@@ -8,11 +8,13 @@ import { useAuthStore } from '@/store/authStore'
 import { authApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 
-const Login = () => {
+const Register = () => {
   const navigate = useNavigate()
   const setAuth = useAuthStore((state) => state.setAuth)
+  const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
   // Apply system theme preference on mount
@@ -27,32 +29,44 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (password !== confirmPassword) {
+      toast.error('Las contraseñas no coinciden')
+      return
+    }
+
+    if (password.length < 3) {
+      toast.error('La contraseña debe tener al menos 3 caracteres')
+      return
+    }
+
     setIsLoading(true)
     
     try {
-      const response = await authApi.login(email, password);
-
-      // Narrow response type since it is 'unknown' by default
+      const response = await authApi.register(email, password, nombre)
+      
       if (
         typeof response === 'object' &&
         response !== null &&
         'token' in response &&
-        'restaurante' in response
+        'newRestaurante' in response
       ) {
-        // Remove Restaurante typing (use `any` for now to fix type error)
-        const { token, restaurante, message } = response as { token: string; restaurante: any; message?: string };
-        setAuth(token, restaurante);
-        toast.success('¡Bienvenido!', {
-          description: message || 'Inicio de sesión exitoso',
-        });
+        const { token, newRestaurante, message } = response as { token: string; newRestaurante: any; message?: string };
+        setAuth(token, newRestaurante[0])
+        toast.success('¡Cuenta creada!', {
+          description: message || 'Registro exitoso',
+        })
         navigate('/dashboard')
       } else {
+        console.error('Register error:', response)
+        const data = await response as { token: string; newRestaurante: any; message?: string }
+        console.error('Register error:', data)
         toast.error('Error en la respuesta del servidor')
       }
     } catch (error) {
-      console.error('Login error:', error)
+      console.error('Register error:', error)
       if (error instanceof ApiError) {
-        toast.error('Error al iniciar sesión', {
+        toast.error('Error al registrarse', {
           description: error.message,
         })
       } else {
@@ -74,13 +88,26 @@ const Login = () => {
               PIRU
             </h1>
           </div>
-          <CardTitle className="text-2xl">Iniciar Sesión</CardTitle>
+          <CardTitle className="text-2xl">Crear Cuenta</CardTitle>
           <CardDescription>
-            Gestión inteligente para tu restaurante
+            Regístrate para comenzar a gestionar tu restaurante
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="nombre">Nombre del restaurante</Label>
+              <Input
+                id="nombre"
+                type="text"
+                placeholder="Mi Restaurante"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                required
+                minLength={3}
+                className="transition-all focus:ring-2 focus:ring-primary"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Correo electrónico</Label>
               <Input
@@ -102,6 +129,20 @@ const Login = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={3}
+                className="transition-all focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={3}
                 className="transition-all focus:ring-2 focus:ring-primary"
               />
             </div>
@@ -111,14 +152,14 @@ const Login = () => {
               size="lg"
               disabled={isLoading}
             >
-              {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+              {isLoading ? 'Creando cuenta...' : 'Registrarse'}
             </Button>
           </form>
           
           <div className="mt-6 text-center text-sm text-muted-foreground">
-            ¿No tienes una cuenta?{' '}
-            <Link to="/register" className="text-primary hover:underline font-medium">
-              Regístrate
+            ¿Ya tienes una cuenta?{' '}
+            <Link to="/login" className="text-primary hover:underline font-medium">
+              Inicia sesión
             </Link>
           </div>
         </CardContent>
@@ -127,4 +168,5 @@ const Login = () => {
   )
 }
 
-export default Login
+export default Register
+

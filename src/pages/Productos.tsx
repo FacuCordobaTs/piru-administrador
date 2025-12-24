@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -6,111 +6,145 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Package, Plus, Edit, Trash2, Search } from 'lucide-react'
-
-// Datos de ejemplo (simulados)
-const productosEjemplo = [
-  {
-    id: 1,
-    nombre: 'Pizza Margarita',
-    descripcion: 'Pizza clásica con tomate, mozzarella y albahaca',
-    precio: 12.50,
-    imagenUrl: 'https://via.placeholder.com/200',
-    activo: true
-  },
-  {
-    id: 2,
-    nombre: 'Hamburguesa Clásica',
-    descripcion: 'Carne, lechuga, tomate, cebolla y salsas especiales',
-    precio: 8.75,
-    imagenUrl: 'https://via.placeholder.com/200',
-    activo: true
-  },
-  {
-    id: 3,
-    nombre: 'Coca Cola',
-    descripcion: 'Refresco de 500ml',
-    precio: 2.50,
-    imagenUrl: 'https://via.placeholder.com/200',
-    activo: true
-  },
-  {
-    id: 4,
-    nombre: 'Papas Fritas',
-    descripcion: 'Porción grande de papas fritas caseras',
-    precio: 4.00,
-    imagenUrl: 'https://via.placeholder.com/200',
-    activo: true
-  },
-  {
-    id: 5,
-    nombre: 'Ensalada César',
-    descripcion: 'Lechuga, pollo, crutones y aderezo césar',
-    precio: 9.50,
-    imagenUrl: 'https://via.placeholder.com/200',
-    activo: false
-  },
-]
+import { useRestauranteStore } from '@/store/restauranteStore'
+import { useAuthStore } from '@/store/authStore'
+import { productosApi, ApiError } from '@/lib/api'
+import { toast } from 'sonner'
+import ImageUpload from '@/components/ImageUpload'
+import { Package, Plus, Edit, Trash2, Search, Loader2 } from 'lucide-react'
 
 const Productos = () => {
-  const [productos, setProductos] = useState(productosEjemplo)
+  const { productos, isLoading, fetchData, restaurante } = useRestauranteStore()
+  const token = useAuthStore((state) => state.token)
   const [busqueda, setBusqueda] = useState('')
   const [dialogAbierto, setDialogAbierto] = useState(false)
-  const [productoEditando, setProductoEditando] = useState<typeof productosEjemplo[0] | null>(null)
+  const [productoEditando, setProductoEditando] = useState<typeof productos[0] | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     nombre: '',
     descripcion: '',
     precio: '',
-    imagenUrl: ''
   })
+  const [imageBase64, setImageBase64] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!restaurante) {
+      fetchData()
+    }
+  }, [])
 
   const productosFiltrados = productos.filter(p => 
     p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-    p.descripcion.toLowerCase().includes(busqueda.toLowerCase())
+    (p.descripcion && p.descripcion.toLowerCase().includes(busqueda.toLowerCase()))
   )
 
   const abrirDialogNuevo = () => {
     setProductoEditando(null)
-    setFormData({ nombre: '', descripcion: '', precio: '', imagenUrl: '' })
+    setFormData({ nombre: '', descripcion: '', precio: '' })
+    setImageBase64(null)
     setDialogAbierto(true)
   }
 
-  const abrirDialogEditar = (producto: typeof productosEjemplo[0]) => {
+  const abrirDialogEditar = (producto: typeof productos[0]) => {
     setProductoEditando(producto)
     setFormData({
       nombre: producto.nombre,
-      descripcion: producto.descripcion,
+      descripcion: producto.descripcion || '',
       precio: producto.precio.toString(),
-      imagenUrl: producto.imagenUrl
     })
+    setImageBase64(producto.imagenUrl || null)
     setDialogAbierto(true)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Aquí se conectaría con el backend
-    if (productoEditando) {
-      setProductos(productos.map(p => 
-        p.id === productoEditando.id 
-          ? { ...p, ...formData, precio: parseFloat(formData.precio) }
-          : p
-      ))
-    } else {
-      const nuevoProducto = {
-        id: productos.length + 1,
-        ...formData,
-        precio: parseFloat(formData.precio),
-        activo: true
-      }
-      setProductos([...productos, nuevoProducto as any])
+    
+    if (!token) {
+      toast.error('No hay sesión activa')
+      return
     }
-    setDialogAbierto(false)
+
+    // Validaciones
+    if (!formData.nombre.trim()) {
+      toast.error('El nombre es requerido')
+      return
+    }
+
+    if (!formData.descripcion.trim()) {
+      toast.error('La descripción es requerida')
+      return
+    }
+
+    const precio = parseFloat(formData.precio)
+    if (isNaN(precio) || precio <= 0) {
+      toast.error('El precio debe ser mayor a 0')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      if (productoEditando) {
+        // Editar producto existente
+        await productosApi.update(token, {
+          id: productoEditando.id,
+          nombre: formData.nombre,
+          descripcion: formData.descripcion,
+          precio: precio,
+          image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
+        })
+        toast.success('Producto actualizado', {
+          description: 'El producto se actualizó correctamente',
+        })
+        // Refrescar datos
+        await fetchData()
+      } else {
+        // Crear nuevo producto
+        await productosApi.create(token, {
+          nombre: formData.nombre,
+          descripcion: formData.descripcion,
+          precio: precio,
+          image: imageBase64 || undefined,
+        })
+
+        toast.success('Producto creado', {
+          description: 'El producto se creó correctamente',
+        })
+
+        // Refrescar datos para obtener el producto con su ID y URL de imagen
+        await fetchData()
+      }
+
+      setDialogAbierto(false)
+      setFormData({ nombre: '', descripcion: '', precio: '' })
+      setImageBase64(null)
+    } catch (error) {
+      console.error('Error al guardar producto:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al guardar', {
+          description: error.message,
+        })
+      } else {
+        toast.error('Error de conexión', {
+          description: 'No se pudo conectar con el servidor',
+        })
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const toggleActivo = (id: number) => {
-    setProductos(productos.map(p => 
-      p.id === id ? { ...p, activo: !p.activo } : p
-    ))
+    // TODO: Conectar con el backend para cambiar estado
+    console.log('Toggle activo:', id)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -122,7 +156,7 @@ const Productos = () => {
             Gestiona el menú de tu restaurante
           </p>
         </div>
-        <Button onClick={abrirDialogNuevo}>
+        <Button onClick={abrirDialogNuevo} className="cursor-pointer">
           <Plus className="mr-2 h-4 w-4" />
           Nuevo Producto
         </Button>
@@ -142,6 +176,27 @@ const Productos = () => {
         </CardContent>
       </Card>
 
+{productosFiltrados.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Package className="h-12 w-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-center mb-2">
+              {productos.length === 0 ? 'No hay productos registrados' : 'No se encontraron productos'}
+            </p>
+            {productos.length === 0 && (
+              <>
+                <p className="text-sm text-muted-foreground text-center mb-4">
+                  Agrega productos a tu menú para comenzar
+                </p>
+                <Button onClick={abrirDialogNuevo} className="cursor-pointer">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear Primer Producto
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {productosFiltrados.map((producto) => (
           <Card 
@@ -151,11 +206,17 @@ const Productos = () => {
             }`}
           >
             <div className="aspect-video w-full overflow-hidden rounded-t-lg bg-muted">
+                {producto.imagenUrl ? (
               <img 
                 src={producto.imagenUrl} 
                 alt={producto.nombre}
                 className="w-full h-full object-cover"
               />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Package className="h-12 w-12 text-muted-foreground" />
+                  </div>
+                )}
             </div>
             <CardHeader>
               <div className="flex items-start justify-between">
@@ -165,26 +226,27 @@ const Productos = () => {
                 </Badge>
               </div>
               <CardDescription className="line-clamp-2">
-                {producto.descripcion}
+                  {producto.descripcion || 'Sin descripción'}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between mb-4">
                 <span className="text-2xl font-bold text-primary">
-                  ${producto.precio.toFixed(2)}
+                    ${parseFloat(producto.precio).toFixed(2)}
                 </span>
               </div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1"
+                  className="flex-1 cursor-pointer"
                   onClick={() => abrirDialogEditar(producto)}
                 >
                   <Edit className="mr-2 h-4 w-4" />
                   Editar
                 </Button>
                 <Button
+                  className="cursor-pointer"
                   variant="outline"
                   size="sm"
                   onClick={() => toggleActivo(producto.id)}
@@ -200,83 +262,92 @@ const Productos = () => {
           </Card>
         ))}
       </div>
-
-      {productosFiltrados.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Package className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No se encontraron productos</p>
-          </CardContent>
-        </Card>
       )}
 
       <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="cursor-pointer">
               {productoEditando ? 'Editar Producto' : 'Nuevo Producto'}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="cursor-pointer">
               {productoEditando 
                 ? 'Modifica la información del producto' 
                 : 'Agrega un nuevo producto al menú'}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre del producto</Label>
+              <Label htmlFor="nombre">Nombre del producto *</Label>
               <Input
                 id="nombre"
                 value={formData.nombre}
                 onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
                 placeholder="Ej: Pizza Margarita"
                 required
+                disabled={isSubmitting}
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="descripcion">Descripción</Label>
+              <Label htmlFor="descripcion">Descripción *</Label>
               <Textarea
                 id="descripcion"
                 value={formData.descripcion}
                 onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
                 placeholder="Describe el producto..."
+                rows={3}
                 required
+                disabled={isSubmitting}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="precio">Precio</Label>
-                <Input
-                  id="precio"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData.precio}
-                  onChange={(e) => setFormData({ ...formData, precio: e.target.value })}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="imagenUrl">URL de imagen</Label>
-                <Input
-                  id="imagenUrl"
-                  value={formData.imagenUrl}
-                  onChange={(e) => setFormData({ ...formData, imagenUrl: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="precio">Precio ($) *</Label>
+              <Input
+                id="precio"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={formData.precio}
+                onChange={(e) => setFormData({ ...formData, precio: e.target.value })}
+                placeholder="0.00"
+                required
+                disabled={isSubmitting}
+              />
             </div>
-            <div className="flex justify-end gap-2 pt-4">
+
+            <div className="space-y-2">
+              <Label>Imagen del producto</Label>
+              <ImageUpload
+                onImageChange={setImageBase64}
+                currentImage={imageBase64}
+                maxSize={5}
+              />
+              <p className="text-xs text-muted-foreground">
+                La imagen es opcional. Si no subes una, se mostrará un ícono predeterminado.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
               <Button
                 type="button"
                 variant="outline"
+                className="cursor-pointer"
                 onClick={() => setDialogAbierto(false)}
+                disabled={isSubmitting}
               >
                 Cancelar
               </Button>
-              <Button type="submit">
-                {productoEditando ? 'Guardar Cambios' : 'Crear Producto'}
+              <Button type="submit" disabled={isSubmitting} className="cursor-pointer">
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {productoEditando ? 'Guardando...' : 'Creando...'}
+                  </>
+                ) : (
+                  productoEditando ? 'Guardar Cambios' : 'Crear Producto'
+                )}
               </Button>
             </div>
           </form>

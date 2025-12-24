@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { Separator } from '@/components/ui/separator'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { useAuthStore } from '@/store/authStore'
+import { useRestauranteStore } from '@/store/restauranteStore'
+import { toast } from 'sonner'
 import { 
   LayoutDashboard, 
   Table, 
@@ -11,18 +15,47 @@ import {
   Menu, 
   LogOut,
   Sun,
-  Moon
+  Moon,
+  User
 } from 'lucide-react'
 
 const DashboardLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const [isDark, setIsDark] = useState(false)
+  const logout = useAuthStore((state) => state.logout)
+  const restauranteStore = useRestauranteStore()
+  const { restaurante } = useAuthStore()
+  const [isDark, setIsDark] = useState(() => {
+    // Initialize with system preference
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  })
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // Apply theme on mount
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [isDark])
+
+  // Fetch restaurante data on mount
+  useEffect(() => {
+    if (!restauranteStore.restaurante) {
+      restauranteStore.fetchData()
+    }
+  }, [])
 
   const toggleTheme = () => {
     setIsDark(!isDark)
-    document.documentElement.classList.toggle('dark')
+  }
+
+  const handleLogout = () => {
+    logout()
+    restauranteStore.reset()
+    toast.success('Sesión cerrada exitosamente')
+    navigate('/login')
   }
 
   const menuItems = [
@@ -74,6 +107,27 @@ const DashboardLayout = () => {
             <Button
               variant="ghost"
               className="w-full justify-start"
+              onClick={() => handleNavigation('/dashboard/perfil')}
+            >
+              <div className="flex items-center w-full">
+                <Avatar className="h-8 w-8 mr-2">
+                  <AvatarImage src={restauranteStore.restaurante?.imagenUrl || ''} />
+                  <AvatarFallback>
+                    {restaurante?.nombre?.charAt(0).toUpperCase() || 'R'}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col items-start flex-1 min-w-0">
+                  <span className="text-sm font-medium truncate w-full">
+                    {restaurante?.nombre || 'Mi Restaurante'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Ver perfil</span>
+                </div>
+              </div>
+            </Button>
+            <Separator />
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
               onClick={toggleTheme}
             >
               {isDark ? <Sun className="mr-2 h-5 w-5" /> : <Moon className="mr-2 h-5 w-5" />}
@@ -82,7 +136,7 @@ const DashboardLayout = () => {
             <Button
               variant="ghost"
               className="w-full justify-start text-destructive hover:text-destructive"
-              onClick={() => navigate('/login')}
+              onClick={handleLogout}
             >
               <LogOut className="mr-2 h-5 w-5" />
               Cerrar Sesión
@@ -127,6 +181,14 @@ const DashboardLayout = () => {
                 <Button
                   variant="ghost"
                   className="w-full justify-start"
+                  onClick={() => handleNavigation('/dashboard/perfil')}
+                >
+                  <User className="mr-2 h-5 w-5" />
+                  Ver Perfil
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start"
                   onClick={toggleTheme}
                 >
                   {isDark ? <Sun className="mr-2 h-5 w-5" /> : <Moon className="mr-2 h-5 w-5" />}
@@ -135,7 +197,7 @@ const DashboardLayout = () => {
                 <Button
                   variant="ghost"
                   className="w-full justify-start text-destructive"
-                  onClick={() => navigate('/login')}
+                  onClick={handleLogout}
                 >
                   <LogOut className="mr-2 h-5 w-5" />
                   Cerrar Sesión

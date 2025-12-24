@@ -1,45 +1,61 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import { RouterProvider } from "react-router/dom";
 import { Toaster } from 'sonner'
-import Welcome from './pages/Welcome'
 import Login from './pages/Login'
+import Register from './pages/Register'
+import ProtectedLayout from './components/ProtectedLayout'
 import DashboardLayout from './components/DashboardLayout'
 import Dashboard from './pages/Dashboard'
 import Mesas from './pages/Mesas'
 import Notificaciones from './pages/Notificaciones'
 import Productos from './pages/Productos'
+import Perfil from './pages/Perfil'
 
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <Welcome />,
+    element: <Navigate to="/login" replace />,
   },
   {
     path: "/login",
     element: <Login />,
   },
   {
+    path: "/register",
+    element: <Register />,
+  },
+  {
     path: "/dashboard",
-    element: <DashboardLayout />,
+    element: <ProtectedLayout />,
     children: [
       {
-        index: true,
-        element: <Dashboard />,
-      },
-      {
-        path: "mesas",
-        element: <Mesas />,
-      },
-      {
-        path: "notificaciones",
-        element: <Notificaciones />,
-      },
-      {
-        path: "productos",
-        element: <Productos />,
+        path: "/dashboard",
+        element: <DashboardLayout />,
+        children: [
+          {
+            index: true,
+            element: <Dashboard />,
+          },
+          {
+            path: "mesas",
+            element: <Mesas />,
+          },
+          {
+            path: "notificaciones",
+            element: <Notificaciones />,
+          },
+          {
+            path: "productos",
+            element: <Productos />,
+          },
+          {
+            path: "perfil",
+            element: <Perfil />,
+          },
+        ],
       },
     ],
   },

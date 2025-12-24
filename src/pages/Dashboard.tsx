@@ -1,47 +1,67 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Table, Bell, Package, DollarSign } from 'lucide-react'
+import { useRestauranteStore } from '@/store/restauranteStore'
+import { Table, Bell, Package, DollarSign, Loader2 } from 'lucide-react'
 
 const Dashboard = () => {
   const navigate = useNavigate()
+  const { mesas, productos, isLoading, fetchData, restaurante } = useRestauranteStore()
+
+  useEffect(() => {
+    if (!restaurante) {
+      fetchData()
+    }
+  }, [])
+
+  const productosActivos = productos.filter(p => p.activo).length
 
   const stats = [
     { 
-      title: 'Mesas Activas', 
-      value: '12', 
+      title: 'Mesas Totales', 
+      value: mesas.length.toString(), 
       icon: Table, 
       color: 'text-primary',
       onClick: () => navigate('/dashboard/mesas')
     },
     { 
-      title: 'Pedidos Pendientes', 
-      value: '8', 
+      title: 'Notificaciones', 
+      value: '0', 
       icon: Bell, 
       color: 'text-orange-500',
       onClick: () => navigate('/dashboard/notificaciones')
     },
     { 
-      title: 'Productos', 
-      value: '45', 
+      title: 'Productos Activos', 
+      value: productosActivos.toString(), 
       icon: Package, 
       color: 'text-blue-500',
       onClick: () => navigate('/dashboard/productos')
     },
     { 
-      title: 'Ingresos Hoy', 
-      value: '$1,250', 
+      title: 'Total Productos', 
+      value: productos.length.toString(), 
       icon: DollarSign, 
-      color: 'text-green-500'
+      color: 'text-green-500',
+      onClick: () => navigate('/dashboard/productos')
     },
   ]
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
-          Resumen general de tu restaurante
+          Bienvenido, {restaurante?.nombre || 'Restaurante'}
         </p>
       </div>
 
@@ -107,32 +127,36 @@ const Dashboard = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Actividad Reciente</CardTitle>
-            <CardDescription>Últimas acciones en el sistema</CardDescription>
+            <CardTitle>Información del Restaurante</CardTitle>
+            <CardDescription>Datos de tu restaurante</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="flex items-center space-x-4">
                 <div className="w-2 h-2 rounded-full bg-primary"></div>
                 <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">Nuevo pedido en Mesa 5</p>
-                  <p className="text-xs text-muted-foreground">Hace 5 minutos</p>
+                  <p className="text-sm font-medium">{restaurante?.nombre || 'Sin nombre'}</p>
+                  <p className="text-xs text-muted-foreground">{restaurante?.email}</p>
                 </div>
               </div>
-              <div className="flex items-center space-x-4">
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">Pago recibido - Mesa 3</p>
-                  <p className="text-xs text-muted-foreground">Hace 15 minutos</p>
+              {restaurante?.direccion && (
+                <div className="flex items-center space-x-4">
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium">Dirección</p>
+                    <p className="text-xs text-muted-foreground">{restaurante.direccion}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">Producto agregado</p>
-                  <p className="text-xs text-muted-foreground">Hace 1 hora</p>
+              )}
+              {restaurante?.telefono && (
+                <div className="flex items-center space-x-4">
+                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium">Teléfono</p>
+                    <p className="text-xs text-muted-foreground">{restaurante.telefono}</p>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>
