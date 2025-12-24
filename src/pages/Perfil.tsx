@@ -8,7 +8,6 @@ import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { toast } from 'sonner'
 import { 
-  User, 
   Mail, 
   MapPin, 
   Phone, 

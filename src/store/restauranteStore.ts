@@ -52,7 +52,7 @@ interface RestauranteState {
   reset: () => void
 }
 
-export const useRestauranteStore = create<RestauranteState>((set, get) => ({
+export const useRestauranteStore = create<RestauranteState>((set) => ({
   restaurante: null,
   mesas: [],
   productos: [],
@@ -68,7 +68,14 @@ export const useRestauranteStore = create<RestauranteState>((set, get) => ({
 
     set({ isLoading: true, error: null })
     try {
-      const response = await restauranteApi.getProfile(token)
+      const response = await restauranteApi.getProfile(token) as {
+        success: boolean
+        data?: {
+          restaurante: RestauranteData[]
+          mesas: Mesa[]
+          productos: Producto[]
+        }
+      }
       
       if (response.success && response.data) {
         set({

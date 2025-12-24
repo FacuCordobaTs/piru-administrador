@@ -71,9 +71,7 @@ const Dashboard = () => {
           return (
             <Card 
               key={stat.title}
-              className={`transition-all duration-300 hover:shadow-lg cursor-pointer ${
-                stat.onClick ? 'hover:scale-105' : ''
-              }`}
+              className="transition-all duration-300 hover:shadow-lg cursor-pointer hover:scale-105"
               onClick={stat.onClick}
               style={{ animationDelay: `${index * 100}ms` }}
             >
