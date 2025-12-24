@@ -14,6 +14,8 @@ import Notificaciones from './pages/Notificaciones'
 import Productos from './pages/Productos'
 import Perfil from './pages/Perfil'
 
+//
+
 const router = createBrowserRouter([
   {
     path: "/",
