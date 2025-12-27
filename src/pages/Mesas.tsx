@@ -21,6 +21,9 @@ const Mesas = () => {
   const [crearMesaDialog, setCrearMesaDialog] = useState(false)
   const [nombreMesa, setNombreMesa] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  const [eliminarMesaDialog, setEliminarMesaDialog] = useState(false)
+  const [mesaAEliminar, setMesaAEliminar] = useState<typeof mesas[0] | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // WebSocket connection para la mesa seleccionada
   const { state: mesaState, isConnected } = useMesaWebSocket(
@@ -78,6 +81,47 @@ const Mesas = () => {
   const handleVerQR = (mesa: typeof mesas[0]) => {
     setSelectedMesa(mesa)
     setVerQR(true)
+  }
+
+  const handleEliminarMesa = async () => {
+    if (!token || !mesaAEliminar) {
+      toast.error('No hay sesión activa o mesa seleccionada')
+      return
+    }
+
+    setIsDeleting(true)
+
+    try {
+      await mesasApi.delete(token, mesaAEliminar.id)
+
+      toast.success('Mesa eliminada', {
+        description: 'La mesa se eliminó correctamente',
+      })
+
+      // Refrescar datos
+      await fetchData()
+      setEliminarMesaDialog(false)
+      setMesaAEliminar(null)
+      setSelectedMesa(null)
+    } catch (error) {
+      console.error('Error al eliminar mesa:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al eliminar mesa', {
+          description: error.message,
+        })
+      } else {
+        toast.error('Error de conexión', {
+          description: 'No se pudo conectar con el servidor',
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleAbrirEliminarDialog = (mesa: typeof mesas[0]) => {
+    setMesaAEliminar(mesa)
+    setEliminarMesaDialog(true)
   }
 
   if (isLoading) {
@@ -278,7 +322,11 @@ const Mesas = () => {
                   <QrCode className="mr-2 h-4 w-4" />
                   Ver QR Code
                 </Button>
-                <Button variant="destructive" className="flex-1" disabled>
+                <Button 
+                  variant="destructive" 
+                  className="flex-1 cursor-pointer"
+                  onClick={() => handleAbrirEliminarDialog(selectedMesa)}
+                >
                   Eliminar Mesa
                 </Button>
               </div>
@@ -301,6 +349,48 @@ const Mesas = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Dialog de Confirmación de Eliminación */}
+      <Dialog open={eliminarMesaDialog} onOpenChange={setEliminarMesaDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Eliminar Mesa?</DialogTitle>
+            <DialogDescription>
+              Esta acción no se puede deshacer. Se eliminará la mesa "{mesaAEliminar?.nombre}" y todos los pedidos cerrados asociados.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEliminarMesaDialog(false)
+                setMesaAEliminar(null)
+              }}
+              disabled={isDeleting}
+              className="cursor-pointer"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={handleEliminarMesa}
+              disabled={isDeleting}
+              className="cursor-pointer"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                'Eliminar'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog de Crear Mesa */}
       <Dialog open={crearMesaDialog} onOpenChange={setCrearMesaDialog}>

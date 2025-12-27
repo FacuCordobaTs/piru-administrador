@@ -7,6 +7,7 @@ import { Toaster } from 'sonner'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ProtectedLayout from './components/ProtectedLayout'
+import GuestLayout from './components/GuestLayout'
 import DashboardLayout from './components/DashboardLayout'
 import Dashboard from './pages/Dashboard'
 import Mesas from './pages/Mesas'
@@ -19,15 +20,21 @@ import Perfil from './pages/Perfil'
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <Navigate to="/login" replace />,
-  },
-  {
-    path: "/login",
-    element: <Login />,
-  },
-  {
-    path: "/register",
-    element: <Register />,
+    element: <GuestLayout />,
+    children: [
+      {
+        index: true,
+        element: <Navigate to="/login" replace />,
+      },
+      {
+        path: "/login",
+        element: <Login />,
+      },
+      {
+        path: "/register",
+        element: <Register />,
+      },
+    ],
   },
   {
     path: "/dashboard",
