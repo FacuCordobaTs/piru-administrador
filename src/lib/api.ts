@@ -174,6 +174,26 @@ export const mesasApi = {
     })
   },
 
+  // Obtener todas las mesas con su pedido actual
+  getAllWithPedidos: async (token: string) => {
+    return fetchApi('/mesa/list-with-pedidos', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Obtener detalle de una mesa específica con su pedido
+  getPedido: async (token: string, mesaId: number) => {
+    return fetchApi(`/mesa/${mesaId}/pedido`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
   create: async (token: string, nombre: string) => {
     return fetchApi('/mesa/create', {
       method: 'POST',
