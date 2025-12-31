@@ -10,8 +10,8 @@ import ProtectedLayout from './components/ProtectedLayout'
 import GuestLayout from './components/GuestLayout'
 import DashboardLayout from './components/DashboardLayout'
 import Dashboard from './pages/Dashboard'
-import Mesas from './pages/Mesas'
-import Notificaciones from './pages/Notificaciones'
+import Pedidos from './pages/Pedidos'
+import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
 import Perfil from './pages/Perfil'
 
@@ -49,12 +49,12 @@ const router = createBrowserRouter([
             element: <Dashboard />,
           },
           {
-            path: "mesas",
-            element: <Mesas />,
+            path: "pedidos",
+            element: <Pedidos />,
           },
           {
-            path: "notificaciones",
-            element: <Notificaciones />,
+            path: "pedidos/:id",
+            element: <Pedido />,
           },
           {
             path: "productos",

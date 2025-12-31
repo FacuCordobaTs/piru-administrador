@@ -1,11 +1,7 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+import { useAuthStore } from '@/store/authStore'
+import { useRestauranteStore } from '@/store/restauranteStore'
 
-// interface ApiResponse<T = any> {
-//   success?: boolean
-//   data?: T
-//   message?: string
-//   error?: string
-// }
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 export class ApiError extends Error {
   status: number
@@ -19,6 +15,40 @@ export class ApiError extends Error {
   }
 }
 
+// Función para hacer logout cuando el token expira
+function handleUnauthorized() {
+  const authStore = useAuthStore.getState()
+  const restauranteStore = useRestauranteStore.getState()
+  
+  // Solo hacer logout si el usuario estaba autenticado
+  if (authStore.isAuthenticated) {
+    authStore.logout()
+    restauranteStore.reset()
+    // Redirigir al login
+    window.location.href = '/login'
+  }
+}
+
+// Función para verificar si el token JWT está expirado
+export function isTokenExpired(token: string): boolean {
+  try {
+    // El JWT tiene 3 partes separadas por puntos: header.payload.signature
+    const payload = token.split('.')[1]
+    if (!payload) return true
+    
+    // Decodificar el payload (base64url)
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
+    
+    // Verificar expiración (exp está en segundos)
+    if (!decoded.exp) return true
+    
+    // Agregar un margen de 60 segundos para evitar problemas de sincronización
+    const now = Math.floor(Date.now() / 1000)
+    return decoded.exp < now + 60
+  } catch {
+    return true
+  }
+}
 
 async function fetchApi<T>(
   endpoint: string,
@@ -38,6 +68,11 @@ async function fetchApi<T>(
     const data = await response.json()
 
     if (!response.ok) {
+      // Si es un error 401 (Unauthorized), hacer logout automático
+      if (response.status === 401) {
+        handleUnauthorized()
+      }
+      
       throw new ApiError(
         data.error || data.message || 'Error en la solicitud',
         response.status,
@@ -103,6 +138,24 @@ export const restauranteApi = {
       body: JSON.stringify(data),
     })
   },
+
+  update: async (
+    token: string,
+    data: {
+      nombre?: string
+      direccion?: string
+      telefono?: string
+      image?: string // Base64 de la imagen
+    }
+  ) => {
+    return fetchApi('/restaurante/update', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
 }
 
 // Productos API
@@ -155,6 +208,133 @@ export const productosApi = {
 
   delete: async (token: string, id: number) => {
     return fetchApi(`/producto/delete/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
+// Pedidos API
+export const pedidosApi = {
+  // Obtener todos los pedidos con paginación
+  getAll: async (token: string, page = 1, limit = 20, estado?: string) => {
+    const params = new URLSearchParams({ 
+      page: page.toString(), 
+      limit: limit.toString() 
+    })
+    if (estado) params.append('estado', estado)
+    
+    return fetchApi(`/pedido/list?${params}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Obtener un pedido específico
+  getById: async (token: string, id: number) => {
+    return fetchApi(`/pedido/${id}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Actualizar estado del pedido
+  updateEstado: async (token: string, id: number, estado: string) => {
+    return fetchApi(`/pedido/${id}/estado`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ estado }),
+    })
+  },
+
+  // ==================== GESTIÓN MANUAL DE PEDIDOS ====================
+
+  // Crear pedido manual para una mesa
+  createManual: async (token: string, mesaId: number) => {
+    return fetchApi('/pedido/create-manual', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ mesaId }),
+    })
+  },
+
+  // Agregar item a un pedido
+  addItem: async (
+    token: string,
+    pedidoId: number,
+    data: {
+      productoId: number
+      cantidad?: number
+      clienteNombre?: string
+    }
+  ) => {
+    return fetchApi(`/pedido/${pedidoId}/items`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        productoId: data.productoId,
+        cantidad: data.cantidad || 1,
+        clienteNombre: data.clienteNombre || 'Mozo'
+      }),
+    })
+  },
+
+  // Eliminar item de un pedido
+  deleteItem: async (token: string, pedidoId: number, itemId: number) => {
+    return fetchApi(`/pedido/${pedidoId}/items/${itemId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Actualizar cantidad de un item
+  updateItemCantidad: async (token: string, pedidoId: number, itemId: number, cantidad: number) => {
+    return fetchApi(`/pedido/${pedidoId}/items/${itemId}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ cantidad }),
+    })
+  },
+
+  // Confirmar pedido (pasar a 'preparing')
+  confirmar: async (token: string, pedidoId: number) => {
+    return fetchApi(`/pedido/${pedidoId}/confirmar`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Cerrar pedido
+  cerrar: async (token: string, pedidoId: number) => {
+    return fetchApi(`/pedido/${pedidoId}/cerrar`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Eliminar pedido
+  delete: async (token: string, pedidoId: number) => {
+    return fetchApi(`/pedido/delete/${pedidoId}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${token}`,

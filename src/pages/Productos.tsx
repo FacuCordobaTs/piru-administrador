@@ -197,7 +197,7 @@ const Productos = () => {
           </CardContent>
         </Card>
       ) : (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {productosFiltrados.map((producto) => (
           <Card 
             key={producto.id}
@@ -205,56 +205,59 @@ const Productos = () => {
               !producto.activo ? 'opacity-60' : ''
             }`}
           >
-            <div className="aspect-video w-full overflow-hidden rounded-t-lg bg-muted">
-                {producto.imagenUrl ? (
-              <img 
-                src={producto.imagenUrl} 
-                alt={producto.nombre}
-                className="w-full h-full object-cover"
-              />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Package className="h-12 w-12 text-muted-foreground" />
-                  </div>
-                )}
+            <div className="aspect-square w-full overflow-hidden rounded-t-lg bg-muted">
+              {producto.imagenUrl ? (
+                <img 
+                  src={producto.imagenUrl} 
+                  alt={producto.nombre}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Package className="h-8 w-8 text-muted-foreground" />
+                </div>
+              )}
             </div>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <CardTitle className="text-lg">{producto.nombre}</CardTitle>
-                <Badge variant={producto.activo ? 'default' : 'secondary'}>
+            <CardHeader className="p-3 pb-1">
+              <div className="flex items-start justify-between gap-1">
+                <CardTitle className="text-sm font-medium line-clamp-1">{producto.nombre}</CardTitle>
+                <Badge 
+                  variant={producto.activo ? 'default' : 'secondary'}
+                  className="text-[10px] px-1.5 py-0 h-4 shrink-0"
+                >
                   {producto.activo ? 'Activo' : 'Inactivo'}
                 </Badge>
               </div>
-              <CardDescription className="line-clamp-2">
-                  {producto.descripcion || 'Sin descripción'}
+              <CardDescription className="text-xs line-clamp-1">
+                {producto.descripcion || 'Sin descripción'}
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-2xl font-bold text-primary">
-                    ${parseFloat(producto.precio).toFixed(2)}
+            <CardContent className="p-3 pt-0">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-lg font-bold text-primary">
+                  ${parseFloat(producto.precio).toFixed(2)}
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-1">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 cursor-pointer"
+                  className="flex-1 h-7 text-xs cursor-pointer"
                   onClick={() => abrirDialogEditar(producto)}
                 >
-                  <Edit className="mr-2 h-4 w-4" />
+                  <Edit className="mr-1 h-3 w-3" />
                   Editar
                 </Button>
                 <Button
-                  className="cursor-pointer"
+                  className="h-7 w-7 cursor-pointer"
                   variant="outline"
-                  size="sm"
+                  size="icon"
                   onClick={() => toggleActivo(producto.id)}
                 >
                   {producto.activo ? (
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3 w-3" />
                   ) : (
-                    <Package className="h-4 w-4" />
+                    <Package className="h-3 w-3" />
                   )}
                 </Button>
               </div>

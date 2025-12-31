@@ -9,14 +9,12 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { toast } from 'sonner'
 import { 
   LayoutDashboard, 
-  Table, 
-  Bell, 
+  ClipboardList, 
   Package, 
   Menu, 
   LogOut,
   Sun,
-  Moon,
-  User
+  Moon
 } from 'lucide-react'
 
 const DashboardLayout = () => {
@@ -26,10 +24,9 @@ const DashboardLayout = () => {
   const restauranteStore = useRestauranteStore()
   const { restaurante } = useAuthStore()
   const [isDark, setIsDark] = useState(() => {
-    // Initialize with system preference
     return window.matchMedia('(prefers-color-scheme: dark)').matches
   })
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   // Apply theme on mount
   useEffect(() => {
@@ -56,161 +53,145 @@ const DashboardLayout = () => {
     restauranteStore.reset()
     toast.success('Sesión cerrada exitosamente')
     navigate('/login')
+    setMenuOpen(false)
   }
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Table, label: 'Mesas', path: '/dashboard/mesas' },
-    { icon: Bell, label: 'Notificaciones', path: '/dashboard/notificaciones' },
+    { icon: ClipboardList, label: 'Pedidos', path: '/dashboard/pedidos' },
     { icon: Package, label: 'Productos', path: '/dashboard/productos' },
   ]
 
   const handleNavigation = (path: string) => {
     navigate(path)
-    setMobileMenuOpen(false)
+    setMenuOpen(false)
   }
 
   const isActive = (path: string) => location.pathname === path
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col border-r bg-card">
-        <div className="flex flex-col grow pt-5 pb-4 overflow-y-auto">
-          <div className="flex items-center shrink-0 px-4 mb-8">
-            <h1 className="text-2xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+      {/* Header con botón de menú - siempre visible */}
+      <header className="sticky top-0 z-50 bg-card border-b">
+        <div className="flex items-center justify-between px-4 h-14">
+          <div className="flex items-center gap-3">
+            <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="shrink-0">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72 p-0">
+                {/* Logo */}
+                <div className="flex items-center px-6 h-14 border-b">
+                  <h1 className="text-2xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                    PIRU
+                  </h1>
+                </div>
+                
+                {/* Navigation */}
+                <nav className="flex flex-col p-4 space-y-1">
+                  {menuItems.map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <Button
+                        key={item.path}
+                        variant={isActive(item.path) ? 'default' : 'ghost'}
+                        className={`w-full justify-start h-11 ${
+                          isActive(item.path) 
+                            ? 'bg-primary text-primary-foreground shadow-md' 
+                            : 'hover:bg-accent'
+                        }`}
+                        onClick={() => handleNavigation(item.path)}
+                      >
+                        <Icon className="mr-3 h-5 w-5" />
+                        {item.label}
+                      </Button>
+                    )
+                  })}
+                </nav>
+                
+                {/* Footer del menú */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-card">
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start h-12 mb-2"
+                    onClick={() => handleNavigation('/dashboard/perfil')}
+                  >
+                    <Avatar className="h-8 w-8 mr-3">
+                      <AvatarImage src={restauranteStore.restaurante?.imagenUrl || ''} />
+                      <AvatarFallback>
+                        {restaurante?.nombre?.charAt(0).toUpperCase() || 'R'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col items-start flex-1 min-w-0">
+                      <span className="text-sm font-medium truncate w-full">
+                        {restaurante?.nombre || 'Mi Restaurante'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">Ver perfil</span>
+                    </div>
+                  </Button>
+                  
+                  <Separator className="my-2" />
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="flex-1 h-10"
+                      onClick={toggleTheme}
+                      title={isDark ? 'Modo Claro' : 'Modo Oscuro'}
+                    >
+                      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1 h-10 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={handleLogout}
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Salir
+                    </Button>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+            
+            <h1 className="text-xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
               PIRU
             </h1>
           </div>
-          <nav className="flex-1 px-4 space-y-2">
-            {menuItems.map((item) => {
-              const Icon = item.icon
-              return (
-                <Button
-                  key={item.path}
-                  variant={isActive(item.path) ? 'default' : 'ghost'}
-                  className={`w-full justify-start transition-all ${
-                    isActive(item.path) 
-                      ? 'bg-primary text-primary-foreground shadow-md' 
-                      : 'hover:bg-accent'
-                  }`}
-                  onClick={() => handleNavigation(item.path)}
-                >
-                  <Icon className="mr-2 h-5 w-5" />
-                  {item.label}
-                </Button>
-              )
-            })}
-          </nav>
-          <div className="px-4 space-y-2">
-            <Separator />
+          
+          {/* Acciones rápidas en el header */}
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
-              className="w-full justify-start"
-              onClick={() => handleNavigation('/dashboard/perfil')}
-            >
-              <div className="flex items-center w-full">
-                <Avatar className="h-8 w-8 mr-2">
-                  <AvatarImage src={restauranteStore.restaurante?.imagenUrl || ''} />
-                  <AvatarFallback>
-                    {restaurante?.nombre?.charAt(0).toUpperCase() || 'R'}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col items-start flex-1 min-w-0">
-                  <span className="text-sm font-medium truncate w-full">
-                    {restaurante?.nombre || 'Mi Restaurante'}
-                  </span>
-                  <span className="text-xs text-muted-foreground">Ver perfil</span>
-                </div>
-              </div>
-            </Button>
-            <Separator />
-            <Button
-              variant="ghost"
-              className="w-full justify-start"
+              size="icon"
               onClick={toggleTheme}
+              title={isDark ? 'Modo Claro' : 'Modo Oscuro'}
             >
-              {isDark ? <Sun className="mr-2 h-5 w-5" /> : <Moon className="mr-2 h-5 w-5" />}
-              {isDark ? 'Modo Claro' : 'Modo Oscuro'}
+              {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
             <Button
               variant="ghost"
-              className="w-full justify-start text-destructive hover:text-destructive"
-              onClick={handleLogout}
+              size="icon"
+              onClick={() => navigate('/dashboard/perfil')}
+              title="Ver perfil"
             >
-              <LogOut className="mr-2 h-5 w-5" />
-              Cerrar Sesión
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={restauranteStore.restaurante?.imagenUrl || ''} />
+                <AvatarFallback className="text-xs">
+                  {restaurante?.nombre?.charAt(0).toUpperCase() || 'R'}
+                </AvatarFallback>
+              </Avatar>
             </Button>
           </div>
         </div>
-      </aside>
-
-      {/* Mobile Header */}
-      <header className="md:hidden sticky top-0 z-50 bg-card border-b">
-        <div className="flex items-center justify-between px-4 h-16">
-          <h1 className="text-xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            PIRU
-          </h1>
-          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-6 w-6" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-64">
-              <nav className="flex flex-col space-y-2 mt-8">
-                {menuItems.map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <Button
-                      key={item.path}
-                      variant={isActive(item.path) ? 'default' : 'ghost'}
-                      className={`w-full justify-start ${
-                        isActive(item.path) 
-                          ? 'bg-primary text-primary-foreground' 
-                          : ''
-                      }`}
-                      onClick={() => handleNavigation(item.path)}
-                    >
-                      <Icon className="mr-2 h-5 w-5" />
-                      {item.label}
-                    </Button>
-                  )
-                })}
-                <Separator className="my-4" />
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start"
-                  onClick={() => handleNavigation('/dashboard/perfil')}
-                >
-                  <User className="mr-2 h-5 w-5" />
-                  Ver Perfil
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start"
-                  onClick={toggleTheme}
-                >
-                  {isDark ? <Sun className="mr-2 h-5 w-5" /> : <Moon className="mr-2 h-5 w-5" />}
-                  {isDark ? 'Modo Claro' : 'Modo Oscuro'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start text-destructive"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="mr-2 h-5 w-5" />
-                  Cerrar Sesión
-                </Button>
-              </nav>
-            </SheetContent>
-          </Sheet>
-        </div>
       </header>
 
-      {/* Main Content */}
-      <main className="md:pl-64">
-        <div className="p-4 md:p-8">
+      {/* Main Content - ahora sin padding lateral del sidebar */}
+      <main>
+        <div className="p-4 md:p-6">
           <Outlet />
         </div>
       </main>
@@ -219,4 +200,3 @@ const DashboardLayout = () => {
 }
 
 export default DashboardLayout
-

@@ -1,11 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
+import { restauranteApi, ApiError } from '@/lib/api'
+import ImageUpload from '@/components/ImageUpload'
 import { toast } from 'sonner'
 import { 
   Mail, 
@@ -15,14 +20,26 @@ import {
   Edit, 
   LogOut,
   Store,
-  Loader2
+  Loader2,
+  Settings
 } from 'lucide-react'
 
 const Perfil = () => {
   const navigate = useNavigate()
   const logout = useAuthStore((state) => state.logout)
+  const token = useAuthStore((state) => state.token)
   const restauranteStore = useRestauranteStore()
   const { restaurante, isLoading } = restauranteStore
+
+  // Estados del modal de edición
+  const [dialogAbierto, setDialogAbierto] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formData, setFormData] = useState({
+    nombre: '',
+    direccion: '',
+    telefono: '',
+  })
+  const [imageBase64, setImageBase64] = useState<string | null>(null)
 
   useEffect(() => {
     if (!restaurante) {
@@ -35,6 +52,93 @@ const Perfil = () => {
     restauranteStore.reset()
     toast.success('Sesión cerrada exitosamente')
     navigate('/login')
+  }
+
+  const abrirDialogEditar = () => {
+    if (restaurante) {
+      setFormData({
+        nombre: restaurante.nombre || '',
+        direccion: restaurante.direccion || '',
+        telefono: restaurante.telefono || '',
+      })
+      setImageBase64(restaurante.imagenUrl || null)
+      setDialogAbierto(true)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!token) {
+      toast.error('No hay sesión activa')
+      return
+    }
+
+    // Validaciones
+    if (!formData.nombre.trim()) {
+      toast.error('El nombre es requerido')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      const updateData: {
+        nombre?: string
+        direccion?: string
+        telefono?: string
+        image?: string
+      } = {}
+
+      // Solo enviar campos que cambiaron
+      if (formData.nombre !== restaurante?.nombre) {
+        updateData.nombre = formData.nombre
+      }
+      if (formData.direccion !== (restaurante?.direccion || '')) {
+        updateData.direccion = formData.direccion
+      }
+      if (formData.telefono !== (restaurante?.telefono || '')) {
+        updateData.telefono = formData.telefono
+      }
+      // Si la imagen es nueva (base64), enviarla
+      if (imageBase64 && imageBase64.startsWith('data:image')) {
+        updateData.image = imageBase64
+      }
+
+      // Verificar que hay algo que actualizar
+      if (Object.keys(updateData).length === 0) {
+        toast.info('No hay cambios para guardar')
+        setDialogAbierto(false)
+        return
+      }
+
+      const response = await restauranteApi.update(token, updateData) as {
+        success: boolean
+        data?: any
+      }
+
+      if (response.success) {
+        toast.success('Perfil actualizado', {
+          description: 'Los cambios se guardaron correctamente',
+        })
+        // Refrescar datos del store
+        await restauranteStore.fetchData()
+        setDialogAbierto(false)
+      }
+    } catch (error) {
+      console.error('Error al actualizar perfil:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al guardar', {
+          description: error.message,
+        })
+      } else {
+        toast.error('Error de conexión', {
+          description: 'No se pudo conectar con el servidor',
+        })
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const formatDate = (dateString: string) => {
@@ -92,7 +196,7 @@ const Perfil = () => {
                   </CardDescription>
                 </div>
               </div>
-              <Button variant="outline">
+              <Button variant="outline" onClick={abrirDialogEditar}>
                 <Edit className="mr-2 h-4 w-4" />
                 Editar Perfil
               </Button>
@@ -200,6 +304,96 @@ const Perfil = () => {
           </Card>
         </div>
       </div>
+
+      {/* Modal de Editar Perfil */}
+      <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Editar Perfil del Restaurante
+            </DialogTitle>
+            <DialogDescription>
+              Modifica la información de tu restaurante
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Imagen del restaurante */}
+            <div className="space-y-2">
+              <Label>Logo del Restaurante</Label>
+              <ImageUpload
+                onImageChange={setImageBase64}
+                currentImage={imageBase64}
+                maxSize={5}
+              />
+              <p className="text-xs text-muted-foreground">
+                Sube el logo de tu restaurante. Tamaño máximo: 5MB.
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Nombre */}
+            <div className="space-y-2">
+              <Label htmlFor="nombre">Nombre del Restaurante *</Label>
+              <Input
+                id="nombre"
+                value={formData.nombre}
+                onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                placeholder="Ej: Mi Restaurante"
+                required
+                disabled={isSubmitting}
+              />
+            </div>
+
+            {/* Dirección */}
+            <div className="space-y-2">
+              <Label htmlFor="direccion">Dirección</Label>
+              <Input
+                id="direccion"
+                value={formData.direccion}
+                onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
+                placeholder="Ej: Av. Principal 123"
+                disabled={isSubmitting}
+              />
+            </div>
+
+            {/* Teléfono */}
+            <div className="space-y-2">
+              <Label htmlFor="telefono">Teléfono</Label>
+              <Input
+                id="telefono"
+                value={formData.telefono}
+                onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
+                placeholder="Ej: +54 11 1234-5678"
+                disabled={isSubmitting}
+              />
+            </div>
+
+            {/* Botones */}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogAbierto(false)}
+                disabled={isSubmitting}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  'Guardar Cambios'
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
