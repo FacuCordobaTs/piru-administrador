@@ -158,6 +158,58 @@ export const restauranteApi = {
   },
 }
 
+// Categorías API
+export const categoriasApi = {
+  getAll: async (token: string) => {
+    return fetchApi('/categoria', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  create: async (
+    token: string,
+    data: {
+      nombre: string
+    }
+  ) => {
+    return fetchApi('/categoria/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  update: async (
+    token: string,
+    data: {
+      id: number
+      nombre?: string
+    }
+  ) => {
+    return fetchApi('/categoria/update', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/categoria/delete/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
 // Productos API
 export const productosApi = {
   getAll: async (token: string) => {
@@ -176,6 +228,7 @@ export const productosApi = {
       descripcion: string
       precio: number
       image?: string // Base64 string
+      categoriaId?: number
     }
   ) => {
     return fetchApi('/producto/create', {
@@ -195,6 +248,7 @@ export const productosApi = {
       descripcion?: string
       precio?: number
       image?: string // Base64 string
+      categoriaId?: number | null
     }
   ) => {
     return fetchApi('/producto/update', {

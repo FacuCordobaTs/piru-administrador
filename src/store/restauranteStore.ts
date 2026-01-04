@@ -10,15 +10,24 @@ interface Mesa {
   createdAt: string
 }
 
+interface Categoria {
+  id: number
+  restauranteId: number
+  nombre: string
+  createdAt: string
+}
+
 interface Producto {
   id: number
   restauranteId: number
+  categoriaId: number | null
   nombre: string
   descripcion: string | null
   precio: string
   activo: boolean
   imagenUrl: string | null
   createdAt: string
+  categoria: string | null
 }
 
 interface RestauranteData {
@@ -37,18 +46,23 @@ interface RestauranteState {
   restaurante: RestauranteData | null
   mesas: Mesa[]
   productos: Producto[]
+  categorias: Categoria[]
   isLoading: boolean
   error: string | null
   fetchData: () => Promise<void>
   setRestaurante: (restaurante: RestauranteData) => void
   setMesas: (mesas: Mesa[]) => void
   setProductos: (productos: Producto[]) => void
+  setCategorias: (categorias: Categoria[]) => void
   addMesa: (mesa: Mesa) => void
   updateMesa: (id: number, data: Partial<Mesa>) => void
   deleteMesa: (id: number) => void
   addProducto: (producto: Producto) => void
   updateProducto: (id: number, data: Partial<Producto>) => void
   deleteProducto: (id: number) => void
+  addCategoria: (categoria: Categoria) => void
+  updateCategoria: (id: number, data: Partial<Categoria>) => void
+  deleteCategoria: (id: number) => void
   reset: () => void
 }
 
@@ -56,6 +70,7 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
   restaurante: null,
   mesas: [],
   productos: [],
+  categorias: [],
   isLoading: false,
   error: null,
 
@@ -77,11 +92,19 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
         }
       }
       
+      // Obtener categorías por separado
+      const { categoriasApi } = await import('@/lib/api')
+      const categoriasResponse = await categoriasApi.getAll(token) as {
+        success: boolean
+        categorias?: Categoria[]
+      }
+      
       if (response.success && response.data) {
         set({
           restaurante: response.data.restaurante[0],
           mesas: response.data.mesas,
           productos: response.data.productos,
+          categorias: categoriasResponse.success && categoriasResponse.categorias ? categoriasResponse.categorias : [],
           isLoading: false,
         })
       } else {
@@ -96,6 +119,7 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
   setRestaurante: (restaurante) => set({ restaurante }),
   setMesas: (mesas) => set({ mesas }),
   setProductos: (productos) => set({ productos }),
+  setCategorias: (categorias) => set({ categorias }),
 
   addMesa: (mesa) => set((state) => ({ mesas: [...state.mesas, mesa] })),
   
@@ -122,11 +146,25 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
       productos: state.productos.filter((p) => p.id !== id),
     })),
 
+  addCategoria: (categoria) =>
+    set((state) => ({ categorias: [...state.categorias, categoria] })),
+  
+  updateCategoria: (id, data) =>
+    set((state) => ({
+      categorias: state.categorias.map((c) => (c.id === id ? { ...c, ...data } : c)),
+    })),
+  
+  deleteCategoria: (id) =>
+    set((state) => ({
+      categorias: state.categorias.filter((c) => c.id !== id),
+    })),
+
   reset: () =>
     set({
       restaurante: null,
       mesas: [],
       productos: [],
+      categorias: [],
       isLoading: false,
       error: null,
     }),

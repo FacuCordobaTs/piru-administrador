@@ -6,15 +6,16 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
-import { productosApi, ApiError } from '@/lib/api'
+import { productosApi, categoriasApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
 import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed } from 'lucide-react'
 
 const Productos = () => {
-  const { productos, isLoading, fetchData, restaurante } = useRestauranteStore()
+  const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
   const token = useAuthStore((state) => state.token)
   const [busqueda, setBusqueda] = useState('')
   const [dialogAbierto, setDialogAbierto] = useState(false)
@@ -24,14 +25,55 @@ const Productos = () => {
     nombre: '',
     descripcion: '',
     precio: '',
+    categoriaId: '0', // Usar '0' en lugar de '' para evitar error de Radix UI
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
+  const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState('')
+  const [isCreandoCategoria, setIsCreandoCategoria] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
       fetchData()
     }
   }, [])
+
+  const crearCategoria = async () => {
+    if (!token || !nuevaCategoriaNombre.trim()) {
+      toast.error('El nombre de la categoría es requerido')
+      return
+    }
+
+    setIsCreandoCategoria(true)
+    try {
+      const response = await categoriasApi.create(token, {
+        nombre: nuevaCategoriaNombre.trim()
+      }) as { success: boolean; data?: any }
+
+      if (response.success) {
+        toast.success('Categoría creada')
+        setNuevaCategoriaNombre('')
+        setDialogCategoriaAbierto(false)
+        // Recargar categorías
+        const categoriasResponse = await categoriasApi.getAll(token) as {
+          success: boolean
+          categorias?: any[]
+        }
+        if (categoriasResponse.success && categoriasResponse.categorias) {
+          setCategorias(categoriasResponse.categorias)
+        }
+      }
+    } catch (error) {
+      console.error('Error al crear categoría:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al crear categoría', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsCreandoCategoria(false)
+    }
+  }
 
   const productosFiltrados = productos.filter(p => 
     p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -40,7 +82,7 @@ const Productos = () => {
 
   const abrirDialogNuevo = () => {
     setProductoEditando(null)
-    setFormData({ nombre: '', descripcion: '', precio: '' })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
     setImageBase64(null)
     setDialogAbierto(true)
   }
@@ -51,6 +93,7 @@ const Productos = () => {
       nombre: producto.nombre,
       descripcion: producto.descripcion || '',
       precio: producto.precio.toString(),
+      categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
     })
     setImageBase64(producto.imagenUrl || null)
     setDialogAbierto(true)
@@ -84,6 +127,12 @@ const Productos = () => {
     setIsSubmitting(true)
 
     try {
+      // Convertir categoriaId: si es '0' o vacío, usar undefined/null
+      const parsedCategoriaId = parseInt(formData.categoriaId)
+      const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0) 
+        ? parsedCategoriaId 
+        : undefined
+      
       if (productoEditando) {
         // Editar producto existente
         await productosApi.update(token, {
@@ -92,6 +141,7 @@ const Productos = () => {
           descripcion: formData.descripcion,
           precio: precio,
           image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
+          categoriaId: categoriaId !== undefined ? categoriaId : null,
         })
         toast.success('Producto actualizado')
         await fetchData()
@@ -102,13 +152,14 @@ const Productos = () => {
           descripcion: formData.descripcion,
           precio: precio,
           image: imageBase64 || undefined,
+          categoriaId: categoriaId,
         })
         toast.success('Producto creado')
         await fetchData()
       }
 
       setDialogAbierto(false)
-      setFormData({ nombre: '', descripcion: '', precio: '' })
+      setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
       setImageBase64(null)
     } catch (error) {
       console.error('Error al guardar producto:', error)
@@ -346,6 +397,39 @@ const Productos = () => {
             </div>
 
             <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="categoria">Categoría</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDialogCategoriaAbierto(true)}
+                  className="h-7 text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Nueva
+                </Button>
+              </div>
+              <Select
+                value={formData.categoriaId}
+                onValueChange={(value) => setFormData({ ...formData, categoriaId: value })}
+                disabled={isSubmitting}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría (opcional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Sin categoría</SelectItem>
+                  {categorias.map((categoria) => (
+                    <SelectItem key={categoria.id} value={categoria.id.toString()}>
+                      {categoria.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label>Foto del plato</Label>
               <ImageUpload
                 onImageChange={setImageBase64}
@@ -375,6 +459,64 @@ const Productos = () => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para crear nueva categoría */}
+      <Dialog open={dialogCategoriaAbierto} onOpenChange={setDialogCategoriaAbierto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nueva Categoría</DialogTitle>
+            <DialogDescription>
+              Crea una nueva categoría para organizar tus productos
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="categoriaNombre">Nombre de la categoría</Label>
+              <Input
+                id="categoriaNombre"
+                value={nuevaCategoriaNombre}
+                onChange={(e) => setNuevaCategoriaNombre(e.target.value)}
+                placeholder="Ej: Bebidas, Pizzas, Hamburguesas..."
+                required
+                disabled={isCreandoCategoria}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isCreandoCategoria) {
+                    e.preventDefault()
+                    crearCategoria()
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setDialogCategoriaAbierto(false)
+                  setNuevaCategoriaNombre('')
+                }}
+                disabled={isCreandoCategoria}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                type="button" 
+                onClick={crearCategoria}
+                disabled={isCreandoCategoria || !nuevaCategoriaNombre.trim()}
+              >
+                {isCreandoCategoria ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creando...
+                  </>
+                ) : (
+                  'Crear'
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
