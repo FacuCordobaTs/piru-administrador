@@ -190,8 +190,8 @@ const DashboardLayout = () => {
       </header>
 
       {/* Main Content - ahora sin padding lateral del sidebar */}
-      <main>
-        <div className="p-4 md:p-6">
+      <main className="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div className="h-full flex flex-col overflow-hidden">
           <Outlet />
         </div>
       </main>

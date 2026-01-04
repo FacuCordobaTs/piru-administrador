@@ -396,7 +396,7 @@ const Pedido = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
@@ -404,7 +404,7 @@ const Pedido = () => {
 
   if (!pedido) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
+      <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col items-center justify-center min-h-[400px]">
         <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
         <p className="text-muted-foreground mb-4">Pedido no encontrado</p>
         <Button onClick={() => navigate('/dashboard/pedidos')}>
@@ -420,7 +420,7 @@ const Pedido = () => {
   const isActive = pedido.estado !== 'closed'
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 animate-in fade-in duration-500 pb-8">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -428,7 +428,7 @@ const Pedido = () => {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3  mt-8">
               <h1 className="text-3xl font-bold tracking-tight">Pedido #{pedido.id}</h1>
               <Badge variant={estadoBadge.variant} className="gap-1 text-base px-3 py-1">
                 <StatusIcon className="h-4 w-4" />

@@ -17,7 +17,7 @@ import {
   Bell, BellOff, ShoppingCart, Users, Loader2, QrCode, Plus, 
   Wifi, WifiOff, Clock, CheckCircle, XCircle, Coffee, CreditCard, 
   Utensils, ChefHat, RefreshCw, Volume2, VolumeX, Trash2,
-  ArrowRight, HandMetal, MoreVertical
+  ArrowRight, HandMetal, MoreVertical, LayoutGrid
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -121,6 +121,9 @@ const Dashboard = () => {
   const [abrirMesaDialog, setAbrirMesaDialog] = useState(false)
   const [mesaAAbrir, setMesaAAbrir] = useState<MesaConPedido | null>(null)
   const [isOpening, setIsOpening] = useState(false)
+
+  // MOBILE VIEW STATE: 'mesas' | 'notifications'
+  const [mobileView, setMobileView] = useState<'mesas' | 'notifications'>('mesas')
 
   // Update mesas from WebSocket
   useEffect(() => {
@@ -321,24 +324,60 @@ const Dashboard = () => {
 
   if (isLoading && mesas.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] gap-4 animate-in fade-in duration-500">
+    <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-4 md:py-6">
+      <div className="flex flex-col md:flex-row h-[calc(100dvh-4rem-2rem)] md:h-[calc(100dvh-7rem)] md:gap-4 animate-in fade-in duration-500 overflow-hidden">
+      
+      {/* MOBILE VIEW TOGGLE - Visible only on Mobile */}
+      <div className="md:hidden flex p-2 gap-2 bg-background border-b shrink-0 z-10 -mx-4 sm:-mx-6 lg:-mx-8 xl:-mx-12 px-4 sm:px-6 lg:px-8 xl:px-12">
+        <Button 
+          variant={mobileView === 'mesas' ? 'default' : 'ghost'} 
+          className="flex-1 rounded-full text-sm h-9"
+          onClick={() => setMobileView('mesas')}
+        >
+          <LayoutGrid className="mr-2 h-4 w-4" />
+          Mesas
+        </Button>
+        <Button 
+          variant={mobileView === 'notifications' ? 'default' : 'ghost'} 
+          className="flex-1 rounded-full text-sm h-9 relative"
+          onClick={() => setMobileView('notifications')}
+        >
+          <Bell className="mr-2 h-4 w-4" />
+          Alertas
+          {unreadCount > 0 && (
+            <Badge variant="destructive" className="ml-2 h-5 px-1.5 text-[10px] absolute -top-1 -right-1 md:relative md:top-auto md:right-auto md:text-xs">
+              {unreadCount}
+            </Badge>
+          )}
+        </Button>
+      </div>
+
       {/* Notifications Sidebar */}
-      <div className="w-80 shrink-0 flex flex-col bg-card border rounded-lg overflow-hidden">
+      {/* CORRECCIÓN:
+         - 'flex-1' se mantiene para rellenar altura en móvil (flex-col).
+         - 'md:flex-none' (NUEVO) evita que se ensanche en desktop.
+         - 'md:w-80' mantiene el ancho fijo en desktop.
+      */}
+      <div className={`
+        ${mobileView === 'mesas' ? 'hidden' : 'flex'} 
+        md:flex flex-col w-full md:w-80 shrink-0 bg-card border md:rounded-lg overflow-hidden flex-1 min-h-0 md:flex-none md:h-full
+      `}>
         {/* Sidebar Header */}
-        <div className="p-4 border-b bg-muted/30">
+        <div className="p-4 border-b bg-muted/30 shrink-0">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Bell className="h-5 w-5" />
               <h2 className="font-semibold">Notificaciones</h2>
+              {/* Desktop Badge */}
               {unreadCount > 0 && (
-                <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+                <Badge variant="destructive" className="h-5 px-1.5 text-xs hidden md:flex">
                   {unreadCount}
                 </Badge>
               )}
@@ -381,7 +420,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Notifications List */}
+        {/* Notifications List - Takes available space */}
         <ScrollArea className="flex-1">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
@@ -435,9 +474,9 @@ const Dashboard = () => {
           )}
         </ScrollArea>
 
-        {/* Sidebar Footer */}
+        {/* Sidebar Footer - Always visible at bottom of container */}
         {unreadCount > 0 && (
-          <div className="p-2 border-t">
+          <div className="p-2 border-t mt-auto shrink-0 bg-background">
             <Button
               variant="ghost"
               size="sm"
@@ -451,32 +490,36 @@ const Dashboard = () => {
       </div>
 
       {/* Main Content - Mesas */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`
+        ${mobileView === 'notifications' ? 'hidden' : 'flex'} 
+        md:flex flex-1 flex-col overflow-hidden min-h-0
+      `}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 p-1 md:p-0 shrink-0">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight">
               {restaurante?.nombre || 'Dashboard'}
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs md:text-sm text-muted-foreground">
               {sortedMesas.length} mesa{sortedMesas.length !== 1 ? 's' : ''} • 
               {sortedMesas.filter(m => m.pedido && m.pedido.estado !== 'closed').length} activa{sortedMesas.filter(m => m.pedido && m.pedido.estado !== 'closed').length !== 1 ? 's' : ''}
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Actualizar
+            <Button variant="outline" size="sm" onClick={handleRefresh} className="h-8 md:h-9">
+              <RefreshCw className="mr-2 h-3 w-3 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Actualizar</span>
             </Button>
-            <Button size="sm" onClick={() => setCrearMesaDialog(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Nueva Mesa
+            <Button size="sm" onClick={() => setCrearMesaDialog(true)} className="h-8 md:h-9">
+              <Plus className="mr-2 h-3 w-3 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Nueva Mesa</span>
+              <span className="sm:hidden">Crear</span>
             </Button>
           </div>
         </div>
 
         {/* Mesas Grid */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 -mx-2 px-2 md:mx-0 md:px-0">
           {sortedMesas.length === 0 ? (
             <Card className="mx-auto max-w-md">
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -491,7 +534,7 @@ const Dashboard = () => {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 pb-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 pb-4">
               {sortedMesas.map((mesa) => {
                 const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed'
                 const isConfirmed = mesa.pedido?.estado === 'preparing' || mesa.pedido?.estado === 'delivered'
@@ -523,9 +566,9 @@ const Dashboard = () => {
                           )}
                         </CardTitle>
                         <div className="flex items-center gap-2">
-                          <Badge variant={estado.variant} className="gap-1">
+                          <Badge variant={estado.variant} className="gap-1 px-1.5 h-6">
                             <StatusIcon className="h-3 w-3" />
-                            {estado.label}
+                            <span className="hidden sm:inline">{estado.label}</span>
                           </Badge>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -578,14 +621,14 @@ const Dashboard = () => {
                           {/* Connected clients */}
                           {mesa.clientesConectados.length > 0 && (
                             <div className="flex flex-wrap gap-1">
-                              {mesa.clientesConectados.slice(0, 4).map((cliente) => (
-                                <Badge key={cliente.id} variant="outline" className="text-xs">
+                              {mesa.clientesConectados.slice(0, 3).map((cliente) => (
+                                <Badge key={cliente.id} variant="outline" className="text-[10px] h-5">
                                   {cliente.nombre}
                                 </Badge>
                               ))}
-                              {mesa.clientesConectados.length > 4 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{mesa.clientesConectados.length - 4}
+                              {mesa.clientesConectados.length > 3 && (
+                                <Badge variant="outline" className="text-[10px] h-5">
+                                  +{mesa.clientesConectados.length - 3}
                                 </Badge>
                               )}
                             </div>
@@ -594,19 +637,16 @@ const Dashboard = () => {
                           {/* Show products only if order is confirmed */}
                           {isConfirmed && mesa.items.length > 0 && (
                             <div className="space-y-1">
-                              {mesa.items.slice(0, 3).map((item) => (
+                              {mesa.items.slice(0, 2).map((item) => (
                                 <div key={item.id} className="flex items-center justify-between text-sm">
                                   <span className="truncate flex-1">
                                     {item.cantidad}x {item.nombreProducto}
                                   </span>
-                                  <span className="text-muted-foreground text-xs ml-2">
-                                    {item.clienteNombre}
-                                  </span>
                                 </div>
                               ))}
-                              {mesa.items.length > 3 && (
+                              {mesa.items.length > 2 && (
                                 <p className="text-xs text-muted-foreground">
-                                  +{mesa.items.length - 3} producto{mesa.items.length - 3 !== 1 ? 's' : ''} más
+                                  +{mesa.items.length - 2} producto{mesa.items.length - 2 !== 1 ? 's' : ''} más
                                 </p>
                               )}
                             </div>
@@ -617,9 +657,9 @@ const Dashboard = () => {
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground flex items-center gap-1">
                               <ShoppingCart className="h-4 w-4" />
-                              {mesa.totalItems} producto{mesa.totalItems !== 1 ? 's' : ''}
+                              {mesa.totalItems}
                             </span>
-                            <span className="text-xl font-bold">
+                            <span className="text-lg font-bold">
                               ${parseFloat(mesa.pedido?.total || '0').toFixed(2)}
                             </span>
                           </div>
@@ -644,7 +684,7 @@ const Dashboard = () => {
                           }}
                         >
                           <QrCode className="mr-1 h-4 w-4" />
-                          QR
+                          <span className="hidden sm:inline">QR</span>
                         </Button>
                         <Button 
                           variant={hasActiveOrder ? "default" : "outline"}
@@ -660,7 +700,7 @@ const Dashboard = () => {
                             }
                           }}
                         >
-                          {hasActiveOrder ? 'Ver Pedido' : 'Abrir Mesa'}
+                          {hasActiveOrder ? 'Ver Pedido' : 'Abrir'}
                         </Button>
                       </div>
                     </CardContent>
@@ -1191,6 +1231,7 @@ const Dashboard = () => {
           })()}
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   )
 }

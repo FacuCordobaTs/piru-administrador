@@ -232,89 +232,104 @@ const Pedidos = () => {
 
   if (isLoading && pedidos.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Pedidos</h1>
-          <p className="text-muted-foreground flex items-center gap-2">
-            Gestiona todos los pedidos de tu restaurante
-            {isConnected ? (
-              <Badge variant="outline" className="gap-1 text-xs">
-                <Wifi className="h-3 w-3 text-green-500" />
-                En vivo
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="gap-1 text-xs">
-                <WifiOff className="h-3 w-3 text-orange-500" />
-                Offline
-              </Badge>
-            )}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar pedido, mesa, cliente..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 w-64"
-            />
+    <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 space-y-4 md:space-y-6 animate-in fade-in duration-500 pb-20 md:pb-0">
+      
+      {/* Header Sticky para Mobile */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 py-4 md:py-6 md:static md:bg-transparent -mx-4 sm:-mx-6 lg:-mx-8 xl:-mx-12 px-4 sm:px-6 lg:px-8 xl:px-12 md:mx-0 md:px-0 border-b md:border-none">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Pedidos</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-sm md:text-base text-muted-foreground">
+                  Gestión de pedidos
+                </p>
+                {isConnected ? (
+                  <Badge variant="outline" className="gap-1 text-[10px] h-5">
+                    <Wifi className="h-3 w-3 text-green-500" />
+                    <span className="hidden sm:inline">En vivo</span>
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1 text-[10px] h-5">
+                    <WifiOff className="h-3 w-3 text-orange-500" />
+                    Offline
+                  </Badge>
+                )}
+              </div>
+            </div>
+            
+            {/* Botón Actualizar solo visible en mobile para ahorrar espacio */}
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => fetchPedidos(1, false)}>
+              <RefreshCw className="h-5 w-5" />
+            </Button>
           </div>
-          <Button variant="outline" onClick={() => fetchPedidos(1, false)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Actualizar
-          </Button>
+
+          <div className="flex gap-2 w-full md:w-auto">
+            <div className="relative flex-1 md:flex-none">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar pedido, mesa..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 w-full md:w-64"
+              />
+            </div>
+            <Button variant="outline" className="hidden md:flex" onClick={() => fetchPedidos(1, false)}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Actualizar
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Tabs de estado */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-flex">
-          <TabsTrigger value="all" className="gap-2">
-            Todos
-            <Badge variant="secondary" className="ml-1">{countByEstado.all}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="preparing" className="gap-2">
-            <ChefHat className="h-4 w-4" />
-            Preparando
-            {countByEstado.preparing > 0 && (
-              <Badge variant="default" className="ml-1">{countByEstado.preparing}</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="pending" className="gap-2">
-            <Clock className="h-4 w-4" />
-            Pendientes
-            {countByEstado.pending > 0 && (
-              <Badge variant="outline" className="ml-1">{countByEstado.pending}</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="delivered" className="gap-2">
-            <Utensils className="h-4 w-4" />
-            Entregados
-          </TabsTrigger>
-          <TabsTrigger value="closed" className="gap-2">
-            <CheckCircle className="h-4 w-4" />
-            Cerrados
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Tabs de estado - Scroll Horizontal en Mobile */}
+      <div className="-mx-4 sm:-mx-6 lg:-mx-8 xl:-mx-12 px-4 sm:px-6 lg:px-8 xl:px-12 md:mx-0 md:px-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="w-full justify-start overflow-x-auto flex-nowrap h-auto p-1 scrollbar-hide">
+            <TabsTrigger value="all" className="gap-2 shrink-0">
+              Todos
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1 h-4 min-w-5">{countByEstado.all}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="preparing" className="gap-2 shrink-0">
+              <ChefHat className="h-3.5 w-3.5" />
+              Preparando
+              {countByEstado.preparing > 0 && (
+                <Badge variant="default" className="ml-1 text-[10px] px-1 h-4 min-w-5">{countByEstado.preparing}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="pending" className="gap-2 shrink-0">
+              <Clock className="h-3.5 w-3.5" />
+              Pendientes
+              {countByEstado.pending > 0 && (
+                <Badge variant="outline" className="ml-1 text-[10px] px-1 h-4 min-w-5">{countByEstado.pending}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="delivered" className="gap-2 shrink-0">
+              <Utensils className="h-3.5 w-3.5" />
+              Entregados
+            </TabsTrigger>
+            <TabsTrigger value="closed" className="gap-2 shrink-0">
+              <CheckCircle className="h-3.5 w-3.5" />
+              Cerrados
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
       {/* Lista de Pedidos - Grilla Responsiva */}
       {filteredPedidos.length === 0 ? (
-        <Card className="max-w-md mx-auto">
+        <Card className="max-w-md mx-auto mt-8">
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground text-center mb-2">
-              {searchTerm ? 'No se encontraron pedidos' : 'No hay pedidos en este estado'}
+            <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
+            <p className="text-muted-foreground text-center mb-4">
+              {searchTerm ? 'No se encontraron pedidos con esa búsqueda' : 'No hay pedidos en este estado'}
             </p>
             {searchTerm && (
               <Button variant="ghost" onClick={() => setSearchTerm('')}>
@@ -326,7 +341,7 @@ const Pedidos = () => {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
             {filteredPedidos.map((pedido) => {
               const estadoBadge = getEstadoBadge(pedido.estado)
               const StatusIcon = estadoBadge.icon
@@ -337,56 +352,58 @@ const Pedidos = () => {
               return (
                 <Card 
                   key={pedido.id}
-                  className={`transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer flex flex-col ${
+                  className={`transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer flex flex-col group ${
                     isActive ? 'border-primary/40' : ''
-                  } ${pedido.estado === 'preparing' ? 'ring-2 ring-primary/20' : ''}`}
+                  } ${pedido.estado === 'preparing' ? 'ring-1 ring-primary/20' : ''}`}
                   onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
                 >
                   {/* Header: Mesa + ID + Estado */}
                   <CardHeader className="p-4 pb-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <CardTitle className="text-xl font-bold truncate">
-                        Pedido #{pedido.id}
-                        </CardTitle>
-                        <CardDescription className="text-md mt-0.5 text-primary">
-                        {pedido.mesaNombre || 'Sin mesa'}
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-lg font-bold truncate group-hover:text-primary transition-colors">
+                            Pedido #{pedido.id}
+                          </CardTitle>
+                        </div>
+                        <CardDescription className="text-sm font-medium text-foreground/80 mt-1">
+                          {pedido.mesaNombre || 'Sin mesa asignada'}
                         </CardDescription>
                       </div>
                       <Badge 
                         variant={estadoBadge.variant} 
-                        className="gap-1 shrink-0"
+                        className="gap-1 shrink-0 h-6 px-2"
                       >
                         <StatusIcon className="h-3 w-3" />
-                        {estadoBadge.label}
+                        <span className="hidden sm:inline">{estadoBadge.label}</span>
                       </Badge>
                     </div>
                   </CardHeader>
 
                   {/* Content: Items del pedido */}
                   <CardContent className="p-4 pt-0 flex-1">
-                    <div className="space-y-2">
+                    <div className="space-y-2 mt-1">
                       {pedido.items.slice(0, maxItemsToShow).map((item) => (
                         <div 
                           key={item.id} 
                           className="flex items-center justify-between text-sm"
                         >
-                          <span className="text-foreground truncate flex-1 mr-2">
+                          <span className="text-muted-foreground truncate flex-1 mr-2">
                             {item.nombreProducto}
                           </span>
-                          <div className="flex items-center gap-3 shrink-0">
-                            <span className="text-muted-foreground">
+                          <div className="flex items-center gap-3 shrink-0 text-foreground">
+                            <span className="text-xs text-muted-foreground">
                               x{item.cantidad}
                             </span>
-                            <span className="font-medium w-16 text-right">
-                              ${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}
+                            <span className="font-medium min-w-12 text-right">
+                              ${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(0)}
                             </span>
                           </div>
                         </div>
                       ))}
                       {remainingItems > 0 && (
-                        <p className="text-xs text-muted-foreground pt-1">
-                          Ver {remainingItems} más...
+                        <p className="text-xs text-muted-foreground pt-1 italic">
+                          +{remainingItems} productos más...
                         </p>
                       )}
                     </div>
@@ -395,27 +412,29 @@ const Pedidos = () => {
                   <Separator />
 
                   {/* Footer: Tiempo + Total + Acciones */}
-                  <CardFooter className="p-4 pt-3">
+                  <CardFooter className="p-3 bg-muted/20">
                     <div className="flex items-center justify-between w-full">
                       {/* Tiempo */}
                       <div className="flex items-center gap-1.5 text-muted-foreground">
                         <Clock className="h-3.5 w-3.5" />
-                        <span className="text-xs">{getTimeAgo(pedido.createdAt)}</span>
+                        <span className="text-xs font-medium">{getTimeAgo(pedido.createdAt)}</span>
                       </div>
 
                       {/* Acciones + Total */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
+                         {/* Botón eliminar sutil */}
                         <Button 
                           variant="ghost" 
                           size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mr-2"
                           onClick={(e) => {
                             e.stopPropagation()
                             setPedidoAEliminar(pedido)
                           }}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
+
                         <span className="text-lg font-bold text-primary">
                           ${parseFloat(pedido.total || '0').toFixed(2)}
                         </span>
@@ -429,11 +448,12 @@ const Pedidos = () => {
           
           {/* Load More */}
           {hasMore && (
-            <div className="flex justify-center pt-8">
+            <div className="flex justify-center pt-8 pb-8">
               <Button 
                 variant="outline" 
                 onClick={loadMore}
                 disabled={isLoadingMore}
+                className="w-full md:w-auto"
               >
                 {isLoadingMore ? (
                   <>
@@ -451,19 +471,19 @@ const Pedidos = () => {
 
       {/* Dialog de confirmación para eliminar pedido */}
       <Dialog open={!!pedidoAEliminar} onOpenChange={(open) => !open && setPedidoAEliminar(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md mx-4 rounded-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-destructive" />
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
               ¿Eliminar Pedido?
             </DialogTitle>
-            <DialogDescription>
-              ¿Estás seguro de eliminar el pedido <strong>#{pedidoAEliminar?.id}</strong> de la mesa <strong>{pedidoAEliminar?.mesaNombre || 'Sin asignar'}</strong>?
+            <DialogDescription className="pt-2">
+              ¿Estás seguro de eliminar el pedido <strong className="text-foreground">#{pedidoAEliminar?.id}</strong> de la mesa <strong className="text-foreground">{pedidoAEliminar?.mesaNombre || 'Sin asignar'}</strong>?
               <br /><br />
               Esta acción eliminará permanentemente el pedido y todos sus items asociados. No se puede deshacer.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
             <Button
               variant="outline"
               onClick={() => setPedidoAEliminar(null)}
@@ -482,10 +502,7 @@ const Pedidos = () => {
                   Eliminando...
                 </>
               ) : (
-                <>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Eliminar Pedido
-                </>
+                'Eliminar definitivamente'
               )}
             </Button>
           </DialogFooter>
@@ -496,4 +513,3 @@ const Pedidos = () => {
 }
 
 export default Pedidos
-
