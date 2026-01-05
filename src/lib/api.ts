@@ -229,6 +229,7 @@ export const productosApi = {
       precio: number
       image?: string // Base64 string
       categoriaId?: number
+      ingredienteIds?: number[]
     }
   ) => {
     return fetchApi('/producto/create', {
@@ -249,6 +250,7 @@ export const productosApi = {
       precio?: number
       image?: string // Base64 string
       categoriaId?: number | null
+      ingredienteIds?: number[]
     }
   ) => {
     return fetchApi('/producto/update', {
@@ -263,6 +265,51 @@ export const productosApi = {
   delete: async (token: string, id: number) => {
     return fetchApi(`/producto/delete/${id}`, {
       method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
+// Ingredientes API
+export const ingredientesApi = {
+  getAll: async (token: string) => {
+    return fetchApi('/ingrediente', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  create: async (
+    token: string,
+    data: {
+      nombre: string
+    }
+  ) => {
+    return fetchApi('/ingrediente/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/ingrediente/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  getByProducto: async (token: string, productoId: number) => {
+    return fetchApi(`/ingrediente/producto/${productoId}`, {
+      method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
       },

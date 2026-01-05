@@ -28,6 +28,8 @@ interface ItemPedido {
   nombreProducto?: string
   imagenUrl?: string | null
   descripcion?: string | null
+  ingredientesExcluidos?: number[]
+  ingredientesExcluidosNombres?: string[]
 }
 
 interface PagoInfo {
@@ -677,6 +679,11 @@ const Pedido = () => {
                             <p className="text-sm text-muted-foreground">
                               ${parseFloat(item.precioUnitario).toFixed(2)} x {item.cantidad}
                             </p>
+                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                              <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                Sin: {item.ingredientesExcluidosNombres.join(', ')}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-3">

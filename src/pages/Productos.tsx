@@ -9,10 +9,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
-import { productosApi, categoriasApi, ApiError } from '@/lib/api'
+import { productosApi, categoriasApi, ingredientesApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
-import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed } from 'lucide-react'
+import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X } from 'lucide-react'
 
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
@@ -31,12 +31,73 @@ const Productos = () => {
   const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState('')
   const [isCreandoCategoria, setIsCreandoCategoria] = useState(false)
+  const [ingredientes, setIngredientes] = useState<Array<{ id: number; nombre: string }>>([])
+  const [ingredientesSeleccionados, setIngredientesSeleccionados] = useState<number[]>([])
+  const [nuevoIngredienteNombre, setNuevoIngredienteNombre] = useState('')
+  const [dialogIngredienteAbierto, setDialogIngredienteAbierto] = useState(false)
+  const [isCreandoIngrediente, setIsCreandoIngrediente] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
       fetchData()
     }
   }, [])
+
+  // Cargar ingredientes
+  useEffect(() => {
+    const cargarIngredientes = async () => {
+      if (!token) return
+      try {
+        const response = await ingredientesApi.getAll(token) as {
+          success: boolean
+          ingredientes?: Array<{ id: number; nombre: string }>
+        }
+        if (response.success && response.ingredientes) {
+          setIngredientes(response.ingredientes)
+        }
+      } catch (error) {
+        console.error('Error cargando ingredientes:', error)
+      }
+    }
+    cargarIngredientes()
+  }, [token])
+
+  const crearIngrediente = async () => {
+    if (!token || !nuevoIngredienteNombre.trim()) {
+      toast.error('El nombre del ingrediente es requerido')
+      return
+    }
+
+    setIsCreandoIngrediente(true)
+    try {
+      const response = await ingredientesApi.create(token, {
+        nombre: nuevoIngredienteNombre.trim()
+      }) as { success: boolean; data?: any }
+
+      if (response.success) {
+        toast.success('Ingrediente creado')
+        setNuevoIngredienteNombre('')
+        setDialogIngredienteAbierto(false)
+        // Recargar ingredientes
+        const ingredientesResponse = await ingredientesApi.getAll(token) as {
+          success: boolean
+          ingredientes?: Array<{ id: number; nombre: string }>
+        }
+        if (ingredientesResponse.success && ingredientesResponse.ingredientes) {
+          setIngredientes(ingredientesResponse.ingredientes)
+        }
+      }
+    } catch (error) {
+      console.error('Error al crear ingrediente:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al crear ingrediente', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsCreandoIngrediente(false)
+    }
+  }
 
   const crearCategoria = async () => {
     if (!token || !nuevaCategoriaNombre.trim()) {
@@ -84,10 +145,11 @@ const Productos = () => {
     setProductoEditando(null)
     setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
     setImageBase64(null)
+    setIngredientesSeleccionados([])
     setDialogAbierto(true)
   }
 
-  const abrirDialogEditar = (producto: typeof productos[0]) => {
+  const abrirDialogEditar = async (producto: typeof productos[0]) => {
     setProductoEditando(producto)
     setFormData({
       nombre: producto.nombre,
@@ -96,6 +158,25 @@ const Productos = () => {
       categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
     })
     setImageBase64(producto.imagenUrl || null)
+    
+    // Cargar ingredientes del producto
+    if (token) {
+      try {
+        const response = await ingredientesApi.getByProducto(token, producto.id) as {
+          success: boolean
+          ingredientes?: Array<{ id: number; nombre: string }>
+        }
+        if (response.success && response.ingredientes) {
+          setIngredientesSeleccionados(response.ingredientes.map(ing => ing.id))
+        } else {
+          setIngredientesSeleccionados([])
+        }
+      } catch (error) {
+        console.error('Error cargando ingredientes del producto:', error)
+        setIngredientesSeleccionados([])
+      }
+    }
+    
     setDialogAbierto(true)
   }
 
@@ -142,6 +223,7 @@ const Productos = () => {
           precio: precio,
           image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
           categoriaId: categoriaId !== undefined ? categoriaId : null,
+          ingredienteIds: ingredientesSeleccionados,
         })
         toast.success('Producto actualizado')
         await fetchData()
@@ -153,6 +235,7 @@ const Productos = () => {
           precio: precio,
           image: imageBase64 || undefined,
           categoriaId: categoriaId,
+          ingredienteIds: ingredientesSeleccionados,
         })
         toast.success('Producto creado')
         await fetchData()
@@ -161,6 +244,7 @@ const Productos = () => {
       setDialogAbierto(false)
       setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
       setImageBase64(null)
+      setIngredientesSeleccionados([])
     } catch (error) {
       console.error('Error al guardar producto:', error)
       if (error instanceof ApiError) {
@@ -438,6 +522,62 @@ const Productos = () => {
               />
             </div>
 
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="ingredientes">Ingredientes</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDialogIngredienteAbierto(true)}
+                  className="h-7 text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Nuevo
+                </Button>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
+                {ingredientes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No hay ingredientes. Crea uno nuevo.
+                  </p>
+                ) : (
+                  ingredientes.map((ingrediente) => {
+                    const estaSeleccionado = ingredientesSeleccionados.includes(ingrediente.id)
+                    return (
+                      <div
+                        key={ingrediente.id}
+                        className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
+                          estaSeleccionado
+                            ? 'bg-primary/10 border-primary'
+                            : 'bg-background hover:bg-muted'
+                        }`}
+                        onClick={() => {
+                          if (estaSeleccionado) {
+                            setIngredientesSeleccionados(ingredientesSeleccionados.filter(id => id !== ingrediente.id))
+                          } else {
+                            setIngredientesSeleccionados([...ingredientesSeleccionados, ingrediente.id])
+                          }
+                        }}
+                      >
+                        <span className="text-sm font-medium">{ingrediente.nombre}</span>
+                        {estaSeleccionado && (
+                          <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+                            <X className="h-3 w-3 text-primary-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+              {ingredientesSeleccionados.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {ingredientesSeleccionados.length} ingrediente{ingredientesSeleccionados.length !== 1 ? 's' : ''} seleccionado{ingredientesSeleccionados.length !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+
             <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-background pb-2">
               <Button
                 type="button"
@@ -459,6 +599,64 @@ const Productos = () => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para crear nuevo ingrediente */}
+      <Dialog open={dialogIngredienteAbierto} onOpenChange={setDialogIngredienteAbierto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuevo Ingrediente</DialogTitle>
+            <DialogDescription>
+              Crea un nuevo ingrediente para usar en tus productos
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="ingredienteNombre">Nombre del ingrediente</Label>
+              <Input
+                id="ingredienteNombre"
+                value={nuevoIngredienteNombre}
+                onChange={(e) => setNuevoIngredienteNombre(e.target.value)}
+                placeholder="Ej: Ketchup, Cebolla, Queso..."
+                required
+                disabled={isCreandoIngrediente}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isCreandoIngrediente) {
+                    e.preventDefault()
+                    crearIngrediente()
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setDialogIngredienteAbierto(false)
+                  setNuevoIngredienteNombre('')
+                }}
+                disabled={isCreandoIngrediente}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                type="button" 
+                onClick={crearIngrediente}
+                disabled={isCreandoIngrediente || !nuevoIngredienteNombre.trim()}
+              >
+                {isCreandoIngrediente ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creando...
+                  </>
+                ) : (
+                  'Crear'
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

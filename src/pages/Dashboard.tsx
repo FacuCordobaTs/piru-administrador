@@ -639,9 +639,14 @@ const Dashboard = () => {
                             <div className="space-y-1">
                               {mesa.items.slice(0, 2).map((item) => (
                                 <div key={item.id} className="flex items-center justify-between text-sm">
-                                  <span className="truncate flex-1">
-                                    {item.cantidad}x {item.nombreProducto}
-                                  </span>
+                                  <div className="truncate flex-1">
+                                    <span>{item.cantidad}x {item.nombreProducto}</span>
+                                    {(item as any).ingredientesExcluidosNombres && (item as any).ingredientesExcluidosNombres.length > 0 && (
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                               {mesa.items.length > 2 && (
@@ -776,6 +781,11 @@ const Dashboard = () => {
                               <p className="text-xs text-muted-foreground">
                                 ${parseFloat(item.precioUnitario).toFixed(2)} x {item.cantidad} • {item.clienteNombre}
                               </p>
+                              {(item as any).ingredientesExcluidosNombres && (item as any).ingredientesExcluidosNombres.length > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
+                                  Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <p className="font-semibold">
@@ -1185,7 +1195,14 @@ const Dashboard = () => {
                         <div className="space-y-2">
                           {mesaInfo.items.slice(0, 4).map((item) => (
                             <div key={item.id} className="flex items-center justify-between text-sm">
-                              <span>{item.cantidad}x {item.nombreProducto}</span>
+                              <div>
+                                <span>{item.cantidad}x {item.nombreProducto}</span>
+                                {(item as any).ingredientesExcluidosNombres && (item as any).ingredientesExcluidosNombres.length > 0 && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
+                                  </p>
+                                )}
+                              </div>
                               <span className="text-muted-foreground">{item.clienteNombre}</span>
                             </div>
                           ))}

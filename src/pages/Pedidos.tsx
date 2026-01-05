@@ -25,6 +25,8 @@ interface ItemPedido {
   precioUnitario: string
   nombreProducto?: string
   imagenUrl?: string | null
+  ingredientesExcluidos?: number[]
+  ingredientesExcluidosNombres?: string[]
 }
 
 interface PedidoData {
@@ -388,9 +390,14 @@ const Pedidos = () => {
                           key={item.id} 
                           className="flex items-center justify-between text-sm"
                         >
-                          <span className="text-muted-foreground truncate flex-1 mr-2">
-                            {item.nombreProducto}
-                          </span>
+                          <div className="text-muted-foreground truncate flex-1 mr-2">
+                            <span>{item.nombreProducto}</span>
+                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                              <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
+                                Sin: {item.ingredientesExcluidosNombres.join(', ')}
+                              </p>
+                            )}
+                          </div>
                           <div className="flex items-center gap-3 shrink-0 text-foreground">
                             <span className="text-xs text-muted-foreground">
                               x{item.cantidad}
