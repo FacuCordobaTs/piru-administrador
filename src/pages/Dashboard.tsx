@@ -45,6 +45,7 @@ const getNotificationInfo = (tipo: string) => {
     PEDIDO_CERRADO: { icon: XCircle, color: 'text-gray-600', bgColor: 'bg-gray-100' },
     LLAMADA_MOZO: { icon: Bell, color: 'text-red-600', bgColor: 'bg-red-100' },
     PAGO_RECIBIDO: { icon: CreditCard, color: 'text-purple-600', bgColor: 'bg-purple-100' },
+    PRODUCTO_AGREGADO: { icon: Plus, color: 'text-orange-600', bgColor: 'bg-orange-100' },
   }
   return tipos[tipo] || { icon: Bell, color: 'text-gray-600', bgColor: 'bg-gray-100' }
 }
@@ -137,7 +138,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (soundEnabled && notifications.length > 0) {
       const latestNotif = notifications[0]
-      if (!latestNotif.leida && ['PEDIDO_CONFIRMADO', 'LLAMADA_MOZO', 'PAGO_RECIBIDO'].includes(latestNotif.tipo)) {
+      if (!latestNotif.leida && ['PEDIDO_CONFIRMADO', 'LLAMADA_MOZO', 'PAGO_RECIBIDO', 'PRODUCTO_AGREGADO'].includes(latestNotif.tipo)) {
         // Play notification sound
         try {
           const audio = new Audio('/notification.mp3')
