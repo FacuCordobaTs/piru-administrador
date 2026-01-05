@@ -29,6 +29,8 @@ export interface ItemPedido {
   precioUnitario: string
   nombreProducto?: string
   imagenUrl?: string | null
+  ingredientesExcluidos?: number[]
+  ingredientesExcluidosNombres?: string[]
 }
 
 export interface Pedido {

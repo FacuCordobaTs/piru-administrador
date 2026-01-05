@@ -680,9 +680,11 @@ const Pedido = () => {
                               ${parseFloat(item.precioUnitario).toFixed(2)} x {item.cantidad}
                             </p>
                             {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                              <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                                Sin: {item.ingredientesExcluidosNombres.join(', ')}
-                              </p>
+                              <div className="mt-2 p-2 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded">
+                                <p className="text-xs text-orange-700 dark:text-orange-300 font-medium">
+                                  ⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}
+                                </p>
+                              </div>
                             )}
                           </div>
                         </div>

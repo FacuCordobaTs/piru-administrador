@@ -393,9 +393,11 @@ const Pedidos = () => {
                           <div className="text-muted-foreground truncate flex-1 mr-2">
                             <span>{item.nombreProducto}</span>
                             {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                              <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
-                                Sin: {item.ingredientesExcluidosNombres.join(', ')}
-                              </p>
+                              <div className="mt-1 p-1.5 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded">
+                                <p className="text-xs text-orange-700 dark:text-orange-300 font-medium">
+                                  ⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}
+                                </p>
+                              </div>
                             )}
                           </div>
                           <div className="flex items-center gap-3 shrink-0 text-foreground">

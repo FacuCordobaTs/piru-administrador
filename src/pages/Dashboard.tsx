@@ -642,8 +642,8 @@ const Dashboard = () => {
                                   <div className="truncate flex-1">
                                     <span>{item.cantidad}x {item.nombreProducto}</span>
                                     {(item as any).ingredientesExcluidosNombres && (item as any).ingredientesExcluidosNombres.length > 0 && (
-                                      <p className="text-xs text-muted-foreground mt-0.5">
-                                        Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
+                                      <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mt-0.5">
+                                        ⚠️ Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
                                       </p>
                                     )}
                                   </div>
@@ -782,9 +782,11 @@ const Dashboard = () => {
                                 ${parseFloat(item.precioUnitario).toFixed(2)} x {item.cantidad} • {item.clienteNombre}
                               </p>
                               {(item as any).ingredientesExcluidosNombres && (item as any).ingredientesExcluidosNombres.length > 0 && (
-                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
-                                  Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
-                                </p>
+                                <div className="mt-1 p-1.5 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded text-xs">
+                                  <p className="text-orange-700 dark:text-orange-300 font-medium">
+                                    ⚠️ Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
+                                  </p>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -1198,8 +1200,8 @@ const Dashboard = () => {
                               <div>
                                 <span>{item.cantidad}x {item.nombreProducto}</span>
                                 {(item as any).ingredientesExcluidosNombres && (item as any).ingredientesExcluidosNombres.length > 0 && (
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
+                                  <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mt-0.5">
+                                    ⚠️ Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
                                   </p>
                                 )}
                               </div>
