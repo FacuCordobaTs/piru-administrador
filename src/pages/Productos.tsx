@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
-import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X } from 'lucide-react'
+import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X, Power, Settings2, AlertTriangle } from 'lucide-react'
 
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
@@ -21,7 +21,12 @@ const Productos = () => {
   const [dialogAbierto, setDialogAbierto] = useState(false)
   const [productoEditando, setProductoEditando] = useState<typeof productos[0] | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    nombre: string
+    descripcion: string
+    precio: string
+    categoriaId: string
+  }>({
     nombre: '',
     descripcion: '',
     precio: '',
@@ -36,6 +41,18 @@ const Productos = () => {
   const [nuevoIngredienteNombre, setNuevoIngredienteNombre] = useState('')
   const [dialogIngredienteAbierto, setDialogIngredienteAbierto] = useState(false)
   const [isCreandoIngrediente, setIsCreandoIngrediente] = useState(false)
+  const [dialogEliminarAbierto, setDialogEliminarAbierto] = useState(false)
+  const [productoAEliminar, setProductoAEliminar] = useState<typeof productos[0] | null>(null)
+  const [isEliminando, setIsEliminando] = useState(false)
+  const [dialogDesactivarAbierto, setDialogDesactivarAbierto] = useState(false)
+  const [productoADesactivar, setProductoADesactivar] = useState<typeof productos[0] | null>(null)
+  const [isDesactivando, setIsDesactivando] = useState(false)
+  
+  // Estados para gestión de categorías
+  const [dialogGestionCategoriasAbierto, setDialogGestionCategoriasAbierto] = useState(false)
+  const [dialogEliminarCategoriaAbierto, setDialogEliminarCategoriaAbierto] = useState(false)
+  const [categoriaAEliminar, setCategoriaAEliminar] = useState<typeof categorias[0] | null>(null)
+  const [isEliminandoCategoria, setIsEliminandoCategoria] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
@@ -134,6 +151,47 @@ const Productos = () => {
     } finally {
       setIsCreandoCategoria(false)
     }
+  }
+
+  const eliminarCategoria = async () => {
+    if (!token || !categoriaAEliminar) {
+      toast.error('Error: No se puede eliminar la categoría')
+      return
+    }
+
+    setIsEliminandoCategoria(true)
+    try {
+      const response = await categoriasApi.delete(token, categoriaAEliminar.id) as { 
+        success: boolean
+        message?: string
+        productosActualizados?: number
+      }
+      
+      if (response.success) {
+        const mensaje = response.productosActualizados && response.productosActualizados > 0
+          ? `Categoría eliminada. ${response.productosActualizados} producto(s) movido(s) a "Sin categoría"`
+          : 'Categoría eliminada correctamente'
+        toast.success(mensaje)
+        setDialogEliminarCategoriaAbierto(false)
+        setCategoriaAEliminar(null)
+        // Recargar datos para actualizar categorías y productos
+        await fetchData()
+      }
+    } catch (error) {
+      console.error('Error al eliminar categoría:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al eliminar categoría', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsEliminandoCategoria(false)
+    }
+  }
+
+  // Contar productos por categoría
+  const contarProductosPorCategoria = (categoriaId: number) => {
+    return productos.filter(p => p.categoriaId === categoriaId).length
   }
 
   const productosFiltrados = productos.filter(p => 
@@ -257,9 +315,76 @@ const Productos = () => {
     }
   }
 
-  const toggleActivo = (id: number) => {
-    console.log('Toggle activo:', id)
-    // Aquí iría la llamada a la API
+  const abrirDialogEliminar = (producto: typeof productos[0]) => {
+    setProductoAEliminar(producto)
+    setDialogEliminarAbierto(true)
+  }
+
+  const eliminarProducto = async () => {
+    if (!token || !productoAEliminar) {
+      toast.error('Error: No se puede eliminar el producto')
+      return
+    }
+
+    setIsEliminando(true)
+    try {
+      await productosApi.delete(token, productoAEliminar.id)
+      toast.success('Producto eliminado correctamente')
+      setDialogEliminarAbierto(false)
+      setProductoAEliminar(null)
+      await fetchData()
+    } catch (error) {
+      console.error('Error al eliminar producto:', error)
+      if (error instanceof ApiError) {
+        // Verificar si el error es por pedidos asociados
+        const errorMessage = error.message || error.response?.message || ''
+        if (errorMessage.includes('pedidos asociados') || errorMessage.includes('pedido')) {
+          toast.error('No se puede eliminar el producto', { 
+            description: 'Este producto tiene pedidos asociados. Desactívalo en su lugar para ocultarlo del menú sin perder el historial.' 
+          })
+        } else {
+          toast.error('Error al eliminar producto', { description: errorMessage })
+        }
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsEliminando(false)
+    }
+  }
+
+  const abrirDialogToggleActivo = (producto: typeof productos[0]) => {
+    setProductoADesactivar(producto)
+    setDialogDesactivarAbierto(true)
+  }
+
+  const toggleActivoProducto = async () => {
+    if (!token || !productoADesactivar) {
+      toast.error('Error: No se puede cambiar el estado del producto')
+      return
+    }
+
+    const nuevoEstado = !productoADesactivar.activo
+    setIsDesactivando(true)
+    try {
+      await productosApi.update(token, {
+        id: productoADesactivar.id,
+        activo: nuevoEstado
+      })
+      toast.success(nuevoEstado ? 'Producto activado correctamente' : 'Producto desactivado correctamente')
+      setDialogDesactivarAbierto(false)
+      setProductoADesactivar(null)
+      await fetchData()
+    } catch (error) {
+      console.error('Error al cambiar estado del producto:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al cambiar estado del producto', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsDesactivando(false)
+    }
   }
 
   if (isLoading) {
@@ -388,6 +513,7 @@ const Productos = () => {
                       size="icon"
                       className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
                       onClick={() => abrirDialogEditar(producto)}
+                      title="Editar producto"
                     >
                       <Edit className="h-4 w-4" />
                       <span className="sr-only">Editar</span>
@@ -395,15 +521,35 @@ const Productos = () => {
                     <Button
                       variant="ghost"
                       size="icon"
+                      className={`h-8 w-8 ${
+                        producto.activo 
+                          ? 'hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
+                          : 'hover:bg-green-100 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
+                      }`}
+                      onClick={() => abrirDialogToggleActivo(producto)}
+                      title={producto.activo ? 'Desactivar producto' : 'Activar producto'}
+                    >
+                      {producto.activo ? (
+                        <Package className="h-4 w-4" />
+                      ) : (
+                        <Power className="h-4 w-4" />
+                      )}
+                      <span className="sr-only">{producto.activo ? 'Desactivar' : 'Activar'}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className={`h-8 w-8 ${producto.activo ? 'hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-green-100 hover:text-green-600'}`}
-                      onClick={() => toggleActivo(producto.id)}
+                      onClick={() => producto.activo ? abrirDialogEliminar(producto) : null}
+                      disabled={!producto.activo}
+                      title={producto.activo ? 'Eliminar producto' : 'Producto inactivo'}
                     >
                       {producto.activo ? (
                         <Trash2 className="h-4 w-4" />
                       ) : (
                         <Package className="h-4 w-4" />
                       )}
-                      <span className="sr-only">Cambiar estado</span>
+                      <span className="sr-only">{producto.activo ? 'Eliminar' : 'Inactivo'}</span>
                     </Button>
                   </div>
                 </div>
@@ -483,16 +629,29 @@ const Productos = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="categoria">Categoría</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDialogCategoriaAbierto(true)}
-                  className="h-7 text-xs"
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Nueva
-                </Button>
+                <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDialogGestionCategoriasAbierto(true)}
+                    className="h-7 text-xs"
+                    title="Gestionar categorías"
+                  >
+                    <Settings2 className="h-3 w-3 mr-1" />
+                    Gestionar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDialogCategoriaAbierto(true)}
+                    className="h-7 text-xs"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Nueva
+                  </Button>
+                </div>
               </div>
               <Select
                 value={formData.categoriaId}
@@ -714,6 +873,227 @@ const Productos = () => {
                 )}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Confirmar Eliminación */}
+      <Dialog open={dialogEliminarAbierto} onOpenChange={setDialogEliminarAbierto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Eliminar producto?</DialogTitle>
+            <DialogDescription>
+              Esta acción no se puede deshacer. El producto <strong>{productoAEliminar?.nombre}</strong> será eliminado permanentemente, incluyendo su imagen.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDialogEliminarAbierto(false)
+                setProductoAEliminar(null)
+              }}
+              disabled={isEliminando}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              onClick={eliminarProducto}
+              disabled={isEliminando}
+              variant="destructive"
+            >
+              {isEliminando ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                'Eliminar'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Confirmar Activar/Desactivar */}
+      <Dialog open={dialogDesactivarAbierto} onOpenChange={setDialogDesactivarAbierto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {productoADesactivar?.activo ? '¿Desactivar producto?' : '¿Activar producto?'}
+            </DialogTitle>
+            <DialogDescription>
+              {productoADesactivar?.activo ? (
+                <>
+                  El producto <strong>{productoADesactivar?.nombre}</strong> se ocultará del menú pero se mantendrá en el sistema. Podrás reactivarlo más tarde.
+                </>
+              ) : (
+                <>
+                  El producto <strong>{productoADesactivar?.nombre}</strong> volverá a estar visible en el menú para los clientes.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDialogDesactivarAbierto(false)
+                setProductoADesactivar(null)
+              }}
+              disabled={isDesactivando}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              onClick={toggleActivoProducto}
+              disabled={isDesactivando}
+              className={productoADesactivar?.activo 
+                ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                : 'bg-green-500 hover:bg-green-600 text-white'
+              }
+            >
+              {isDesactivando ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {productoADesactivar?.activo ? 'Desactivando...' : 'Activando...'}
+                </>
+              ) : (
+                productoADesactivar?.activo ? 'Desactivar' : 'Activar'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Gestionar Categorías */}
+      <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={setDialogGestionCategoriasAbierto}>
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Gestionar Categorías</DialogTitle>
+            <DialogDescription>
+              Administra las categorías de tu menú. Al eliminar una categoría, los productos asociados pasarán a "Sin categoría".
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 pt-2">
+            {categorias.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No hay categorías creadas</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    setDialogGestionCategoriasAbierto(false)
+                    setDialogCategoriaAbierto(true)
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Crear primera categoría
+                </Button>
+              </div>
+            ) : (
+              <>
+                {categorias.map((categoria) => {
+                  const cantidadProductos = contarProductosPorCategoria(categoria.id)
+                  return (
+                    <div
+                      key={categoria.id}
+                      className="flex items-center justify-between p-3 rounded-lg border bg-background hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{categoria.nombre}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {cantidadProductos} producto{cantidadProductos !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={() => {
+                          setCategoriaAEliminar(categoria)
+                          setDialogEliminarCategoriaAbierto(true)
+                        }}
+                        title="Eliminar categoría"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )
+                })}
+                <div className="pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setDialogGestionCategoriasAbierto(false)
+                      setDialogCategoriaAbierto(true)
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Nueva categoría
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Confirmar Eliminación de Categoría */}
+      <Dialog open={dialogEliminarCategoriaAbierto} onOpenChange={setDialogEliminarCategoriaAbierto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              ¿Eliminar categoría?
+            </DialogTitle>
+            <DialogDescription className="space-y-2">
+              <span className="block">
+                Estás a punto de eliminar la categoría <strong>"{categoriaAEliminar?.nombre}"</strong>.
+              </span>
+              {categoriaAEliminar && contarProductosPorCategoria(categoriaAEliminar.id) > 0 && (
+                <span className="block text-amber-600 dark:text-amber-400">
+                  ⚠️ Esta categoría tiene {contarProductosPorCategoria(categoriaAEliminar.id)} producto(s) asociado(s). 
+                  Estos productos pasarán a "Sin categoría".
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDialogEliminarCategoriaAbierto(false)
+                setCategoriaAEliminar(null)
+              }}
+              disabled={isEliminandoCategoria}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              onClick={eliminarCategoria}
+              disabled={isEliminandoCategoria}
+              variant="destructive"
+            >
+              {isEliminandoCategoria ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                'Eliminar'
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

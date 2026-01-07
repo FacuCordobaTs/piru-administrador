@@ -251,6 +251,7 @@ export const productosApi = {
       image?: string // Base64 string
       categoriaId?: number | null
       ingredienteIds?: number[]
+      activo?: boolean
     }
   ) => {
     return fetchApi('/producto/update', {
