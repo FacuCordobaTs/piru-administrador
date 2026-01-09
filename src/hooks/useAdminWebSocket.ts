@@ -65,6 +65,7 @@ interface UseAdminWebSocketReturn {
   unreadCount: number
   markAsRead: (id: string) => void
   markAllAsRead: () => void
+  deleteNotification: (id: string) => void
   clearNotifications: () => void
   refresh: () => void
 }
@@ -168,6 +169,10 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
       const updated = prev.map(n => ({ ...n, leida: true }))
       return updated
     })
+  }, [])
+
+  const deleteNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id))
   }, [])
 
   const clearNotifications = useCallback(() => {
@@ -390,6 +395,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
     unreadCount,
     markAsRead,
     markAllAsRead,
+    deleteNotification,
     clearNotifications,
     refresh
   }

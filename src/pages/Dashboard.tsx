@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -39,15 +39,83 @@ const getEstadoBadge = (estado: string | null | undefined) => {
 
 // Helper para obtener info de notificación
 const getNotificationInfo = (tipo: string) => {
-  const tipos: Record<string, { icon: any; color: string; bgColor: string }> = {
-    NUEVO_PEDIDO: { icon: ShoppingCart, color: 'text-green-600', bgColor: 'bg-green-100' },
-    PEDIDO_CONFIRMADO: { icon: CheckCircle, color: 'text-blue-600', bgColor: 'bg-blue-100' },
-    PEDIDO_CERRADO: { icon: XCircle, color: 'text-gray-600', bgColor: 'bg-gray-100' },
-    LLAMADA_MOZO: { icon: Bell, color: 'text-red-600', bgColor: 'bg-red-100' },
-    PAGO_RECIBIDO: { icon: CreditCard, color: 'text-purple-600', bgColor: 'bg-purple-100' },
-    PRODUCTO_AGREGADO: { icon: Plus, color: 'text-orange-600', bgColor: 'bg-orange-100' },
+  const tipos: Record<string, { 
+    icon: any
+    label: string
+    // Color para el indicador/acento
+    accentColor: string
+    // Fondo opaco para NO leídas
+    unreadBg: string
+    // Fondo claro para iconos en dialogs
+    bgColor: string
+    // Color de texto/icono
+    color: string
+    priority: 'urgent' | 'high' | 'normal' | 'low'
+  }> = {
+    LLAMADA_MOZO: { 
+      icon: HandMetal, 
+      label: '¡MOZO!',
+      accentColor: 'bg-red-500',
+      unreadBg: 'bg-red-500',
+      bgColor: 'bg-red-100',
+      color: 'text-red-500',
+      priority: 'urgent'
+    },
+    PEDIDO_CONFIRMADO: { 
+      icon: ChefHat, 
+      label: 'Nuevo pedido',
+      accentColor: 'bg-emerald-500',
+      unreadBg: 'bg-emerald-600',
+      bgColor: 'bg-emerald-100',
+      color: 'text-emerald-500',
+      priority: 'high'
+    },
+    PAGO_RECIBIDO: { 
+      icon: CreditCard, 
+      label: 'Pago',
+      accentColor: 'bg-violet-500',
+      unreadBg: 'bg-violet-600',
+      bgColor: 'bg-violet-100',
+      color: 'text-violet-500',
+      priority: 'high'
+    },
+    PRODUCTO_AGREGADO: { 
+      icon: Plus, 
+      label: 'Producto',
+      accentColor: 'bg-amber-500',
+      unreadBg: 'bg-amber-500',
+      bgColor: 'bg-amber-100',
+      color: 'text-amber-500',
+      priority: 'normal'
+    },
+    NUEVO_PEDIDO: { 
+      icon: ShoppingCart, 
+      label: 'Mesa activa',
+      accentColor: 'bg-blue-500',
+      unreadBg: 'bg-blue-600',
+      bgColor: 'bg-blue-100',
+      color: 'text-blue-500',
+      priority: 'normal'
+    },
+    PEDIDO_CERRADO: { 
+      icon: CheckCircle, 
+      label: 'Cerrado',
+      accentColor: 'bg-slate-400',
+      unreadBg: 'bg-slate-500',
+      bgColor: 'bg-slate-100',
+      color: 'text-slate-500',
+      priority: 'low'
+    },
   }
-  return tipos[tipo] || { icon: Bell, color: 'text-gray-600', bgColor: 'bg-gray-100' }
+  return tipos[tipo] || { 
+    icon: Bell, 
+    label: 'Info',
+    accentColor: 'bg-slate-400',
+    unreadBg: 'bg-slate-500',
+    bgColor: 'bg-slate-100',
+    color: 'text-slate-500',
+    priority: 'low' as const
+  }
 }
 
 // Helper para calcular tiempo transcurrido
@@ -102,6 +170,7 @@ const Dashboard = () => {
     unreadCount,
     markAsRead,
     markAllAsRead,
+    deleteNotification,
     clearNotifications,
     refresh 
   } = useAdminWebSocket()
@@ -162,7 +231,7 @@ const Dashboard = () => {
   }, [notifications, soundEnabled])
 
   // Fetch mesas via REST API
-  const fetchMesasREST = async () => {
+  const fetchMesasREST = useCallback(async () => {
     if (!token) return
     
     try {
@@ -185,21 +254,21 @@ const Dashboard = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [token])
 
   // Combined refresh function (WebSocket + REST fallback)
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     if (isConnected) {
       refresh() // WebSocket refresh
     } else {
       await fetchMesasREST() // REST API fallback
     }
-  }
+  }, [isConnected, refresh, fetchMesasREST])
 
-  // Initial fetch
+  // Initial fetch - siempre cargar al montar el componente
   useEffect(() => {
     fetchMesasREST()
-  }, [token])
+  }, [fetchMesasREST])
 
   const handleCrearMesa = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -300,6 +369,23 @@ const Dashboard = () => {
       setSelectedMesa(mesa)
     }
   }
+
+  // Calcular notificaciones sin leer por mesa
+  const unreadNotificationsByMesa = useMemo(() => {
+    const map = new Map<number, { count: number; hasUrgent: boolean; types: string[] }>()
+    
+    notifications.forEach(notif => {
+      if (!notif.leida && notif.mesaId) {
+        const current = map.get(notif.mesaId) || { count: 0, hasUrgent: false, types: [] }
+        current.count++
+        if (notif.tipo === 'LLAMADA_MOZO') current.hasUrgent = true
+        if (!current.types.includes(notif.tipo)) current.types.push(notif.tipo)
+        map.set(notif.mesaId, current)
+      }
+    })
+    
+    return map
+  }, [notifications])
 
   // Sort mesas: active orders first, then by status
   const sortedMesas = [...mesas].sort((a, b) => {
@@ -426,48 +512,93 @@ const Dashboard = () => {
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
               <BellOff className="h-10 w-10 text-muted-foreground/50 mb-3" />
-              <p className="text-sm text-muted-foreground">No hay notificaciones</p>
+              <p className="text-sm text-muted-foreground">Sin notificaciones</p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Las notificaciones aparecerán aquí cuando haya actividad
+                Aparecerán aquí cuando haya actividad
               </p>
             </div>
           ) : (
-            <div className="p-2 space-y-2">
+            <div className="p-2 space-y-1">
               {notifications.map((notif) => {
                 const info = getNotificationInfo(notif.tipo)
                 const Icon = info.icon
+                const isUnread = !notif.leida
+                const isUrgent = info.priority === 'urgent' && isUnread
                 
                 return (
                   <div
                     key={notif.id}
-                    className={`p-3 rounded-lg cursor-pointer transition-all hover:bg-muted/50 hover:scale-[1.02] ${
-                      !notif.leida ? 'bg-primary/5 border-l-2 border-primary' : ''
-                    } ${notif.tipo === 'LLAMADA_MOZO' && !notif.leida ? 'animate-pulse bg-red-50 dark:bg-red-950/20' : ''}`}
-                    onClick={() => setSelectedNotification(notif)}
+                    className={`
+                      relative group rounded-lg transition-all overflow-hidden
+                      ${isUnread 
+                        ? `${info.unreadBg} text-white shadow-md ${isUrgent ? ' ' : ''}` 
+                        : 'bg-muted/50 hover:bg-muted'
+                      }
+                    `}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-lg ${info.bgColor}`}>
-                        <Icon className={`h-4 w-4 ${info.color}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium text-sm truncate">{notif.mensaje}</p>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {getTimeAgo(notif.timestamp)}
-                          </span>
+                    {/* Botón eliminar - aparece en hover */}
+                    <button
+                      className={`
+                        absolute top-1 right-1 z-10 p-1 rounded-full transition-opacity
+                        opacity-0 group-hover:opacity-100
+                        ${isUnread 
+                          ? 'bg-white/20 hover:bg-white/40 text-white' 
+                          : 'bg-background border shadow-sm hover:bg-destructive hover:text-white hover:border-destructive'
+                        }
+                      `}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteNotification(notif.id)
+                      }}
+                      title="Eliminar"
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                    </button>
+                    
+                    <div
+                      className="p-2.5 cursor-pointer"
+                      onClick={() => setSelectedNotification(notif)}
+                    >
+                      {/* Fila principal: Icono + Mesa + Tiempo */}
+                      <div className="flex items-center gap-2">
+                        {/* Icono */}
+                        <div className={`
+                          shrink-0 p-1.5 rounded-md
+                          ${isUnread ? 'bg-white/20' : 'bg-background'}
+                        `}>
+                          <Icon className={`h-4 w-4 ${isUnread ? 'text-white' : 'text-muted-foreground'}`} />
                         </div>
-                        {notif.detalles && (
-                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                            {notif.detalles}
-                          </p>
-                        )}
-                        {notif.mesaNombre && (
-                          <Badge variant="outline" className="mt-1 text-xs h-5">
-                            {notif.mesaNombre}
-                          </Badge>
-                        )}
+                        
+                        <div className="flex-1 min-w-0">
+                          {/* Mesa - prominente */}
+                          <div className="flex items-center gap-2">
+                            <span className={`font-bold text-sm truncate ${isUnread ? 'text-white' : 'text-foreground'}`}>
+                              {notif.mesaNombre || 'Sin mesa'}
+                            </span>
+                            <span className={`text-[10px] font-medium uppercase tracking-wide shrink-0 ${isUnread ? 'text-white/70' : 'text-muted-foreground'}`}>
+                              {info.label}
+                            </span>
+                          </div>
+                          
+                          {/* Detalles (solo si hay) */}
+                          {notif.detalles && (
+                            <p className={`text-xs mt-0.5 truncate ${isUnread ? 'text-white/80' : 'text-muted-foreground'}`}>
+                              {notif.detalles}
+                            </p>
+                          )}
+                        </div>
+                        
+                        {/* Tiempo */}
+                        <span className={`text-[11px] font-mono shrink-0 ${isUnread ? 'text-white/70' : 'text-muted-foreground'}`}>
+                          {getTimeAgo(notif.timestamp)}
+                        </span>
                       </div>
                     </div>
+                    
+                    {/* Indicador de color para leídas */}
+                    {!isUnread && (
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${info.accentColor}`} />
+                    )}
                   </div>
                 )
               })}
@@ -539,6 +670,7 @@ const Dashboard = () => {
               {sortedMesas.map((mesa) => {
                 const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed'
                 const isConfirmed = mesa.pedido?.estado === 'preparing' || mesa.pedido?.estado === 'delivered'
+                const mesaNotifs = unreadNotificationsByMesa.get(mesa.id)
                 
                 // Si no hay clientes conectados y no hay pedido confirmado, mostrar "Libre"
                 const estadoBase = getEstadoBadge(mesa.pedido?.estado)
@@ -567,6 +699,16 @@ const Dashboard = () => {
                           )}
                         </CardTitle>
                         <div className="flex items-center gap-2">
+                          {/* Badge de notificaciones sin leer */}
+                          {mesaNotifs && mesaNotifs.count > 0 && (
+                            <Badge 
+                              variant="destructive" 
+                              className={`gap-1 px-1.5 h-6 ${mesaNotifs.hasUrgent ? 'bg-red-500' : 'bg-blue-500 hover:bg-blue-600'}`}
+                            >
+                              <Bell className="h-3 w-3" />
+                              {mesaNotifs.count}
+                            </Badge>
+                          )}
                           <Badge variant={estado.variant} className="gap-1 px-1.5 h-6">
                             <StatusIcon className="h-3 w-3" />
                             <span className="hidden sm:inline">{estado.label}</span>
