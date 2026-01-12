@@ -30,7 +30,7 @@ import {
 } from 'lucide-react'
 
 // Configuración de MercadoPago
-const MP_APP_ID = import.meta.env.VITE_MP_APP_ID
+const MP_APP_ID = 38638191854826
 const MP_REDIRECT_URI = import.meta.env.VITE_MP_REDIRECT_URI || 'https://api.piru.app/api/mp/callback'
 
 const Perfil = () => {
