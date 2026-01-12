@@ -40,6 +40,9 @@ interface RestauranteData {
   mercadoPagoPublicKey: string | null
   mercadoPagoPrivateKey: string | null
   createdAt: string
+  // Campos OAuth de MercadoPago
+  mpConnected: boolean | null
+  mpUserId: string | null
 }
 
 interface RestauranteState {

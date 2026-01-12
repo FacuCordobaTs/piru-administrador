@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { restauranteApi, ApiError } from '@/lib/api'
+import { restauranteApi, mercadopagoApi, ApiError } from '@/lib/api'
 import ImageUpload from '@/components/ImageUpload'
 import { toast } from 'sonner'
 import { 
@@ -21,8 +21,17 @@ import {
   LogOut,
   Store,
   Loader2,
-  Settings
+  Settings,
+  CreditCard,
+  Link2,
+  Unlink,
+  ExternalLink,
+  CheckCircle2
 } from 'lucide-react'
+
+// Configuración de MercadoPago
+const MP_APP_ID = import.meta.env.VITE_MP_APP_ID
+const MP_REDIRECT_URI = import.meta.env.VITE_MP_REDIRECT_URI || 'https://api.piru.app/api/mp/callback'
 
 const Perfil = () => {
   const navigate = useNavigate()
@@ -40,12 +49,67 @@ const Perfil = () => {
     telefono: '',
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
       restauranteStore.fetchData()
     }
   }, [])
+
+  // Manejar callback de MercadoPago (cuando vuelve de autorizar)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const mpStatus = urlParams.get('mp_status')
+    const mpError = urlParams.get('mp_error')
+
+    if (mpStatus === 'success') {
+      toast.success('¡MercadoPago conectado!', {
+        description: 'Ahora tus clientes pueden pagar con MercadoPago',
+      })
+      // Refrescar datos para obtener el nuevo estado
+      restauranteStore.fetchData()
+      // Limpiar URL
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (mpStatus === 'error') {
+      let errorMessage = 'No se pudo conectar con MercadoPago'
+      if (mpError === 'missing_params') errorMessage = 'Faltan parámetros de autorización'
+      else if (mpError === 'config_error') errorMessage = 'Error de configuración del servidor'
+      else if (mpError === 'oauth_failed') errorMessage = 'Error en la autenticación con MercadoPago'
+      
+      toast.error('Error al conectar MercadoPago', {
+        description: errorMessage,
+      })
+      // Limpiar URL
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
+
+  // Generar URL de vinculación con MercadoPago
+  const getMercadoPagoAuthUrl = () => {
+    if (!MP_APP_ID || !restaurante?.id) return null
+    const state = restaurante.id.toString()
+    return `https://auth.mercadopago.com.ar/authorization?client_id=${MP_APP_ID}&response_type=code&platform_id=mp&state=${state}&redirect_uri=${encodeURIComponent(MP_REDIRECT_URI)}`
+  }
+
+  // Desconectar MercadoPago
+  const handleDesconectarMP = async () => {
+    if (!token) return
+    
+    setIsDisconnectingMP(true)
+    try {
+      const response = await mercadopagoApi.desconectar(token) as { success: boolean }
+      if (response.success) {
+        toast.success('MercadoPago desconectado')
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al desconectar MP:', error)
+      toast.error('Error al desconectar MercadoPago')
+    } finally {
+      setIsDisconnectingMP(false)
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -256,6 +320,77 @@ const Perfil = () => {
         </Card>
 
         <div className="space-y-6">
+          {/* Tarjeta de MercadoPago */}
+          <Card className={restaurante?.mpConnected ? "border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-sky-500/50 bg-sky-50/50 dark:bg-sky-950/20"}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CreditCard className="h-5 w-5" />
+                MercadoPago
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.mpConnected 
+                  ? 'Tu cuenta está conectada y lista para recibir pagos'
+                  : 'Conecta tu cuenta para recibir pagos de tus clientes'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.mpConnected ? (
+                <>
+                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <span className="font-medium">Cuenta conectada</span>
+                  </div>
+                  {restaurante.mpUserId && (
+                    <p className="text-sm text-muted-foreground">
+                      ID de usuario: {restaurante.mpUserId}
+                    </p>
+                  )}
+                  <Button 
+                    variant="outline" 
+                    className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
+                    onClick={handleDesconectarMP}
+                    disabled={isDisconnectingMP}
+                  >
+                    {isDisconnectingMP ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Desconectando...
+                      </>
+                    ) : (
+                      <>
+                        <Unlink className="mr-2 h-4 w-4" />
+                        Desconectar cuenta
+                      </>
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Al conectar tu cuenta de MercadoPago, tus clientes podrán pagar directamente desde la app.
+                  </p>
+                  {getMercadoPagoAuthUrl() ? (
+                    <Button 
+                      asChild
+                      className="w-full bg-sky-500 hover:bg-sky-600 text-white"
+                    >
+                      <a href={getMercadoPagoAuthUrl()!}>
+                        <Link2 className="mr-2 h-4 w-4" />
+                        Conectar MercadoPago
+                        <ExternalLink className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                  ) : (
+                    <p className="text-sm text-amber-600 dark:text-amber-400">
+                      Configuración de MercadoPago no disponible. Contacta al soporte.
+                    </p>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Estadísticas Rápidas</CardTitle>

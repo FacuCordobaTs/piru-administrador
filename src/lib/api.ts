@@ -445,6 +445,29 @@ export const pedidosApi = {
   },
 }
 
+// MercadoPago API
+export const mercadopagoApi = {
+  // Obtener estado de conexión
+  getEstado: async (token: string) => {
+    return fetchApi('/mp/estado', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Desconectar MercadoPago
+  desconectar: async (token: string) => {
+    return fetchApi('/mp/desconectar', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
 // Mesas API
 export const mesasApi = {
   getAll: async (token: string) => {
