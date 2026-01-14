@@ -536,24 +536,82 @@ const Dashboard = () => {
                       }
                     `}
                   >
-                    {/* Botón eliminar - aparece en hover */}
-                    <button
-                      className={`
-                        absolute top-1 right-1 z-10 p-1 rounded-full transition-opacity
-                        opacity-0 group-hover:opacity-100
-                        ${isUnread 
-                          ? 'bg-white/20 hover:bg-white/40 text-white' 
-                          : 'bg-background border shadow-sm hover:bg-destructive hover:text-white hover:border-destructive'
-                        }
-                      `}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deleteNotification(notif.id)
-                      }}
-                      title="Eliminar"
-                    >
-                      <XCircle className="h-3.5 w-3.5" />
-                    </button>
+                    {/* Desktop: Botones que aparecen en hover */}
+                    <div className={`
+                      absolute top-1 right-1 z-10 hidden md:flex gap-1 transition-opacity
+                      opacity-0 group-hover:opacity-100
+                    `}>
+                      {/* Marcar como leída - solo si no está leída */}
+                      {isUnread && (
+                        <button
+                          className={`
+                            p-1 rounded-full
+                            bg-white/20 hover:bg-white/40 text-white
+                          `}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            markAsRead(notif.id)
+                          }}
+                          title="Marcar como leída"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {/* Eliminar */}
+                      <button
+                        className={`
+                          p-1 rounded-full
+                          ${isUnread 
+                            ? 'bg-white/20 hover:bg-white/40 text-white' 
+                            : 'bg-background border shadow-sm hover:bg-destructive hover:text-white hover:border-destructive'
+                          }
+                        `}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteNotification(notif.id)
+                        }}
+                        title="Eliminar"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    
+                    {/* Mobile: Dropdown menu siempre visible */}
+                    <div className="absolute top-1 right-1 z-10 md:hidden">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className={`
+                              p-1 rounded-full
+                              ${isUnread 
+                                ? 'bg-white/20 text-white' 
+                                : 'bg-muted text-muted-foreground'
+                              }
+                            `}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          {isUnread && (
+                            <DropdownMenuItem
+                              onClick={() => markAsRead(notif.id)}
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Marcar como leída
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                            onClick={() => deleteNotification(notif.id)}
+                          >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                     
                     <div
                       className="p-2.5 cursor-pointer"
@@ -1110,7 +1168,6 @@ const Dashboard = () => {
                 placeholder="Ej: Mesa 1, Mesa VIP, etc."
                 required
                 disabled={isCreating}
-                minLength={3}
               />
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t">
@@ -1282,6 +1339,9 @@ const Dashboard = () => {
             }
             
             // Contenido para NUEVO_PEDIDO, PEDIDO_CONFIRMADO, PEDIDO_CERRADO
+            // Solo mostrar info del pedido de la mesa si coincide con el pedidoId de la notificación
+            const isPedidoActual = mesaInfo?.pedido?.id === selectedNotification.pedidoId
+            
             return (
               <>
                 <DialogHeader className="text-center pb-2">
@@ -1305,19 +1365,11 @@ const Dashboard = () => {
                             {selectedNotification.mesaNombre || 'Sin nombre'}
                           </p>
                         </div>
-                        {mesaInfo?.pedido && (
-                          <div className="text-right">
-                            <p className="text-sm text-muted-foreground">Total</p>
-                            <p className="text-2xl font-bold text-primary">
-                              ${parseFloat(mesaInfo.pedido.total || '0').toFixed(2)}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     </CardContent>
                   </Card>
 
-                  {/* Detalles adicionales */}
+                  {/* Detalles adicionales - contiene info del pedido como el total */}
                   {selectedNotification.detalles && (
                     <Card>
                       <CardContent className="pt-4">
@@ -1327,8 +1379,8 @@ const Dashboard = () => {
                     </Card>
                   )}
 
-                  {/* Preview de productos si hay mesa */}
-                  {mesaInfo && mesaInfo.items.length > 0 && (
+                  {/* Preview de productos - solo si el pedido actual coincide con el de la notificación */}
+                  {isPedidoActual && mesaInfo && mesaInfo.items.length > 0 && (
                     <Card>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm flex items-center gap-2">
