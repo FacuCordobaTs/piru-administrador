@@ -642,6 +642,45 @@ const Pedidos = () => {
             )
           })}
           
+          {/* Pedidos cerrados - Mobile */}
+          {showClosed && filteredPedidos.filter(p => p.estado === 'closed').length > 0 && (
+            <div className="opacity-70">
+              {/* Header de sección */}
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800/50">
+                <CheckCircle className="h-5 w-5 text-slate-500" />
+                <span className="font-bold text-foreground flex-1">Cerrados</span>
+                <Badge variant="secondary" className="font-mono font-bold">
+                  {filteredPedidos.filter(p => p.estado === 'closed').length}
+                </Badge>
+              </div>
+              
+              {/* Cards de cerrados */}
+              <div className="space-y-2">
+                {filteredPedidos
+                  .filter(p => p.estado === 'closed')
+                  .slice(0, 10)
+                  .map((pedido) => (
+                    <Card 
+                      key={pedido.id}
+                      className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-bold">{pedido.mesaNombre}</span>
+                          <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
+                        </div>
+                        <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatTimeAgo(pedido.createdAt)}
+                      </p>
+                    </Card>
+                  ))}
+              </div>
+            </div>
+          )}
+
           {/* Mensaje vacío */}
           {counts.total === 0 && (
             <div className="text-center py-12">

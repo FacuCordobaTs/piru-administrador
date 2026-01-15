@@ -457,6 +457,13 @@ export const mercadopagoApi = {
     })
   },
 
+  // Obtener subtotales de un pedido (split payment)
+  getSubtotales: async (pedidoId: number) => {
+    return fetchApi(`/mp/subtotales/${pedidoId}`, {
+      method: 'GET',
+    })
+  },
+
   // Desconectar MercadoPago
   desconectar: async (token: string) => {
     return fetchApi('/mp/desconectar', {
@@ -511,6 +518,59 @@ export const mesasApi = {
 
   delete: async (token: string, id: number) => {
     return fetchApi(`/mesa/delete/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
+// Notificaciones API
+export const notificacionesApi = {
+  // Obtener todas las notificaciones del restaurante
+  getAll: async (token: string) => {
+    return fetchApi('/notificacion', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Marcar una notificación como leída
+  markAsRead: async (token: string, id: string) => {
+    return fetchApi(`/notificacion/${id}/read`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Marcar todas las notificaciones como leídas
+  markAllAsRead: async (token: string) => {
+    return fetchApi('/notificacion/read-all', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Eliminar una notificación
+  delete: async (token: string, id: string) => {
+    return fetchApi(`/notificacion/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Eliminar todas las notificaciones
+  deleteAll: async (token: string) => {
+    return fetchApi('/notificacion/all', {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${token}`,

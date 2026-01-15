@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAuthStore } from '@/store/authStore'
+import { notificacionesApi } from '@/lib/api'
 
 // Types - Only important notifications (connect/disconnect are not shown)
 export type NotificationType = 
@@ -32,6 +33,7 @@ export interface ItemPedido {
   imagenUrl?: string | null
   ingredientesExcluidos?: number[]
   ingredientesExcluidosNombres?: string[]
+  postConfirmacion?: boolean
 }
 
 export interface Pedido {
@@ -57,12 +59,28 @@ export interface MesaConPedido {
   totalItems: number
 }
 
+export interface SubtotalActualizado {
+  clienteNombre: string
+  monto: string
+  estado: 'pending' | 'paid' | 'failed'
+  metodo: 'efectivo' | 'mercadopago' | null
+}
+
+export interface SubtotalesUpdate {
+  pedidoId: number
+  mesaId: number
+  mesaNombre: string
+  clientesPagados: string[]
+  todosSubtotales: SubtotalActualizado[]
+}
+
 interface UseAdminWebSocketReturn {
   mesas: MesaConPedido[]
   notifications: Notification[]
   isConnected: boolean
   error: string | null
   unreadCount: number
+  subtotalesUpdates: Map<number, SubtotalesUpdate>
   markAsRead: (id: string) => void
   markAllAsRead: () => void
   deleteNotification: (id: string) => void
@@ -71,80 +89,27 @@ interface UseAdminWebSocketReturn {
 }
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'wss://api.piru.app'
-const MAX_NOTIFICATIONS = 50
 
-// LocalStorage keys
-const STORAGE_KEY_NOTIFICATIONS = 'admin_notifications'
-const STORAGE_KEY_SEEN_IDS = 'admin_seen_notification_ids'
-
-// Track seen notification IDs to prevent duplicates (shared across hook instances)
-const seenNotificationIds = new Set<string>()
-
-// Load notifications from localStorage
-const loadNotificationsFromStorage = (): Notification[] => {
+// Clean up old localStorage data from previous implementation
+const cleanupOldStorage = () => {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY_NOTIFICATIONS)
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      // Ensure all notifications have required fields
-      return parsed.filter((n: Notification) => n.id && n.tipo && n.timestamp)
-    }
-  } catch (error) {
-    console.error('Error loading notifications from storage:', error)
-  }
-  return []
-}
-
-// Save notifications to localStorage
-const saveNotificationsToStorage = (notifications: Notification[]) => {
-  try {
-    localStorage.setItem(STORAGE_KEY_NOTIFICATIONS, JSON.stringify(notifications))
-  } catch (error) {
-    console.error('Error saving notifications to storage:', error)
+    localStorage.removeItem('admin_notifications')
+    localStorage.removeItem('admin_seen_notification_ids')
+  } catch (e) {
+    // Ignore errors
   }
 }
 
-// Load seen notification IDs from localStorage
-const loadSeenIdsFromStorage = (): Set<string> => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_SEEN_IDS)
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      return new Set(parsed)
-    }
-  } catch (error) {
-    console.error('Error loading seen IDs from storage:', error)
-  }
-  return new Set<string>()
-}
-
-// Save seen notification IDs to localStorage
-const saveSeenIdsToStorage = (ids: Set<string>) => {
-  try {
-    localStorage.setItem(STORAGE_KEY_SEEN_IDS, JSON.stringify(Array.from(ids)))
-  } catch (error) {
-    console.error('Error saving seen IDs to storage:', error)
-  }
-}
-
-// Initialize seen IDs from storage once when module loads
-const initializeSeenIds = () => {
-  const storedIds = loadSeenIdsFromStorage()
-  storedIds.forEach(id => seenNotificationIds.add(id))
-}
-
-// Initialize on module load
-initializeSeenIds()
+// Run cleanup once when module loads
+cleanupOldStorage()
 
 export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   const token = useAuthStore((state) => state.token)
   const [mesas, setMesas] = useState<MesaConPedido[]>([])
-  // Initialize notifications from localStorage
-  const [notifications, setNotifications] = useState<Notification[]>(() => {
-    return loadNotificationsFromStorage()
-  })
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [subtotalesUpdates, setSubtotalesUpdates] = useState<Map<number, SubtotalesUpdate>>(new Map())
   
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -152,36 +117,62 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   const isConnectingRef = useRef(false)
   const connectionIdRef = useRef<string | null>(null)
 
-  // Save notifications to localStorage whenever they change
-  useEffect(() => {
-    saveNotificationsToStorage(notifications)
-  }, [notifications])
+  // Mark notification as read via API
+  const markAsRead = useCallback(async (id: string) => {
+    if (!token) return
+    
+    // Optimistic update
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, leida: true } : n))
+    
+    try {
+      await notificacionesApi.markAsRead(token, id)
+    } catch (error) {
+      console.error('Error marking notification as read:', error)
+      // Revert on error - refetch from server
+    }
+  }, [token])
 
-  const markAsRead = useCallback((id: string) => {
-    setNotifications(prev => {
-      const updated = prev.map(n => n.id === id ? { ...n, leida: true } : n)
-      return updated
-    })
-  }, [])
+  // Mark all notifications as read via API
+  const markAllAsRead = useCallback(async () => {
+    if (!token) return
+    
+    // Optimistic update
+    setNotifications(prev => prev.map(n => ({ ...n, leida: true })))
+    
+    try {
+      await notificacionesApi.markAllAsRead(token)
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error)
+    }
+  }, [token])
 
-  const markAllAsRead = useCallback(() => {
-    setNotifications(prev => {
-      const updated = prev.map(n => ({ ...n, leida: true }))
-      return updated
-    })
-  }, [])
-
-  const deleteNotification = useCallback((id: string) => {
+  // Delete notification via API
+  const deleteNotification = useCallback(async (id: string) => {
+    if (!token) return
+    
+    // Optimistic update
     setNotifications(prev => prev.filter(n => n.id !== id))
-  }, [])
+    
+    try {
+      await notificacionesApi.delete(token, id)
+    } catch (error) {
+      console.error('Error deleting notification:', error)
+    }
+  }, [token])
 
-  const clearNotifications = useCallback(() => {
+  // Clear all notifications via API
+  const clearNotifications = useCallback(async () => {
+    if (!token) return
+    
+    // Optimistic update
     setNotifications([])
-    // Also clear the seen IDs when user clears notifications
-    seenNotificationIds.clear()
-    saveSeenIdsToStorage(seenNotificationIds)
-    localStorage.removeItem(STORAGE_KEY_NOTIFICATIONS)
-  }, [])
+    
+    try {
+      await notificacionesApi.deleteAll(token)
+    } catch (error) {
+      console.error('Error clearing notifications:', error)
+    }
+  }, [token])
 
   const refresh = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -225,7 +216,6 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
       setMesas([])
       setNotifications([])
       setIsConnected(false)
-      // Don't clear localStorage on logout - keep notifications for next login
       return
     }
 
@@ -295,31 +285,44 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
                 setMesas(data.payload.mesas || [])
                 break
 
+              case 'ADMIN_NOTIFICACIONES_INICIAL':
+                // Initial notifications from database
+                const initialNotifs = (data.payload.notificaciones || []).map((n: any) => ({
+                  ...n,
+                  // Ensure timestamp is in ISO format
+                  timestamp: n.timestamp ? new Date(n.timestamp).toISOString() : new Date().toISOString()
+                }))
+                console.log(`📥 Received ${initialNotifs.length} initial notifications from server`)
+                setNotifications(initialNotifs)
+                break
+
               case 'ADMIN_NOTIFICACION':
                 const newNotification = data.payload as Notification
-                
-                // Deduplicate by ID
-                if (seenNotificationIds.has(newNotification.id)) {
-                  console.log('⏭️ Duplicate notification ignored:', newNotification.id)
-                  return
-                }
-                
-                seenNotificationIds.add(newNotification.id)
-                saveSeenIdsToStorage(seenNotificationIds)
                 console.log('🔔 New notification:', newNotification.mensaje)
                 
                 setNotifications(prev => {
-                  // Double-check it's not already in the list
+                  // Check if already exists (avoid duplicates)
                   if (prev.some(n => n.id === newNotification.id)) {
                     return prev
                   }
-                  const updated = [newNotification, ...prev].slice(0, MAX_NOTIFICATIONS)
-                  return updated
+                  // Add to beginning, limit to 100
+                  return [newNotification, ...prev].slice(0, 100)
                 })
                 break
 
               case 'PONG':
                 // Heartbeat response
+                break
+
+              case 'ADMIN_SUBTOTALES_ACTUALIZADOS':
+                // Actualización de subtotales pagados (split payment)
+                const subtotalesUpdate = data.payload as SubtotalesUpdate
+                console.log('📊 Subtotales actualizados:', subtotalesUpdate)
+                setSubtotalesUpdates(prev => {
+                  const newMap = new Map(prev)
+                  newMap.set(subtotalesUpdate.pedidoId, subtotalesUpdate)
+                  return newMap
+                })
                 break
             }
           } catch (err) {
@@ -393,6 +396,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
     isConnected,
     error,
     unreadCount,
+    subtotalesUpdates,
     markAsRead,
     markAllAsRead,
     deleteNotification,

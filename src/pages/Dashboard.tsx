@@ -17,7 +17,7 @@ import {
   Bell, BellOff, ShoppingCart, Users, Loader2, QrCode, Plus, 
   Wifi, WifiOff, Clock, CheckCircle, XCircle, Coffee, CreditCard, 
   Utensils, ChefHat, RefreshCw, Volume2, VolumeX, Trash2,
-  ArrowRight, HandMetal, MoreVertical, LayoutGrid
+  ArrowRight, HandMetal, MoreVertical, LayoutGrid, History, Sparkles
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -195,13 +195,119 @@ const Dashboard = () => {
   // MOBILE VIEW STATE: 'mesas' | 'notifications'
   const [mobileView, setMobileView] = useState<'mesas' | 'notifications'>('mesas')
 
+  // Estado para guardar los últimos pedidos cerrados por mesa (usando notificaciones)
+  const [ultimosPedidosCerrados, setUltimosPedidosCerrados] = useState<Map<number, number>>(new Map()) // mesaId -> pedidoId
+  
+  // Estado para guardar los datos del pedido cerrado cargado por mesa
+  const [datosPedidoCerrado, setDatosPedidoCerrado] = useState<Map<number, {
+    pedido: { id: number; estado: string; total: string; createdAt: string };
+    items: { id: number; cantidad: number; nombreProducto: string; precioUnitario: string; clienteNombre: string; ingredientesExcluidosNombres?: string[] }[];
+    totalItems: number;
+  }>>(new Map())
+  
+  // Estado para controlar qué mesas están mostrando el pedido cerrado
+  const [mostrandoPedidoCerrado, setMostrandoPedidoCerrado] = useState<Set<number>>(new Set())
+  
+  // Estado para indicar qué mesa está cargando datos
+  const [cargandoPedido, setCargandoPedido] = useState<number | null>(null)
+
   // Update mesas from WebSocket
   useEffect(() => {
     if (mesasWS.length > 0) {
       setMesas(mesasWS)
       setIsLoading(false)
+      
+      // Si una mesa que estaba mostrando pedido cerrado ahora tiene un pedido confirmado, quitar la vista del cerrado
+      setMostrandoPedidoCerrado(prev => {
+        const newSet = new Set(prev)
+        mesasWS.forEach(mesa => {
+          if (mesa.pedido?.estado === 'preparing' || mesa.pedido?.estado === 'delivered') {
+            newSet.delete(mesa.id)
+          }
+        })
+        return newSet
+      })
     }
   }, [mesasWS])
+  
+  // Función para cargar y mostrar pedido cerrado
+  const verPedidoCerrado = async (mesaId: number, pedidoId: number) => {
+    if (!token) return
+    
+    setCargandoPedido(mesaId)
+    
+    try {
+      const response = await pedidosApi.getById(token, pedidoId) as {
+        success: boolean
+        data: {
+          id: number
+          estado: string
+          total: string
+          createdAt: string
+          items: { id: number; cantidad: number; nombreProducto: string; precioUnitario: string; clienteNombre: string; ingredientesExcluidosNombres?: string[] }[]
+        }
+      }
+      
+      if (response.success && response.data) {
+        setDatosPedidoCerrado(prev => {
+          const newMap = new Map(prev)
+          newMap.set(mesaId, {
+            pedido: {
+              id: response.data.id,
+              estado: response.data.estado,
+              total: response.data.total,
+              createdAt: response.data.createdAt
+            },
+            items: response.data.items,
+            totalItems: response.data.items.reduce((sum, item) => sum + item.cantidad, 0)
+          })
+          return newMap
+        })
+        
+        setMostrandoPedidoCerrado(prev => {
+          const newSet = new Set(prev)
+          newSet.add(mesaId)
+          return newSet
+        })
+      }
+    } catch (error) {
+      console.error('Error cargando pedido cerrado:', error)
+      toast.error('Error al cargar pedido anterior')
+    } finally {
+      setCargandoPedido(null)
+    }
+  }
+  
+  // Función para volver a mostrar el pedido actual
+  const verPedidoActual = (mesaId: number) => {
+    setMostrandoPedidoCerrado(prev => {
+      const newSet = new Set(prev)
+      newSet.delete(mesaId)
+      return newSet
+    })
+  }
+
+  // Detectar notificaciones de pedido cerrado para guardar el pedidoId
+  useEffect(() => {
+    if (notifications.length > 0) {
+      const notifsCerrados = notifications.filter(n => n.tipo === 'PEDIDO_CERRADO' && n.mesaId && n.pedidoId)
+      if (notifsCerrados.length > 0) {
+        setUltimosPedidosCerrados(prev => {
+          const newMap = new Map(prev)
+          notifsCerrados.forEach(notif => {
+            // Solo guardar si no hay ya uno guardado o si es más reciente
+            if (notif.mesaId && notif.pedidoId) {
+              const existing = newMap.get(notif.mesaId)
+              if (!existing || notif.pedidoId > existing) {
+                newMap.set(notif.mesaId, notif.pedidoId)
+              }
+            }
+          })
+          return newMap
+        })
+      }
+    }
+  }, [notifications])
 
   // Play sound on new important notifications
   useEffect(() => {
@@ -730,26 +836,54 @@ const Dashboard = () => {
                 const isConfirmed = mesa.pedido?.estado === 'preparing' || mesa.pedido?.estado === 'delivered'
                 const mesaNotifs = unreadNotificationsByMesa.get(mesa.id)
                 
+                // Verificar si hay un pedido cerrado anterior para esta mesa
+                const ultimoPedidoCerradoId = ultimosPedidosCerrados.get(mesa.id)
+                const pedidoActualVacio = mesa.items.length === 0 && parseFloat(mesa.pedido?.total || '0') === 0
+                const hayPedidoCerradoDisponible = ultimoPedidoCerradoId && pedidoActualVacio && (!mesa.pedido || mesa.pedido.id !== ultimoPedidoCerradoId)
+                
+                // ¿Estamos mostrando el pedido cerrado?
+                const mostrandoCerrado = mostrandoPedidoCerrado.has(mesa.id)
+                const datosCerrado = datosPedidoCerrado.get(mesa.id)
+                const estaCargando = cargandoPedido === mesa.id
+                
+                // Determinar qué datos mostrar
+                const itemsAMostrar = mostrandoCerrado && datosCerrado ? datosCerrado.items : mesa.items
+                const totalAMostrar = mostrandoCerrado && datosCerrado ? datosCerrado.pedido.total : mesa.pedido?.total
+                const totalItemsAMostrar = mostrandoCerrado && datosCerrado ? datosCerrado.totalItems : mesa.totalItems
+                
+                // Contar items post-confirmación (productos agregados después de confirmar)
+                const itemsPostConfirmacion = itemsAMostrar.filter((item: any) => item.postConfirmacion).length
+                
                 // Si no hay clientes conectados y no hay pedido confirmado, mostrar "Libre"
                 const estadoBase = getEstadoBadge(mesa.pedido?.estado)
-                const estado = (!isConfirmed && mesa.clientesConectados.length === 0)
-                  ? { label: 'Libre', variant: 'outline' as const, icon: Coffee }
-                  : estadoBase
+                const estado = mostrandoCerrado 
+                  ? { label: 'Cerrado', variant: 'secondary' as const, icon: CheckCircle }
+                  : (!isConfirmed && mesa.clientesConectados.length === 0)
+                    ? { label: 'Libre', variant: 'outline' as const, icon: Coffee }
+                    : estadoBase
                 const StatusIcon = estado.icon
+                
+                // Determinar si mostrar contenido (productos, total, etc)
+                const mostrarContenido = mostrandoCerrado || isConfirmed
                 
                 return (
                   <Card 
                     key={mesa.id}
                     className={`transition-all duration-300 hover:shadow-lg cursor-pointer ${
-                      hasActiveOrder ? 'border-primary/30 shadow-sm' : ''
-                    } ${mesa.pedido?.estado === 'preparing' ? 'ring-2 ring-primary/20' : ''}`}
-                    onClick={() => handleMesaClick(mesa)}
+                      hasActiveOrder && !mostrandoCerrado ? 'border-primary/30 shadow-sm' : ''
+                    } ${mesa.pedido?.estado === 'preparing' && !mostrandoCerrado ? 'ring-2 ring-primary/20' : ''} ${
+                      mostrandoCerrado ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20' : ''
+                    }`}
+                    onClick={() => mostrandoCerrado && datosCerrado 
+                      ? navigate(`/dashboard/pedidos/${datosCerrado.pedido.id}`)
+                      : handleMesaClick(mesa)
+                    }
                   >
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg flex items-center gap-2">
                           {mesa.nombre}
-                          {mesa.clientesConectados.length > 0 && (
+                          {!mostrandoCerrado && mesa.clientesConectados.length > 0 && (
                             <Badge variant="secondary" className="gap-1 text-xs">
                               <Users className="h-3 w-3" />
                               {mesa.clientesConectados.length}
@@ -757,14 +891,31 @@ const Dashboard = () => {
                           )}
                         </CardTitle>
                         <div className="flex items-center gap-2">
+                          {/* Badge de items nuevos post-confirmación */}
+                          {itemsPostConfirmacion > 0 && !mostrandoCerrado && (
+                            <Badge 
+                              variant="outline" 
+                              className="gap-1 px-1.5 h-6 bg-amber-100 dark:bg-amber-900/50 border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 animate-pulse"
+                            >
+                              <Sparkles className="h-3 w-3" />
+                              {itemsPostConfirmacion}
+                            </Badge>
+                          )}
                           {/* Badge de notificaciones sin leer */}
-                          {mesaNotifs && mesaNotifs.count > 0 && (
+                          {mesaNotifs && mesaNotifs.count > 0 && !mostrandoCerrado && (
                             <Badge 
                               variant="destructive" 
                               className={`gap-1 px-1.5 h-6 ${mesaNotifs.hasUrgent ? 'bg-red-500' : 'bg-blue-500 hover:bg-blue-600'}`}
                             >
                               <Bell className="h-3 w-3" />
                               {mesaNotifs.count}
+                            </Badge>
+                          )}
+                          {/* Badge indicador de pedido cerrado */}
+                          {mostrandoCerrado && (
+                            <Badge variant="outline" className="gap-1 px-1.5 h-6 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300">
+                              <History className="h-3 w-3" />
+                              <span className="hidden sm:inline">Anterior</span>
                             </Badge>
                           )}
                           <Badge variant={estado.variant} className="gap-1 px-1.5 h-6">
@@ -784,6 +935,27 @@ const Dashboard = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                              {mostrandoCerrado ? (
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    verPedidoActual(mesa.id)
+                                  }}
+                                >
+                                  <ShoppingCart className="mr-2 h-4 w-4" />
+                                  Ver pedido actual
+                                </DropdownMenuItem>
+                              ) : hayPedidoCerradoDisponible && (
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    verPedidoCerrado(mesa.id, ultimoPedidoCerradoId)
+                                  }}
+                                >
+                                  <History className="mr-2 h-4 w-4" />
+                                  Ver pedido anterior
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -809,7 +981,13 @@ const Dashboard = () => {
                           </DropdownMenu>
                         </div>
                       </div>
-                      {hasActiveOrder && mesa.pedido?.createdAt && (
+                      {/* Descripción según el estado */}
+                      {mostrandoCerrado && datosCerrado ? (
+                        <CardDescription className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                          <History className="h-3 w-3" />
+                          Pedido #{datosCerrado.pedido.id} (cerrado)
+                        </CardDescription>
+                      ) : hasActiveOrder && mesa.pedido?.createdAt && (
                         <CardDescription className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {getTimeAgo(mesa.pedido.createdAt)}
@@ -817,10 +995,10 @@ const Dashboard = () => {
                       )}
                     </CardHeader>
                     <CardContent>
-                      {hasActiveOrder ? (
+                      {mostrarContenido ? (
                         <div className="space-y-3">
-                          {/* Connected clients */}
-                          {mesa.clientesConectados.length > 0 && (
+                          {/* Connected clients - solo si no estamos mostrando pedido cerrado */}
+                          {!mostrandoCerrado && mesa.clientesConectados.length > 0 && (
                             <div className="flex flex-wrap gap-1">
                               {mesa.clientesConectados.slice(0, 3).map((cliente) => (
                                 <Badge key={cliente.id} variant="outline" className="text-[10px] h-5">
@@ -835,13 +1013,16 @@ const Dashboard = () => {
                             </div>
                           )}
 
-                          {/* Show products only if order is confirmed */}
-                          {isConfirmed && mesa.items.length > 0 && (
+                          {/* Show products */}
+                          {itemsAMostrar.length > 0 && (
                             <div className="space-y-1">
-                              {mesa.items.slice(0, 2).map((item) => (
-                                <div key={item.id} className="flex items-center justify-between text-sm">
+                              {itemsAMostrar.slice(0, 2).map((item) => (
+                                <div key={item.id} className={`flex items-center justify-between text-sm ${(item as any).postConfirmacion ? 'text-amber-700 dark:text-amber-400' : ''}`}>
                                   <div className="truncate flex-1">
-                                    <span>{item.cantidad}x {item.nombreProducto}</span>
+                                    <span className="flex items-center gap-1">
+                                      {(item as any).postConfirmacion && <Sparkles className="h-3 w-3 text-amber-500 shrink-0" />}
+                                      {item.cantidad}x {item.nombreProducto}
+                                    </span>
                                     {(item as any).ingredientesExcluidosNombres && (item as any).ingredientesExcluidosNombres.length > 0 && (
                                       <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mt-0.5">
                                         ⚠️ Sin: {(item as any).ingredientesExcluidosNombres.join(', ')}
@@ -850,9 +1031,9 @@ const Dashboard = () => {
                                   </div>
                                 </div>
                               ))}
-                              {mesa.items.length > 2 && (
+                              {itemsAMostrar.length > 2 && (
                                 <p className="text-xs text-muted-foreground">
-                                  +{mesa.items.length - 2} producto{mesa.items.length - 2 !== 1 ? 's' : ''} más
+                                  +{itemsAMostrar.length - 2} producto{itemsAMostrar.length - 2 !== 1 ? 's' : ''} más
                                 </p>
                               )}
                             </div>
@@ -863,12 +1044,51 @@ const Dashboard = () => {
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground flex items-center gap-1">
                               <ShoppingCart className="h-4 w-4" />
-                              {mesa.totalItems}
+                              {totalItemsAMostrar}
                             </span>
                             <span className="text-lg font-bold">
-                              ${parseFloat(mesa.pedido?.total || '0').toFixed(2)}
+                              ${parseFloat(totalAMostrar || '0').toFixed(2)}
                             </span>
                           </div>
+                          
+                          {/* Botones de navegación entre pedidos */}
+                          {mostrandoCerrado ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                verPedidoActual(mesa.id)
+                              }}
+                            >
+                              <ShoppingCart className="mr-1 h-3 w-3" />
+                              Ver pedido actual
+                            </Button>
+                          ) : hayPedidoCerradoDisponible && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-xs border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                verPedidoCerrado(mesa.id, ultimoPedidoCerradoId)
+                              }}
+                              disabled={estaCargando}
+                            >
+                              {estaCargando ? (
+                                <>
+                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                  Cargando...
+                                </>
+                              ) : (
+                                <>
+                                  <History className="mr-1 h-3 w-3" />
+                                  Ver pedido anterior #{ultimoPedidoCerradoId}
+                                </>
+                              )}
+                            </Button>
+                          )}
                         </div>
                       ) : (
                         <div className="py-4 text-center text-muted-foreground">

@@ -9,13 +9,14 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/store/authStore'
-import { pedidosApi, productosApi, ApiError } from '@/lib/api'
+import { pedidosApi, productosApi, mercadopagoApi, ApiError } from '@/lib/api'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { toast } from 'sonner'
 import { 
   Loader2, ArrowLeft, Clock, CheckCircle, ChefHat, Utensils, 
   ShoppingCart, Users, Wifi, WifiOff, User, Plus, Trash2, Minus,
-  Receipt, CreditCard, Banknote, AlertCircle, CheckCircle2, XCircle, Search, Package
+  Receipt, CreditCard, Banknote, AlertCircle, CheckCircle2, XCircle, Search, Package,
+  Sparkles
 } from 'lucide-react'
 
 // Types
@@ -30,6 +31,7 @@ interface ItemPedido {
   descripcion?: string | null
   ingredientesExcluidos?: number[]
   ingredientesExcluidosNombres?: string[]
+  postConfirmacion?: boolean // true si se agregó después de confirmar el pedido
 }
 
 interface PagoInfo {
@@ -64,6 +66,14 @@ interface PedidoDetalle {
   totalItems: number
   pago?: PagoInfo | null
   pagos?: PagoInfo[]
+}
+
+// Interface para subtotales (split payment)
+interface SubtotalInfo {
+  clienteNombre: string
+  subtotal: string
+  pagado: boolean
+  metodo?: string
 }
 
 // Helper para obtener el badge del estado
@@ -146,12 +156,16 @@ const Pedido = () => {
   const token = useAuthStore((state) => state.token)
   
   // WebSocket para actualizaciones en tiempo real
-  const { mesas: mesasWS, isConnected } = useAdminWebSocket()
+  const { mesas: mesasWS, isConnected, subtotalesUpdates } = useAdminWebSocket()
   
   // State
   const [pedido, setPedido] = useState<PedidoDetalle | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
+  
+  // Estado para subtotales (split payment)
+  const [subtotales, setSubtotales] = useState<SubtotalInfo[]>([])
+  const [loadingSubtotales, setLoadingSubtotales] = useState(false)
   
   // Estados para gestión de productos
   const [addProductSheet, setAddProductSheet] = useState(false)
@@ -232,6 +246,50 @@ const Pedido = () => {
       })
     }
   }, [mesasWS, pedido?.id])
+
+  // Cargar subtotales del pedido (split payment)
+  const fetchSubtotales = useCallback(async () => {
+    if (!id) return
+    
+    setLoadingSubtotales(true)
+    try {
+      const response = await mercadopagoApi.getSubtotales(Number(id)) as {
+        success: boolean
+        subtotales: SubtotalInfo[]
+      }
+      
+      if (response.success && response.subtotales) {
+        setSubtotales(response.subtotales)
+      }
+    } catch (error) {
+      console.error('Error fetching subtotales:', error)
+    } finally {
+      setLoadingSubtotales(false)
+    }
+  }, [id])
+
+  // Cargar subtotales cuando el pedido está cerrado
+  useEffect(() => {
+    if (pedido?.estado === 'closed') {
+      fetchSubtotales()
+    }
+  }, [pedido?.estado, fetchSubtotales])
+
+  // Actualizar subtotales desde WebSocket
+  useEffect(() => {
+    if (!id) return
+    const pedidoId = Number(id)
+    const update = subtotalesUpdates.get(pedidoId)
+    
+    if (update) {
+      setSubtotales(update.todosSubtotales.map(s => ({
+        clienteNombre: s.clienteNombre,
+        subtotal: s.monto,
+        pagado: s.estado === 'paid',
+        metodo: s.metodo || undefined
+      })))
+    }
+  }, [subtotalesUpdates, id])
 
   // Cambiar estado del pedido
   const handleChangeEstado = async (nuevoEstado: string) => {
@@ -660,22 +718,41 @@ const Pedido = () => {
                     {items.map((item) => (
                       <div 
                         key={item.id} 
-                        className="flex items-center justify-between p-3 bg-muted/50 rounded-lg group"
+                        className={`flex items-center justify-between p-3 rounded-lg group transition-all ${
+                          item.postConfirmacion 
+                            ? 'bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-700 ring-1 ring-amber-200 dark:ring-amber-800' 
+                            : 'bg-muted/50'
+                        }`}
                       >
                         <div className="flex items-center gap-4">
-                          {item.imagenUrl ? (
-                            <img 
-                              src={item.imagenUrl} 
-                              alt={item.nombreProducto} 
-                              className="w-14 h-14 rounded-lg object-cover"
-                            />
-                          ) : (
-                            <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
-                              <ShoppingCart className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                          )}
+                          <div className="relative">
+                            {item.imagenUrl ? (
+                              <img 
+                                src={item.imagenUrl} 
+                                alt={item.nombreProducto} 
+                                className="w-14 h-14 rounded-lg object-cover"
+                              />
+                            ) : (
+                              <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
+                                <ShoppingCart className="h-6 w-6 text-muted-foreground" />
+                              </div>
+                            )}
+                            {item.postConfirmacion && (
+                              <div className="absolute -top-1 -right-1 bg-amber-500 rounded-full p-0.5">
+                                <Sparkles className="h-3 w-3 text-white" />
+                              </div>
+                            )}
+                          </div>
                           <div>
-                            <p className="font-medium">{item.nombreProducto}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{item.nombreProducto}</p>
+                              {item.postConfirmacion && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300">
+                                  <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                                  Nuevo
+                                </Badge>
+                              )}
+                            </div>
                             <p className="text-sm text-muted-foreground">
                               ${parseFloat(item.precioUnitario).toFixed(2)} x {item.cantidad}
                             </p>
@@ -689,7 +766,7 @@ const Pedido = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <p className="text-lg font-bold">
+                          <p className={`text-lg font-bold ${item.postConfirmacion ? 'text-amber-700 dark:text-amber-400' : ''}`}>
                             ${(parseFloat(item.precioUnitario) * (item.cantidad || 1)).toFixed(2)}
                           </p>
                           {isActive && (
@@ -898,33 +975,115 @@ const Pedido = () => {
             </CardContent>
           </Card>
 
-          {/* Resumen de clientes */}
+          {/* Resumen de clientes con estado de pago */}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
                 <Users className="h-4 w-4" />
                 Clientes ({Object.keys(pedido.itemsPorCliente).length})
               </CardTitle>
+              {pedido.estado === 'closed' && subtotales.length > 0 && (
+                <CardDescription>
+                  Estado de pago por cliente
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {Object.keys(pedido.itemsPorCliente).map((cliente) => {
-                  const clienteItems = pedido.itemsPorCliente[cliente]
-                  const clienteTotal = clienteItems.reduce(
-                    (sum, item) => sum + (parseFloat(item.precioUnitario) * (item.cantidad || 1)), 
-                    0
-                  )
-                  return (
-                    <Badge key={cliente} variant="secondary" className="gap-2 py-1.5 px-3">
-                      <User className="h-3 w-3" />
-                      {cliente}
-                      <span className="text-xs text-muted-foreground">
-                        ${clienteTotal.toFixed(2)}
-                      </span>
-                    </Badge>
-                  )
-                })}
-              </div>
+              {loadingSubtotales ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.keys(pedido.itemsPorCliente).map((cliente) => {
+                    const clienteItems = pedido.itemsPorCliente[cliente]
+                    const clienteTotal = clienteItems.reduce(
+                      (sum, item) => sum + (parseFloat(item.precioUnitario) * (item.cantidad || 1)), 
+                      0
+                    )
+                    // Buscar estado de pago del cliente
+                    const subtotalInfo = subtotales.find(s => s.clienteNombre === cliente)
+                    const estaPagado = subtotalInfo?.pagado === true
+                    const metodoPago = subtotalInfo?.metodo
+
+                    return (
+                      <div 
+                        key={cliente} 
+                        className={`flex items-center justify-between p-2 rounded-lg ${
+                          estaPagado ? 'bg-green-50 dark:bg-green-950/30' : 'bg-muted/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {estaPagado ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <User className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <span className={`font-medium text-sm ${estaPagado ? 'text-green-700 dark:text-green-400' : ''}`}>
+                            {cliente}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-semibold ${estaPagado ? 'text-green-600 line-through' : ''}`}>
+                            ${clienteTotal.toFixed(2)}
+                          </span>
+                          {estaPagado && metodoPago && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-green-100 dark:bg-green-900/50 border-green-300 dark:border-green-700 text-green-700 dark:text-green-300">
+                              {metodoPago === 'mercadopago' ? (
+                                <CreditCard className="h-2.5 w-2.5 mr-0.5" />
+                              ) : (
+                                <Banknote className="h-2.5 w-2.5 mr-0.5" />
+                              )}
+                              {metodoPago === 'mercadopago' ? 'MP' : 'Efectivo'}
+                            </Badge>
+                          )}
+                          {pedido.estado === 'closed' && !estaPagado && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300">
+                              <Clock className="h-2.5 w-2.5 mr-0.5" />
+                              Pendiente
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              
+              {/* Resumen de pagos si el pedido está cerrado */}
+              {pedido.estado === 'closed' && subtotales.length > 0 && (
+                <>
+                  <Separator className="my-4" />
+                  <div className="space-y-2">
+                    {(() => {
+                      const totalPagado = subtotales.filter(s => s.pagado).reduce((sum, s) => sum + parseFloat(s.subtotal), 0)
+                      const totalPendiente = parseFloat(pedido.total) - totalPagado
+                      const todoPagado = totalPendiente <= 0.01
+
+                      return (
+                        <>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-muted-foreground">Pagado</span>
+                            <span className="font-semibold text-green-600">${totalPagado.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-muted-foreground">Pendiente</span>
+                            <span className={`font-semibold ${todoPagado ? 'text-green-600' : 'text-orange-600'}`}>
+                              ${totalPendiente.toFixed(2)}
+                            </span>
+                          </div>
+                          {todoPagado && (
+                            <div className="flex items-center justify-center gap-2 pt-2 text-green-600">
+                              <CheckCircle2 className="h-4 w-4" />
+                              <span className="text-sm font-medium">Todo pagado</span>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
