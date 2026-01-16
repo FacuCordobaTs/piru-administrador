@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,7 +17,8 @@ import {
   Bell, BellOff, ShoppingCart, Users, Loader2, QrCode, Plus, 
   Wifi, WifiOff, Clock, CheckCircle, XCircle, Coffee, CreditCard, 
   Utensils, ChefHat, RefreshCw, Volume2, VolumeX, Trash2,
-  ArrowRight, HandMetal, MoreVertical, LayoutGrid, History, Sparkles
+  ArrowRight, HandMetal, MoreVertical, LayoutGrid, History, Sparkles,
+  RotateCcw
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -191,6 +192,9 @@ const Dashboard = () => {
   const [abrirMesaDialog, setAbrirMesaDialog] = useState(false)
   const [mesaAAbrir, setMesaAAbrir] = useState<MesaConPedido | null>(null)
   const [isOpening, setIsOpening] = useState(false)
+  const [resetearMesaDialog, setResetearMesaDialog] = useState(false)
+  const [mesaAResetear, setMesaAResetear] = useState<MesaConPedido | null>(null)
+  const [isResetting, setIsResetting] = useState(false)
 
   // MOBILE VIEW STATE: 'mesas' | 'notifications'
   const [mobileView, setMobileView] = useState<'mesas' | 'notifications'>('mesas')
@@ -210,6 +214,10 @@ const Dashboard = () => {
   
   // Estado para indicar qué mesa está cargando datos
   const [cargandoPedido, setCargandoPedido] = useState<number | null>(null)
+  
+  // Ref para rastrear notificaciones procesadas (evitar sonido en carga inicial)
+  const processedNotificationsRef = useRef<Set<string>>(new Set())
+  const isInitialLoadRef = useRef(true)
 
   // Update mesas from WebSocket
   useEffect(() => {
@@ -311,29 +319,50 @@ const Dashboard = () => {
 
   // Play sound on new important notifications
   useEffect(() => {
-    if (soundEnabled && notifications.length > 0) {
-      const latestNotif = notifications[0]
-      if (!latestNotif.leida && ['PEDIDO_CONFIRMADO', 'LLAMADA_MOZO', 'PAGO_RECIBIDO', 'PRODUCTO_AGREGADO'].includes(latestNotif.tipo)) {
-        // Play notification sound
-        try {
-          const audio = new Audio('/notification.mp3')
-          audio.volume = 0.5
-          audio.play().catch(() => {})
-        } catch {}
-        
-        // Show toast for important notifications
-        if (latestNotif.tipo === 'LLAMADA_MOZO') {
-          toast.warning(latestNotif.mensaje, {
-            description: latestNotif.detalles,
-            duration: 10000,
-          })
-        } else if (latestNotif.tipo === 'PEDIDO_CONFIRMADO') {
-          toast.success(latestNotif.mensaje, {
-            description: latestNotif.detalles,
-          })
-        }
+    if (notifications.length === 0) {
+      // Reset on empty
+      isInitialLoadRef.current = true
+      return
+    }
+    
+    // On initial load, just mark all current notifications as processed (no sound)
+    if (isInitialLoadRef.current) {
+      notifications.forEach(n => processedNotificationsRef.current.add(n.id))
+      isInitialLoadRef.current = false
+      return
+    }
+    
+    // Find truly new notifications (not processed yet)
+    const newNotifications = notifications.filter(
+      n => !processedNotificationsRef.current.has(n.id) && 
+           !n.leida && 
+           ['PEDIDO_CONFIRMADO', 'LLAMADA_MOZO', 'PAGO_RECIBIDO', 'PRODUCTO_AGREGADO'].includes(n.tipo)
+    )
+    
+    if (newNotifications.length > 0 && soundEnabled) {
+      // Play notification sound for new notifications
+      try {
+        const audio = new Audio('/notification.mp3')
+        audio.volume = 0.5
+        audio.play().catch(() => {})
+      } catch {}
+      
+      // Show toast for the most recent important notification
+      const latestNotif = newNotifications[0]
+      if (latestNotif.tipo === 'LLAMADA_MOZO') {
+        toast.warning(latestNotif.mensaje, {
+          description: latestNotif.detalles,
+          duration: 10000,
+        })
+      } else if (latestNotif.tipo === 'PEDIDO_CONFIRMADO') {
+        toast.success(latestNotif.mensaje, {
+          description: latestNotif.detalles,
+        })
       }
     }
+    
+    // Mark all current notifications as processed
+    notifications.forEach(n => processedNotificationsRef.current.add(n.id))
   }, [notifications, soundEnabled])
 
   // Fetch mesas via REST API
@@ -454,6 +483,35 @@ const Dashboard = () => {
       }
     } finally {
       setIsOpening(false)
+    }
+  }
+
+  // Resetear mesa (cerrar pedido actual y crear uno nuevo vacío)
+  const handleResetearMesa = async () => {
+    if (!token || !mesaAResetear) return
+
+    setIsResetting(true)
+
+    try {
+      const response = await mesasApi.reset(token, mesaAResetear.id) as {
+        success: boolean
+        data: { pedidoAnteriorId: number | null; nuevoPedidoId: number }
+      }
+      
+      if (response.success) {
+        toast.success('Mesa reseteada correctamente')
+        setResetearMesaDialog(false)
+        setMesaAResetear(null)
+        // Refrescar datos
+        refresh()
+        await fetchMesasREST()
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(error.message)
+      }
+    } finally {
+      setIsResetting(false)
     }
   }
 
@@ -966,6 +1024,20 @@ const Dashboard = () => {
                                 <QrCode className="mr-2 h-4 w-4" />
                                 Ver QR Code
                               </DropdownMenuItem>
+                              {/* Solo mostrar opción de resetear si hay un pedido activo (no cerrado) */}
+                              {mesa.pedido && mesa.pedido.estado !== 'closed' && (
+                                <DropdownMenuItem
+                                  className="text-orange-600 focus:text-orange-600 focus:bg-orange-50 dark:focus:bg-orange-950/20"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setMesaAResetear(mesa)
+                                    setResetearMesaDialog(true)
+                                  }}
+                                >
+                                  <RotateCcw className="mr-2 h-4 w-4" />
+                                  Resetear Mesa
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive focus:bg-destructive/10"
                                 onClick={(e) => {
@@ -1320,6 +1392,55 @@ const Dashboard = () => {
                 </>
               ) : (
                 'Eliminar'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Mesa Confirmation Dialog */}
+      <Dialog open={resetearMesaDialog} onOpenChange={setResetearMesaDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-orange-500" />
+              ¿Resetear Mesa?
+            </DialogTitle>
+            <DialogDescription>
+              Se cerrará el pedido actual de "{mesaAResetear?.nombre}" y se creará uno nuevo vacío. 
+              {mesaAResetear?.pedido && mesaAResetear.items.length > 0 && (
+                <span className="block mt-2 text-orange-600 dark:text-orange-400 font-medium">
+                  ⚠️ Hay {mesaAResetear.items.length} producto(s) en el pedido actual que se perderán.
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResetearMesaDialog(false)
+                setMesaAResetear(null)
+              }}
+              disabled={isResetting}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              className="bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={handleResetearMesa}
+              disabled={isResetting}
+            >
+              {isResetting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Reseteando...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Resetear
+                </>
               )}
             </Button>
           </div>

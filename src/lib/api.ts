@@ -524,6 +524,16 @@ export const mesasApi = {
       },
     })
   },
+
+  // Resetear mesa: cierra el pedido actual y crea uno nuevo vacío
+  reset: async (token: string, id: number) => {
+    return fetchApi(`/mesa/${id}/reset`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Notificaciones API

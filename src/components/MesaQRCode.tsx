@@ -21,46 +21,52 @@ const MesaQRCode = ({ qrToken, mesaNombre }: MesaQRCodeProps) => {
     })
   }
 
-  const handleDownloadQR = () => {
-    const canvas = qrRef.current?.querySelector('canvas')
-    if (!canvas) return
-
-    // Crear un canvas más grande con padding y texto
-    const finalCanvas = document.createElement('canvas')
-    const ctx = finalCanvas.getContext('2d')
-    if (!ctx) return
-
-    const padding = 40
-    const textHeight = 60
-    finalCanvas.width = canvas.width + padding * 2
-    finalCanvas.height = canvas.height + padding * 2 + textHeight
-
-    // Fondo blanco
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height)
-
-    // Dibujar QR
-    ctx.drawImage(canvas, padding, padding)
-
-    // Agregar texto
-    ctx.fillStyle = '#000000'
-    ctx.font = 'bold 24px Arial'
-    ctx.textAlign = 'center'
-    ctx.fillText(mesaNombre, finalCanvas.width / 2, canvas.height + padding + 35)
-
-    // Descargar
-    finalCanvas.toBlob((blob) => {
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.download = `qr-${mesaNombre.toLowerCase().replace(/\s+/g, '-')}.png`
-      link.href = url
-      link.click()
-      URL.revokeObjectURL(url)
-      toast.success('QR descargado', {
-        description: 'El código QR se descargó correctamente',
+  const handleDownloadQR = async () => {
+    const qrCanvas = qrRef.current?.querySelector('canvas')
+    if (!qrCanvas) return
+  
+    const template = new Image()
+    template.src = '/qr-template.png'
+  
+    template.onload = () => {
+      const W = template.width
+      const H = template.height
+  
+      const out = document.createElement('canvas')
+      const ctx = out.getContext('2d')
+      if (!ctx) return
+  
+      out.width = W
+      out.height = H
+  
+      // 1️⃣ Dibujar plantilla
+      ctx.drawImage(template, 0, 0, W, H)
+  
+      // 2️⃣ Dibujar QR encima
+      const qrSize = 1000
+      const qrX = (W - qrSize) / 2
+      const qrY = 820
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize)
+  
+      // 3️⃣ Nombre de mesa
+      ctx.fillStyle = '#8A8A8A'
+      ctx.font = '14px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+  
+      // 4️⃣ Descargar
+      out.toBlob(blob => {
+        if (!blob) return
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `qr-${mesaNombre.toLowerCase().replace(/\s+/g, '-')}.png`
+        a.click()
+        URL.revokeObjectURL(url)
+  
+        toast.success('QR descargado')
       })
-    })
+    }
   }
 
   const handleOpenLink = () => {
@@ -76,11 +82,28 @@ const MesaQRCode = ({ qrToken, mesaNombre }: MesaQRCodeProps) => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* QR Code */}
-        <div ref={qrRef} className="flex justify-center p-6 bg-white rounded-lg">
+        {/* QR Code visible (UI) */}
+        <div className="flex justify-center p-6 bg-white rounded-lg">
           <QRCodeCanvas
             value={mesaUrl}
-            size={256}
+            size={220}
+            level="H"
+            includeMargin={true}
+          />
+        </div>
+
+        {/* QR Code oculto (solo para descarga en alta resolución) */}
+        <div
+          ref={qrRef}
+          style={{
+            position: 'absolute',
+            left: '-9999px',
+            top: '-9999px',
+          }}
+        >
+          <QRCodeCanvas
+            value={mesaUrl}
+            size={1000}
             level="H"
             includeMargin={true}
           />
