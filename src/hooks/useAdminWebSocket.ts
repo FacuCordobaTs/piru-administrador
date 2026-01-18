@@ -57,6 +57,7 @@ export interface MesaConPedido {
   items: ItemPedido[]
   clientesConectados: ClienteConectado[]
   totalItems: number
+  todosPagaron?: boolean // true si el pedido cerrado tiene todos los pagos completados
 }
 
 export interface SubtotalActualizado {

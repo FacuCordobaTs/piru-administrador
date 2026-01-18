@@ -914,15 +914,22 @@ const Dashboard = () => {
                 
                 // Si no hay clientes conectados y no hay pedido confirmado, mostrar "Libre"
                 const estadoBase = getEstadoBadge(mesa.pedido?.estado)
+                // Si el pedido está cerrado, verificar si todos pagaron
+                const pedidoCerrado = mesa.pedido?.estado === 'closed'
+                const todosPagaron = mesa.todosPagaron ?? false
+                
                 const estado = mostrandoCerrado 
                   ? { label: 'Cerrado', variant: 'secondary' as const, icon: CheckCircle }
+                  : pedidoCerrado && !todosPagaron
+                    ? { label: 'Cerrado (Pendiente pago)', variant: 'outline' as const, icon: CheckCircle }
                   : (!isConfirmed && mesa.clientesConectados.length === 0)
                     ? { label: 'Libre', variant: 'outline' as const, icon: Coffee }
                     : estadoBase
                 const StatusIcon = estado.icon
                 
                 // Determinar si mostrar contenido (productos, total, etc)
-                const mostrarContenido = mostrandoCerrado || isConfirmed
+                // Mostrar contenido si está mostrando pedido cerrado, está confirmado, o está cerrado (aunque falte pagar)
+                const mostrarContenido = mostrandoCerrado || isConfirmed || pedidoCerrado
                 
                 return (
                   <Card 
@@ -1058,6 +1065,11 @@ const Dashboard = () => {
                         <CardDescription className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
                           <History className="h-3 w-3" />
                           Pedido #{datosCerrado.pedido.id} (cerrado)
+                        </CardDescription>
+                      ) : pedidoCerrado && !todosPagaron ? (
+                        <CardDescription className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
+                          <CheckCircle className="h-3 w-3" />
+                          Cerrado - Pendiente pago
                         </CardDescription>
                       ) : hasActiveOrder && mesa.pedido?.createdAt && (
                         <CardDescription className="flex items-center gap-1">

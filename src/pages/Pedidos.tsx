@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/store/authStore'
-import { pedidosApi, ApiError } from '@/lib/api'
+import { pedidosApi, mercadopagoApi, ApiError } from '@/lib/api'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { toast } from 'sonner'
 import { 
@@ -107,6 +107,9 @@ const Pedidos = () => {
   // Estado para eliminar pedido
   const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  
+  // Estado para trackear qué pedidos cerrados tienen todos los pagos completados
+  const [pedidosCerradosPagados, setPedidosCerradosPagados] = useState<Set<number>>(new Set())
   
   // Actualizar tiempo cada 30 segundos
   const [, setTick] = useState(0)
@@ -280,16 +283,56 @@ const Pedidos = () => {
     })
   }, [pedidos, searchTerm, showClosed])
 
+  // Verificar pagos de pedidos cerrados
+  useEffect(() => {
+    const verificarPagos = async () => {
+      const pedidosCerrados = filteredPedidos.filter(p => p.estado === 'closed')
+      if (pedidosCerrados.length === 0) return
+      
+      const nuevosPagados = new Set<number>()
+      
+      await Promise.all(
+        pedidosCerrados.map(async (pedido) => {
+          try {
+            const response = await mercadopagoApi.getSubtotales(pedido.id) as {
+              success: boolean
+              resumen?: { todoPagado: boolean }
+            }
+            
+            if (response.success && response.resumen?.todoPagado) {
+              nuevosPagados.add(pedido.id)
+            }
+          } catch (error) {
+            console.error(`Error verificando pagos del pedido ${pedido.id}:`, error)
+          }
+        })
+      )
+      
+      setPedidosCerradosPagados(nuevosPagados)
+    }
+    
+    verificarPagos()
+  }, [filteredPedidos])
+
   // Agrupar por columna
   const pedidosByColumn = useMemo(() => {
     const grouped: Record<string, PedidoData[]> = {
       pending: [],
       preparing: [],
       delivered: [],
+      closedPending: [], // Cerrados pero pendientes de pago
+      closedPaid: [], // Cerrados y pagados
     }
     
     filteredPedidos.forEach(pedido => {
-      if (grouped[pedido.estado]) {
+      if (pedido.estado === 'closed') {
+        // Separar cerrados según si todos pagaron
+        if (pedidosCerradosPagados.has(pedido.id)) {
+          grouped.closedPaid.push(pedido)
+        } else {
+          grouped.closedPending.push(pedido)
+        }
+      } else if (grouped[pedido.estado]) {
         grouped[pedido.estado].push(pedido)
       }
     })
@@ -302,7 +345,7 @@ const Pedidos = () => {
     })
     
     return grouped
-  }, [filteredPedidos])
+  }, [filteredPedidos, pedidosCerradosPagados])
 
   // Contar totales
   const counts = useMemo(() => ({
@@ -564,43 +607,79 @@ const Pedidos = () => {
           )
         })}
         
-        {/* Columna de cerrados (opcional) */}
-        {showClosed && (
-          <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px] opacity-60">
-            <div className="shrink-0 rounded-t-lg px-4 py-3 bg-slate-100 dark:bg-slate-800/50">
+        {/* Columna de cerrados pendientes de pago */}
+        {showClosed && pedidosByColumn.closedPending.length > 0 && (
+          <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px]">
+            <div className="shrink-0 rounded-t-lg px-4 py-3 bg-orange-100 dark:bg-orange-900/30">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-slate-500" />
-                  <span className="font-bold text-foreground">Cerrados</span>
+                  <CheckCircle className="h-5 w-5 text-orange-600" />
+                  <span className="font-bold text-foreground">Cerrados (Pendiente pago)</span>
                 </div>
                 <Badge variant="secondary" className="font-mono">
-                  {filteredPedidos.filter(p => p.estado === 'closed').length}
+                  {pedidosByColumn.closedPending.length}
                 </Badge>
               </div>
             </div>
             <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
               <div className="p-3 space-y-2">
-                {filteredPedidos
-                  .filter(p => p.estado === 'closed')
-                  .slice(0, 10)
-                  .map((pedido) => (
-                    <Card 
-                      key={pedido.id}
-                      className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="font-bold">{pedido.mesaNombre}</span>
-                          <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
-                        </div>
-                        <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                {pedidosByColumn.closedPending.slice(0, 10).map((pedido) => (
+                  <Card 
+                    key={pedido.id}
+                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold">{pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formatTimeAgo(pedido.createdAt)}
-                      </p>
-                    </Card>
-                  ))}
+                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatTimeAgo(pedido.createdAt)}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
+        
+        {/* Columna de cerrados pagados */}
+        {showClosed && pedidosByColumn.closedPaid.length > 0 && (
+          <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px] opacity-60">
+            <div className="shrink-0 rounded-t-lg px-4 py-3 bg-slate-100 dark:bg-slate-800/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-slate-500" />
+                  <span className="font-bold text-foreground">Cerrados (Pagados)</span>
+                </div>
+                <Badge variant="secondary" className="font-mono">
+                  {pedidosByColumn.closedPaid.length}
+                </Badge>
+              </div>
+            </div>
+            <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
+              <div className="p-3 space-y-2">
+                {pedidosByColumn.closedPaid.slice(0, 10).map((pedido) => (
+                  <Card 
+                    key={pedido.id}
+                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold">{pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
+                      </div>
+                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatTimeAgo(pedido.createdAt)}
+                    </p>
+                  </Card>
+                ))}
                 {hasMore && (
                   <Button variant="ghost" size="sm" className="w-full" onClick={loadMore}>
                     {isLoadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cargar más'}
@@ -642,41 +721,74 @@ const Pedidos = () => {
             )
           })}
           
-          {/* Pedidos cerrados - Mobile */}
-          {showClosed && filteredPedidos.filter(p => p.estado === 'closed').length > 0 && (
+          {/* Pedidos cerrados pendientes de pago - Mobile */}
+          {showClosed && pedidosByColumn.closedPending.length > 0 && (
+            <div>
+              {/* Header de sección */}
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                <CheckCircle className="h-5 w-5 text-orange-600" />
+                <span className="font-bold text-foreground flex-1">Cerrados (Pendiente pago)</span>
+                <Badge variant="secondary" className="font-mono font-bold">
+                  {pedidosByColumn.closedPending.length}
+                </Badge>
+              </div>
+              
+              {/* Cards de cerrados pendientes */}
+              <div className="space-y-2">
+                {pedidosByColumn.closedPending.slice(0, 10).map((pedido) => (
+                  <Card 
+                    key={pedido.id}
+                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold">{pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
+                      </div>
+                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatTimeAgo(pedido.createdAt)}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pedidos cerrados pagados - Mobile */}
+          {showClosed && pedidosByColumn.closedPaid.length > 0 && (
             <div className="opacity-70">
               {/* Header de sección */}
               <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800/50">
                 <CheckCircle className="h-5 w-5 text-slate-500" />
-                <span className="font-bold text-foreground flex-1">Cerrados</span>
+                <span className="font-bold text-foreground flex-1">Cerrados (Pagados)</span>
                 <Badge variant="secondary" className="font-mono font-bold">
-                  {filteredPedidos.filter(p => p.estado === 'closed').length}
+                  {pedidosByColumn.closedPaid.length}
                 </Badge>
               </div>
               
-              {/* Cards de cerrados */}
+              {/* Cards de cerrados pagados */}
               <div className="space-y-2">
-                {filteredPedidos
-                  .filter(p => p.estado === 'closed')
-                  .slice(0, 10)
-                  .map((pedido) => (
-                    <Card 
-                      key={pedido.id}
-                      className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="font-bold">{pedido.mesaNombre}</span>
-                          <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
-                        </div>
-                        <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                {pedidosByColumn.closedPaid.slice(0, 10).map((pedido) => (
+                  <Card 
+                    key={pedido.id}
+                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold">{pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formatTimeAgo(pedido.createdAt)}
-                      </p>
-                    </Card>
-                  ))}
+                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatTimeAgo(pedido.createdAt)}
+                    </p>
+                  </Card>
+                ))}
               </div>
             </div>
           )}
