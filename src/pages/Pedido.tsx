@@ -182,6 +182,9 @@ const Pedido = () => {
   // Estados para eliminar pedido completo
   const [showDeletePedidoDialog, setShowDeletePedidoDialog] = useState(false)
   const [deletingPedido, setDeletingPedido] = useState(false)
+  
+  // Estados para marcar pago en efectivo
+  const [marcandoPagoEfectivo, setMarcandoPagoEfectivo] = useState<string | null>(null) // clienteNombre que se está marcando
 
   // Fetch pedido desde API REST
   const fetchPedido = useCallback(async () => {
@@ -241,7 +244,9 @@ const Pedido = () => {
           total: mesaWS.pedido!.total,
           items: mesaWS.items,
           itemsPorCliente,
-          totalItems: mesaWS.totalItems
+          totalItems: mesaWS.totalItems,
+          // Actualizar qrToken si no está disponible
+          mesaQrToken: prev.mesaQrToken || mesaWS.qrToken
         }
       })
     }
@@ -445,6 +450,48 @@ const Pedido = () => {
     } finally {
       setDeletingPedido(false)
       setShowDeletePedidoDialog(false)
+    }
+  }
+
+  // Marcar pago en efectivo (admin)
+  const handleMarcarPagoEfectivo = async (clienteNombre: string) => {
+    if (!pedido || !pedido.mesaQrToken) {
+      toast.error('Error', { description: 'No se pudo obtener la información del pedido' })
+      return
+    }
+
+    setMarcandoPagoEfectivo(clienteNombre)
+    try {
+      const response = await mercadopagoApi.pagarEfectivo(
+        pedido.id,
+        [clienteNombre],
+        pedido.mesaQrToken
+      ) as {
+        success: boolean
+        message?: string
+        error?: string
+      }
+
+      if (response.success) {
+        toast.success('¡Pago registrado!', {
+          description: `Pago en efectivo registrado para ${clienteNombre}`
+        })
+        // Refrescar subtotales
+        await fetchSubtotales()
+      } else {
+        toast.error('Error al registrar pago', { 
+          description: response.error || 'Error desconocido' 
+        })
+      }
+    } catch (error) {
+      console.error('Error al registrar pago en efectivo:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al registrar pago', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setMarcandoPagoEfectivo(null)
     }
   }
 
@@ -1038,10 +1085,26 @@ const Pedido = () => {
                             </Badge>
                           )}
                           {pedido.estado === 'closed' && !estaPagado && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300">
-                              <Clock className="h-2.5 w-2.5 mr-0.5" />
-                              Pendiente
-                            </Badge>
+                            <>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300">
+                                <Clock className="h-2.5 w-2.5 mr-0.5" />
+                                Pendiente
+                              </Badge>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs gap-1.5 border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-950/30 hover:border-green-400 dark:hover:border-green-600"
+                                onClick={() => handleMarcarPagoEfectivo(cliente)}
+                                disabled={marcandoPagoEfectivo === cliente}
+                              >
+                                {marcandoPagoEfectivo === cliente ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Banknote className="h-3 w-3" />
+                                )}
+                                Marcar pagado
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>

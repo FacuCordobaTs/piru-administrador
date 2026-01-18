@@ -464,6 +464,18 @@ export const mercadopagoApi = {
     })
   },
 
+  // Pagar en efectivo (para admin)
+  pagarEfectivo: async (pedidoId: number, clientesAPagar: string[], qrToken: string) => {
+    return fetchApi('/mp/pagar-efectivo', {
+      method: 'POST',
+      body: JSON.stringify({
+        pedidoId,
+        clientesAPagar,
+        qrToken
+      }),
+    })
+  },
+
   // Desconectar MercadoPago
   desconectar: async (token: string) => {
     return fetchApi('/mp/desconectar', {
