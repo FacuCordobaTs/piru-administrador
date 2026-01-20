@@ -195,6 +195,8 @@ const Dashboard = () => {
   const [resetearMesaDialog, setResetearMesaDialog] = useState(false)
   const [mesaAResetear, setMesaAResetear] = useState<MesaConPedido | null>(null)
   const [isResetting, setIsResetting] = useState(false)
+  const [eliminarTodasNotificacionesDialog, setEliminarTodasNotificacionesDialog] = useState(false)
+  const [isDeletingAllNotifications, setIsDeletingAllNotifications] = useState(false)
 
   // MOBILE VIEW STATE: 'mesas' | 'notifications'
   const [mobileView, setMobileView] = useState<'mesas' | 'notifications'>('mesas')
@@ -515,6 +517,27 @@ const Dashboard = () => {
     }
   }
 
+  // Eliminar todas las notificaciones
+  const handleEliminarTodasNotificaciones = async () => {
+    if (!token) return
+
+    setIsDeletingAllNotifications(true)
+
+    try {
+      await clearNotifications()
+      toast.success('Todas las notificaciones eliminadas')
+      setEliminarTodasNotificacionesDialog(false)
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(error.message)
+      } else {
+        toast.error('Error al eliminar notificaciones')
+      }
+    } finally {
+      setIsDeletingAllNotifications(false)
+    }
+  }
+
   // Manejar clic en tarjeta de mesa
   const handleMesaClick = (mesa: MesaConPedido) => {
     const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed'
@@ -648,7 +671,7 @@ const Dashboard = () => {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={clearNotifications}
+                  onClick={() => setEliminarTodasNotificacionesDialog(true)}
                   title="Limpiar"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -1796,6 +1819,50 @@ const Dashboard = () => {
               </>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Eliminar Todas las Notificaciones Confirmation Dialog */}
+      <Dialog open={eliminarTodasNotificacionesDialog} onOpenChange={setEliminarTodasNotificacionesDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              ¿Eliminar todas las notificaciones?
+            </DialogTitle>
+            <DialogDescription>
+              Esta acción eliminará permanentemente todas las notificaciones de la base de datos. 
+              Esta acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEliminarTodasNotificacionesDialog(false)
+              }}
+              disabled={isDeletingAllNotifications}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleEliminarTodasNotificaciones}
+              disabled={isDeletingAllNotifications}
+            >
+              {isDeletingAllNotifications ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Eliminar todas
+                </>
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
       </div>
