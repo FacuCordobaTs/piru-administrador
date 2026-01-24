@@ -6,11 +6,12 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/store/authStore'
+import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidosApi, mercadopagoApi, ApiError } from '@/lib/api'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { toast } from 'sonner'
-import { 
-  Loader2, Search, Clock, CheckCircle, ChefHat, Utensils, 
+import {
+  Loader2, Search, Clock, CheckCircle, ChefHat, Utensils,
   ShoppingCart, RefreshCw, Wifi, WifiOff, Trash2,
   AlertTriangle, Play, X
 } from 'lucide-react'
@@ -39,6 +40,7 @@ interface PedidoData {
   closedAt?: string | null
   items: ItemPedido[]
   totalItems: number
+  nombrePedido?: string | null  // Carrito mode
 }
 
 // Helper para calcular minutos transcurridos
@@ -69,18 +71,18 @@ const COLUMNS = [
   //   bgHeader: 'bg-amber-100 dark:bg-amber-900/30',
   //   description: 'Por confirmar'
   // },
-  { 
-    id: 'preparing', 
-    title: 'En Cocina', 
-    icon: ChefHat, 
+  {
+    id: 'preparing',
+    title: 'En Cocina',
+    icon: ChefHat,
     color: 'text-blue-600',
     bgHeader: 'bg-blue-100 dark:bg-blue-900/30',
     description: 'Preparando'
   },
-  { 
-    id: 'delivered', 
-    title: 'Listos', 
-    icon: Utensils, 
+  {
+    id: 'delivered',
+    title: 'Listos',
+    icon: Utensils,
     color: 'text-emerald-600',
     bgHeader: 'bg-emerald-100 dark:bg-emerald-900/30',
     description: 'Para entregar'
@@ -90,10 +92,12 @@ const COLUMNS = [
 const Pedidos = () => {
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
-  
+  const { restaurante } = useRestauranteStore()
+  const esCarrito = restaurante?.esCarrito || false
+
   // WebSocket para actualizaciones en tiempo real
   const { mesas: mesasWS, isConnected } = useAdminWebSocket()
-  
+
   // State
   const [pedidos, setPedidos] = useState<PedidoData[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -103,14 +107,14 @@ const Pedidos = () => {
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [updatingPedido, setUpdatingPedido] = useState<number | null>(null)
-  
+
   // Estado para eliminar pedido
   const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
-  
+
   // Estado para trackear qué pedidos cerrados tienen todos los pagos completados
   const [pedidosCerradosPagados, setPedidosCerradosPagados] = useState<Set<number>>(new Set())
-  
+
   // Actualizar tiempo cada 30 segundos
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -121,17 +125,17 @@ const Pedidos = () => {
   // Fetch pedidos desde API REST
   const fetchPedidos = useCallback(async (pageNum = 1, append = false) => {
     if (!token) return
-    
+
     if (pageNum === 1) setIsLoading(true)
     else setIsLoadingMore(true)
-    
+
     try {
       const response = await pedidosApi.getAll(token, pageNum, 50) as {
         success: boolean
         data: PedidoData[]
         pagination: { hasMore: boolean }
       }
-      
+
       if (response.success && response.data) {
         if (append) {
           setPedidos(prev => [...prev, ...response.data])
@@ -189,7 +193,8 @@ const Pedidos = () => {
                 createdAt: mesa.pedido!.createdAt,
                 closedAt: mesa.pedido!.closedAt,
                 items: mesa.items,
-                totalItems: mesa.totalItems
+                totalItems: mesa.totalItems,
+                nombrePedido: mesa.pedido!.nombrePedido
               }
               updated = [newPedido, ...updated]
             }
@@ -213,7 +218,7 @@ const Pedidos = () => {
   // Cambiar estado del pedido
   const handleChangeEstado = async (pedido: PedidoData, nuevoEstado: string) => {
     if (!token) return
-    
+
     setUpdatingPedido(pedido.id)
     try {
       if (nuevoEstado === 'preparing') {
@@ -221,12 +226,12 @@ const Pedidos = () => {
       } else {
         await pedidosApi.updateEstado(token, pedido.id, nuevoEstado)
       }
-      
+
       // Actualizar localmente
-      setPedidos(prev => prev.map(p => 
+      setPedidos(prev => prev.map(p =>
         p.id === pedido.id ? { ...p, estado: nuevoEstado as PedidoData['estado'] } : p
       ))
-      
+
       const estadoLabels: Record<string, string> = {
         preparing: 'En cocina',
         delivered: 'Listo para entregar',
@@ -245,7 +250,7 @@ const Pedidos = () => {
   // Eliminar pedido
   const handleDeletePedido = async () => {
     if (!token || !pedidoAEliminar) return
-    
+
     setIsDeleting(true)
     try {
       await pedidosApi.delete(token, pedidoAEliminar.id)
@@ -268,14 +273,14 @@ const Pedidos = () => {
     return pedidos.filter(pedido => {
       // Filtrar cerrados si no se quieren ver
       if (!showClosed && pedido.estado === 'closed') return false
-      
+
       // Filtrar por búsqueda
       if (!searchTerm) return true
       const search = searchTerm.toLowerCase()
       return (
         pedido.mesaNombre?.toLowerCase().includes(search) ||
         pedido.id.toString().includes(search) ||
-        pedido.items.some(item => 
+        pedido.items.some(item =>
           item.clienteNombre?.toLowerCase().includes(search) ||
           item.nombreProducto?.toLowerCase().includes(search)
         )
@@ -288,9 +293,9 @@ const Pedidos = () => {
     const verificarPagos = async () => {
       const pedidosCerrados = filteredPedidos.filter(p => p.estado === 'closed')
       if (pedidosCerrados.length === 0) return
-      
+
       const nuevosPagados = new Set<number>()
-      
+
       await Promise.all(
         pedidosCerrados.map(async (pedido) => {
           try {
@@ -298,7 +303,7 @@ const Pedidos = () => {
               success: boolean
               resumen?: { todoPagado: boolean }
             }
-            
+
             if (response.success && response.resumen?.todoPagado) {
               nuevosPagados.add(pedido.id)
             }
@@ -307,10 +312,10 @@ const Pedidos = () => {
           }
         })
       )
-      
+
       setPedidosCerradosPagados(nuevosPagados)
     }
-    
+
     verificarPagos()
   }, [filteredPedidos])
 
@@ -323,7 +328,7 @@ const Pedidos = () => {
       closedPending: [], // Cerrados pero pendientes de pago
       closedPaid: [], // Cerrados y pagados
     }
-    
+
     filteredPedidos.forEach(pedido => {
       if (pedido.estado === 'closed') {
         // Separar cerrados según si todos pagaron
@@ -336,14 +341,14 @@ const Pedidos = () => {
         grouped[pedido.estado].push(pedido)
       }
     })
-    
+
     // Ordenar cada columna por tiempo (más antiguos primero para urgencia)
     Object.keys(grouped).forEach(key => {
-      grouped[key].sort((a, b) => 
+      grouped[key].sort((a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       )
     })
-    
+
     return grouped
   }, [filteredPedidos, pedidosCerradosPagados])
 
@@ -358,7 +363,7 @@ const Pedidos = () => {
   // Componente de tarjeta de pedido
   const PedidoCard = ({ pedido, compact = false }: { pedido: PedidoData; compact?: boolean }) => {
     const isUpdating = updatingPedido === pedido.id
-    
+
     // Acción principal según estado
     const getNextAction = () => {
       switch (pedido.estado) {
@@ -372,13 +377,13 @@ const Pedidos = () => {
           return null
       }
     }
-    
+
     const nextAction = getNextAction()
     const maxItems = compact ? 2 : 4
     const hasExclusions = pedido.items.some(i => i.ingredientesExcluidosNombres?.length)
-    
+
     return (
-      <Card 
+      <Card
         className={`transition-all duration-200 border-2 cursor-pointer group `}
         onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
       >
@@ -386,18 +391,20 @@ const Pedidos = () => {
           {/* Header: Mesa + Tiempo */}
           <div className="flex items-center justify-between p-3 pb-2">
             <div className="flex items-center gap-2 min-w-0">
-              {/* Mesa - GRANDE y prominente */}
+              {/* Mesa/Pedido - GRANDE y prominente */}
               <div className="text-2xl font-black text-foreground truncate">
-                {pedido.mesaNombre || `Mesa ?`}
+                {esCarrito && pedido.nombrePedido
+                  ? `Pedido de ${pedido.nombrePedido}`
+                  : (pedido.mesaNombre || `Mesa ?`)}
               </div>
               {hasExclusions && (
                 <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
               )}
             </div>
-            
+
 
           </div>
-          
+
           {/* Items del pedido */}
           <div className="px-3 pb-2 space-y-1">
             {pedido.items.slice(0, maxItems).map((item) => (
@@ -423,7 +430,7 @@ const Pedidos = () => {
               </p>
             )}
           </div>
-          
+
           {/* Footer: Total + Acción */}
           <div className="flex items-center justify-between p-3 pt-2 border-t border-border/50 bg-black/5 dark:bg-white/5">
             <div className="flex items-center gap-2">
@@ -434,7 +441,7 @@ const Pedidos = () => {
                 • #{pedido.id}
               </span>
             </div>
-            
+
             <div className="flex items-center gap-1">
               {/* Botón eliminar */}
               <Button
@@ -448,7 +455,7 @@ const Pedidos = () => {
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
-              
+
               {/* Botón acción principal */}
               {nextAction && (
                 <Button
@@ -571,7 +578,7 @@ const Pedidos = () => {
         {COLUMNS.map((column) => {
           const columnPedidos = pedidosByColumn[column.id] || []
           const ColumnIcon = column.icon
-          
+
           return (
             <div key={column.id} className="flex-1 flex flex-col min-w-[320px] max-w-[400px]">
               {/* Header de columna */}
@@ -587,7 +594,7 @@ const Pedidos = () => {
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{column.description}</p>
               </div>
-              
+
               {/* Lista de pedidos */}
               <ScrollArea className="flex-1 bg-muted/30 rounded-b-lg border border-t-0">
                 <div className="p-3 space-y-3">
@@ -606,7 +613,7 @@ const Pedidos = () => {
             </div>
           )
         })}
-        
+
         {/* Columna de cerrados pendientes de pago */}
         {showClosed && pedidosByColumn.closedPending.length > 0 && (
           <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px]">
@@ -624,7 +631,7 @@ const Pedidos = () => {
             <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
               <div className="p-3 space-y-2">
                 {pedidosByColumn.closedPending.slice(0, 10).map((pedido) => (
-                  <Card 
+                  <Card
                     key={pedido.id}
                     className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
@@ -645,7 +652,7 @@ const Pedidos = () => {
             </ScrollArea>
           </div>
         )}
-        
+
         {/* Columna de cerrados pagados */}
         {showClosed && pedidosByColumn.closedPaid.length > 0 && (
           <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px] opacity-60">
@@ -663,7 +670,7 @@ const Pedidos = () => {
             <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
               <div className="p-3 space-y-2">
                 {pedidosByColumn.closedPaid.slice(0, 10).map((pedido) => (
-                  <Card 
+                  <Card
                     key={pedido.id}
                     className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
@@ -697,9 +704,9 @@ const Pedidos = () => {
           {COLUMNS.map((column) => {
             const columnPedidos = pedidosByColumn[column.id] || []
             const ColumnIcon = column.icon
-            
+
             if (columnPedidos.length === 0) return null
-            
+
             return (
               <div key={column.id}>
                 {/* Header de sección */}
@@ -710,7 +717,7 @@ const Pedidos = () => {
                     {columnPedidos.length}
                   </Badge>
                 </div>
-                
+
                 {/* Cards */}
                 <div className="space-y-3">
                   {columnPedidos.map((pedido) => (
@@ -720,7 +727,7 @@ const Pedidos = () => {
               </div>
             )
           })}
-          
+
           {/* Pedidos cerrados pendientes de pago - Mobile */}
           {showClosed && pedidosByColumn.closedPending.length > 0 && (
             <div>
@@ -732,11 +739,11 @@ const Pedidos = () => {
                   {pedidosByColumn.closedPending.length}
                 </Badge>
               </div>
-              
+
               {/* Cards de cerrados pendientes */}
               <div className="space-y-2">
                 {pedidosByColumn.closedPending.slice(0, 10).map((pedido) => (
-                  <Card 
+                  <Card
                     key={pedido.id}
                     className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
@@ -768,11 +775,11 @@ const Pedidos = () => {
                   {pedidosByColumn.closedPaid.length}
                 </Badge>
               </div>
-              
+
               {/* Cards de cerrados pagados */}
               <div className="space-y-2">
                 {pedidosByColumn.closedPaid.slice(0, 10).map((pedido) => (
-                  <Card 
+                  <Card
                     key={pedido.id}
                     className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
@@ -806,7 +813,7 @@ const Pedidos = () => {
               )}
             </div>
           )}
-          
+
           {/* Load more para mobile */}
           {hasMore && counts.total > 0 && (
             <div className="pt-4 pb-8">

@@ -156,6 +156,15 @@ export const restauranteApi = {
       body: JSON.stringify(data),
     })
   },
+
+  toggleCarrito: async (token: string) => {
+    return fetchApi('/restaurante/toggle-carrito', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Categorías API

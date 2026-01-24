@@ -43,6 +43,8 @@ interface RestauranteData {
   // Campos OAuth de MercadoPago
   mpConnected: boolean | null
   mpUserId: string | null
+  // Modo carrito
+  esCarrito: boolean | null
 }
 
 interface RestauranteState {
@@ -94,14 +96,14 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
           productos: Producto[]
         }
       }
-      
+
       // Obtener categorías por separado
       const { categoriasApi } = await import('@/lib/api')
       const categoriasResponse = await categoriasApi.getAll(token) as {
         success: boolean
         categorias?: Categoria[]
       }
-      
+
       if (response.success && response.data) {
         set({
           restaurante: response.data.restaurante[0],
@@ -125,12 +127,12 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
   setCategorias: (categorias) => set({ categorias }),
 
   addMesa: (mesa) => set((state) => ({ mesas: [...state.mesas, mesa] })),
-  
+
   updateMesa: (id, data) =>
     set((state) => ({
       mesas: state.mesas.map((m) => (m.id === id ? { ...m, ...data } : m)),
     })),
-  
+
   deleteMesa: (id) =>
     set((state) => ({
       mesas: state.mesas.filter((m) => m.id !== id),
@@ -138,12 +140,12 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
 
   addProducto: (producto) =>
     set((state) => ({ productos: [...state.productos, producto] })),
-  
+
   updateProducto: (id, data) =>
     set((state) => ({
       productos: state.productos.map((p) => (p.id === id ? { ...p, ...data } : p)),
     })),
-  
+
   deleteProducto: (id) =>
     set((state) => ({
       productos: state.productos.filter((p) => p.id !== id),
@@ -151,12 +153,12 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
 
   addCategoria: (categoria) =>
     set((state) => ({ categorias: [...state.categorias, categoria] })),
-  
+
   updateCategoria: (id, data) =>
     set((state) => ({
       categorias: state.categorias.map((c) => (c.id === id ? { ...c, ...data } : c)),
     })),
-  
+
   deleteCategoria: (id) =>
     set((state) => ({
       categorias: state.categorias.filter((c) => c.id !== id),

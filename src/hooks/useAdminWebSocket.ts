@@ -42,6 +42,7 @@ export interface Pedido {
   total: string
   createdAt: string
   closedAt?: string | null
+  nombrePedido?: string | null  // Carrito mode: nombre del pedido
 }
 
 export interface ClienteConectado {
@@ -87,6 +88,7 @@ interface UseAdminWebSocketReturn {
   deleteNotification: (id: string) => void
   clearNotifications: () => void
   refresh: () => void
+  marcarPedidoListo: (pedidoId: number, mesaId: number) => void
 }
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'wss://api.piru.app'
@@ -391,6 +393,17 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
 
   const unreadCount = notifications.filter(n => !n.leida).length
 
+  // Marcar pedido como listo para retirar (modo carrito)
+  const marcarPedidoListo = useCallback((pedidoId: number, mesaId: number) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'MARCAR_PEDIDO_LISTO',
+        payload: { pedidoId, mesaId }
+      }))
+      console.log('🛒 Enviado MARCAR_PEDIDO_LISTO:', { pedidoId, mesaId })
+    }
+  }, [])
+
   return {
     mesas,
     notifications,
@@ -402,6 +415,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
     markAllAsRead,
     deleteNotification,
     clearNotifications,
-    refresh
+    refresh,
+    marcarPedidoListo
   }
 }

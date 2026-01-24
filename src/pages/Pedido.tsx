@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/store/authStore'
+import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidosApi, productosApi, mercadopagoApi, ApiError } from '@/lib/api'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { toast } from 'sonner'
@@ -16,7 +17,7 @@ import {
   Loader2, ArrowLeft, Clock, CheckCircle, ChefHat, Utensils,
   ShoppingCart, Users, Wifi, WifiOff, User, Plus, Trash2, Minus,
   Receipt, CreditCard, Banknote, AlertCircle, CheckCircle2, XCircle, Search, Package,
-  Sparkles
+  Sparkles, Bell
 } from 'lucide-react'
 
 // Types
@@ -66,6 +67,7 @@ interface PedidoDetalle {
   totalItems: number
   pago?: PagoInfo | null
   pagos?: PagoInfo[]
+  nombrePedido?: string | null  // Carrito mode
 }
 
 // Interface para subtotales (split payment)
@@ -155,9 +157,11 @@ const Pedido = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
+  const { restaurante } = useRestauranteStore()
+  const esCarrito = restaurante?.esCarrito || false
 
   // WebSocket para actualizaciones en tiempo real
-  const { mesas: mesasWS, isConnected, subtotalesUpdates } = useAdminWebSocket()
+  const { mesas: mesasWS, isConnected, subtotalesUpdates, marcarPedidoListo } = useAdminWebSocket()
 
   // State
   const [pedido, setPedido] = useState<PedidoDetalle | null>(null)
@@ -545,7 +549,9 @@ const Pedido = () => {
               </Badge>
             </div>
             <p className="text-muted-foreground flex items-center gap-2 mt-1">
-              {pedido.mesaNombre || 'Sin mesa'}
+              {esCarrito && pedido.nombrePedido
+                ? `Pedido de ${pedido.nombrePedido}`
+                : (pedido.mesaNombre || 'Sin mesa')}
               {isConnected ? (
                 <Badge variant="outline" className="gap-1 text-xs">
                   <Wifi className="h-3 w-3 text-green-500" />
@@ -572,6 +578,25 @@ const Pedido = () => {
             <Trash2 className="mr-2 h-4 w-4" />
             Eliminar
           </Button>
+
+          {/* Botón marcar como listo (solo para carritos) */}
+          {esCarrito && pedido.estado === 'preparing' && (
+            <Button
+              variant="default"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => {
+                if (pedido.mesaId) {
+                  marcarPedidoListo(pedido.id, pedido.mesaId)
+                  toast.success('¡Pedido marcado como listo!', {
+                    description: 'Se ha notificado al cliente'
+                  })
+                }
+              }}
+            >
+              <Bell className="mr-2 h-4 w-4" />
+              Marcar Listo para Retirar
+            </Button>
+          )}
 
           {isActive && (
             <>
@@ -1060,10 +1085,10 @@ const Pedido = () => {
                       <div
                         key={cliente}
                         className={`flex items-center justify-between p-2 rounded-lg ${estaPagado
-                            ? 'bg-green-50 dark:bg-green-950/30'
-                            : esperandoConfirmacion
-                              ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700'
-                              : 'bg-muted/30'
+                          ? 'bg-green-50 dark:bg-green-950/30'
+                          : esperandoConfirmacion
+                            ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700'
+                            : 'bg-muted/30'
                           }`}
                       >
                         <div className="flex items-center gap-2">
@@ -1075,10 +1100,10 @@ const Pedido = () => {
                             <User className="h-4 w-4 text-muted-foreground" />
                           )}
                           <span className={`font-medium text-sm ${estaPagado
-                              ? 'text-green-700 dark:text-green-400'
-                              : esperandoConfirmacion
-                                ? 'text-amber-700 dark:text-amber-400'
-                                : ''
+                            ? 'text-green-700 dark:text-green-400'
+                            : esperandoConfirmacion
+                              ? 'text-amber-700 dark:text-amber-400'
+                              : ''
                             }`}>
                             {cliente}
                           </span>

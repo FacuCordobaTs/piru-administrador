@@ -12,12 +12,12 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { restauranteApi, mercadopagoApi, ApiError } from '@/lib/api'
 import ImageUpload from '@/components/ImageUpload'
 import { toast } from 'sonner'
-import { 
-  Mail, 
-  MapPin, 
-  Phone, 
-  Calendar, 
-  Edit, 
+import {
+  Mail,
+  MapPin,
+  Phone,
+  Calendar,
+  Edit,
   LogOut,
   Store,
   Loader2,
@@ -26,7 +26,8 @@ import {
   Link2,
   Unlink,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  ShoppingCart
 } from 'lucide-react'
 
 // Configuración de MercadoPago
@@ -50,6 +51,7 @@ const Perfil = () => {
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
+  const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
@@ -76,7 +78,7 @@ const Perfil = () => {
       if (mpError === 'missing_params') errorMessage = 'Faltan parámetros de autorización'
       else if (mpError === 'config_error') errorMessage = 'Error de configuración del servidor'
       else if (mpError === 'oauth_failed') errorMessage = 'Error en la autenticación con MercadoPago'
-      
+
       toast.error('Error al conectar MercadoPago', {
         description: errorMessage,
       })
@@ -95,7 +97,7 @@ const Perfil = () => {
   // Desconectar MercadoPago
   const handleDesconectarMP = async () => {
     if (!token) return
-    
+
     setIsDisconnectingMP(true)
     try {
       const response = await mercadopagoApi.desconectar(token) as { success: boolean }
@@ -118,6 +120,29 @@ const Perfil = () => {
     navigate('/login')
   }
 
+  // Toggle modo carrito
+  const handleToggleCarrito = async () => {
+    if (!token) return
+
+    setIsTogglingCarrito(true)
+    try {
+      const response = await restauranteApi.toggleCarrito(token) as { success: boolean; esCarrito: boolean }
+      if (response.success) {
+        toast.success(response.esCarrito ? 'Modo carrito activado' : 'Modo restaurante activado', {
+          description: response.esCarrito
+            ? 'Los pedidos ahora se identifican por nombre del cliente'
+            : 'Los pedidos ahora se identifican por número de mesa'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar modo:', error)
+      toast.error('Error al cambiar el modo')
+    } finally {
+      setIsTogglingCarrito(false)
+    }
+  }
+
   const abrirDialogEditar = () => {
     if (restaurante) {
       setFormData({
@@ -132,7 +157,7 @@ const Perfil = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!token) {
       toast.error('No hay sesión activa')
       return
@@ -244,8 +269,8 @@ const Perfil = () => {
               <div className="flex items-center space-x-4">
                 <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
                   {restaurante?.imagenUrl ? (
-                    <img 
-                      src={restaurante.imagenUrl} 
+                    <img
+                      src={restaurante.imagenUrl}
                       alt={restaurante.nombre}
                       className="h-16 w-16 rounded-full object-cover"
                     />
@@ -328,7 +353,7 @@ const Perfil = () => {
                 MercadoPago
               </CardTitle>
               <CardDescription>
-                {restaurante?.mpConnected 
+                {restaurante?.mpConnected
                   ? 'Tu cuenta está conectada y lista para recibir pagos'
                   : 'Conecta tu cuenta para recibir pagos de tus clientes'
                 }
@@ -346,8 +371,8 @@ const Perfil = () => {
                       ID de usuario: {restaurante.mpUserId}
                     </p>
                   )}
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
                     onClick={handleDesconectarMP}
                     disabled={isDisconnectingMP}
@@ -371,7 +396,7 @@ const Perfil = () => {
                     Al conectar tu cuenta de MercadoPago, tus clientes podrán pagar directamente desde la app.
                   </p>
                   {getMercadoPagoAuthUrl() ? (
-                    <Button 
+                    <Button
                       asChild
                       className="w-full bg-sky-500 hover:bg-sky-600 text-white"
                     >
@@ -388,6 +413,74 @@ const Perfil = () => {
                   )}
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Modo Carrito */}
+          <Card className={restaurante?.esCarrito ? "border-orange-500/50 bg-orange-50/50 dark:bg-orange-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5" />
+                Modo de Operación
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.esCarrito
+                  ? 'Operando como carrito de comidas'
+                  : 'Operando como restaurante con mesas'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.esCarrito ? (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Pedidos identificados por nombre del cliente</p>
+                    <p>• Los clientes pagan antes de recibir el pedido</p>
+                    <p>• Notificación cuando el pedido está listo</p>
+                  </div>
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+                    Modo Carrito Activo
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Pedidos identificados por número de mesa</p>
+                    <p>• Los clientes pagan después de recibir el pedido</p>
+                    <p>• Flujo tradicional de restaurante</p>
+                  </div>
+                  <Badge variant="secondary">
+                    Modo Restaurante Activo
+                  </Badge>
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleToggleCarrito}
+                disabled={isTogglingCarrito}
+              >
+                {isTogglingCarrito ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cambiando...
+                  </>
+                ) : (
+                  <>
+                    {restaurante?.esCarrito ? (
+                      <>
+                        <Store className="mr-2 h-4 w-4" />
+                        Cambiar a Restaurante
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Cambiar a Carrito
+                      </>
+                    )}
+                  </>
+                )}
+              </Button>
             </CardContent>
           </Card>
 
@@ -427,8 +520,8 @@ const Perfil = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 className="w-full"
                 onClick={handleLogout}
               >
