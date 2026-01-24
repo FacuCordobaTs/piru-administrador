@@ -3,9 +3,9 @@ import { useAuthStore } from '@/store/authStore'
 import { notificacionesApi } from '@/lib/api'
 
 // Types - Only important notifications (connect/disconnect are not shown)
-export type NotificationType = 
+export type NotificationType =
   | 'NUEVO_PEDIDO'
-  | 'PEDIDO_CONFIRMADO' 
+  | 'PEDIDO_CONFIRMADO'
   | 'PEDIDO_CERRADO'
   | 'LLAMADA_MOZO'
   | 'PAGO_RECIBIDO'
@@ -63,7 +63,7 @@ export interface MesaConPedido {
 export interface SubtotalActualizado {
   clienteNombre: string
   monto: string
-  estado: 'pending' | 'paid' | 'failed'
+  estado: 'pending' | 'pending_cash' | 'paid' | 'failed'
   metodo: 'efectivo' | 'mercadopago' | null
 }
 
@@ -111,7 +111,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [subtotalesUpdates, setSubtotalesUpdates] = useState<Map<number, SubtotalesUpdate>>(new Map())
-  
+
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -121,10 +121,10 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   // Mark notification as read via API
   const markAsRead = useCallback(async (id: string) => {
     if (!token) return
-    
+
     // Optimistic update
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, leida: true } : n))
-    
+
     try {
       await notificacionesApi.markAsRead(token, id)
     } catch (error) {
@@ -136,10 +136,10 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   // Mark all notifications as read via API
   const markAllAsRead = useCallback(async () => {
     if (!token) return
-    
+
     // Optimistic update
     setNotifications(prev => prev.map(n => ({ ...n, leida: true })))
-    
+
     try {
       await notificacionesApi.markAllAsRead(token)
     } catch (error) {
@@ -150,10 +150,10 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   // Delete notification via API
   const deleteNotification = useCallback(async (id: string) => {
     if (!token) return
-    
+
     // Optimistic update
     setNotifications(prev => prev.filter(n => n.id !== id))
-    
+
     try {
       await notificacionesApi.delete(token, id)
     } catch (error) {
@@ -164,10 +164,10 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   // Clear all notifications via API
   const clearNotifications = useCallback(async () => {
     if (!token) return
-    
+
     // Optimistic update
     setNotifications([])
-    
+
     try {
       await notificacionesApi.deleteAll(token)
     } catch (error) {
@@ -187,26 +187,26 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
       clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = null
     }
-    
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
     }
-    
+
     if (wsRef.current) {
       // Remove all listeners to prevent callbacks after cleanup
       wsRef.current.onopen = null
       wsRef.current.onmessage = null
       wsRef.current.onerror = null
       wsRef.current.onclose = null
-      
-      if (wsRef.current.readyState === WebSocket.OPEN || 
-          wsRef.current.readyState === WebSocket.CONNECTING) {
+
+      if (wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING) {
         wsRef.current.close(1000, 'Cleanup')
       }
       wsRef.current = null
     }
-    
+
     isConnectingRef.current = false
     connectionIdRef.current = null
   }, [])
@@ -230,7 +230,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
         console.log('⏳ Already connecting, skipping...')
         return
       }
-      
+
       // Check if this connection attempt is still valid
       if (connectionIdRef.current !== thisConnectionId) {
         console.log('🚫 Stale connection attempt, aborting')
@@ -243,8 +243,8 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
         wsRef.current.onmessage = null
         wsRef.current.onerror = null
         wsRef.current.onclose = null
-        if (wsRef.current.readyState === WebSocket.OPEN || 
-            wsRef.current.readyState === WebSocket.CONNECTING) {
+        if (wsRef.current.readyState === WebSocket.OPEN ||
+          wsRef.current.readyState === WebSocket.CONNECTING) {
           wsRef.current.close(1000, 'New connection')
         }
         wsRef.current = null
@@ -265,7 +265,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
             ws.close(1000, 'Stale connection')
             return
           }
-          
+
           console.log('🔑 Admin WebSocket connected')
           isConnectingRef.current = false
           setIsConnected(true)
@@ -300,7 +300,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
               case 'ADMIN_NOTIFICACION':
                 const newNotification = data.payload as Notification
                 console.log('🔔 New notification:', newNotification.mensaje)
-                
+
                 setNotifications(prev => {
                   // Check if already exists (avoid duplicates)
                   if (prev.some(n => n.id === newNotification.id)) {
@@ -333,7 +333,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
 
         ws.onerror = () => {
           if (connectionIdRef.current !== thisConnectionId) return
-          
+
           console.error('❌ WebSocket error')
           setError('Error de conexión')
           setIsConnected(false)
@@ -345,7 +345,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
             console.log('🔓 Stale connection closed, ignoring')
             return
           }
-          
+
           console.log('🔓 Admin WebSocket disconnected, code:', event.code)
           setIsConnected(false)
           isConnectingRef.current = false

@@ -19,7 +19,7 @@ export class ApiError extends Error {
 function handleUnauthorized() {
   const authStore = useAuthStore.getState()
   const restauranteStore = useRestauranteStore.getState()
-  
+
   // Solo hacer logout si el usuario estaba autenticado
   if (authStore.isAuthenticated) {
     authStore.logout()
@@ -35,13 +35,13 @@ export function isTokenExpired(token: string): boolean {
     // El JWT tiene 3 partes separadas por puntos: header.payload.signature
     const payload = token.split('.')[1]
     if (!payload) return true
-    
+
     // Decodificar el payload (base64url)
     const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-    
+
     // Verificar expiración (exp está en segundos)
     if (!decoded.exp) return true
-    
+
     // Agregar un margen de 60 segundos para evitar problemas de sincronización
     const now = Math.floor(Date.now() / 1000)
     return decoded.exp < now + 60
@@ -72,7 +72,7 @@ async function fetchApi<T>(
       if (response.status === 401) {
         handleUnauthorized()
       }
-      
+
       throw new ApiError(
         data.error || data.message || 'Error en la solicitud',
         response.status,
@@ -322,12 +322,12 @@ export const ingredientesApi = {
 export const pedidosApi = {
   // Obtener todos los pedidos con paginación
   getAll: async (token: string, page = 1, limit = 20, estado?: string) => {
-    const params = new URLSearchParams({ 
-      page: page.toString(), 
-      limit: limit.toString() 
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
     })
     if (estado) params.append('estado', estado)
-    
+
     return fetchApi(`/pedido/list?${params}`, {
       method: 'GET',
       headers: {
@@ -464,7 +464,7 @@ export const mercadopagoApi = {
     })
   },
 
-  // Pagar en efectivo (para admin)
+  // Pagar en efectivo (para admin - marca como pending_cash)
   pagarEfectivo: async (pedidoId: number, clientesAPagar: string[], qrToken: string) => {
     return fetchApi('/mp/pagar-efectivo', {
       method: 'POST',
@@ -472,6 +472,20 @@ export const mercadopagoApi = {
         pedidoId,
         clientesAPagar,
         qrToken
+      }),
+    })
+  },
+
+  // Confirmar pago en efectivo (admin confirma que recibió el dinero)
+  confirmarEfectivo: async (token: string, pedidoId: number, clienteNombre: string) => {
+    return fetchApi('/mp/confirmar-efectivo', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        pedidoId,
+        clienteNombre
       }),
     })
   },

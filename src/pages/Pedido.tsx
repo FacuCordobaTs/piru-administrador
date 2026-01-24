@@ -12,8 +12,8 @@ import { useAuthStore } from '@/store/authStore'
 import { pedidosApi, productosApi, mercadopagoApi, ApiError } from '@/lib/api'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { toast } from 'sonner'
-import { 
-  Loader2, ArrowLeft, Clock, CheckCircle, ChefHat, Utensils, 
+import {
+  Loader2, ArrowLeft, Clock, CheckCircle, ChefHat, Utensils,
   ShoppingCart, Users, Wifi, WifiOff, User, Plus, Trash2, Minus,
   Receipt, CreditCard, Banknote, AlertCircle, CheckCircle2, XCircle, Search, Package,
   Sparkles
@@ -74,6 +74,7 @@ interface SubtotalInfo {
   subtotal: string
   pagado: boolean
   metodo?: string
+  estado?: 'pending' | 'pending_cash' | 'paid' | 'failed' // Estado específico para control granular
 }
 
 // Helper para obtener el badge del estado
@@ -109,9 +110,9 @@ const getMetodoPagoInfo = (metodo: string | null | undefined) => {
 // Helper para formatear fecha completa
 const formatDateFull = (dateString: string) => {
   const date = new Date(dateString)
-  return date.toLocaleDateString('es-ES', { 
+  return date.toLocaleDateString('es-ES', {
     weekday: 'long',
-    day: 'numeric', 
+    day: 'numeric',
     month: 'long',
     year: 'numeric',
     hour: '2-digit',
@@ -125,13 +126,13 @@ const getTimeAgo = (dateString: string) => {
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMins = Math.floor(diffMs / 60000)
-  
+
   if (diffMins < 1) return 'Hace un momento'
   if (diffMins < 60) return `Hace ${diffMins} minuto${diffMins !== 1 ? 's' : ''}`
-  
+
   const diffHours = Math.floor(diffMins / 60)
   if (diffHours < 24) return `Hace ${diffHours} hora${diffHours !== 1 ? 's' : ''}`
-  
+
   const diffDays = Math.floor(diffHours / 24)
   return `Hace ${diffDays} día${diffDays !== 1 ? 's' : ''}`
 }
@@ -142,9 +143,9 @@ const getDuration = (startDate: string, endDate?: string | null) => {
   const end = endDate ? new Date(endDate) : new Date()
   const diffMs = end.getTime() - start.getTime()
   const diffMins = Math.floor(diffMs / 60000)
-  
+
   if (diffMins < 60) return `${diffMins} min`
-  
+
   const hours = Math.floor(diffMins / 60)
   const mins = diffMins % 60
   return `${hours}h ${mins}m`
@@ -154,19 +155,19 @@ const Pedido = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
-  
+
   // WebSocket para actualizaciones en tiempo real
   const { mesas: mesasWS, isConnected, subtotalesUpdates } = useAdminWebSocket()
-  
+
   // State
   const [pedido, setPedido] = useState<PedidoDetalle | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
-  
+
   // Estado para subtotales (split payment)
   const [subtotales, setSubtotales] = useState<SubtotalInfo[]>([])
   const [loadingSubtotales, setLoadingSubtotales] = useState(false)
-  
+
   // Estados para gestión de productos
   const [addProductSheet, setAddProductSheet] = useState(false)
   const [productos, setProductos] = useState<Producto[]>([])
@@ -174,29 +175,29 @@ const Pedido = () => {
   const [searchProducto, setSearchProducto] = useState('')
   const [addingProducto, setAddingProducto] = useState<number | null>(null)
   const [cantidadProducto, setCantidadProducto] = useState<Record<number, number>>({})
-  
+
   // Estados para eliminar item
   const [itemAEliminar, setItemAEliminar] = useState<ItemPedido | null>(null)
   const [deletingItem, setDeletingItem] = useState(false)
-  
+
   // Estados para eliminar pedido completo
   const [showDeletePedidoDialog, setShowDeletePedidoDialog] = useState(false)
   const [deletingPedido, setDeletingPedido] = useState(false)
-  
+
   // Estados para marcar pago en efectivo
   const [marcandoPagoEfectivo, setMarcandoPagoEfectivo] = useState<string | null>(null) // clienteNombre que se está marcando
 
   // Fetch pedido desde API REST
   const fetchPedido = useCallback(async () => {
     if (!token || !id) return
-    
+
     setIsLoading(true)
     try {
       const response = await pedidosApi.getById(token, Number(id)) as {
         success: boolean
         data: PedidoDetalle
       }
-      
+
       if (response.success && response.data) {
         setPedido(response.data)
       }
@@ -221,13 +222,13 @@ const Pedido = () => {
   // Actualizar desde WebSocket
   useEffect(() => {
     if (!pedido || mesasWS.length === 0) return
-    
+
     // Buscar si este pedido está en alguna mesa del WebSocket
     const mesaWS = mesasWS.find(m => m.pedido?.id === pedido.id)
     if (mesaWS && mesaWS.pedido) {
       setPedido(prev => {
         if (!prev) return null
-        
+
         // Agrupar items por cliente
         const itemsPorCliente = mesaWS.items.reduce((acc, item) => {
           const cliente = item.clienteNombre || 'Sin nombre'
@@ -237,7 +238,7 @@ const Pedido = () => {
           acc[cliente].push(item)
           return acc
         }, {} as Record<string, ItemPedido[]>)
-        
+
         return {
           ...prev,
           estado: mesaWS.pedido!.estado,
@@ -255,14 +256,14 @@ const Pedido = () => {
   // Cargar subtotales del pedido (split payment)
   const fetchSubtotales = useCallback(async () => {
     if (!id) return
-    
+
     setLoadingSubtotales(true)
     try {
       const response = await mercadopagoApi.getSubtotales(Number(id)) as {
         success: boolean
         subtotales: SubtotalInfo[]
       }
-      
+
       if (response.success && response.subtotales) {
         setSubtotales(response.subtotales)
       }
@@ -285,13 +286,14 @@ const Pedido = () => {
     if (!id) return
     const pedidoId = Number(id)
     const update = subtotalesUpdates.get(pedidoId)
-    
+
     if (update) {
       setSubtotales(update.todosSubtotales.map(s => ({
         clienteNombre: s.clienteNombre,
         subtotal: s.monto,
         pagado: s.estado === 'paid',
-        metodo: s.metodo || undefined
+        metodo: s.metodo || undefined,
+        estado: s.estado
       })))
     }
   }, [subtotalesUpdates, id])
@@ -299,12 +301,12 @@ const Pedido = () => {
   // Cambiar estado del pedido
   const handleChangeEstado = async (nuevoEstado: string) => {
     if (!token || !pedido) return
-    
+
     setIsUpdating(true)
     try {
       await pedidosApi.updateEstado(token, pedido.id, nuevoEstado)
       toast.success('Estado actualizado correctamente')
-      
+
       // Actualizar localmente
       setPedido(prev => prev ? { ...prev, estado: nuevoEstado as any } : null)
     } catch (error) {
@@ -319,14 +321,14 @@ const Pedido = () => {
   // Cargar productos del restaurante
   const fetchProductos = useCallback(async () => {
     if (!token) return
-    
+
     setLoadingProductos(true)
     try {
       const response = await productosApi.getAll(token) as {
         success: boolean
         productos: Producto[]
       }
-      
+
       if (response.success && response.productos) {
         // Solo mostrar productos activos
         setProductos(response.productos.filter(p => p.activo))
@@ -348,7 +350,7 @@ const Pedido = () => {
   // Agregar producto al pedido
   const handleAddProducto = async (producto: Producto) => {
     if (!token || !pedido) return
-    
+
     setAddingProducto(producto.id)
     try {
       const cantidad = cantidadProducto[producto.id] || 1
@@ -376,7 +378,7 @@ const Pedido = () => {
   // Eliminar item del pedido
   const handleDeleteItem = async () => {
     if (!token || !pedido || !itemAEliminar) return
-    
+
     setDeletingItem(true)
     try {
       await pedidosApi.deleteItem(token, pedido.id, itemAEliminar.id)
@@ -396,7 +398,7 @@ const Pedido = () => {
   // Confirmar pedido
   const handleConfirmarPedido = async () => {
     if (!token || !pedido) return
-    
+
     setIsUpdating(true)
     try {
       await pedidosApi.confirmar(token, pedido.id)
@@ -416,7 +418,7 @@ const Pedido = () => {
   // Cerrar pedido
   const handleCerrarPedido = async () => {
     if (!token || !pedido) return
-    
+
     setIsUpdating(true)
     try {
       await pedidosApi.cerrar(token, pedido.id)
@@ -434,7 +436,7 @@ const Pedido = () => {
   // Eliminar pedido completo
   const handleDeletePedido = async () => {
     if (!token || !pedido) return
-    
+
     setDeletingPedido(true)
     try {
       await pedidosApi.delete(token, pedido.id)
@@ -453,19 +455,19 @@ const Pedido = () => {
     }
   }
 
-  // Marcar pago en efectivo (admin)
-  const handleMarcarPagoEfectivo = async (clienteNombre: string) => {
-    if (!pedido || !pedido.mesaQrToken) {
+  // Confirmar pago en efectivo (admin confirma que recibió el dinero)
+  const handleConfirmarPagoEfectivo = async (clienteNombre: string) => {
+    if (!token || !pedido) {
       toast.error('Error', { description: 'No se pudo obtener la información del pedido' })
       return
     }
 
     setMarcandoPagoEfectivo(clienteNombre)
     try {
-      const response = await mercadopagoApi.pagarEfectivo(
+      const response = await mercadopagoApi.confirmarEfectivo(
+        token,
         pedido.id,
-        [clienteNombre],
-        pedido.mesaQrToken
+        clienteNombre
       ) as {
         success: boolean
         message?: string
@@ -473,20 +475,20 @@ const Pedido = () => {
       }
 
       if (response.success) {
-        toast.success('¡Pago registrado!', {
-          description: `Pago en efectivo registrado para ${clienteNombre}`
+        toast.success('¡Pago confirmado!', {
+          description: `Pago en efectivo confirmado para ${clienteNombre}`
         })
         // Refrescar subtotales
         await fetchSubtotales()
       } else {
-        toast.error('Error al registrar pago', { 
-          description: response.error || 'Error desconocido' 
+        toast.error('Error al confirmar pago', {
+          description: response.error || 'Error desconocido'
         })
       }
     } catch (error) {
-      console.error('Error al registrar pago en efectivo:', error)
+      console.error('Error al confirmar pago en efectivo:', error)
       if (error instanceof ApiError) {
-        toast.error('Error al registrar pago', { description: error.message })
+        toast.error('Error al confirmar pago', { description: error.message })
       } else {
         toast.error('Error de conexión')
       }
@@ -496,7 +498,7 @@ const Pedido = () => {
   }
 
   // Filtrar productos por búsqueda
-  const productosFiltrados = productos.filter(p => 
+  const productosFiltrados = productos.filter(p =>
     p.nombre.toLowerCase().includes(searchProducto.toLowerCase()) ||
     p.descripcion?.toLowerCase().includes(searchProducto.toLowerCase())
   )
@@ -558,12 +560,12 @@ const Pedido = () => {
             </p>
           </div>
         </div>
-        
+
         {/* Acciones de estado */}
         <div className="flex gap-2 flex-wrap">
           {/* Botón eliminar pedido */}
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
             onClick={() => setShowDeletePedidoDialog(true)}
           >
@@ -581,142 +583,142 @@ const Pedido = () => {
                     Agregar Producto
                   </Button>
                 </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-lg">
-                <SheetHeader>
-                  <SheetTitle className="flex items-center gap-2">
-                    <Package className="h-5 w-5" />
-                    Agregar Producto
-                  </SheetTitle>
-                  <SheetDescription>
-                    Selecciona un producto para agregar al pedido
-                  </SheetDescription>
-                </SheetHeader>
-                
-                {/* Buscador */}
-                <div className="relative mt-4">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar producto..."
-                    value={searchProducto}
-                    onChange={(e) => setSearchProducto(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                
-                {/* Lista de productos */}
-                <ScrollArea className="h-[calc(100vh-200px)] mt-4">
-                  {loadingProductos ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    </div>
-                  ) : productosFiltrados.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-center">
-                      <Package className="h-8 w-8 text-muted-foreground mb-2" />
-                      <p className="text-sm text-muted-foreground">
-                        {searchProducto ? 'No se encontraron productos' : 'No hay productos disponibles'}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3 pr-4">
-                      {productosFiltrados.map((producto) => (
-                        <div 
-                          key={producto.id}
-                          className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
-                        >
-                          {producto.imagenUrl ? (
-                            <img 
-                              src={producto.imagenUrl} 
-                              alt={producto.nombre}
-                              className="w-14 h-14 rounded-lg object-cover"
-                            />
-                          ) : (
-                            <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
-                              <Package className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{producto.nombre}</p>
-                            <p className="text-lg font-bold text-primary">
-                              ${parseFloat(producto.precio).toFixed(2)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {/* Control de cantidad */}
-                            <div className="flex items-center border rounded-lg">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => setCantidadProducto(prev => ({
-                                  ...prev,
-                                  [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1)
-                                }))}
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
-                              <span className="w-8 text-center text-sm font-medium">
-                                {cantidadProducto[producto.id] || 1}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => setCantidadProducto(prev => ({
-                                  ...prev,
-                                  [producto.id]: (prev[producto.id] || 1) + 1
-                                }))}
-                              >
-                                <Plus className="h-3 w-3" />
-                              </Button>
-                            </div>
-                            <Button
-                              size="sm"
-                              onClick={() => handleAddProducto(producto)}
-                              disabled={addingProducto === producto.id}
-                            >
-                              {addingProducto === producto.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Plus className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-              </SheetContent>
-            </Sheet>
+                <SheetContent className="w-full sm:max-w-lg">
+                  <SheetHeader>
+                    <SheetTitle className="flex items-center gap-2">
+                      <Package className="h-5 w-5" />
+                      Agregar Producto
+                    </SheetTitle>
+                    <SheetDescription>
+                      Selecciona un producto para agregar al pedido
+                    </SheetDescription>
+                  </SheetHeader>
 
-            {pedido.estado === 'pending' && (
-              <Button 
-                onClick={handleConfirmarPedido}
-                disabled={isUpdating || pedido.items.length === 0}
-              >
-                {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ChefHat className="mr-2 h-4 w-4" />}
-                Confirmar Pedido
-              </Button>
-            )}
-            {pedido.estado === 'preparing' && (
-              <Button 
-                onClick={() => handleChangeEstado('delivered')}
-                disabled={isUpdating}
-              >
-                {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Utensils className="mr-2 h-4 w-4" />}
-                Marcar como Entregado
-              </Button>
-            )}
-            {pedido.estado === 'delivered' && (
-              <Button 
-                variant="secondary"
-                onClick={handleCerrarPedido}
-                disabled={isUpdating}
-              >
-                {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-                Cerrar Pedido
-              </Button>
-            )}
+                  {/* Buscador */}
+                  <div className="relative mt-4">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar producto..."
+                      value={searchProducto}
+                      onChange={(e) => setSearchProducto(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+
+                  {/* Lista de productos */}
+                  <ScrollArea className="h-[calc(100vh-200px)] mt-4">
+                    {loadingProductos ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
+                    ) : productosFiltrados.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <Package className="h-8 w-8 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">
+                          {searchProducto ? 'No se encontraron productos' : 'No hay productos disponibles'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 pr-4">
+                        {productosFiltrados.map((producto) => (
+                          <div
+                            key={producto.id}
+                            className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                          >
+                            {producto.imagenUrl ? (
+                              <img
+                                src={producto.imagenUrl}
+                                alt={producto.nombre}
+                                className="w-14 h-14 rounded-lg object-cover"
+                              />
+                            ) : (
+                              <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
+                                <Package className="h-6 w-6 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{producto.nombre}</p>
+                              <p className="text-lg font-bold text-primary">
+                                ${parseFloat(producto.precio).toFixed(2)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {/* Control de cantidad */}
+                              <div className="flex items-center border rounded-lg">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => setCantidadProducto(prev => ({
+                                    ...prev,
+                                    [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1)
+                                  }))}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <span className="w-8 text-center text-sm font-medium">
+                                  {cantidadProducto[producto.id] || 1}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => setCantidadProducto(prev => ({
+                                    ...prev,
+                                    [producto.id]: (prev[producto.id] || 1) + 1
+                                  }))}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <Button
+                                size="sm"
+                                onClick={() => handleAddProducto(producto)}
+                                disabled={addingProducto === producto.id}
+                              >
+                                {addingProducto === producto.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Plus className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </SheetContent>
+              </Sheet>
+
+              {pedido.estado === 'pending' && (
+                <Button
+                  onClick={handleConfirmarPedido}
+                  disabled={isUpdating || pedido.items.length === 0}
+                >
+                  {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ChefHat className="mr-2 h-4 w-4" />}
+                  Confirmar Pedido
+                </Button>
+              )}
+              {pedido.estado === 'preparing' && (
+                <Button
+                  onClick={() => handleChangeEstado('delivered')}
+                  disabled={isUpdating}
+                >
+                  {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Utensils className="mr-2 h-4 w-4" />}
+                  Marcar como Entregado
+                </Button>
+              )}
+              {pedido.estado === 'delivered' && (
+                <Button
+                  variant="secondary"
+                  onClick={handleCerrarPedido}
+                  disabled={isUpdating}
+                >
+                  {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                  Cerrar Pedido
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -733,7 +735,7 @@ const Pedido = () => {
                 Productos del Pedido
               </CardTitle>
               <CardDescription>
-                {pedido.totalItems} producto{pedido.totalItems !== 1 ? 's' : ''} • 
+                {pedido.totalItems} producto{pedido.totalItems !== 1 ? 's' : ''} •
                 {Object.keys(pedido.itemsPorCliente).length} cliente{Object.keys(pedido.itemsPorCliente).length !== 1 ? 's' : ''}
               </CardDescription>
             </CardHeader>
@@ -763,20 +765,19 @@ const Pedido = () => {
                   </div>
                   <div className="space-y-3">
                     {items.map((item) => (
-                      <div 
-                        key={item.id} 
-                        className={`flex items-center justify-between p-3 rounded-lg group transition-all ${
-                          item.postConfirmacion 
-                            ? 'bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-700 ring-1 ring-amber-200 dark:ring-amber-800' 
-                            : 'bg-muted/50'
-                        }`}
+                      <div
+                        key={item.id}
+                        className={`flex items-center justify-between p-3 rounded-lg group transition-all ${item.postConfirmacion
+                          ? 'bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-700 ring-1 ring-amber-200 dark:ring-amber-800'
+                          : 'bg-muted/50'
+                          }`}
                       >
                         <div className="flex items-center gap-4">
                           <div className="relative">
                             {item.imagenUrl ? (
-                              <img 
-                                src={item.imagenUrl} 
-                                alt={item.nombreProducto} 
+                              <img
+                                src={item.imagenUrl}
+                                alt={item.nombreProducto}
                                 className="w-14 h-14 rounded-lg object-cover"
                               />
                             ) : (
@@ -839,8 +840,8 @@ const Pedido = () => {
         {/* Columna lateral - Resumen */}
         <div className="space-y-6">
           {/* Total */}
-          <Card className={pedido.pago?.estado === 'paid' 
-            ? "bg-green-500/10 border-green-500/30" 
+          <Card className={pedido.pago?.estado === 'paid'
+            ? "bg-green-500/10 border-green-500/30"
             : "bg-primary/5 border-primary/20"
           }>
             <CardHeader className="pb-2">
@@ -954,7 +955,7 @@ const Pedido = () => {
                     })()}
                   </div>
                   <Separator />
-                  
+
                   {/* Método de pago */}
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Método</span>
@@ -970,7 +971,7 @@ const Pedido = () => {
                     })()}
                   </div>
                   <Separator />
-                  
+
                   {/* Monto pagado */}
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Monto</span>
@@ -978,7 +979,7 @@ const Pedido = () => {
                       ${parseFloat(pedido.pago.monto || '0').toFixed(2)}
                     </span>
                   </div>
-                  
+
                   {/* ID de MercadoPago si aplica */}
                   {pedido.pago.metodo === 'mercadopago' && pedido.pago.mpPaymentId && (
                     <>
@@ -991,7 +992,7 @@ const Pedido = () => {
                       </div>
                     </>
                   )}
-                  
+
                   {/* Fecha del pago */}
                   {pedido.pago.createdAt && (
                     <>
@@ -1045,28 +1046,40 @@ const Pedido = () => {
                   {Object.keys(pedido.itemsPorCliente).map((cliente) => {
                     const clienteItems = pedido.itemsPorCliente[cliente]
                     const clienteTotal = clienteItems.reduce(
-                      (sum, item) => sum + (parseFloat(item.precioUnitario) * (item.cantidad || 1)), 
+                      (sum, item) => sum + (parseFloat(item.precioUnitario) * (item.cantidad || 1)),
                       0
                     )
                     // Buscar estado de pago del cliente
                     const subtotalInfo = subtotales.find(s => s.clienteNombre === cliente)
                     const estaPagado = subtotalInfo?.pagado === true
                     const metodoPago = subtotalInfo?.metodo
+                    const estadoPago = subtotalInfo?.estado
+                    const esperandoConfirmacion = estadoPago === 'pending_cash'
 
                     return (
-                      <div 
-                        key={cliente} 
-                        className={`flex items-center justify-between p-2 rounded-lg ${
-                          estaPagado ? 'bg-green-50 dark:bg-green-950/30' : 'bg-muted/30'
-                        }`}
+                      <div
+                        key={cliente}
+                        className={`flex items-center justify-between p-2 rounded-lg ${estaPagado
+                            ? 'bg-green-50 dark:bg-green-950/30'
+                            : esperandoConfirmacion
+                              ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700'
+                              : 'bg-muted/30'
+                          }`}
                       >
                         <div className="flex items-center gap-2">
                           {estaPagado ? (
                             <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          ) : esperandoConfirmacion ? (
+                            <Banknote className="h-4 w-4 text-amber-600" />
                           ) : (
                             <User className="h-4 w-4 text-muted-foreground" />
                           )}
-                          <span className={`font-medium text-sm ${estaPagado ? 'text-green-700 dark:text-green-400' : ''}`}>
+                          <span className={`font-medium text-sm ${estaPagado
+                              ? 'text-green-700 dark:text-green-400'
+                              : esperandoConfirmacion
+                                ? 'text-amber-700 dark:text-amber-400'
+                                : ''
+                            }`}>
                             {cliente}
                           </span>
                         </div>
@@ -1084,27 +1097,35 @@ const Pedido = () => {
                               {metodoPago === 'mercadopago' ? 'MP' : 'Efectivo'}
                             </Badge>
                           )}
-                          {pedido.estado === 'closed' && !estaPagado && (
+                          {/* Esperando confirmación de pago en efectivo */}
+                          {pedido.estado === 'closed' && esperandoConfirmacion && (
                             <>
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300">
-                                <Clock className="h-2.5 w-2.5 mr-0.5" />
-                                Pendiente
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-semibold">
+                                <Banknote className="h-2.5 w-2.5 mr-0.5" />
+                                DEBE ABONAR EN EFECTIVO
                               </Badge>
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="h-7 px-2.5 text-xs gap-1.5 border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-950/30 hover:border-green-400 dark:hover:border-green-600"
-                                onClick={() => handleMarcarPagoEfectivo(cliente)}
+                                variant="default"
+                                className="h-7 px-2.5 text-xs gap-1.5 bg-green-600 hover:bg-green-700"
+                                onClick={() => handleConfirmarPagoEfectivo(cliente)}
                                 disabled={marcandoPagoEfectivo === cliente}
                               >
                                 {marcandoPagoEfectivo === cliente ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
-                                  <Banknote className="h-3 w-3" />
+                                  <CheckCircle2 className="h-3 w-3" />
                                 )}
-                                Marcar pagado
+                                Confirmar pago
                               </Button>
                             </>
+                          )}
+                          {/* Sin selección de método de pago aún */}
+                          {pedido.estado === 'closed' && !estaPagado && !esperandoConfirmacion && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300">
+                              <Clock className="h-2.5 w-2.5 mr-0.5" />
+                              Pendiente
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -1112,7 +1133,7 @@ const Pedido = () => {
                   })}
                 </div>
               )}
-              
+
               {/* Resumen de pagos si el pedido está cerrado */}
               {pedido.estado === 'closed' && subtotales.length > 0 && (
                 <>
