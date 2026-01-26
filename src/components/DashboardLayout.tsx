@@ -7,11 +7,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { toast } from 'sonner'
-import { 
-  LayoutDashboard, 
-  ClipboardList, 
-  Package, 
-  Menu, 
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Package,
+  Menu,
   LogOut,
   Sun,
   Moon
@@ -57,8 +57,8 @@ const DashboardLayout = () => {
   }
 
   const menuItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: ClipboardList, label: 'Pedidos', path: '/dashboard/pedidos' },
+    { icon: ClipboardList, label: 'Pedidos', path: '/dashboard' },
+    { icon: LayoutDashboard, label: 'Mesas', path: '/dashboard/mesas' },
     { icon: Package, label: 'Productos', path: '/dashboard/productos' },
   ]
 
@@ -88,7 +88,7 @@ const DashboardLayout = () => {
                     PIRU
                   </h1>
                 </div>
-                
+
                 {/* Navigation */}
                 <nav className="flex flex-col p-4 space-y-1">
                   {menuItems.map((item) => {
@@ -97,11 +97,10 @@ const DashboardLayout = () => {
                       <Button
                         key={item.path}
                         variant={isActive(item.path) ? 'default' : 'ghost'}
-                        className={`w-full justify-start h-11 ${
-                          isActive(item.path) 
-                            ? 'bg-primary text-primary-foreground shadow-md' 
+                        className={`w-full justify-start h-11 ${isActive(item.path)
+                            ? 'bg-primary text-primary-foreground shadow-md'
                             : 'hover:bg-accent'
-                        }`}
+                          }`}
                         onClick={() => handleNavigation(item.path)}
                       >
                         <Icon className="mr-3 h-5 w-5" />
@@ -110,7 +109,7 @@ const DashboardLayout = () => {
                     )
                   })}
                 </nav>
-                
+
                 {/* Footer del menú */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-card">
                   <Button
@@ -131,9 +130,9 @@ const DashboardLayout = () => {
                       <span className="text-xs text-muted-foreground">Ver perfil</span>
                     </div>
                   </Button>
-                  
+
                   <Separator className="my-2" />
-                  
+
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -156,12 +155,12 @@ const DashboardLayout = () => {
                 </div>
               </SheetContent>
             </Sheet>
-            
+
             <h1 className="text-xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
               PIRU
             </h1>
           </div>
-          
+
           {/* Acciones rápidas en el header */}
           <div className="flex items-center gap-1">
             <Button

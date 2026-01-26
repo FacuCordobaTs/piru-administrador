@@ -3,6 +3,8 @@ import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { isTokenExpired } from '@/lib/api'
 import { useEffect } from 'react'
+import { AdminProvider } from '@/context/AdminContext'
+import NotificationOverlay from '@/components/NotificationOverlay'
 
 const ProtectedLayout = () => {
   const { isAuthenticated, token, logout } = useAuthStore()
@@ -26,7 +28,12 @@ const ProtectedLayout = () => {
     return <Navigate to="/login" replace />
   }
 
-  return <Outlet />
+  return (
+    <AdminProvider>
+      <NotificationOverlay />
+      <Outlet />
+    </AdminProvider>
+  )
 }
 
 export default ProtectedLayout

@@ -8,8 +8,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidosApi, mercadopagoApi, ApiError } from '@/lib/api'
-import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
+import { useAdminContext } from '@/context/AdminContext'
 import { toast } from 'sonner'
+import { NotificationSheet } from '@/components/NotificationSheet'
 import {
   Loader2, Search, Clock, CheckCircle, ChefHat, Utensils,
   ShoppingCart, RefreshCw, Wifi, WifiOff, Trash2,
@@ -54,8 +55,12 @@ interface KanbanCardData {
 // Helper para calcular minutos transcurridos
 const getMinutesAgo = (dateString: string) => {
   const date = new Date(dateString)
+  // Ajuste manual: El servidor está 3 horas adelantado (o la fecha viene como UTC y la mostramos local),
+  // así que sumamos 3 horas para que "3h ago" sean "0m ago".
+  const adjustedDate = new Date(date.getTime() + 3 * 60 * 60 * 1000)
+
   const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
+  const diffMs = now.getTime() - adjustedDate.getTime()
   return Math.floor(diffMs / 60000)
 }
 
@@ -131,8 +136,17 @@ const Pedidos = () => {
   const { restaurante } = useRestauranteStore()
   const esCarrito = restaurante?.esCarrito || false
 
-  // WebSocket para actualizaciones en tiempo real
-  const { mesas: mesasWS, isConnected } = useAdminWebSocket()
+  const {
+    mesas: mesasWS,
+    isConnected,
+    notifications,
+    unreadCount,
+    markAsRead,
+    deleteNotification,
+    clearNotifications,
+    soundEnabled,
+    setSoundEnabled
+  } = useAdminContext()
 
   // State
   const [pedidos, setPedidos] = useState<PedidoData[]>([])
@@ -143,6 +157,7 @@ const Pedidos = () => {
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [updatingPedido, setUpdatingPedido] = useState<number | null>(null)
+
 
   // // Estado para eliminar pedido
   // const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
@@ -157,6 +172,9 @@ const Pedidos = () => {
     const interval = setInterval(() => setTick(t => t + 1), 30000)
     return () => clearInterval(interval)
   }, [])
+
+  // Play sound on new important notifications
+
 
   // Fetch pedidos desde API REST
   const fetchPedidos = useCallback(async (pageNum = 1, append = false) => {
@@ -470,10 +488,20 @@ const Pedidos = () => {
     })
 
     // Ordenar
+    // Ordenar
     Object.keys(grouped).forEach(key => {
-      grouped[key].sort((a, b) =>
-        new Date(a.pedido.createdAt).getTime() - new Date(b.pedido.createdAt).getTime()
-      )
+      grouped[key].sort((a, b) => {
+        const dateA = new Date(a.pedido.createdAt).getTime()
+        const dateB = new Date(b.pedido.createdAt).getTime()
+
+        // Para columnas cerradas, orden descendente (más recientes arriba)
+        if (key === 'closedPending' || key === 'closedPaid') {
+          return dateB - dateA
+        }
+
+        // Para columnas activas, orden ascendente (más antiguos arriba - FIFO)
+        return dateA - dateB
+      })
     })
 
     return grouped
@@ -512,6 +540,16 @@ const Pedidos = () => {
     const maxItems = compact ? 2 : 100
     const hasExclusions = items.some(i => i.ingredientesExcluidosNombres?.length)
 
+    const itemsByClient = useMemo(() => {
+      const grouped: Record<string, ItemPedido[]> = {}
+      items.forEach(item => {
+        const name = item.clienteNombre || 'Cliente'
+        if (!grouped[name]) grouped[name] = []
+        grouped[name].push(item)
+      })
+      return grouped
+    }, [items])
+
     return (
       <Card
         className={`transition-all duration-200 border-2 cursor-pointer group hover:border-primary/50 relative overflow-hidden`}
@@ -526,7 +564,7 @@ const Pedidos = () => {
 
         <CardContent className="p-0 pl-1">
           {/* Header */}
-          <div className="flex items-center justify-between p-3 pb-2">
+          <div className="flex items-center justify-between p-3 pb-2 border-b border-border/40 mb-2">
             <div className="flex items-center gap-2 min-w-0">
               <div className="text-xl font-bold text-foreground truncate">
                 {esCarrito && pedido.nombrePedido
@@ -540,51 +578,69 @@ const Pedidos = () => {
             </span>
           </div>
 
-          {/* Items */}
-          <div className="px-3 pb-2 space-y-2">
-            {items.slice(0, maxItems).map((item) => (
-              <div key={item.id} className="flex items-center gap-2 text-sm group/item">
-                <span className="font-bold text-foreground shrink-0 w-6 text-center bg-muted rounded-md py-0.5">
-                  {item.cantidad}
-                </span>
-
-                <div className="flex-1 min-w-0">
-                  <span className="text-foreground/90 font-medium truncate block">
-                    {item.nombreProducto}
-                  </span>
-                  {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                    <span className="text-xs text-orange-600 dark:text-orange-400 font-medium block">
-                      ⚠ Sin: {item.ingredientesExcluidosNombres.join(', ')}
-                    </span>
-                  )}
+          {/* Items agrupados por cliente */}
+          <div className="px-3 pb-2 space-y-4">
+            {Object.entries(itemsByClient).map(([cliente, clientItems]) => (
+              <div key={cliente} className="space-y-1">
+                {/* Header Cliente */}
+                <div className="flex items-center gap-1.5 pb-1">
+                  <Badge variant="outline" className="h-5 px-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
+                    <span className="font-semibold">{cliente}</span>
+                  </Badge>
                 </div>
 
-                {/* Acciones por item */}
-                <div onClick={(e) => e.stopPropagation()}>
-                  {status === 'preparing' && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
-                      title="Marcar Listo"
-                      onClick={() => handleChangeItemEstado(pedido, item.id, 'delivered')}
-                      disabled={isUpdating}
-                    >
-                      {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-5 w-5" />}
-                    </Button>
-                  )}
-                  {status === 'delivered' && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
-                      title="Marcar Entregado"
-                      onClick={() => handleChangeItemEstado(pedido, item.id, 'served')}
-                      disabled={isUpdating}
-                    >
-                      {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Utensils className="h-5 w-5" />}
-                    </Button>
-                  )}
+                {/* Items del cliente */}
+                <div className="space-y-2 pl-1">
+                  {clientItems.slice(0, maxItems).map((item) => (
+                    <div key={item.id} className="flex items-start gap-2 text-sm group/item">
+                      <span className="font-bold text-foreground shrink-0 w-6 text-center bg-muted rounded-md py-0.5 text-xs">
+                        {item.cantidad}
+                      </span>
+
+                      <div className="flex-1 min-w-0">
+                        <span className="text-foreground/90 font-medium truncate block leading-tight">
+                          {item.nombreProducto}
+                        </span>
+                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {item.ingredientesExcluidosNombres.map((ing, i) => (
+                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 font-medium border border-orange-200 dark:border-orange-800/50">
+                                Sin {ing}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Acciones por item */}
+                      <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex gap-1">
+                        {status === 'preparing' && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
+                            title="Marcar Listo"
+                            onClick={() => handleChangeItemEstado(pedido, item.id, 'delivered')}
+                            disabled={isUpdating}
+                          >
+                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                          </Button>
+                        )}
+                        {status === 'delivered' && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
+                            title="Marcar Entregado"
+                            onClick={() => handleChangeItemEstado(pedido, item.id, 'served')}
+                            disabled={isUpdating}
+                          >
+                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Utensils className="h-4 w-4" />}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -600,7 +656,7 @@ const Pedidos = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-7 w-7 text-muted-foreground/50 hover:text-destructive"
                   onClick={(e) => {
                     e.stopPropagation()
                     // setPedidoAEliminar(pedido)
@@ -662,8 +718,17 @@ const Pedidos = () => {
             )}
           </div>
 
-          {/* Controles */}
+          {/* Controles para Mobile y Desktop */}
           <div className="flex items-center gap-2">
+            <NotificationSheet
+              notifications={notifications}
+              unreadCount={unreadCount}
+              soundEnabled={soundEnabled}
+              setSoundEnabled={setSoundEnabled}
+              markAsRead={markAsRead}
+              deleteNotification={deleteNotification}
+              clearNotifications={clearNotifications}
+            />
             <div className="relative flex-1 lg:flex-none">
               <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -725,7 +790,7 @@ const Pedidos = () => {
       </div>
 
       {/* Vista Kanban - Desktop */}
-      <div className="flex-1 hidden lg:flex gap-4 p-4 overflow-hidden">
+      <div className="flex-1 hidden lg:flex gap-4 p-4 overflow-x-auto">
         {(esCarrito ? CARRITO_COLUMNS : COLUMNS).map((column) => {
           const columnCards = kanbanData[column.id] || []
           const ColumnIcon = column.icon

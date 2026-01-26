@@ -142,8 +142,11 @@ const formatDateFull = (dateString: string) => {
 // Helper para calcular tiempo transcurrido
 const getTimeAgo = (dateString: string) => {
   const date = new Date(dateString)
+  // Ajuste manual: Sumar 3 horas
+  const adjustedDate = new Date(date.getTime() + 3 * 60 * 60 * 1000)
+
   const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
+  const diffMs = now.getTime() - adjustedDate.getTime()
   const diffMins = Math.floor(diffMs / 60000)
 
   if (diffMins < 1) return 'Hace un momento'
@@ -159,8 +162,15 @@ const getTimeAgo = (dateString: string) => {
 // Helper para calcular duración
 const getDuration = (startDate: string, endDate?: string | null) => {
   const start = new Date(startDate)
-  const end = endDate ? new Date(endDate) : new Date()
-  const diffMs = end.getTime() - start.getTime()
+  // Ajuste manual: Sumar 3 horas a start
+  const adjustedStart = new Date(start.getTime() + 3 * 60 * 60 * 1000)
+
+  // Si hay endDate, también sumar 3 horas. Si es now, usar now directo.
+  const end = endDate
+    ? new Date(new Date(endDate).getTime() + 3 * 60 * 60 * 1000)
+    : new Date()
+
+  const diffMs = end.getTime() - adjustedStart.getTime()
   const diffMins = Math.floor(diffMs / 60000)
 
   if (diffMins < 60) return `${diffMins} min`

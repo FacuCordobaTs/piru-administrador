@@ -46,11 +46,11 @@ const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Dashboard />,
+            element: <Pedidos />,
           },
           {
-            path: "pedidos",
-            element: <Pedidos />,
+            path: "mesas",
+            element: <Dashboard />,
           },
           {
             path: "pedidos/:id",
@@ -73,7 +73,7 @@ const router = createBrowserRouter([
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RouterProvider router={router} />
-    <Toaster 
+    <Toaster
       position="top-right"
       richColors
       closeButton

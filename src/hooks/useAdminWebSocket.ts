@@ -76,7 +76,7 @@ export interface SubtotalesUpdate {
   todosSubtotales: SubtotalActualizado[]
 }
 
-interface UseAdminWebSocketReturn {
+export interface UseAdminWebSocketReturn {
   mesas: MesaConPedido[]
   notifications: Notification[]
   isConnected: boolean
