@@ -61,7 +61,7 @@ const formatTimeAgo = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
 }
 
-// Columnas del Kanban
+// Columnas del Kanban - Restaurante normal
 const COLUMNS = [
   // { 
   //   id: 'pending', 
@@ -86,6 +86,34 @@ const COLUMNS = [
     color: 'text-emerald-600',
     bgHeader: 'bg-emerald-100 dark:bg-emerald-900/30',
     description: 'Para entregar'
+  },
+]
+
+// Columnas del Kanban - Modo Carrito
+const CARRITO_COLUMNS = [
+  {
+    id: 'preparingSinPagar',
+    title: 'Preparando (Sin Pagar)',
+    icon: Clock,
+    color: 'text-orange-600',
+    bgHeader: 'bg-orange-100 dark:bg-orange-900/30',
+    description: 'Esperando pago'
+  },
+  {
+    id: 'preparingPagado',
+    title: 'Preparando (Pagado)',
+    icon: ChefHat,
+    color: 'text-blue-600',
+    bgHeader: 'bg-blue-100 dark:bg-blue-900/30',
+    description: 'En cocina'
+  },
+  {
+    id: 'delivered',
+    title: 'Listos para Retirar',
+    icon: Utensils,
+    color: 'text-emerald-600',
+    bgHeader: 'bg-emerald-100 dark:bg-emerald-900/30',
+    description: 'Notificar cliente'
   },
 ]
 
@@ -288,16 +316,19 @@ const Pedidos = () => {
     })
   }, [pedidos, searchTerm, showClosed])
 
-  // Verificar pagos de pedidos cerrados
+  // Verificar pagos de pedidos cerrados (y preparing para carritos)
   useEffect(() => {
     const verificarPagos = async () => {
-      const pedidosCerrados = filteredPedidos.filter(p => p.estado === 'closed')
-      if (pedidosCerrados.length === 0) return
+      // Para carritos, verificar también los pedidos en preparing
+      const pedidosAVerificar = esCarrito
+        ? filteredPedidos.filter(p => p.estado === 'closed' || p.estado === 'preparing')
+        : filteredPedidos.filter(p => p.estado === 'closed')
+      if (pedidosAVerificar.length === 0) return
 
       const nuevosPagados = new Set<number>()
 
       await Promise.all(
-        pedidosCerrados.map(async (pedido) => {
+        pedidosAVerificar.map(async (pedido) => {
           try {
             const response = await mercadopagoApi.getSubtotales(pedido.id) as {
               success: boolean
@@ -317,13 +348,15 @@ const Pedidos = () => {
     }
 
     verificarPagos()
-  }, [filteredPedidos])
+  }, [filteredPedidos, esCarrito])
 
   // Agrupar por columna
   const pedidosByColumn = useMemo(() => {
     const grouped: Record<string, PedidoData[]> = {
       pending: [],
       preparing: [],
+      preparingSinPagar: [], // Carrito: preparando sin pagar
+      preparingPagado: [], // Carrito: preparando ya pagado
       delivered: [],
       closedPending: [], // Cerrados pero pendientes de pago
       closedPaid: [], // Cerrados y pagados
@@ -336,6 +369,13 @@ const Pedidos = () => {
           grouped.closedPaid.push(pedido)
         } else {
           grouped.closedPending.push(pedido)
+        }
+      } else if (pedido.estado === 'preparing' && esCarrito) {
+        // Carrito mode: separar por estado de pago
+        if (pedidosCerradosPagados.has(pedido.id)) {
+          grouped.preparingPagado.push(pedido)
+        } else {
+          grouped.preparingSinPagar.push(pedido)
         }
       } else if (grouped[pedido.estado]) {
         grouped[pedido.estado].push(pedido)
@@ -350,7 +390,7 @@ const Pedidos = () => {
     })
 
     return grouped
-  }, [filteredPedidos, pedidosCerradosPagados])
+  }, [filteredPedidos, pedidosCerradosPagados, esCarrito])
 
   // Contar totales
   const counts = useMemo(() => ({
@@ -575,7 +615,7 @@ const Pedidos = () => {
 
       {/* Vista Kanban - Desktop */}
       <div className="flex-1 hidden lg:flex gap-4 p-4 overflow-hidden">
-        {COLUMNS.map((column) => {
+        {(esCarrito ? CARRITO_COLUMNS : COLUMNS).map((column) => {
           const columnPedidos = pedidosByColumn[column.id] || []
           const ColumnIcon = column.icon
 
@@ -701,7 +741,7 @@ const Pedidos = () => {
       {/* Vista Mobile - Lista con secciones colapsables */}
       <div className="flex-1 lg:hidden overflow-auto">
         <div className="p-4 space-y-6">
-          {COLUMNS.map((column) => {
+          {(esCarrito ? CARRITO_COLUMNS : COLUMNS).map((column) => {
             const columnPedidos = pedidosByColumn[column.id] || []
             const ColumnIcon = column.icon
 
