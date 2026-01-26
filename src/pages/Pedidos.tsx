@@ -15,7 +15,6 @@ import {
   ShoppingCart, RefreshCw, Wifi, WifiOff, Trash2,
   AlertTriangle, Play, X
 } from 'lucide-react'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 // Types
 interface ItemPedido {
@@ -28,19 +27,28 @@ interface ItemPedido {
   imagenUrl?: string | null
   ingredientesExcluidos?: number[]
   ingredientesExcluidosNombres?: string[]
+  estado?: 'pending' | 'preparing' | 'delivered' | 'served' | 'cancelled'
 }
 
 interface PedidoData {
   id: number
   mesaId: number | null
   mesaNombre: string | null
-  estado: 'pending' | 'preparing' | 'delivered' | 'closed'
+  estado: 'pending' | 'preparing' | 'delivered' | 'served' | 'closed'
   total: string
   createdAt: string
   closedAt?: string | null
   items: ItemPedido[]
   totalItems: number
   nombrePedido?: string | null  // Carrito mode
+}
+
+// Estructura para items en el tablero (que envuelve un pedido y sus items específicos para esa columna)
+interface KanbanCardData {
+  id: string // composite id: pedidoId-status
+  pedido: PedidoData
+  items: ItemPedido[]
+  status: string
 }
 
 // Helper para calcular minutos transcurridos
@@ -63,14 +71,6 @@ const formatTimeAgo = (dateString: string) => {
 
 // Columnas del Kanban - Restaurante normal
 const COLUMNS = [
-  // { 
-  //   id: 'pending', 
-  //   title: 'Nuevos', 
-  //   icon: Clock, 
-  //   color: 'text-amber-600',
-  //   bgHeader: 'bg-amber-100 dark:bg-amber-900/30',
-  //   description: 'Por confirmar'
-  // },
   {
     id: 'preparing',
     title: 'En Cocina',
@@ -86,6 +86,14 @@ const COLUMNS = [
     color: 'text-emerald-600',
     bgHeader: 'bg-emerald-100 dark:bg-emerald-900/30',
     description: 'Para entregar'
+  },
+  {
+    id: 'served',
+    title: 'Entregados',
+    icon: CheckCircle,
+    color: 'text-indigo-600',
+    bgHeader: 'bg-indigo-100 dark:bg-indigo-900/30',
+    description: 'En mesa'
   },
 ]
 
@@ -136,9 +144,9 @@ const Pedidos = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [updatingPedido, setUpdatingPedido] = useState<number | null>(null)
 
-  // Estado para eliminar pedido
-  const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+  // // Estado para eliminar pedido
+  // const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
+  // const [isDeleting, setIsDeleting] = useState(false)
 
   // Estado para trackear qué pedidos cerrados tienen todos los pagos completados
   const [pedidosCerradosPagados, setPedidosCerradosPagados] = useState<Set<number>>(new Set())
@@ -251,6 +259,8 @@ const Pedidos = () => {
     try {
       if (nuevoEstado === 'preparing') {
         await pedidosApi.confirmar(token, pedido.id)
+      } else if (nuevoEstado === 'closed') {
+        await pedidosApi.cerrar(token, pedido.id)
       } else {
         await pedidosApi.updateEstado(token, pedido.id, nuevoEstado)
       }
@@ -263,6 +273,7 @@ const Pedidos = () => {
       const estadoLabels: Record<string, string> = {
         preparing: 'En cocina',
         delivered: 'Listo para entregar',
+        served: 'Entregado',
         closed: 'Cerrado'
       }
       toast.success(`Pedido #${pedido.id} → ${estadoLabels[nuevoEstado]}`)
@@ -275,26 +286,50 @@ const Pedidos = () => {
     }
   }
 
-  // Eliminar pedido
-  const handleDeletePedido = async () => {
-    if (!token || !pedidoAEliminar) return
+  // Cambiar estado de un item específico
+  const handleChangeItemEstado = async (pedido: PedidoData, itemId: number, nuevoEstado: string) => {
+    if (!token) return
 
-    setIsDeleting(true)
-    try {
-      await pedidosApi.delete(token, pedidoAEliminar.id)
-      toast.success('Pedido eliminado', {
-        description: `El pedido #${pedidoAEliminar.id} ha sido eliminado`
-      })
-      setPedidos(prev => prev.filter(p => p.id !== pedidoAEliminar.id))
-      setPedidoAEliminar(null)
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error('Error al eliminar', { description: error.message })
+    // Actualizar localmente optimísticamente
+    setPedidos(prev => prev.map(p => {
+      if (p.id !== pedido.id) return p
+      return {
+        ...p,
+        items: p.items.map(i => i.id === itemId ? { ...i, estado: nuevoEstado as any } : i)
       }
-    } finally {
-      setIsDeleting(false)
+    }))
+
+    try {
+      await pedidosApi.updateItemEstado(token, pedido.id, itemId, nuevoEstado)
+      toast.success(`Item actualizado`)
+    } catch (error) {
+      console.error(error)
+      toast.error('Error al actualizar item')
+      // Revertir si hay error (podríamos implementar revert aquí)
+      fetchPedidos(page, false) // Recargar para asegurar consistencia
     }
   }
+
+  // // Eliminar pedido
+  // const handleDeletePedido = async () => {
+  //   if (!token || !pedidoAEliminar) return
+
+  //   setIsDeleting(true)
+  //   try {
+  //     await pedidosApi.delete(token, pedidoAEliminar.id)
+  //     toast.success('Pedido eliminado', {
+  //       description: `El pedido #${pedidoAEliminar.id} ha sido eliminado`
+  //     })
+  //     setPedidos(prev => prev.filter(p => p.id !== pedidoAEliminar.id))
+  //     setPedidoAEliminar(null)
+  //   } catch (error) {
+  //     if (error instanceof ApiError) {
+  //       toast.error('Error al eliminar', { description: error.message })
+  //     }
+  //   } finally {
+  //     setIsDeleting(false)
+  //   }
+  // }
 
   // Filtrar y agrupar pedidos
   const filteredPedidos = useMemo(() => {
@@ -350,108 +385,169 @@ const Pedidos = () => {
     verificarPagos()
   }, [filteredPedidos, esCarrito])
 
-  // Agrupar por columna
-  const pedidosByColumn = useMemo(() => {
-    const grouped: Record<string, PedidoData[]> = {
+  // Agrupar por columna - REFACTORIZADO para Items
+  const kanbanData = useMemo(() => {
+    const grouped: Record<string, KanbanCardData[]> = {
       pending: [],
       preparing: [],
-      preparingSinPagar: [], // Carrito: preparando sin pagar
-      preparingPagado: [], // Carrito: preparando ya pagado
+      preparingSinPagar: [],
+      preparingPagado: [],
       delivered: [],
-      closedPending: [], // Cerrados pero pendientes de pago
-      closedPaid: [], // Cerrados y pagados
+      served: [],
+      closedPending: [],
+      closedPaid: [],
     }
 
     filteredPedidos.forEach(pedido => {
+      // 1. Pending: Si el pedido está 'pending', va entero a pending
+      if (pedido.estado === 'pending') {
+        grouped.pending.push({
+          id: `${pedido.id}-pending`,
+          pedido,
+          items: pedido.items, // Todos los items
+          status: 'pending'
+        })
+        return
+      }
+
+      // 2. Closed: Si está cerrado, va entero a closed
       if (pedido.estado === 'closed') {
-        // Separar cerrados según si todos pagaron
-        if (pedidosCerradosPagados.has(pedido.id)) {
-          grouped.closedPaid.push(pedido)
+        const target = pedidosCerradosPagados.has(pedido.id) ? 'closedPaid' : 'closedPending'
+        grouped[target].push({
+          id: `${pedido.id}-closed`,
+          pedido,
+          items: pedido.items,
+          status: 'closed'
+        })
+        return
+      }
+
+      // 3. Active (preparing/delivered/served): Separar items por estado
+
+      // Items en cocina (preparing)
+      // Items que no tienen estado o están en preparing o pending (si el pedido ya no es pending)
+      const itemsPreparing = pedido.items.filter(i => !i.estado || i.estado === 'preparing' || i.estado === 'pending')
+      if (itemsPreparing.length > 0) {
+        if (esCarrito) {
+          const target = pedidosCerradosPagados.has(pedido.id) ? 'preparingPagado' : 'preparingSinPagar'
+          grouped[target].push({
+            id: `${pedido.id}-preparing`,
+            pedido,
+            items: itemsPreparing,
+            status: 'preparing'
+          })
         } else {
-          grouped.closedPending.push(pedido)
+          grouped.preparing.push({
+            id: `${pedido.id}-preparing`,
+            pedido,
+            items: itemsPreparing,
+            status: 'preparing'
+          })
         }
-      } else if (pedido.estado === 'preparing' && esCarrito) {
-        // Carrito mode: separar por estado de pago
-        if (pedidosCerradosPagados.has(pedido.id)) {
-          grouped.preparingPagado.push(pedido)
-        } else {
-          grouped.preparingSinPagar.push(pedido)
-        }
-      } else if (grouped[pedido.estado]) {
-        grouped[pedido.estado].push(pedido)
+      }
+
+      // Items listos (delivered)
+      const itemsDelivered = pedido.items.filter(i => i.estado === 'delivered')
+      if (itemsDelivered.length > 0) {
+        grouped.delivered.push({
+          id: `${pedido.id}-delivered`,
+          pedido,
+          items: itemsDelivered,
+          status: 'delivered'
+        })
+      }
+
+      // Items entregados (served)
+      const itemsServed = pedido.items.filter(i => i.estado === 'served')
+      if (itemsServed.length > 0) {
+        grouped.served.push({
+          id: `${pedido.id}-served`,
+          pedido,
+          items: itemsServed,
+          status: 'served'
+        })
       }
     })
 
-    // Ordenar cada columna por tiempo (más antiguos primero para urgencia)
+    // Ordenar
     Object.keys(grouped).forEach(key => {
       grouped[key].sort((a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        new Date(a.pedido.createdAt).getTime() - new Date(b.pedido.createdAt).getTime()
       )
     })
 
     return grouped
   }, [filteredPedidos, pedidosCerradosPagados, esCarrito])
 
-  // Contar totales
+  // Contar totales items/tarjetas
   const counts = useMemo(() => ({
-    pending: pedidosByColumn.pending.length,
-    preparing: pedidosByColumn.preparing.length,
-    delivered: pedidosByColumn.delivered.length,
+    pending: kanbanData.pending.length,
+    preparing: kanbanData.preparing.length,
+    delivered: kanbanData.delivered.length,
+    served: kanbanData.served.length,
     total: filteredPedidos.filter(p => p.estado !== 'closed').length
-  }), [pedidosByColumn, filteredPedidos])
+  }), [kanbanData, filteredPedidos])
 
   // Componente de tarjeta de pedido
-  const PedidoCard = ({ pedido, compact = false }: { pedido: PedidoData; compact?: boolean }) => {
+  const PedidoCard = ({ data, compact = false }: { data: KanbanCardData; compact?: boolean }) => {
+    const { pedido, items, status } = data
     const isUpdating = updatingPedido === pedido.id
 
-    // Acción principal según estado
-    const getNextAction = () => {
-      switch (pedido.estado) {
-        case 'pending':
-          return { label: 'Confirmar', icon: Play, estado: 'preparing', color: 'bg-blue-600 hover:bg-blue-700' }
-        case 'preparing':
-          return { label: 'Listo', icon: CheckCircle, estado: 'delivered', color: 'bg-emerald-600 hover:bg-emerald-700' }
-        case 'delivered':
-          return { label: 'Cerrar', icon: CheckCircle, estado: 'closed', color: 'bg-slate-600 hover:bg-slate-700' }
-        default:
-          return null
+    // Acción principal para todo el grupo
+    const getGroupAction = () => {
+      if (status === 'pending') {
+        return { label: 'Confirmar Todo', icon: Play, action: () => handleChangeEstado(pedido, 'preparing'), color: 'bg-blue-600 hover:bg-blue-700' }
       }
+      if (status === 'served') {
+        // Verificar si todos los items del pedido están served
+        const allItemsProcessed = pedido.items.every(i => i.estado === 'served' || i.estado === 'cancelled')
+        if (allItemsProcessed) {
+          return { label: 'Cerrar Pedido', icon: CheckCircle, action: () => handleChangeEstado(pedido, 'closed'), color: 'bg-slate-600 hover:bg-slate-700' }
+        }
+      }
+      return null
     }
 
-    const nextAction = getNextAction()
-    const maxItems = compact ? 2 : 4
-    const hasExclusions = pedido.items.some(i => i.ingredientesExcluidosNombres?.length)
+    const groupAction = getGroupAction()
+    const maxItems = compact ? 2 : 100
+    const hasExclusions = items.some(i => i.ingredientesExcluidosNombres?.length)
 
     return (
       <Card
-        className={`transition-all duration-200 border-2 cursor-pointer group `}
+        className={`transition-all duration-200 border-2 cursor-pointer group hover:border-primary/50 relative overflow-hidden`}
         onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
       >
-        <CardContent className="p-0">
-          {/* Header: Mesa + Tiempo */}
+        {/* Color stripe based on status */}
+        <div className={`absolute left-0 top-0 bottom-0 w-1 ${status === 'preparing' ? 'bg-blue-500' :
+          status === 'delivered' ? 'bg-emerald-500' :
+            status === 'served' ? 'bg-indigo-500' :
+              'bg-transparent'
+          }`} />
+
+        <CardContent className="p-0 pl-1">
+          {/* Header */}
           <div className="flex items-center justify-between p-3 pb-2">
             <div className="flex items-center gap-2 min-w-0">
-              {/* Mesa/Pedido - GRANDE y prominente */}
-              <div className="text-2xl font-black text-foreground truncate">
+              <div className="text-xl font-bold text-foreground truncate">
                 {esCarrito && pedido.nombrePedido
-                  ? `Pedido de ${pedido.nombrePedido}`
+                  ? `${pedido.nombrePedido}`
                   : (pedido.mesaNombre || `Mesa ?`)}
               </div>
-              {hasExclusions && (
-                <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
-              )}
+              {hasExclusions && <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />}
             </div>
-
-
+            <span className="text-xs font-mono text-muted-foreground">
+              {formatTimeAgo(pedido.createdAt)}
+            </span>
           </div>
 
-          {/* Items del pedido */}
-          <div className="px-3 pb-2 space-y-1">
-            {pedido.items.slice(0, maxItems).map((item) => (
-              <div key={item.id} className="flex items-start gap-2 text-sm">
-                <span className="font-bold text-foreground shrink-0 w-5">
-                  {item.cantidad}×
+          {/* Items */}
+          <div className="px-3 pb-2 space-y-2">
+            {items.slice(0, maxItems).map((item) => (
+              <div key={item.id} className="flex items-center gap-2 text-sm group/item">
+                <span className="font-bold text-foreground shrink-0 w-6 text-center bg-muted rounded-md py-0.5">
+                  {item.cantidad}
                 </span>
+
                 <div className="flex-1 min-w-0">
                   <span className="text-foreground/90 font-medium truncate block">
                     {item.nombreProducto}
@@ -462,59 +558,69 @@ const Pedidos = () => {
                     </span>
                   )}
                 </div>
+
+                {/* Acciones por item */}
+                <div onClick={(e) => e.stopPropagation()}>
+                  {status === 'preparing' && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
+                      title="Marcar Listo"
+                      onClick={() => handleChangeItemEstado(pedido, item.id, 'delivered')}
+                      disabled={isUpdating}
+                    >
+                      {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-5 w-5" />}
+                    </Button>
+                  )}
+                  {status === 'delivered' && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
+                      title="Marcar Entregado"
+                      onClick={() => handleChangeItemEstado(pedido, item.id, 'served')}
+                      disabled={isUpdating}
+                    >
+                      {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Utensils className="h-5 w-5" />}
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
-            {pedido.items.length > maxItems && (
-              <p className="text-xs text-muted-foreground pl-7">
-                +{pedido.items.length - maxItems} más...
-              </p>
-            )}
           </div>
 
-          {/* Footer: Total + Acción */}
-          <div className="flex items-center justify-between p-3 pt-2 border-t border-border/50 bg-black/5 dark:bg-white/5">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-foreground">
-                ${parseFloat(pedido.total || '0').toFixed(0)}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                • #{pedido.id}
-              </span>
-            </div>
+          {/* Footer */}
+          <div className="flex items-center justify-between p-3 pt-2 border-t border-border/50 bg-muted/10">
+            <span className="text-xs text-muted-foreground">#{pedido.id}</span>
 
-            <div className="flex items-center gap-1">
-              {/* Botón eliminar */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setPedidoAEliminar(pedido)
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+            <div className="flex gap-2">
+              {/* Botón eliminar (solo en pending?) */}
+              {status === 'pending' && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    // setPedidoAEliminar(pedido)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
 
-              {/* Botón acción principal */}
-              {nextAction && (
+              {groupAction && (
                 <Button
                   size="sm"
-                  className={`${nextAction.color} text-white font-semibold h-8 gap-1`}
+                  className={`${groupAction.color} text-white font-semibold h-7 text-xs`}
                   disabled={isUpdating}
                   onClick={(e) => {
                     e.stopPropagation()
-                    handleChangeEstado(pedido, nextAction.estado)
+                    groupAction.action()
                   }}
                 >
-                  {isUpdating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <nextAction.icon className="h-4 w-4" />
-                      {nextAction.label}
-                    </>
-                  )}
+                  {groupAction.label}
                 </Button>
               )}
             </div>
@@ -610,13 +716,18 @@ const Pedidos = () => {
             <span className="font-semibold text-emerald-700 dark:text-emerald-400">{counts.delivered}</span>
             <span className="text-emerald-600/80">listos</span>
           </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30">
+            <CheckCircle className="h-4 w-4 text-indigo-600" />
+            <span className="font-semibold text-indigo-700 dark:text-indigo-400">{counts.served}</span>
+            <span className="text-indigo-600/80">entregados</span>
+          </div>
         </div>
       </div>
 
       {/* Vista Kanban - Desktop */}
       <div className="flex-1 hidden lg:flex gap-4 p-4 overflow-hidden">
         {(esCarrito ? CARRITO_COLUMNS : COLUMNS).map((column) => {
-          const columnPedidos = pedidosByColumn[column.id] || []
+          const columnCards = kanbanData[column.id] || []
           const ColumnIcon = column.icon
 
           return (
@@ -629,23 +740,23 @@ const Pedidos = () => {
                     <span className="font-bold text-foreground">{column.title}</span>
                   </div>
                   <Badge variant="secondary" className="font-mono font-bold">
-                    {columnPedidos.length}
+                    {columnCards.length}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{column.description}</p>
               </div>
 
-              {/* Lista de pedidos */}
+              {/* Lista de tarjetas */}
               <ScrollArea className="flex-1 bg-muted/30 rounded-b-lg border border-t-0">
                 <div className="p-3 space-y-3">
-                  {columnPedidos.length === 0 ? (
+                  {columnCards.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-40" />
                       <p className="text-sm">Sin pedidos</p>
                     </div>
                   ) : (
-                    columnPedidos.map((pedido) => (
-                      <PedidoCard key={pedido.id} pedido={pedido} />
+                    columnCards.map((card) => (
+                      <PedidoCard key={card.id} data={card} />
                     ))
                   )}
                 </div>
@@ -655,7 +766,7 @@ const Pedidos = () => {
         })}
 
         {/* Columna de cerrados pendientes de pago */}
-        {showClosed && pedidosByColumn.closedPending.length > 0 && (
+        {showClosed && kanbanData.closedPending.length > 0 && (
           <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px]">
             <div className="shrink-0 rounded-t-lg px-4 py-3 bg-orange-100 dark:bg-orange-900/30">
               <div className="flex items-center justify-between">
@@ -664,27 +775,27 @@ const Pedidos = () => {
                   <span className="font-bold text-foreground">Cerrados (Pendiente pago)</span>
                 </div>
                 <Badge variant="secondary" className="font-mono">
-                  {pedidosByColumn.closedPending.length}
+                  {kanbanData.closedPending.length}
                 </Badge>
               </div>
             </div>
             <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
               <div className="p-3 space-y-2">
-                {pedidosByColumn.closedPending.slice(0, 10).map((pedido) => (
+                {kanbanData.closedPending.slice(0, 10).map((card) => (
                   <Card
-                    key={pedido.id}
+                    key={card.id}
                     className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                    onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="font-bold">{pedido.mesaNombre}</span>
-                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
+                        <span className="font-bold">{card.pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
                       </div>
-                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                      <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {formatTimeAgo(pedido.createdAt)}
+                      {formatTimeAgo(card.pedido.createdAt)}
                     </p>
                   </Card>
                 ))}
@@ -694,7 +805,7 @@ const Pedidos = () => {
         )}
 
         {/* Columna de cerrados pagados */}
-        {showClosed && pedidosByColumn.closedPaid.length > 0 && (
+        {showClosed && kanbanData.closedPaid.length > 0 && (
           <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px] opacity-60">
             <div className="shrink-0 rounded-t-lg px-4 py-3 bg-slate-100 dark:bg-slate-800/50">
               <div className="flex items-center justify-between">
@@ -703,27 +814,27 @@ const Pedidos = () => {
                   <span className="font-bold text-foreground">Cerrados (Pagados)</span>
                 </div>
                 <Badge variant="secondary" className="font-mono">
-                  {pedidosByColumn.closedPaid.length}
+                  {kanbanData.closedPaid.length}
                 </Badge>
               </div>
             </div>
             <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
               <div className="p-3 space-y-2">
-                {pedidosByColumn.closedPaid.slice(0, 10).map((pedido) => (
+                {kanbanData.closedPaid.slice(0, 10).map((card) => (
                   <Card
-                    key={pedido.id}
+                    key={card.id}
                     className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                    onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="font-bold">{pedido.mesaNombre}</span>
-                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
+                        <span className="font-bold">{card.pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
                       </div>
-                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                      <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {formatTimeAgo(pedido.createdAt)}
+                      {formatTimeAgo(card.pedido.createdAt)}
                     </p>
                   </Card>
                 ))}
@@ -742,10 +853,10 @@ const Pedidos = () => {
       <div className="flex-1 lg:hidden overflow-auto">
         <div className="p-4 space-y-6">
           {(esCarrito ? CARRITO_COLUMNS : COLUMNS).map((column) => {
-            const columnPedidos = pedidosByColumn[column.id] || []
+            const columnCards = kanbanData[column.id] || []
             const ColumnIcon = column.icon
 
-            if (columnPedidos.length === 0) return null
+            if (columnCards.length === 0) return null
 
             return (
               <div key={column.id}>
@@ -754,14 +865,14 @@ const Pedidos = () => {
                   <ColumnIcon className={`h-5 w-5 ${column.color}`} />
                   <span className="font-bold text-foreground flex-1">{column.title}</span>
                   <Badge variant="secondary" className="font-mono font-bold">
-                    {columnPedidos.length}
+                    {columnCards.length}
                   </Badge>
                 </div>
 
                 {/* Cards */}
                 <div className="space-y-3">
-                  {columnPedidos.map((pedido) => (
-                    <PedidoCard key={pedido.id} pedido={pedido} compact />
+                  {columnCards.map((card) => (
+                    <PedidoCard key={card.id} data={card} compact />
                   ))}
                 </div>
               </div>
@@ -769,140 +880,41 @@ const Pedidos = () => {
           })}
 
           {/* Pedidos cerrados pendientes de pago - Mobile */}
-          {showClosed && pedidosByColumn.closedPending.length > 0 && (
+          {showClosed && kanbanData.closedPending.length > 0 && (
             <div>
               {/* Header de sección */}
               <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
                 <CheckCircle className="h-5 w-5 text-orange-600" />
                 <span className="font-bold text-foreground flex-1">Cerrados (Pendiente pago)</span>
                 <Badge variant="secondary" className="font-mono font-bold">
-                  {pedidosByColumn.closedPending.length}
+                  {kanbanData.closedPending.length}
                 </Badge>
               </div>
 
-              {/* Cards de cerrados pendientes */}
-              <div className="space-y-2">
-                {pedidosByColumn.closedPending.slice(0, 10).map((pedido) => (
+              <div className="space-y-3">
+                {kanbanData.closedPending.slice(0, 10).map((card) => (
                   <Card
-                    key={pedido.id}
+                    key={card.id}
                     className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
+                    onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="font-bold">{pedido.mesaNombre}</span>
-                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
+                        <span className="font-bold">{card.pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
                       </div>
-                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
+                      <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {formatTimeAgo(pedido.createdAt)}
+                      {formatTimeAgo(card.pedido.createdAt)}
                     </p>
                   </Card>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Pedidos cerrados pagados - Mobile */}
-          {showClosed && pedidosByColumn.closedPaid.length > 0 && (
-            <div className="opacity-70">
-              {/* Header de sección */}
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800/50">
-                <CheckCircle className="h-5 w-5 text-slate-500" />
-                <span className="font-bold text-foreground flex-1">Cerrados (Pagados)</span>
-                <Badge variant="secondary" className="font-mono font-bold">
-                  {pedidosByColumn.closedPaid.length}
-                </Badge>
-              </div>
-
-              {/* Cards de cerrados pagados */}
-              <div className="space-y-2">
-                {pedidosByColumn.closedPaid.slice(0, 10).map((pedido) => (
-                  <Card
-                    key={pedido.id}
-                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/dashboard/pedidos/${pedido.id}`)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-bold">{pedido.mesaNombre}</span>
-                        <span className="text-xs text-muted-foreground ml-2">#{pedido.id}</span>
-                      </div>
-                      <span className="font-semibold">${parseFloat(pedido.total).toFixed(0)}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatTimeAgo(pedido.createdAt)}
-                    </p>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Mensaje vacío */}
-          {counts.total === 0 && (
-            <div className="text-center py-12">
-              <ShoppingCart className="h-16 w-16 mx-auto mb-4 text-muted-foreground/40" />
-              <p className="text-lg font-medium text-muted-foreground">No hay pedidos activos</p>
-              {searchTerm && (
-                <Button variant="ghost" className="mt-4" onClick={() => setSearchTerm('')}>
-                  <X className="h-4 w-4 mr-2" />
-                  Limpiar búsqueda
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Load more para mobile */}
-          {hasMore && counts.total > 0 && (
-            <div className="pt-4 pb-8">
-              <Button variant="outline" className="w-full" onClick={loadMore} disabled={isLoadingMore}>
-                {isLoadingMore ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cargando...
-                  </>
-                ) : (
-                  'Cargar más pedidos'
-                )}
-              </Button>
             </div>
           )}
         </div>
       </div>
-
-      {/* Dialog de confirmación para eliminar */}
-      <Dialog open={!!pedidoAEliminar} onOpenChange={(open) => !open && setPedidoAEliminar(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="h-5 w-5" />
-              ¿Eliminar Pedido?
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              ¿Eliminar el pedido <strong className="text-foreground">#{pedidoAEliminar?.id}</strong> de <strong className="text-foreground">{pedidoAEliminar?.mesaNombre || 'Sin mesa'}</strong>?
-              <br /><br />
-              Esta acción no se puede deshacer.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setPedidoAEliminar(null)} disabled={isDeleting}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleDeletePedido} disabled={isDeleting}>
-              {isDeleting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Eliminando...
-                </>
-              ) : (
-                'Eliminar'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -33,6 +33,7 @@ interface ItemPedido {
   ingredientesExcluidos?: number[]
   ingredientesExcluidosNombres?: string[]
   postConfirmacion?: boolean // true si se agregó después de confirmar el pedido
+  estado?: 'pending' | 'preparing' | 'delivered' | 'served' | 'cancelled'
 }
 
 interface PagoInfo {
@@ -90,6 +91,18 @@ const getEstadoBadge = (estado: string | null | undefined) => {
     preparing: { label: 'Preparando', variant: 'default', icon: ChefHat, color: 'text-blue-600 bg-blue-100' },
     delivered: { label: 'Entregado', variant: 'secondary', icon: Utensils, color: 'text-green-600 bg-green-100' },
     closed: { label: 'Cerrado', variant: 'secondary', icon: CheckCircle, color: 'text-gray-600 bg-gray-100' },
+  }
+  return estados[estado || 'pending'] || estados.pending
+}
+
+// Helper para obtener el badge del estado del ITEM
+const getItemEstadoBadge = (estado: string | null | undefined) => {
+  const estados: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: any; color: string }> = {
+    pending: { label: 'Pendiente', variant: 'outline', icon: Clock, color: 'text-yellow-600 bg-yellow-100' },
+    preparing: { label: 'En Cocina', variant: 'default', icon: ChefHat, color: 'text-blue-600 bg-blue-100' },
+    delivered: { label: 'Listo', variant: 'secondary', icon: Utensils, color: 'text-green-600 bg-green-100' },
+    served: { label: 'Entregado', variant: 'secondary', icon: CheckCircle, color: 'text-indigo-600 bg-indigo-100' },
+    cancelled: { label: 'Cancelado', variant: 'destructive', icon: XCircle, color: 'text-red-600 bg-red-100' },
   }
   return estados[estado || 'pending'] || estados.pending
 }
@@ -333,6 +346,36 @@ const Pedido = () => {
       }
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  // Cambiar estado de un item específico
+  const handleChangeItemEstado = async (itemId: number, nuevoEstado: string) => {
+    if (!token || !pedido) return
+
+    // Optimistic update
+    setPedido(prev => {
+      if (!prev) return null
+      const updatedItems = prev.items.map(i => i.id === itemId ? { ...i, estado: nuevoEstado as any } : i)
+
+      // Re-group items por cliente
+      const itemsPorCliente = updatedItems.reduce((acc, item) => {
+        const cliente = item.clienteNombre || 'Sin nombre'
+        if (!acc[cliente]) acc[cliente] = []
+        acc[cliente].push(item)
+        return acc
+      }, {} as Record<string, ItemPedido[]>)
+
+      return { ...prev, items: updatedItems, itemsPorCliente }
+    })
+
+    try {
+      await pedidosApi.updateItemEstado(token, pedido.id, itemId, nuevoEstado)
+      toast.success(`Item actualizado`)
+    } catch (error) {
+      console.error(error)
+      toast.error('Error al actualizar item')
+      await fetchPedido() // Revert/Refresh
     }
   }
 
@@ -803,72 +846,110 @@ const Pedido = () => {
                     </Badge>
                   </div>
                   <div className="space-y-3">
-                    {items.map((item) => (
-                      <div
-                        key={item.id}
-                        className={`flex items-center justify-between p-3 rounded-lg group transition-all ${item.postConfirmacion
-                          ? 'bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-700 ring-1 ring-amber-200 dark:ring-amber-800'
-                          : 'bg-muted/50'
-                          }`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="relative">
-                            {item.imagenUrl ? (
-                              <img
-                                src={item.imagenUrl}
-                                alt={item.nombreProducto}
-                                className="w-14 h-14 rounded-lg object-cover"
-                              />
-                            ) : (
-                              <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
-                                <ShoppingCart className="h-6 w-6 text-muted-foreground" />
-                              </div>
-                            )}
-                            {item.postConfirmacion && (
-                              <div className="absolute -top-1 -right-1 bg-amber-500 rounded-full p-0.5">
-                                <Sparkles className="h-3 w-3 text-white" />
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium">{item.nombreProducto}</p>
+                    {items.map((item) => {
+                      const itemBadge = getItemEstadoBadge(item.estado);
+                      const ItemStatusIcon = itemBadge.icon;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex items-center justify-between p-3 rounded-lg group transition-all ${item.postConfirmacion
+                            ? 'bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-700 ring-1 ring-amber-200 dark:ring-amber-800'
+                            : 'bg-muted/50'
+                            }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              {item.imagenUrl ? (
+                                <img
+                                  src={item.imagenUrl}
+                                  alt={item.nombreProducto}
+                                  className="w-14 h-14 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
+                                  <ShoppingCart className="h-6 w-6 text-muted-foreground" />
+                                </div>
+                              )}
                               {item.postConfirmacion && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300">
-                                  <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                                  Nuevo
-                                </Badge>
+                                <div className="absolute -top-1 -right-1 bg-amber-500 rounded-full p-0.5">
+                                  <Sparkles className="h-3 w-3 text-white" />
+                                </div>
                               )}
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                              ${parseFloat(item.precioUnitario).toFixed(2)} x {item.cantidad}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{item.nombreProducto}</p>
+                                {/* Item Status Badge */}
+                                <Badge variant={itemBadge.variant as any} className={`text-[10px] px-1.5 py-0 h-4 gap-1 ${itemBadge.color} bg-opacity-20`}>
+                                  <ItemStatusIcon className="h-2.5 w-2.5" />
+                                  {itemBadge.label}
+                                </Badge>
+
+                                {item.postConfirmacion && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300">
+                                    <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                                    Nuevo
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                ${parseFloat(item.precioUnitario).toFixed(2)} x {item.cantidad}
+                              </p>
+                              {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                <div className="mt-2 p-2 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded">
+                                  <p className="text-xs text-orange-700 dark:text-orange-300 font-medium">
+                                    ⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <p className={`text-lg font-bold ${item.postConfirmacion ? 'text-amber-700 dark:text-amber-400' : ''}`}>
+                              ${(parseFloat(item.precioUnitario) * (item.cantidad || 1)).toFixed(2)}
                             </p>
-                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                              <div className="mt-2 p-2 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded">
-                                <p className="text-xs text-orange-700 dark:text-orange-300 font-medium">
-                                  ⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}
-                                </p>
+
+                            {/* Item Actions */}
+                            {isActive && (
+                              <div className="flex items-center gap-1">
+                                {(item.estado === 'preparing' || item.estado === 'pending' || !item.estado) && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
+                                    title="Marcar Listo"
+                                    onClick={() => handleChangeItemEstado(item.id, 'delivered')}
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {item.estado === 'delivered' && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
+                                    title="Marcar Entregado"
+                                    onClick={() => handleChangeItemEstado(item.id, 'served')}
+                                  >
+                                    <Utensils className="h-4 w-4" />
+                                  </Button>
+                                )}
+
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => setItemAEliminar(item)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <p className={`text-lg font-bold ${item.postConfirmacion ? 'text-amber-700 dark:text-amber-400' : ''}`}>
-                            ${(parseFloat(item.precioUnitario) * (item.cantidad || 1)).toFixed(2)}
-                          </p>
-                          {isActive && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => setItemAEliminar(item)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}

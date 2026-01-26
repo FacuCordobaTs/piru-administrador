@@ -366,6 +366,17 @@ export const pedidosApi = {
     })
   },
 
+  // Actualizar estado de un item específico
+  updateItemEstado: async (token: string, pedidoId: number, itemId: number, estado: string) => {
+    return fetchApi(`/pedido/${pedidoId}/items/${itemId}/estado`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ estado }),
+    })
+  },
+
   // ==================== GESTIÓN MANUAL DE PEDIDOS ====================
 
   // Crear pedido manual para una mesa
