@@ -77,6 +77,10 @@ interface SubtotalInfo {
   pagado: boolean
   metodo?: string
   estado?: 'pending' | 'pending_cash' | 'paid' | 'failed' // Estado específico para control granular
+  // Campos opcionales para items de Mozo
+  isMozoItem?: boolean
+  itemId?: number
+  nombreProducto?: string
 }
 
 // Helper para obtener el badge del estado
@@ -271,10 +275,15 @@ const Pedido = () => {
       const response = await mercadopagoApi.getSubtotales(Number(id)) as {
         success: boolean
         subtotales: SubtotalInfo[]
+        mozoItems?: SubtotalInfo[]
       }
 
-      if (response.success && response.subtotales) {
-        setSubtotales(response.subtotales)
+      if (response.success) {
+        let allSubtotales = response.subtotales || []
+        if (response.mozoItems && Array.isArray(response.mozoItems)) {
+          allSubtotales = [...allSubtotales, ...response.mozoItems]
+        }
+        setSubtotales(allSubtotales)
       }
     } catch (error) {
       console.error('Error fetching subtotales:', error)
@@ -1075,6 +1084,101 @@ const Pedido = () => {
               ) : (
                 <div className="space-y-3">
                   {Object.keys(pedido.itemsPorCliente).map((cliente) => {
+                    // Special handling for Mozo items - they are paid individually
+                    if (cliente === 'Mozo') {
+                      const mozoItems = pedido.itemsPorCliente[cliente]
+                      return mozoItems.map((item) => {
+                        const itemTotal = parseFloat(item.precioUnitario) * (item.cantidad || 1)
+                        const itemKey = `Mozo:item:${item.id}`
+
+                        // Find payment status for this specific item
+                        const subtotalInfo = subtotales.find(s => s.clienteNombre === itemKey)
+                        const estaPagado = subtotalInfo?.pagado === true
+                        const metodoPago = subtotalInfo?.metodo
+                        const estadoPago = subtotalInfo?.estado
+                        const esperandoConfirmacion = estadoPago === 'pending_cash'
+
+                        return (
+                          <div
+                            key={itemKey}
+                            className={`flex items-center justify-between p-2 rounded-lg ${estaPagado
+                              ? 'bg-green-50 dark:bg-green-950/30'
+                              : esperandoConfirmacion
+                                ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700'
+                                : 'bg-muted/30'
+                              }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              {estaPagado ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              ) : esperandoConfirmacion ? (
+                                <Banknote className="h-4 w-4 text-amber-600" />
+                              ) : (
+                                <ChefHat className="h-4 w-4 text-amber-600" />
+                              )}
+                              <div className="flex flex-col">
+                                <span className={`font-medium text-sm ${estaPagado
+                                  ? 'text-green-700 dark:text-green-400'
+                                  : esperandoConfirmacion
+                                    ? 'text-amber-700 dark:text-amber-400'
+                                    : ''
+                                  }`}>
+                                  {item.nombreProducto || 'Producto Mozo'}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  Agregado por Mozo
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-sm font-semibold ${estaPagado ? 'text-green-600 line-through' : ''}`}>
+                                ${itemTotal.toFixed(2)}
+                              </span>
+                              {estaPagado && metodoPago && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-green-100 dark:bg-green-900/50 border-green-300 dark:border-green-700 text-green-700 dark:text-green-300">
+                                  {metodoPago === 'mercadopago' ? (
+                                    <CreditCard className="h-2.5 w-2.5 mr-0.5" />
+                                  ) : (
+                                    <Banknote className="h-2.5 w-2.5 mr-0.5" />
+                                  )}
+                                  {metodoPago === 'mercadopago' ? 'MP' : 'Efectivo'}
+                                </Badge>
+                              )}
+                              {puedeGestionarPagos && esperandoConfirmacion && (
+                                <>
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-semibold">
+                                    <Banknote className="h-2.5 w-2.5 mr-0.5" />
+                                    DEBE ABONAR EFECTIVO
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="h-7 px-2.5 text-xs gap-1.5 bg-green-600 hover:bg-green-700"
+                                    onClick={() => handleConfirmarPagoEfectivo(itemKey)}
+                                    disabled={marcandoPagoEfectivo === itemKey}
+                                  >
+                                    {marcandoPagoEfectivo === itemKey ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="h-3 w-3" />
+                                    )}
+                                    Confirmar
+                                  </Button>
+                                </>
+                              )}
+                              {puedeGestionarPagos && !estaPagado && !esperandoConfirmacion && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300">
+                                  <Clock className="h-2.5 w-2.5 mr-0.5" />
+                                  Pendiente
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })
+                    }
+
+                    // Standard handling for other clients
                     const clienteItems = pedido.itemsPorCliente[cliente]
                     const clienteTotal = clienteItems.reduce(
                       (sum, item) => sum + (parseFloat(item.precioUnitario) * (item.cantidad || 1)),
