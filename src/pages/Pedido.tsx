@@ -191,6 +191,11 @@ const Pedido = () => {
   // Estados para marcar pago en efectivo
   const [marcandoPagoEfectivo, setMarcandoPagoEfectivo] = useState<string | null>(null) // clienteNombre que se está marcando
 
+  // HELPER: Determinar si se pueden gestionar pagos
+  // En restaurante normal: solo si está cerrado
+  // En carrito: si está cerrado O si está preparando (porque pagan antes)
+  const puedeGestionarPagos = pedido?.estado === 'closed' || (esCarrito && pedido?.estado === 'preparing');
+
   // Fetch pedido desde API REST
   const fetchPedido = useCallback(async () => {
     if (!token || !id) return
@@ -278,12 +283,12 @@ const Pedido = () => {
     }
   }, [id])
 
-  // Cargar subtotales cuando el pedido está cerrado
+  // CAMBIO 1: Cargar subtotales si puede gestionar pagos (Closed o Carrito+Preparing)
   useEffect(() => {
-    if (pedido?.estado === 'closed') {
+    if (puedeGestionarPagos) {
       fetchSubtotales()
     }
-  }, [pedido?.estado, fetchSubtotales])
+  }, [puedeGestionarPagos, fetchSubtotales])
 
   // Actualizar subtotales desde WebSocket
   useEffect(() => {
@@ -1055,7 +1060,8 @@ const Pedido = () => {
                 <Users className="h-4 w-4" />
                 Clientes ({Object.keys(pedido.itemsPorCliente).length})
               </CardTitle>
-              {pedido.estado === 'closed' && subtotales.length > 0 && (
+              {/* CAMBIO 2: Mostrar descripción también si es carrito + preparing */}
+              {puedeGestionarPagos && subtotales.length > 0 && (
                 <CardDescription>
                   Estado de pago por cliente
                 </CardDescription>
@@ -1122,8 +1128,8 @@ const Pedido = () => {
                               {metodoPago === 'mercadopago' ? 'MP' : 'Efectivo'}
                             </Badge>
                           )}
-                          {/* Esperando confirmación de pago en efectivo */}
-                          {pedido.estado === 'closed' && esperandoConfirmacion && (
+                          {/* CAMBIO 3: Mostrar botón de confirmar efectivo si es carrito + preparing */}
+                          {puedeGestionarPagos && esperandoConfirmacion && (
                             <>
                               <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-semibold">
                                 <Banknote className="h-2.5 w-2.5 mr-0.5" />
@@ -1145,8 +1151,8 @@ const Pedido = () => {
                               </Button>
                             </>
                           )}
-                          {/* Sin selección de método de pago aún */}
-                          {pedido.estado === 'closed' && !estaPagado && !esperandoConfirmacion && (
+                          {/* CAMBIO 4: Mostrar pendiente si es carrito + preparing */}
+                          {puedeGestionarPagos && !estaPagado && !esperandoConfirmacion && (
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300">
                               <Clock className="h-2.5 w-2.5 mr-0.5" />
                               Pendiente
@@ -1159,8 +1165,8 @@ const Pedido = () => {
                 </div>
               )}
 
-              {/* Resumen de pagos si el pedido está cerrado */}
-              {pedido.estado === 'closed' && subtotales.length > 0 && (
+              {/* CAMBIO 5: Mostrar totales si es carrito + preparing */}
+              {puedeGestionarPagos && subtotales.length > 0 && (
                 <>
                   <Separator className="my-4" />
                   <div className="space-y-2">
