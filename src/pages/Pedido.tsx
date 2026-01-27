@@ -242,7 +242,7 @@ const Pedido = () => {
       if (error instanceof ApiError) {
         toast.error('Error al cargar el pedido', { description: error.message })
         if (error.status === 404) {
-          navigate('/dashboard/pedidos')
+          navigate('/dashboard')
         }
       }
     } finally {
@@ -515,7 +515,7 @@ const Pedido = () => {
         description: `El pedido #${pedido.id} ha sido eliminado correctamente`
       })
       // Redirigir a la lista de pedidos
-      navigate('/dashboard/pedidos')
+      navigate('/dashboard')
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error('Error al eliminar pedido', { description: error.message })
@@ -587,7 +587,7 @@ const Pedido = () => {
       <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col items-center justify-center min-h-[400px]">
         <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
         <p className="text-muted-foreground mb-4">Pedido no encontrado</p>
-        <Button onClick={() => navigate('/dashboard/pedidos')}>
+        <Button onClick={() => navigate('/dashboard')}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Volver a Pedidos
         </Button>
