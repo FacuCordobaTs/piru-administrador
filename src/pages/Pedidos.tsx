@@ -216,27 +216,84 @@ const Pedidos = () => {
   }, [token])
 
   // Actualizar pedidos activos desde WebSocket
+  // Actualizar pedidos activos desde WebSocket (ESTRATEGIA DEFENSIVA)
   useEffect(() => {
     if (mesasWS.length > 0) {
       setPedidos(prev => {
-        let updated = prev.map(pedido => {
-          const mesaWS = mesasWS.find(m => m.pedido?.id === pedido.id)
-          if (mesaWS && mesaWS.pedido) {
-            return {
-              ...pedido,
-              estado: mesaWS.pedido.estado,
-              total: mesaWS.pedido.total,
-              items: mesaWS.items,
-              totalItems: mesaWS.totalItems
-            }
-          }
-          return pedido
-        })
+        // Creamos un mapa de los pedidos que vienen por WS para acceso rápido
+        const wsMap = new Map(mesasWS.map(m => [m.pedido?.id, m]));
 
-        // Agregar nuevos pedidos que no estaban en la lista
+        // 1. Actualizamos los pedidos existentes (Conservando la verdad local)
+        let updated = prev.map(pedidoLocal => {
+          const mesaWS = wsMap.get(pedidoLocal.id);
+
+          // Si este pedido no viene en el WS, no lo tocamos
+          if (!mesaWS || !mesaWS.pedido) return pedidoLocal;
+
+          // Si el pedido está cerrado en local y el WS dice lo mismo, ignoramos para no causar saltos
+          if (pedidoLocal.estado === 'closed' && mesaWS.pedido.estado === 'closed') return pedidoLocal;
+
+          // MERGE INTELIGENTE DE ITEMS
+          // Estrategia: Iteramos sobre los items LOCALES para asegurar que no perdemos datos.
+          // Solo actualizamos si el WS trae información nueva y válida.
+          const currentItemsMap = new Map(pedidoLocal.items.map(i => [i.id, i]));
+          const wsItemsMap = new Map(mesaWS.items.map(i => [i.id, i]));
+
+          // a) Revisar items existentes
+          const mergedExistingItems = pedidoLocal.items.map(localItem => {
+            const wsItem = wsItemsMap.get(localItem.id);
+
+            // Si el item no está en el WS (y no fue borrado), mantenemos el local
+            if (!wsItem) return localItem;
+
+            // PROTECCIÓN DE ESTADO (El corazón del arreglo):
+            // Si localmente ya está avanzado (Listos/Entregados) y el WS dice "preparing" (o nada),
+            // asumimos que el WS trae datos viejos/básicos y PROTEGEMOS el estado local.
+            const estadoLocal = localItem.estado;
+            const estadoWS = (wsItem as any).estado; // A veces viene como propiedad directa
+
+            let estadoFinal = estadoWS || estadoLocal; // Si WS no tiene estado, usa local
+
+            const estadosAvanzados = ['delivered', 'served', 'cancelled'];
+            const estadosBasicos = ['pending', 'preparing'];
+
+            // Si yo tengo un estado avanzado y el WS me quiere regresar a uno básico...
+            if (estadosAvanzados.includes(estadoLocal || '') &&
+              (!estadoWS || estadosBasicos.includes(estadoWS))) {
+              // ...¡LE DIGO QUE NO! Me quedo con mi estado local.
+              estadoFinal = estadoLocal;
+            }
+
+            return {
+              ...localItem, // Mantenemos fotos, nombres, notas locales
+              ...wsItem,    // Actualizamos cantidades o datos cambiantes
+              estado: estadoFinal // Forzamos el estado decidido
+            };
+          });
+
+          // b) Detectar items NUEVOS que vienen en el WS pero no tengo en local
+          // (Ej: El cliente agregó una bebida desde su cel)
+          const newItemsFromWS = mesaWS.items
+            .filter(wsItem => !currentItemsMap.has(wsItem.id))
+            .map(wsItem => ({
+              ...wsItem,
+              // Si es nuevo, confiamos en el estado que traiga o preparing por defecto
+              estado: (wsItem as any).estado || 'preparing'
+            }));
+
+          return {
+            ...pedidoLocal,
+            estado: mesaWS.pedido.estado, // El estado general del pedido sí confiamos en el WS
+            total: mesaWS.pedido.total,
+            totalItems: mesaWS.totalItems,
+            items: [...mergedExistingItems, ...newItemsFromWS] // Unimos protegidos + nuevos
+          };
+        });
+
+        // 2. Agregar pedidos NUEVOS que vienen por WS y no están en local
         mesasWS.forEach(mesa => {
           if (mesa.pedido && mesa.pedido.estado !== 'closed') {
-            const exists = updated.some(p => p.id === mesa.pedido!.id)
+            const exists = prev.some(p => p.id == mesa.pedido!.id);
             if (!exists) {
               const newPedido: PedidoData = {
                 id: mesa.pedido!.id,
@@ -246,19 +303,19 @@ const Pedidos = () => {
                 total: mesa.pedido!.total,
                 createdAt: mesa.pedido!.createdAt,
                 closedAt: mesa.pedido!.closedAt,
-                items: mesa.items,
+                items: mesa.items.map(i => ({ ...i, estado: (i as any).estado || 'preparing' })),
                 totalItems: mesa.totalItems,
                 nombrePedido: mesa.pedido!.nombrePedido
-              }
-              updated = [newPedido, ...updated]
+              };
+              updated = [newPedido, ...updated];
             }
           }
-        })
+        });
 
-        return updated
-      })
+        return updated;
+      });
     }
-  }, [mesasWS])
+  }, [mesasWS]);
 
   // Cargar más
   const loadMore = () => {
