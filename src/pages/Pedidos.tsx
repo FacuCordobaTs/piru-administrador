@@ -385,6 +385,41 @@ const Pedidos = () => {
     }
   }
 
+  // Cambiar estado de TODOS los items de un pedido (para modo carrito)
+  const handleChangeAllItemsEstado = async (pedido: PedidoData, items: ItemPedido[], nuevoEstado: string) => {
+    if (!token) return
+
+    setUpdatingPedido(pedido.id)
+
+    // Actualizar localmente optimísticamente
+    setPedidos(prev => prev.map(p => {
+      if (p.id !== pedido.id) return p
+      const itemIds = new Set(items.map(i => i.id))
+      return {
+        ...p,
+        items: p.items.map(i => itemIds.has(i.id) ? { ...i, estado: nuevoEstado as any } : i)
+      }
+    }))
+
+    try {
+      // Actualizar cada item en el backend
+      await Promise.all(
+        items.map(item => pedidosApi.updateItemEstado(token, pedido.id, item.id, nuevoEstado))
+      )
+      const estadoLabels: Record<string, string> = {
+        delivered: 'Listo',
+        served: 'Entregado'
+      }
+      toast.success(`Pedido #${pedido.id} → ${estadoLabels[nuevoEstado] || nuevoEstado}`)
+    } catch (error) {
+      console.error(error)
+      toast.error('Error al actualizar pedido')
+      fetchPedidos(page, false)
+    } finally {
+      setUpdatingPedido(null)
+    }
+  }
+
   // // Eliminar pedido
   // const handleDeletePedido = async () => {
   //   if (!token || !pedidoAEliminar) return
@@ -669,33 +704,35 @@ const Pedidos = () => {
                         )}
                       </div>
 
-                      {/* Acciones por item */}
-                      <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex gap-1">
-                        {status === 'preparing' && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
-                            title="Marcar Listo"
-                            onClick={() => handleChangeItemEstado(pedido, item.id, 'delivered')}
-                            disabled={isUpdating}
-                          >
-                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                          </Button>
-                        )}
-                        {status === 'delivered' && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
-                            title="Marcar Entregado"
-                            onClick={() => handleChangeItemEstado(pedido, item.id, 'served')}
-                            disabled={isUpdating}
-                          >
-                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Utensils className="h-4 w-4" />}
-                          </Button>
-                        )}
-                      </div>
+                      {/* Acciones por item - Solo en modo RESTAURANTE */}
+                      {!esCarrito && (
+                        <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex gap-1">
+                          {status === 'preparing' && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
+                              title="Marcar Listo"
+                              onClick={() => handleChangeItemEstado(pedido, item.id, 'delivered')}
+                              disabled={isUpdating}
+                            >
+                              {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                            </Button>
+                          )}
+                          {status === 'delivered' && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
+                              title="Marcar Entregado"
+                              onClick={() => handleChangeItemEstado(pedido, item.id, 'served')}
+                              disabled={isUpdating}
+                            >
+                              {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Utensils className="h-4 w-4" />}
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -733,7 +770,38 @@ const Pedidos = () => {
                     groupAction.action()
                   }}
                 >
+                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                   {groupAction.label}
+                </Button>
+              )}
+
+              {/* Botones de acción global para modo CARRITO */}
+              {esCarrito && status === 'preparing' && (
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-7 text-xs gap-1"
+                  disabled={isUpdating}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleChangeAllItemsEstado(pedido, items, 'delivered')
+                  }}
+                >
+                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                  Listo
+                </Button>
+              )}
+              {esCarrito && status === 'delivered' && (
+                <Button
+                  size="sm"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold h-7 text-xs gap-1"
+                  disabled={isUpdating}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleChangeAllItemsEstado(pedido, items, 'served')
+                  }}
+                >
+                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Utensils className="h-3 w-3" />}
+                  Entregado
                 </Button>
               )}
             </div>
