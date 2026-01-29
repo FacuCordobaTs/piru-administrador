@@ -77,6 +77,14 @@ const formatTimeAgo = (dateString: string) => {
 // Columnas del Kanban - Restaurante normal
 const COLUMNS = [
   {
+    id: 'pending',
+    title: 'Pendientes',
+    icon: Clock,
+    color: 'text-amber-600',
+    bgHeader: 'bg-amber-100 dark:bg-amber-900/30',
+    description: 'Por confirmar'
+  },
+  {
     id: 'preparing',
     title: 'En Cocina',
     icon: ChefHat,
@@ -509,8 +517,11 @@ const Pedidos = () => {
     }
 
     filteredPedidos.forEach(pedido => {
-      // 1. Pending: Si el pedido está 'pending', va entero a pending
+      // 1. Pending: Si el pedido está 'pending' Y tiene items, va entero a pending
       if (pedido.estado === 'pending') {
+        // Si no tiene items, ignorar (mesa abierta sin productos)
+        if (pedido.items.length === 0) return
+
         grouped.pending.push({
           id: `${pedido.id}-pending`,
           pedido,
@@ -520,16 +531,22 @@ const Pedidos = () => {
         return
       }
 
-      // 2. Closed: Si está cerrado, va entero a closed
+      // 2. Closed: Solo mover a columnas cerradas si TODOS los items están en 'served' (SOLO para modo restaurante)
       if (pedido.estado === 'closed') {
-        const target = pedidosCerradosPagados.has(pedido.id) ? 'closedPaid' : 'closedPending'
-        grouped[target].push({
-          id: `${pedido.id}-closed`,
-          pedido,
-          items: pedido.items,
-          status: 'closed'
-        })
-        return
+        const allItemsServed = pedido.items.every(i => i.estado === 'served' || i.estado === 'cancelled')
+
+        // Solo si todos los items están entregados, o si estamos en modo carrito, va a la columna cerrada
+        if (allItemsServed || esCarrito) {
+          const target = pedidosCerradosPagados.has(pedido.id) ? 'closedPaid' : 'closedPending'
+          grouped[target].push({
+            id: `${pedido.id}-closed`,
+            pedido,
+            items: pedido.items,
+            status: 'closed'
+          })
+          return
+        }
+        // Si no todos están served en modo restaurante, continuamos para distribuir items por estado
       }
 
       // 3. Active (preparing/delivered/served): Separar items por estado
@@ -664,6 +681,17 @@ const Pedidos = () => {
                   : (pedido.mesaNombre || `Mesa ?`)}
               </div>
               {hasExclusions && <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />}
+              {/* Badge de estado de cuenta - Solo en modo restaurante cuando el pedido está cerrado pero items aún en progreso */}
+              {!esCarrito && pedido.estado === 'closed' && (
+                <Badge
+                  variant="outline"
+                  className={pedidosCerradosPagados.has(pedido.id)
+                    ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 text-[10px] px-1.5 py-0.5"
+                    : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 dark:border-orange-700 text-[10px] px-1.5 py-0.5"}
+                >
+                  {pedidosCerradosPagados.has(pedido.id) ? "💳 Pagado" : "📋 Cuenta Pedida"}
+                </Badge>
+              )}
             </div>
             <span className="text-xs font-mono text-muted-foreground">
               {formatTimeAgo(pedido.createdAt)}
