@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidosApi, mercadopagoApi, ApiError } from '@/lib/api'
@@ -166,10 +167,9 @@ const Pedidos = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [updatingPedido, setUpdatingPedido] = useState<number | null>(null)
 
-
-  // // Estado para eliminar pedido
-  // const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
-  // const [isDeleting, setIsDeleting] = useState(false)
+  // Estado para eliminar pedido
+  const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Estado para trackear qué pedidos cerrados tienen todos los pagos completados
   const [pedidosCerradosPagados, setPedidosCerradosPagados] = useState<Set<number>>(new Set())
@@ -428,26 +428,26 @@ const Pedidos = () => {
     }
   }
 
-  // // Eliminar pedido
-  // const handleDeletePedido = async () => {
-  //   if (!token || !pedidoAEliminar) return
+  // Eliminar pedido
+  const handleDeletePedido = async () => {
+    if (!token || !pedidoAEliminar) return
 
-  //   setIsDeleting(true)
-  //   try {
-  //     await pedidosApi.delete(token, pedidoAEliminar.id)
-  //     toast.success('Pedido eliminado', {
-  //       description: `El pedido #${pedidoAEliminar.id} ha sido eliminado`
-  //     })
-  //     setPedidos(prev => prev.filter(p => p.id !== pedidoAEliminar.id))
-  //     setPedidoAEliminar(null)
-  //   } catch (error) {
-  //     if (error instanceof ApiError) {
-  //       toast.error('Error al eliminar', { description: error.message })
-  //     }
-  //   } finally {
-  //     setIsDeleting(false)
-  //   }
-  // }
+    setIsDeleting(true)
+    try {
+      await pedidosApi.delete(token, pedidoAEliminar.id)
+      toast.success('Pedido eliminado', {
+        description: `El pedido #${pedidoAEliminar.id} ha sido eliminado`
+      })
+      setPedidos(prev => prev.filter(p => p.id !== pedidoAEliminar.id))
+      setPedidoAEliminar(null)
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error('Error al eliminar', { description: error.message })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   // Filtrar y agrupar pedidos
   const filteredPedidos = useMemo(() => {
@@ -781,7 +781,7 @@ const Pedidos = () => {
                   className="h-7 w-7 text-muted-foreground/50 hover:text-destructive"
                   onClick={(e) => {
                     e.stopPropagation()
-                    // setPedidoAEliminar(pedido)
+                    setPedidoAEliminar(pedido)
                   }}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -1133,6 +1133,38 @@ const Pedidos = () => {
           )}
         </div>
       </div>
+
+      {/* Dialog de confirmación para eliminar pedido */}
+      <Dialog open={!!pedidoAEliminar} onOpenChange={(open) => !open && setPedidoAEliminar(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              ¿Eliminar Pedido?
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              ¿Eliminar el pedido <strong className="text-foreground">#{pedidoAEliminar?.id}</strong> de <strong className="text-foreground">{pedidoAEliminar?.mesaNombre || 'Sin mesa'}</strong>?
+              <br /><br />
+              Esta acción no se puede deshacer. Los productos pendientes se eliminarán.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPedidoAEliminar(null)} disabled={isDeleting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDeletePedido} disabled={isDeleting}>
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                'Eliminar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
