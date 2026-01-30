@@ -24,36 +24,37 @@ const MesaQRCode = ({ qrToken, mesaNombre }: MesaQRCodeProps) => {
   const handleDownloadQR = async () => {
     const qrCanvas = qrRef.current?.querySelector('canvas')
     if (!qrCanvas) return
-  
+
     const template = new Image()
     template.src = '/qr-template.png'
-  
+
     template.onload = () => {
       const W = template.width
       const H = template.height
-  
+
       const out = document.createElement('canvas')
       const ctx = out.getContext('2d')
       if (!ctx) return
-  
+
       out.width = W
       out.height = H
-  
+
       // 1️⃣ Dibujar plantilla
       ctx.drawImage(template, 0, 0, W, H)
-  
+
       // 2️⃣ Dibujar QR encima
       const qrSize = 1000
       const qrX = (W - qrSize) / 2
       const qrY = 820
       ctx.imageSmoothingEnabled = false
       ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize)
-  
+
       // 3️⃣ Nombre de mesa
-      ctx.fillStyle = '#8A8A8A'
-      ctx.font = '14px system-ui, sans-serif'
+      ctx.fillStyle = '#000000'
+      ctx.font = 'bold 80px system-ui, sans-serif'
       ctx.textAlign = 'center'
-  
+      ctx.fillText(mesaNombre, W / 2, qrY + qrSize + 120)
+
       // 4️⃣ Descargar
       out.toBlob(blob => {
         if (!blob) return
@@ -63,7 +64,7 @@ const MesaQRCode = ({ qrToken, mesaNombre }: MesaQRCodeProps) => {
         a.download = `qr-${mesaNombre.toLowerCase().replace(/\s+/g, '-')}.png`
         a.click()
         URL.revokeObjectURL(url)
-  
+
         toast.success('QR descargado')
       })
     }
@@ -83,13 +84,14 @@ const MesaQRCode = ({ qrToken, mesaNombre }: MesaQRCodeProps) => {
       </CardHeader>
       <CardContent className="space-y-6">
         {/* QR Code visible (UI) */}
-        <div className="flex justify-center p-6 bg-white rounded-lg">
+        <div className="flex flex-col items-center justify-center p-6 bg-white rounded-lg">
           <QRCodeCanvas
             value={mesaUrl}
             size={220}
             level="H"
             includeMargin={true}
           />
+          <p className="mt-4 text-3xl font-bold text-black">{mesaNombre}</p>
         </div>
 
         {/* QR Code oculto (solo para descarga en alta resolución) */}
