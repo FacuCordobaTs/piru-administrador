@@ -18,7 +18,7 @@ import {
   Loader2, ArrowLeft, Clock, CheckCircle, ChefHat, Utensils,
   ShoppingCart, Users, Wifi, WifiOff, User, Plus, Trash2, Minus,
   Receipt, CheckCircle2, XCircle, Search,
-  Bell
+  Bell, Package
 } from 'lucide-react'
 
 // Types
@@ -167,6 +167,15 @@ const Pedido = () => {
   const [itemAEliminar, setItemAEliminar] = useState<ItemPedido | null>(null)
   const [showDeletePedidoDialog, setShowDeletePedidoDialog] = useState(false)
   const [marcandoPagoEfectivo, setMarcandoPagoEfectivo] = useState<string | null>(null)
+
+  // NUEVO: Detectar si es mobile para la dirección del Sheet
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   // Estado para la pestaña móvil (default: items)
   const [mobileTab, setMobileTab] = useState<'items' | 'info'>('items')
@@ -579,171 +588,232 @@ const Pedido = () => {
           )}
           {isActive && (
             <>
-              <Sheet open={addProductSheet} onOpenChange={setAddProductSheet}>
-                <SheetTrigger asChild><Button variant="outline"><Plus className="mr-2 h-4 w-4" /> Agregar Producto</Button></SheetTrigger>
-                {/* Contenido del Sheet de productos (Mismo que antes) */}
-                <SheetContent className="w-full sm:max-w-lg">
-                  <SheetHeader>
-                    <SheetTitle>Agregar Producto</SheetTitle>
-                    <SheetDescription>Busca y agrega productos al pedido</SheetDescription>
-                  </SheetHeader>
-                  <div className="relative mt-4 mb-4">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Buscar..." value={searchProducto} onChange={(e) => setSearchProducto(e.target.value)} className="pl-10" />
-                  </div>
-                  <ScrollArea className="h-[calc(100vh-200px)]">
-                    {loadingProductos ? <div className="flex justify-center py-8"><Loader2 className="animate-spin" /></div> : (
-                      <div className="space-y-3 pr-4">
-                        {productosFiltrados.map(prod => (
-                          <div key={prod.id} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <p className="font-medium">{prod.nombre}</p>
-                              <p className="font-bold text-primary">${parseFloat(prod.precio).toFixed(2)}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setCantidadProducto(p => ({ ...p, [prod.id]: Math.max(1, (p[prod.id] || 1) - 1) }))}><Minus className="h-3 w-3" /></Button>
-                              <span className="w-6 text-center text-sm">{cantidadProducto[prod.id] || 1}</span>
-                              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setCantidadProducto(p => ({ ...p, [prod.id]: (p[prod.id] || 1) + 1 }))}><Plus className="h-3 w-3" /></Button>
-                              <Button size="sm" onClick={() => handleAddProducto(prod)} disabled={addingProducto === prod.id}>{addingProducto === prod.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}</Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </ScrollArea>
-                </SheetContent>
-              </Sheet>
-
-              {pedido.estado === 'pending' && <Button onClick={handleConfirmarPedido} disabled={isUpdating || pedido.items.length === 0}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <ChefHat className="mr-2" />} Confirmar</Button>}
-              {pedido.estado === 'preparing' && <Button onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <Utensils className="mr-2" />} Entregado</Button>}
-              {pedido.estado === 'delivered' && <Button variant="secondary" onClick={handleCerrarPedido} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <CheckCircle className="mr-2" />} Cerrar</Button>}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* --- DESKTOP VIEW (Grid Original) --- */}
-      <div className="hidden md:grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <ItemsList isMobile={false} />
-        </div>
-        <div className="space-y-6">
-          <InfoAndPayments isMobile={false} />
-        </div>
-      </div>
-
-      {/* --- MOBILE VIEW (Tabs + Diseño Optimizado) --- */}
-      <div className="md:hidden">
-        <Tabs defaultValue="items" value={mobileTab} onValueChange={(v) => setMobileTab(v as 'items' | 'info')} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-4">
-            <TabsTrigger value="items">Items ({pedido.totalItems})</TabsTrigger>
-            <TabsTrigger value="info">Detalles & Pagos</TabsTrigger>
-          </TabsList>
-          <TabsContent value="items" className="space-y-4">
-            <ItemsList isMobile={true} />
-          </TabsContent>
-          <TabsContent value="info">
-            <InfoAndPayments isMobile={true} />
-            <div className="mt-8">
-              <Button variant="outline" className="w-full text-destructive" onClick={() => setShowDeletePedidoDialog(true)}>
-                <Trash2 className="mr-2 h-4 w-4" /> Eliminar Pedido Completo
-              </Button>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* --- MOBILE STICKY BOTTOM ACTION BAR (La clave del diseño ergonómico) --- */}
-      <div className="md:hidden fixed bottom-0 left-0 w-full bg-background border-t p-4 z-40 flex items-center justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-        <div className="flex flex-col">
-          <span className="text-xs text-muted-foreground">Total</span>
-          <span className="text-xl font-bold text-primary">${parseFloat(pedido.total || '0').toFixed(2)}</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {isActive && (
-            <Sheet open={addProductSheet} onOpenChange={setAddProductSheet}>
-              <SheetTrigger asChild>
-                <Button size="icon" variant="outline" className="h-12 w-12 rounded-full border-dashed border-2">
-                  <Plus className="h-6 w-6" />
+              <>
+                {/* Botón Agregar Producto (DESKTOP) - Sin Sheet wrapper, solo el botón */}
+                <Button variant="outline" onClick={() => setAddProductSheet(true)}>
+                  <Plus className="mr-2 h-4 w-4" /> Agregar Producto
                 </Button>
-              </SheetTrigger>
-              {/* Reutiliza el contenido del sheet definido arriba si lo extraes a un componente, o duplícalo aquí si es necesario por estructura */}
-              {/* Para brevedad, asumo que el Sheet de arriba maneja el estado global 'addProductSheet' correctamente */}
-              <SheetContent className="w-full h-[90vh] sm:max-w-lg" side="bottom">
-                {/* Contenido duplicado del Sheet Mobile para asegurar funcionamiento (en producción extrae a componente) */}
-                <SheetHeader className="text-left">
-                  <SheetTitle>Agregar Producto</SheetTitle>
-                </SheetHeader>
-                <div className="relative mt-4 mb-4">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Buscar..." value={searchProducto} onChange={(e) => setSearchProducto(e.target.value)} className="pl-10 h-12" />
-                </div>
-                <ScrollArea className="h-[60vh]">
-                  {loadingProductos ? <div className="flex justify-center py-8"><Loader2 className="animate-spin" /></div> : (
-                    <div className="space-y-4 pb-8">
-                      {productosFiltrados.map(prod => (
-                        <div key={prod.id} className="flex items-center justify-between p-3 border rounded-xl">
-                          <div>
-                            <p className="font-medium">{prod.nombre}</p>
-                            <p className="font-bold text-primary">${parseFloat(prod.precio).toFixed(2)}</p>
-                          </div>
-                          <Button size="sm" onClick={() => { handleAddProducto(prod); setAddProductSheet(false); }} className="h-10 w-10 rounded-full p-0">
-                            <Plus className="h-5 w-5" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-              </SheetContent>
-            </Sheet>
-          )}
 
-          {/* Main Action Button Logic for Mobile */}
-          {pedido.estado === 'pending' && (
-            <Button className="h-12 px-6 rounded-full text-base font-semibold shadow-lg shadow-primary/20" onClick={handleConfirmarPedido} disabled={isUpdating}>
-              {isUpdating ? <Loader2 className="animate-spin" /> : "Confirmar"}
-            </Button>
+                {pedido.estado === 'pending' && <Button onClick={handleConfirmarPedido} disabled={isUpdating || pedido.items.length === 0}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <ChefHat className="mr-2" />} Confirmar</Button>}
+                {pedido.estado === 'preparing' && <Button onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <Utensils className="mr-2" />} Entregado</Button>}
+                {pedido.estado === 'delivered' && <Button variant="secondary" onClick={handleCerrarPedido} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <CheckCircle className="mr-2" />} Cerrar</Button>}
+              </>
           )}
-          {pedido.estado === 'preparing' && (
-            esCarrito ? (
-              <Button className="h-12 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20" onClick={() => pedido.mesaId && marcarPedidoListo(pedido.id, pedido.mesaId)}>
-                <Bell className="mr-2 h-4 w-4" /> Listo
-              </Button>
-            ) : (
-              <Button className="h-12 px-6 rounded-full" onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>
-                {isUpdating ? <Loader2 className="animate-spin" /> : "Marcar Entregado"}
-              </Button>
-            )
-          )}
-          {pedido.estado === 'delivered' && (
-            <Button variant="secondary" className="h-12 px-6 rounded-full bg-slate-900 text-white hover:bg-slate-800" onClick={handleCerrarPedido} disabled={isUpdating}>
-              {isUpdating ? <Loader2 className="animate-spin" /> : "Cerrar Mesa"}
-            </Button>
-          )}
-          {pedido.estado === 'closed' && (
-            <Button variant="outline" className="h-12 px-6 rounded-full" onClick={() => navigate('/dashboard')}>
-              <ArrowLeft className="mr-2 h-4 w-4" /> Volver
-            </Button>
-          )}
+            </div>
         </div>
+
+        {/* --- DESKTOP VIEW (Grid Original) --- */}
+        <div className="hidden md:grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-6">
+            <ItemsList isMobile={false} />
+          </div>
+          <div className="space-y-6">
+            <InfoAndPayments isMobile={false} />
+          </div>
+        </div>
+
+        {/* --- MOBILE VIEW (Tabs + Diseño Optimizado) --- */}
+        <div className="md:hidden">
+          <Tabs defaultValue="items" value={mobileTab} onValueChange={(v) => setMobileTab(v as 'items' | 'info')} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="items">Items ({pedido.totalItems})</TabsTrigger>
+              <TabsTrigger value="info">Detalles & Pagos</TabsTrigger>
+            </TabsList>
+            <TabsContent value="items" className="space-y-4">
+              <ItemsList isMobile={true} />
+            </TabsContent>
+            <TabsContent value="info">
+              <InfoAndPayments isMobile={true} />
+              <div className="mt-8">
+                <Button variant="outline" className="w-full text-destructive" onClick={() => setShowDeletePedidoDialog(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Eliminar Pedido Completo
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* --- MOBILE STICKY BOTTOM ACTION BAR (La clave del diseño ergonómico) --- */}
+        <div className="md:hidden fixed bottom-0 left-0 w-full bg-background border-t p-4 z-40 flex items-center justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Total</span>
+            <span className="text-xl font-bold text-primary">${parseFloat(pedido.total || '0').toFixed(2)}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isActive && (
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-12 w-12 rounded-full border-dashed border-2"
+                onClick={() => setAddProductSheet(true)}
+              >
+                <Plus className="h-6 w-6" />
+              </Button>
+            )}
+
+            {/* Main Action Button Logic for Mobile */}
+            {pedido.estado === 'pending' && (
+              <Button className="h-12 px-6 rounded-full text-base font-semibold shadow-lg shadow-primary/20" onClick={handleConfirmarPedido} disabled={isUpdating}>
+                {isUpdating ? <Loader2 className="animate-spin" /> : "Confirmar"}
+              </Button>
+            )}
+            {pedido.estado === 'preparing' && (
+              esCarrito ? (
+                <Button className="h-12 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20" onClick={() => pedido.mesaId && marcarPedidoListo(pedido.id, pedido.mesaId)}>
+                  <Bell className="mr-2 h-4 w-4" /> Listo
+                </Button>
+              ) : (
+                <Button className="h-12 px-6 rounded-full" onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>
+                  {isUpdating ? <Loader2 className="animate-spin" /> : "Marcar Entregado"}
+                </Button>
+              )
+            )}
+            {pedido.estado === 'delivered' && (
+              <Button variant="secondary" className="h-12 px-6 rounded-full bg-slate-900 text-white hover:bg-slate-800" onClick={handleCerrarPedido} disabled={isUpdating}>
+                {isUpdating ? <Loader2 className="animate-spin" /> : "Cerrar Mesa"}
+              </Button>
+            )}
+            {pedido.estado === 'closed' && (
+              <Button variant="outline" className="h-12 px-6 rounded-full" onClick={() => navigate('/dashboard')}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Volver
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Dialogs de Eliminar (Mismo que antes) */}
+        <Dialog open={!!itemAEliminar} onOpenChange={(open) => !open && setItemAEliminar(null)}>
+          <DialogContent className="max-w-md rounded-xl">
+            <DialogHeader><DialogTitle>¿Eliminar producto?</DialogTitle><DialogDescription>Se eliminará {itemAEliminar?.nombreProducto}.</DialogDescription></DialogHeader>
+            <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setItemAEliminar(null)}>Cancelar</Button><Button variant="destructive" onClick={handleDeleteItem}>Eliminar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showDeletePedidoDialog} onOpenChange={setShowDeletePedidoDialog}>
+          <DialogContent className="max-w-md rounded-xl">
+            <DialogHeader><DialogTitle>¿Eliminar Pedido Completo?</DialogTitle><DialogDescription>Esta acción es irreversible.</DialogDescription></DialogHeader>
+            <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setShowDeletePedidoDialog(false)}>Cancelar</Button><Button variant="destructive" onClick={handleDeletePedido}>Eliminar Todo</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Dialogs de Eliminar (Mismo que antes) */}
-      <Dialog open={!!itemAEliminar} onOpenChange={(open) => !open && setItemAEliminar(null)}>
-        <DialogContent className="max-w-md rounded-xl">
-          <DialogHeader><DialogTitle>¿Eliminar producto?</DialogTitle><DialogDescription>Se eliminará {itemAEliminar?.nombreProducto}.</DialogDescription></DialogHeader>
-          <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setItemAEliminar(null)}>Cancelar</Button><Button variant="destructive" onClick={handleDeleteItem}>Eliminar</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* --- MASTER SHEET DE PRODUCTOS (Único para evitar duplicados) --- */}
+      <Sheet open={addProductSheet} onOpenChange={setAddProductSheet}>
+        <SheetContent
+          side={isMobile ? "bottom" : "right"}
+          className={`w-full ${isMobile ? 'h-[85vh] rounded-t-xl' : 'sm:max-w-lg'}`}
+        >
+          <SheetHeader className="text-left">
+            <SheetTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Agregar Producto
+            </SheetTitle>
+            <SheetDescription>
+              Selecciona los productos para agregar al pedido.
+            </SheetDescription>
+          </SheetHeader>
 
-      <Dialog open={showDeletePedidoDialog} onOpenChange={setShowDeletePedidoDialog}>
-        <DialogContent className="max-w-md rounded-xl">
-          <DialogHeader><DialogTitle>¿Eliminar Pedido Completo?</DialogTitle><DialogDescription>Esta acción es irreversible.</DialogDescription></DialogHeader>
-          <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setShowDeletePedidoDialog(false)}>Cancelar</Button><Button variant="destructive" onClick={handleDeletePedido}>Eliminar Todo</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {/* Buscador */}
+          <div className="relative mt-4 mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar producto..."
+              value={searchProducto}
+              onChange={(e) => setSearchProducto(e.target.value)}
+              className="pl-10 h-11"
+            />
+          </div>
+
+          {/* Lista de Productos con IMÁGENES */}
+          <ScrollArea className={`pr-4 ${isMobile ? 'h-[calc(85vh-150px)]' : 'h-[calc(100vh-200px)]'}`}>
+            {loadingProductos ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : productosFiltrados.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No se encontraron productos
+              </div>
+            ) : (
+              <div className="space-y-3 pb-8">
+                {productosFiltrados.map((producto) => (
+                  <div
+                    key={producto.id}
+                    className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                  >
+                    {/* IMAGEN VISIBLE EN AMBOS DISPOSITIVOS */}
+                    <div className="shrink-0">
+                      {producto.imagenUrl ? (
+                        <img
+                          src={producto.imagenUrl}
+                          alt={producto.nombre}
+                          className="w-14 h-14 rounded-lg object-cover bg-muted"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
+                          <Package className="h-6 w-6 text-muted-foreground/40" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate text-sm sm:text-base">{producto.nombre}</p>
+                      <p className="font-bold text-primary">
+                        ${parseFloat(producto.precio).toFixed(2)}
+                      </p>
+                    </div>
+
+                    {/* Controles */}
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <div className="flex items-center border rounded-lg bg-background h-8 sm:h-9">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-full w-8 rounded-none"
+                          onClick={() => setCantidadProducto(prev => ({
+                            ...prev,
+                            [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1)
+                          }))}
+                        >
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="w-6 text-center text-sm font-medium">
+                          {cantidadProducto[producto.id] || 1}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-full w-8 rounded-none"
+                          onClick={() => setCantidadProducto(prev => ({
+                            ...prev,
+                            [producto.id]: (prev[producto.id] || 1) + 1
+                          }))}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
+
+                      <Button
+                        size="icon"
+                        className="h-8 w-8 sm:h-9 sm:w-9 shrink-0"
+                        onClick={() => handleAddProducto(producto)}
+                        disabled={addingProducto === producto.id}
+                      >
+                        {addingProducto === producto.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
