@@ -139,6 +139,18 @@ const CARRITO_COLUMNS = [
   },
 ]
 
+// Interface para pagos detallados
+interface SubtotalInfo {
+  clienteNombre: string;
+  subtotal: string;
+  pagado: boolean;
+  metodo?: string;
+  estado?: 'pending' | 'pending_cash' | 'paid' | 'failed';
+  isMozoItem?: boolean;
+  itemId?: number;
+  nombreProducto?: string;
+}
+
 const Pedidos = () => {
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
@@ -171,8 +183,21 @@ const Pedidos = () => {
   const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Estado para trackear qué pedidos cerrados tienen todos los pagos completados
-  const [pedidosCerradosPagados, setPedidosCerradosPagados] = useState<Set<number>>(new Set())
+  // Mapa de subtotales por pedidoId para mostrar estado de pagos
+  const [pedidosSubtotales, setPedidosSubtotales] = useState<Record<number, SubtotalInfo[]>>({})
+  const [updatingPago, setUpdatingPago] = useState<string | null>(null) // clienteNombre que se está actualizando
+
+  // Estados derivados simplificados (ya no necesitamos 'pedidosCerradosPagados' booleano estricto, usamos el mapa)
+  const pedidosCerradosPagados = useMemo(() => {
+    const setPagados = new Set<number>()
+    Object.entries(pedidosSubtotales).forEach(([pedidoId, subs]) => {
+      // Si todos los subtotales están pagados y hay al menos uno
+      if (subs.length > 0 && subs.every(s => s.pagado)) {
+        setPagados.add(Number(pedidoId))
+      }
+    })
+    return setPagados
+  }, [pedidosSubtotales])
 
   // Actualizar tiempo cada 30 segundos
   const [, setTick] = useState(0)
@@ -428,6 +453,37 @@ const Pedidos = () => {
     }
   }
 
+  // Confirmar pago en efectivo desde el tablero
+  const handleConfirmarPagoEfectivo = async (pedidoId: number, clienteNombre: string) => {
+    if (!token) return
+    const loadingKey = `${pedidoId}-${clienteNombre}`
+    setUpdatingPago(loadingKey)
+    try {
+      const response = await mercadopagoApi.confirmarEfectivo(token, pedidoId, clienteNombre) as { success: boolean; error?: string }
+      if (response.success) {
+        toast.success(`Pago de ${clienteNombre} confirmado`)
+        // Actualizar localmente el subtotal para reflejar pagado
+        setPedidosSubtotales(prev => {
+          const subs = prev[pedidoId] || []
+          return {
+            ...prev,
+            [pedidoId]: subs.map(s =>
+              s.clienteNombre === clienteNombre
+                ? { ...s, pagado: true, estado: 'paid', metodo: 'efectivo' }
+                : s
+            )
+          }
+        })
+      } else {
+        toast.error(response.error || 'Error al confirmar pago')
+      }
+    } catch (error) {
+      toast.error('Error de conexión al confirmar pago')
+    } finally {
+      setUpdatingPago(null)
+    }
+  }
+
   // Eliminar pedido
   const handleDeletePedido = async () => {
     if (!token || !pedidoAEliminar) return
@@ -469,35 +525,40 @@ const Pedidos = () => {
     })
   }, [pedidos, searchTerm, showClosed])
 
-  // Verificar pagos de pedidos cerrados (y preparing para carritos)
+  // Obtener subtotales detallados para pedidos cerrados
   useEffect(() => {
     const verificarPagos = async () => {
-      // Para carritos, verificar también los pedidos en preparing
       const pedidosAVerificar = esCarrito
         ? filteredPedidos.filter(p => p.estado === 'closed' || p.estado === 'preparing')
         : filteredPedidos.filter(p => p.estado === 'closed')
-      if (pedidosAVerificar.length === 0) return
 
-      const nuevosPagados = new Set<number>()
+      if (pedidosAVerificar.length === 0) return
 
       await Promise.all(
         pedidosAVerificar.map(async (pedido) => {
           try {
             const response = await mercadopagoApi.getSubtotales(pedido.id) as {
               success: boolean
+              subtotales?: SubtotalInfo[]
+              mozoItems?: SubtotalInfo[]
               resumen?: { todoPagado: boolean }
             }
 
-            if (response.success && response.resumen?.todoPagado) {
-              nuevosPagados.add(pedido.id)
+            if (response.success) {
+              let allSubtotales = response.subtotales || []
+              if (response.mozoItems && Array.isArray(response.mozoItems)) {
+                allSubtotales = [...allSubtotales, ...response.mozoItems.map(m => ({ ...m, isMozoItem: true }))]
+              }
+              setPedidosSubtotales(prev => ({
+                ...prev,
+                [pedido.id]: allSubtotales
+              }))
             }
           } catch (error) {
             console.error(`Error verificando pagos del pedido ${pedido.id}:`, error)
           }
         })
       )
-
-      setPedidosCerradosPagados(nuevosPagados)
     }
 
     verificarPagos()
@@ -649,6 +710,12 @@ const Pedidos = () => {
     const maxItems = compact ? 2 : 100
     const hasExclusions = items.some(i => i.ingredientesExcluidosNombres?.length)
 
+    // --------------------------------------------------------
+    // LÓGICA DE PAGOS (Solo para pedidos cerrados)
+    // --------------------------------------------------------
+    const isClosed = pedido.estado === 'closed'
+    const subtotales = pedidosSubtotales[pedido.id] || []
+
     const itemsByClient = useMemo(() => {
       const grouped: Record<string, ItemPedido[]> = {}
       items.forEach(item => {
@@ -656,8 +723,18 @@ const Pedidos = () => {
         if (!grouped[name]) grouped[name] = []
         grouped[name].push(item)
       })
+
+      // Asegurarnos de que si hay "Mozo" items en los subtotales, aparezcan aunque no tengan items "físicos" en esta vista
+      if (isClosed && subtotales.length > 0) {
+        subtotales.forEach(sub => {
+          if (sub.isMozoItem && !grouped[sub.clienteNombre]) {
+            grouped[sub.clienteNombre] = []
+          }
+        })
+      }
+
       return grouped
-    }, [items])
+    }, [items, isClosed, subtotales])
 
     return (
       <Card
@@ -700,72 +777,125 @@ const Pedidos = () => {
 
           {/* Items agrupados por cliente */}
           <div className="px-3 pb-2 space-y-4">
-            {Object.entries(itemsByClient).map(([cliente, clientItems]) => (
-              <div key={cliente} className="space-y-1">
-                {/* Header Cliente */}
-                <div className="flex items-center gap-1.5 pb-1">
-                  <Badge variant="outline" className="h-5 px-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
-                    <span className="font-semibold">{cliente}</span>
-                  </Badge>
-                </div>
+            {Object.entries(itemsByClient).map(([cliente, clientItems]) => {
+              // Lógica de pago para este cliente
+              const subtotalData = subtotales.find(s => s.clienteNombre === cliente)
+              // Estado de pago
+              const isPaid = subtotalData?.pagado
+              const isPendingCash = subtotalData?.estado === 'pending_cash'
+              const paymentMethod = subtotalData?.metodo
 
-                {/* Items del cliente */}
-                <div className="space-y-2 pl-1">
-                  {clientItems.slice(0, maxItems).map((item) => (
-                    <div key={item.id} className="flex items-start gap-2 text-sm group/item">
-                      <span className="font-bold text-foreground shrink-0 w-6 text-center bg-muted rounded-md py-0.5 text-xs">
-                        {item.cantidad}
-                      </span>
+              // Determinar si mostramos controles de pago
+              const showPaymentControls = isClosed // Solo mostrar en pedidos cerrados
 
-                      <div className="flex-1 min-w-0">
-                        <span className="text-foreground/90 font-medium truncate block leading-tight">
-                          {item.nombreProducto}
-                        </span>
-                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {item.ingredientesExcluidosNombres.map((ing, i) => (
-                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 font-medium border border-orange-200 dark:border-orange-800/50">
-                                Sin {ing}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+              const isConfirming = updatingPago === `${pedido.id}-${cliente}`
 
-                      {/* Acciones por item - Solo en modo RESTAURANTE */}
-                      {!esCarrito && (
-                        <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex gap-1">
-                          {status === 'preparing' && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
-                              title="Marcar Listo"
-                              onClick={() => handleChangeItemEstado(pedido, item.id, 'delivered')}
-                              disabled={isUpdating}
-                            >
-                              {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                            </Button>
+              return (
+                <div key={cliente} className="space-y-1">
+                  {/* Header Cliente + Pagos */}
+                  <div className="flex items-center justify-between pb-1">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="h-5 px-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
+                        <span className="font-semibold">{cliente}</span>
+                      </Badge>
+
+                      {/* Badge de Pago */}
+                      {showPaymentControls && (
+                        <div className="flex items-center">
+                          {isPaid && (
+                            <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 gap-1">
+                              <CheckCircle className="h-2.5 w-2.5" />
+                              {paymentMethod === 'mercadopago' ? 'MP' : 'Efectivo'}
+                            </Badge>
                           )}
-                          {status === 'delivered' && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
-                              title="Marcar Entregado"
-                              onClick={() => handleChangeItemEstado(pedido, item.id, 'served')}
-                              disabled={isUpdating}
-                            >
-                              {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Utensils className="h-4 w-4" />}
-                            </Button>
+                          {!isPaid && isPendingCash && (
+                            <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 gap-1">
+                              <Clock className="h-2.5 w-2.5" /> Efectivo
+                            </Badge>
+                          )}
+                          {!isPaid && !isPendingCash && subtotalData && (
+                            <Badge variant="outline" className="h-5 px-1.5 text-[9px] text-muted-foreground border-dashed">
+                              Pendiente
+                            </Badge>
                           )}
                         </div>
                       )}
                     </div>
-                  ))}
+
+                    {/* Acción de Cobrar (Solo si está pendiente efectivo) */}
+                    {showPaymentControls && !isPaid && isPendingCash && (
+                      <Button
+                        size="sm"
+                        className="h-6 text-[10px] px-2 bg-green-600 hover:bg-green-700 text-white shadow-sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleConfirmarPagoEfectivo(pedido.id, cliente)
+                        }}
+                        disabled={isConfirming}
+                      >
+                        {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Cobrar"}
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Items del cliente */}
+                  <div className="space-y-2 pl-1">
+                    {clientItems.slice(0, maxItems).map((item) => (
+                      <div key={item.id} className="flex items-start gap-2 text-sm group/item">
+                        <span className="font-bold text-foreground shrink-0 w-6 text-center bg-muted rounded-md py-0.5 text-xs">
+                          {item.cantidad}
+                        </span>
+
+                        <div className="flex-1 min-w-0">
+                          <span className="text-foreground/90 font-medium truncate block leading-tight">
+                            {item.nombreProducto}
+                          </span>
+                          {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {item.ingredientesExcluidosNombres.map((ing, i) => (
+                                <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 font-medium border border-orange-200 dark:border-orange-800/50">
+                                  Sin {ing}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Acciones por item - Solo en modo RESTAURANTE */}
+                        {!esCarrito && (
+                          <div onClick={(e) => e.stopPropagation()} className="shrink-0 flex gap-1">
+                            {status === 'preparing' && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-100"
+                                title="Marcar Listo"
+                                onClick={() => handleChangeItemEstado(pedido, item.id, 'delivered')}
+                                disabled={isUpdating}
+                              >
+                                {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                              </Button>
+                            )}
+                            {status === 'delivered' && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-100"
+                                title="Marcar Entregado"
+                                onClick={() => handleChangeItemEstado(pedido, item.id, 'served')}
+                                disabled={isUpdating}
+                              >
+                                {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Utensils className="h-4 w-4" />}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {/* Footer */}
@@ -984,7 +1114,7 @@ const Pedidos = () => {
         })}
 
         {/* Columna de cerrados pendientes de pago */}
-        {showClosed && kanbanData.closedPending.length > 0 && (
+        {showClosed && (
           <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px]">
             <div className="shrink-0 rounded-t-lg px-4 py-3 bg-orange-100 dark:bg-orange-900/30">
               <div className="flex items-center justify-between">
@@ -999,31 +1129,38 @@ const Pedidos = () => {
             </div>
             <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
               <div className="p-3 space-y-2">
-                {kanbanData.closedPending.slice(0, 10).map((card) => (
-                  <Card
-                    key={card.id}
-                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-bold">{card.pedido.mesaNombre}</span>
-                        <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
+                {kanbanData.closedPending.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Sin pedidos</p>
+                  </div>
+                ) : (
+                  kanbanData.closedPending.slice(0, 10).map((card) => (
+                    <Card
+                      key={card.id}
+                      className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-bold">{card.pedido.mesaNombre}</span>
+                          <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
+                        </div>
+                        <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
                       </div>
-                      <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatTimeAgo(card.pedido.createdAt)}
-                    </p>
-                  </Card>
-                ))}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatTimeAgo(card.pedido.createdAt)}
+                      </p>
+                    </Card>
+                  ))
+                )}
               </div>
             </ScrollArea>
           </div>
         )}
 
         {/* Columna de cerrados pagados */}
-        {showClosed && kanbanData.closedPaid.length > 0 && (
+        {showClosed && (
           <div className="flex-1 flex flex-col min-w-[280px] max-w-[320px] opacity-60">
             <div className="shrink-0 rounded-t-lg px-4 py-3 bg-slate-100 dark:bg-slate-800/50">
               <div className="flex items-center justify-between">
@@ -1038,28 +1175,37 @@ const Pedidos = () => {
             </div>
             <ScrollArea className="flex-1 bg-muted/20 rounded-b-lg border border-t-0">
               <div className="p-3 space-y-2">
-                {kanbanData.closedPaid.slice(0, 10).map((card) => (
-                  <Card
-                    key={card.id}
-                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-bold">{card.pedido.mesaNombre}</span>
-                        <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
-                      </div>
-                      <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatTimeAgo(card.pedido.createdAt)}
-                    </p>
-                  </Card>
-                ))}
-                {hasMore && (
-                  <Button variant="ghost" size="sm" className="w-full" onClick={loadMore}>
-                    {isLoadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cargar más'}
-                  </Button>
+                {kanbanData.closedPaid.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Sin pedidos</p>
+                  </div>
+                ) : (
+                  <>
+                    {kanbanData.closedPaid.slice(0, 10).map((card) => (
+                      <Card
+                        key={card.id}
+                        className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-bold">{card.pedido.mesaNombre}</span>
+                            <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
+                          </div>
+                          <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formatTimeAgo(card.pedido.createdAt)}
+                        </p>
+                      </Card>
+                    ))}
+                    {hasMore && (
+                      <Button variant="ghost" size="sm" className="w-full" onClick={loadMore}>
+                        {isLoadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cargar más'}
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             </ScrollArea>
@@ -1122,6 +1268,41 @@ const Pedidos = () => {
                         <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
                       </div>
                       <span className="font-semibold">${parseFloat(card.pedido.total).toFixed(0)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatTimeAgo(card.pedido.createdAt)}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pedidos cerrados pagados - Mobile */}
+          {showClosed && kanbanData.closedPaid.length > 0 && (
+            <div>
+              {/* Header de sección */}
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+                <span className="font-bold text-foreground flex-1">Cerrados (Pagados)</span>
+                <Badge variant="secondary" className="font-mono font-bold">
+                  {kanbanData.closedPaid.length}
+                </Badge>
+              </div>
+
+              <div className="space-y-3">
+                {kanbanData.closedPaid.slice(0, 10).map((card) => (
+                  <Card
+                    key={card.id}
+                    className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/dashboard/pedidos/${card.pedido.id}`)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold">{card.pedido.mesaNombre}</span>
+                        <span className="text-xs text-muted-foreground ml-2">#{card.pedido.id}</span>
+                      </div>
+                      <span className="font-semibold text-emerald-600">${parseFloat(card.pedido.total).toFixed(0)}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       {formatTimeAgo(card.pedido.createdAt)}
