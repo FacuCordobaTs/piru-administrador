@@ -156,6 +156,7 @@ const Pedidos = () => {
   const token = useAuthStore((state) => state.token)
   const { restaurante } = useRestauranteStore()
   const esCarrito = restaurante?.esCarrito || false
+  const splitPayment = restaurante?.splitPayment ?? true // Default to true if undefined
 
   const {
     mesas: mesasWS,
@@ -484,6 +485,73 @@ const Pedidos = () => {
     }
   }
 
+  // Confirmar pago TOTAL (para modo sin split payment)
+  const handleConfirmarPagoTotal = async (pedidoId: number, subtotales: SubtotalInfo[]) => {
+    if (!token) return
+    setUpdatingPago(`all-${pedidoId}`)
+
+    try {
+      // Filtrar lo que falta pagar
+      const pendientes = subtotales.filter(s => !s.pagado && s.estado !== 'paid')
+
+      if (pendientes.length === 0) {
+        toast.info("Ya está todo pagado")
+        return
+      }
+
+      // 1. Preparar datos para 'pagarEfectivo' (Setear estado pending_cash)
+      const regularClients: string[] = []
+      const mozoItemIds: number[] = []
+
+      pendientes.forEach(p => {
+        if (p.isMozoItem && p.itemId) {
+          mozoItemIds.push(p.itemId)
+        } else if (p.clienteNombre.startsWith('Mozo:item:')) {
+          const id = parseInt(p.clienteNombre.split('Mozo:item:')[1])
+          if (!isNaN(id)) mozoItemIds.push(id)
+        } else {
+          regularClients.push(p.clienteNombre)
+        }
+      })
+
+      // Paso 1: Marcar como efectivo (pending_cash) GLOBALMENTE
+      const responsePagar = await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, "", mozoItemIds) as { success: boolean; error?: string }
+
+      if (!responsePagar.success) {
+        toast.error(responsePagar.error || "Error al iniciar pago en efectivo")
+        return
+      }
+
+      // Paso 2: Confirmar pago (paid) INDIVIDUALMENTE
+      const results = await Promise.allSettled(
+        pendientes.map(sub => mercadopagoApi.confirmarEfectivo(token, pedidoId, sub.clienteNombre))
+      )
+
+      const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length
+
+      if (successCount > 0) {
+        toast.success(`Pago total confirmado (${successCount}/${pendientes.length} cuentas procesadas)`)
+
+        // Actualizar UI localmente marcando TODO como pagado
+        setPedidosSubtotales(prev => {
+          const subs = prev[pedidoId] || []
+          return {
+            ...prev,
+            [pedidoId]: subs.map(s => ({ ...s, pagado: true, estado: 'paid', metodo: 'efectivo' }))
+          }
+        })
+      } else {
+        toast.error("No se pudo confirmar el pago")
+      }
+
+    } catch (error) {
+      console.error("Error en pago total:", error)
+      toast.error('Error al procesar el pago total')
+    } finally {
+      setUpdatingPago(null)
+    }
+  }
+
   // Eliminar pedido
   const handleDeletePedido = async () => {
     if (!token || !pedidoAEliminar) return
@@ -689,6 +757,7 @@ const Pedidos = () => {
   // Componente de tarjeta de pedido
   const PedidoCard = ({ data, compact = false }: { data: KanbanCardData; compact?: boolean }) => {
     const { pedido, items, status } = data
+    const safeItems = Array.isArray(items) ? items : []
     const isUpdating = updatingPedido === pedido.id
 
     // Acción principal para todo el grupo
@@ -708,7 +777,7 @@ const Pedidos = () => {
 
     const groupAction = getGroupAction()
     const maxItems = compact ? 2 : 100
-    const hasExclusions = items.some(i => i.ingredientesExcluidosNombres?.length)
+    const hasExclusions = safeItems.some(i => i.ingredientesExcluidosNombres?.length)
 
     // --------------------------------------------------------
     // LÓGICA DE PAGOS (Solo para pedidos cerrados)
@@ -716,9 +785,13 @@ const Pedidos = () => {
     const isClosed = pedido.estado === 'closed'
     const subtotales = pedidosSubtotales[pedido.id] || []
 
+    // Calcular si está todo pagado
+    const isFullyPaid = subtotales.length > 0 && subtotales.every(s => s.pagado)
+    const totalPedido = subtotales.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
+
     const itemsByClient = useMemo(() => {
       const grouped: Record<string, ItemPedido[]> = {}
-      items.forEach(item => {
+      safeItems.forEach(item => {
         const name = item.clienteNombre || 'Cliente'
         if (!grouped[name]) grouped[name] = []
         grouped[name].push(item)
@@ -734,7 +807,10 @@ const Pedidos = () => {
       }
 
       return grouped
-    }, [items, isClosed, subtotales])
+    }, [safeItems, isClosed, subtotales])
+
+    // Determinar si mostramos vista UNIFICADA (Sin Split Payment)
+    const showUnifiedPayment = !splitPayment && isClosed && !esCarrito
 
     return (
       <Card
@@ -762,11 +838,11 @@ const Pedidos = () => {
               {!esCarrito && pedido.estado === 'closed' && (
                 <Badge
                   variant="outline"
-                  className={pedidosCerradosPagados.has(pedido.id)
+                  className={isFullyPaid
                     ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 text-[10px] px-1.5 py-0.5"
                     : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 dark:border-orange-700 text-[10px] px-1.5 py-0.5"}
                 >
-                  {pedidosCerradosPagados.has(pedido.id) ? "💳 Pagado" : "📋 Cuenta Pedida"}
+                  {isFullyPaid ? "💳 Pagado" : "📋 Cuenta Pedida"}
                 </Badge>
               )}
             </div>
@@ -774,6 +850,40 @@ const Pedidos = () => {
               {formatTimeAgo(pedido.createdAt)}
             </span>
           </div>
+
+          {/* VISTA UNIFICADA (SIN SPLIT PAYMENT) */}
+          {showUnifiedPayment && (
+            <div className="px-3 pb-3 bg-muted/20 mx-1 rounded-md mb-2">
+              <div className="flex justify-between items-center py-2 border-b border-dashed border-border/50 mb-2">
+                <span className="text-sm font-medium">Total Mesa</span>
+                <span className="text-lg font-bold">${totalPedido.toLocaleString()}</span>
+              </div>
+
+              {!isFullyPaid ? (
+                <Button
+                  className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleConfirmarPagoTotal(pedido.id, subtotales);
+                  }}
+                  disabled={!!updatingPago}
+                >
+                  {updatingPago === `all-${pedido.id}` ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <div className="flex items-center">
+                      <span className="mr-2">💵</span> Confirmar Pago Total
+                    </div>
+                  )}
+                </Button>
+              ) : (
+                <div className="w-full py-1.5 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center text-sm font-medium border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Mesa Pagada
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Items agrupados por cliente */}
           <div className="px-3 pb-2 space-y-4">
@@ -787,6 +897,7 @@ const Pedidos = () => {
 
               // Determinar si mostramos controles de pago
               const showPaymentControls = isClosed // Solo mostrar en pedidos cerrados
+              const showIndividualPaymentControls = showPaymentControls && !showUnifiedPayment
 
               const isConfirming = updatingPago === `${pedido.id}-${cliente}`
 
@@ -799,8 +910,8 @@ const Pedidos = () => {
                         <span className="font-semibold">{cliente}</span>
                       </Badge>
 
-                      {/* Badge de Pago */}
-                      {showPaymentControls && (
+                      {/* Badge de Pago - Solo mostramos detalle si es Split Payment. Si es unificado, el badge global manda. */}
+                      {showIndividualPaymentControls && (
                         <div className="flex items-center">
                           {isPaid && (
                             <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 gap-1">
@@ -822,8 +933,8 @@ const Pedidos = () => {
                       )}
                     </div>
 
-                    {/* Acción de Cobrar (Solo si está pendiente efectivo) */}
-                    {showPaymentControls && !isPaid && isPendingCash && (
+                    {/* Acción de Cobrar (Solo si está pendiente efectivo y estamos en modo Split Payment) */}
+                    {showIndividualPaymentControls && !isPaid && isPendingCash && (
                       <Button
                         size="sm"
                         className="h-6 text-[10px] px-2 bg-green-600 hover:bg-green-700 text-white shadow-sm"
@@ -834,6 +945,22 @@ const Pedidos = () => {
                         disabled={isConfirming}
                       >
                         {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Cobrar"}
+                      </Button>
+                    )}
+
+                    {/* Botón manual para marcar pagado en modo individual (si no es pending cash) */}
+                    {showIndividualPaymentControls && !isPaid && !isPendingCash && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[10px] px-2 hover:bg-emerald-100 hover:text-emerald-700 text-muted-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleConfirmarPagoEfectivo(pedido.id, cliente)
+                        }}
+                        disabled={isConfirming}
+                      >
+                        {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Marcar Pagado"}
                       </Button>
                     )}
                   </div>

@@ -494,13 +494,14 @@ export const mercadopagoApi = {
   },
 
   // Pagar en efectivo (para admin - marca como pending_cash)
-  pagarEfectivo: async (pedidoId: number, clientesAPagar: string[], qrToken: string) => {
+  pagarEfectivo: async (pedidoId: number, clientesAPagar: string[], qrToken: string, mozoItemIds?: number[]) => {
     return fetchApi('/mp/pagar-efectivo', {
       method: 'POST',
       body: JSON.stringify({
         pedidoId,
         clientesAPagar,
-        qrToken
+        qrToken,
+        mozoItemIds
       }),
     })
   },
