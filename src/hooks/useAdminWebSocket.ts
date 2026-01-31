@@ -106,6 +106,21 @@ const cleanupOldStorage = () => {
 // Run cleanup once when module loads
 cleanupOldStorage()
 
+// Helper para filtrar notificaciones
+const isNotificationAllowed = (n: Notification): boolean => {
+  const allowedTypes = ['PEDIDO_CONFIRMADO', 'PEDIDO_CERRADO', 'PRODUCTO_AGREGADO']
+
+  if (!allowedTypes.includes(n.tipo)) return false
+
+  // Sub-filtro para PRODUCTO_AGREGADO: Ignorar si es de Mozo
+  if (n.tipo === 'PRODUCTO_AGREGADO') {
+    const detallesLower = (n.detalles || '').toLowerCase()
+    if (detallesLower.startsWith('mozo')) return false
+  }
+
+  return true
+}
+
 export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   const token = useAuthStore((state) => state.token)
   const [mesas, setMesas] = useState<MesaConPedido[]>([])
@@ -290,17 +305,27 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
 
               case 'ADMIN_NOTIFICACIONES_INICIAL':
                 // Initial notifications from database
-                const initialNotifs = (data.payload.notificaciones || []).map((n: any) => ({
-                  ...n,
-                  // Ensure timestamp is in ISO format
-                  timestamp: n.timestamp ? new Date(n.timestamp).toISOString() : new Date().toISOString()
-                }))
-                console.log(`📥 Received ${initialNotifs.length} initial notifications from server`)
+                const initialNotifs = (data.payload.notificaciones || [])
+                  .map((n: any) => ({
+                    ...n,
+                    // Ensure timestamp is in ISO format
+                    timestamp: n.timestamp ? new Date(n.timestamp).toISOString() : new Date().toISOString()
+                  }))
+                  .filter((n: Notification) => isNotificationAllowed(n)) // APPLY FILTER
+
+                console.log(`📥 Received ${initialNotifs.length} filtered initial notifications from server`)
                 setNotifications(initialNotifs)
                 break
 
               case 'ADMIN_NOTIFICACION':
                 const newNotification = data.payload as Notification
+
+                // FILTRO DE NOTIFICACIONES usando helper
+                if (!isNotificationAllowed(newNotification)) {
+                  console.log(`🔕 Notificación ignorada: ${newNotification.tipo} - ${newNotification.detalles}`)
+                  break
+                }
+
                 console.log('🔔 New notification:', newNotification.mensaje)
 
                 setNotifications(prev => {

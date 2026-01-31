@@ -52,6 +52,7 @@ const Perfil = () => {
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
+  const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
@@ -140,6 +141,29 @@ const Perfil = () => {
       toast.error('Error al cambiar el modo')
     } finally {
       setIsTogglingCarrito(false)
+    }
+  }
+
+  // Toggle modo split payment
+  const handleToggleSplitPayment = async () => {
+    if (!token) return
+
+    setIsTogglingSplitPayment(true)
+    try {
+      const response = await restauranteApi.toggleSplitPayment(token) as { success: boolean; splitPayment: boolean }
+      if (response.success) {
+        toast.success(response.splitPayment ? 'Split Payment activado' : 'Split Payment desactivado', {
+          description: response.splitPayment
+            ? 'Los clientes podrán pagar individualmente'
+            : 'Los clientes pagarán el total de la mesa'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar modo split payment:', error)
+      toast.error('Error al cambiar la configuración de pagos')
+    } finally {
+      setIsTogglingSplitPayment(false)
     }
   }
 
@@ -484,6 +508,74 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
+          {/* Tarjeta de Split Payment */}
+          <Card className={restaurante?.splitPayment ? "border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CreditCard className="h-5 w-5" />
+                Pagos Divididos
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.splitPayment
+                  ? 'Tus clientes pueden pagar lo que consumieron'
+                  : 'Tus clientes pagan el total de la mesa'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.splitPayment ? (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Los clientes seleccionan qué items pagar</p>
+                    <p>• Ideal para grupos grandes</p>
+                    <p>• Facilita el pago individual</p>
+                  </div>
+                  <Badge variant="secondary" className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                    Split Payment Activo
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Se genera un único ticket por mesa</p>
+                    <p>• Un cliente paga el total (puede recolectar dinero)</p>
+                    <p>• Flujo más rápido para mesas familiares</p>
+                  </div>
+                  <Badge variant="secondary">
+                    Split Payment Inactivo
+                  </Badge>
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleToggleSplitPayment}
+                disabled={isTogglingSplitPayment}
+              >
+                {isTogglingSplitPayment ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cambiando...
+                  </>
+                ) : (
+                  <>
+                    {restaurante?.splitPayment ? (
+                      <>
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Desactivar Split Payment
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Activar Split Payment
+                      </>
+                    )}
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Estadísticas Rápidas</CardTitle>
@@ -622,7 +714,7 @@ const Perfil = () => {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   )
 }
 

@@ -45,6 +45,8 @@ interface RestauranteData {
   mpUserId: string | null
   // Modo carrito
   esCarrito: boolean | null
+  // Configuraciones
+  splitPayment: boolean | null
 }
 
 interface RestauranteState {

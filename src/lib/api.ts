@@ -165,6 +165,15 @@ export const restauranteApi = {
       },
     })
   },
+
+  toggleSplitPayment: async (token: string) => {
+    return fetchApi('/restaurante/toggle-split-payment', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Categorías API
