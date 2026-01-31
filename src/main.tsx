@@ -14,6 +14,7 @@ import Pedidos from './pages/Pedidos'
 import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
 import Perfil from './pages/Perfil'
+import { QZProvider } from './context/QZContext'
 
 
 
@@ -72,20 +73,22 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RouterProvider router={router} />
-    <Toaster
-      position="top-right"
-      richColors
-      closeButton
-      toastOptions={{
-        classNames: {
-          toast: 'bg-card border border-border shadow-lg',
-          title: 'text-foreground font-semibold',
-          description: 'text-muted-foreground',
-          actionButton: 'bg-primary text-primary-foreground',
-          cancelButton: 'bg-muted text-muted-foreground',
-        },
-      }}
-    />
+    <QZProvider>
+      <RouterProvider router={router} />
+      <Toaster
+        position="top-right"
+        richColors
+        closeButton
+        toastOptions={{
+          classNames: {
+            toast: 'bg-card border border-border shadow-lg',
+            title: 'text-foreground font-semibold',
+            description: 'text-muted-foreground',
+            actionButton: 'bg-primary text-primary-foreground',
+            cancelButton: 'bg-muted text-muted-foreground',
+          },
+        }}
+      />
+    </QZProvider>
   </StrictMode>,
 )

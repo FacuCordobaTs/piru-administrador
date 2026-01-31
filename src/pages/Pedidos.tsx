@@ -17,6 +17,9 @@ import {
   ShoppingCart, RefreshCw, Wifi, WifiOff, Trash2,
   AlertTriangle, Play, X
 } from 'lucide-react'
+import { useQZ } from '@/context/QZContext'
+import { formatComanda } from '@/utils/printerUtils'
+import { useRef } from 'react'
 
 // Types
 interface ItemPedido {
@@ -154,9 +157,10 @@ interface SubtotalInfo {
 const Pedidos = () => {
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
-  const { restaurante } = useRestauranteStore()
+  const { restaurante, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
   const esCarrito = restaurante?.esCarrito || false
   const splitPayment = restaurante?.splitPayment ?? true // Default to true if undefined
+  const { print, defaultPrinter } = useQZ()
 
   const {
     mesas: mesasWS,
@@ -183,6 +187,10 @@ const Pedidos = () => {
   // Estado para eliminar pedido
   const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoData | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Estado para cerrar y pagar pedido
+  const [pedidoACerrarYPagar, setPedidoACerrarYPagar] = useState<PedidoData | null>(null)
+  const [isClosingAndPaying, setIsClosingAndPaying] = useState(false)
 
   // Mapa de subtotales por pedidoId para mostrar estado de pagos
   const [pedidosSubtotales, setPedidosSubtotales] = useState<Record<number, SubtotalInfo[]>>({})
@@ -250,9 +258,93 @@ const Pedidos = () => {
   }, [token])
 
   // Actualizar pedidos activos desde WebSocket
-  // Actualizar pedidos activos desde WebSocket (ESTRATEGIA DEFENSIVA)
+  // Actualizar pedidos activos desde
+  // Ref para rastrear el estado anterior de los pedidos y sus items para impresión automática
+  const processedOrdersRef = useRef<Map<number, { status: string, itemIds: Set<number> }>>(new Map());
+
+  // Efecto para sincronizar pedidos con WS y manejar IMPRESIÓN AUTOMÁTICA
   useEffect(() => {
     if (mesasWS.length > 0) {
+
+      // Lógica de impresión automática (Side Effect)
+      if (defaultPrinter) {
+        mesasWS.forEach(mesa => {
+          if (!mesa.pedido) return;
+
+          const pedidoId = mesa.pedido.id;
+          const currentStatus = mesa.pedido.estado;
+          const currentItemIds = new Set(mesa.items.map(i => i.id));
+
+          const prevData = processedOrdersRef.current.get(pedidoId);
+
+          // 1. Detectar transición PENDING -> PREPARING (Confirmación desde App Cliente)
+          if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
+            // Imprimir todo el pedido (filtrando bebidas) y mapeando categoría
+            const itemsToPrint = mesa.items
+              .map(item => {
+                const producto = allProductos.find(p => p.id === item.productoId);
+                const categoria = producto && producto.categoriaId
+                  ? allCategorias.find(c => c.id === producto.categoriaId)
+                  : null;
+                return { ...item, producto, categoria };
+              })
+              .filter(data => {
+                if (!data.producto || !data.categoria) return true; // Si falta info, lo dejamos pasar por seguridad (irá a OTROS)
+                return !data.categoria.nombre.toLowerCase().includes('bebida');
+              })
+              .map(data => ({
+                ...data,
+                categoriaNombre: data.categoria ? data.categoria.nombre : undefined
+              }));
+
+            if (itemsToPrint.length > 0) {
+              console.log("🖨️ Auto-printing confirmed order:", pedidoId);
+              const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
+              print(defaultPrinter, comandaData).catch(err => console.error("Error printing confirmed order:", err));
+              toast.success(`Imprimiendo comanda #${pedidoId}`);
+            }
+          }
+
+          // 2. Detectar NUEVOS ITEMS en pedido ya confirmado (PREPARING)
+          else if (currentStatus === 'preparing' && prevData) {
+            // Identificar items nuevos
+            const newItems = mesa.items.filter(item => !prevData.itemIds.has(item.id));
+
+            if (newItems.length > 0) {
+              const itemsToPrint = newItems
+                .map(item => {
+                  const producto = allProductos.find(p => p.id === item.productoId);
+                  const categoria = producto && producto.categoriaId
+                    ? allCategorias.find(c => c.id === producto.categoriaId)
+                    : null;
+                  return { ...item, producto, categoria };
+                })
+                .filter(data => {
+                  if (!data.producto || !data.categoria) return true;
+                  return !data.categoria.nombre.toLowerCase().includes('bebida');
+                })
+                .map(data => ({
+                  ...data,
+                  categoriaNombre: data.categoria ? data.categoria.nombre : undefined
+                }));
+
+              if (itemsToPrint.length > 0) {
+                console.log("🖨️ Auto-printing new items for order:", pedidoId);
+                const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
+                print(defaultPrinter, comandaData).catch(err => console.error("Error printing new items:", err));
+                toast.info(`Imprimiendo ${itemsToPrint.length} items nuevos`);
+              }
+            }
+          }
+
+          // Actualizar Ref
+          processedOrdersRef.current.set(pedidoId, {
+            status: currentStatus,
+            itemIds: currentItemIds
+          });
+        });
+      }
+
       setPedidos(prev => {
         // Creamos un mapa de los pedidos que vienen por WS para acceso rápido
         const wsMap = new Map(mesasWS.map(m => [m.pedido?.id, m]));
@@ -342,6 +434,10 @@ const Pedidos = () => {
                 nombrePedido: mesa.pedido!.nombrePedido
               };
               updated = [newPedido, ...updated];
+            } else {
+              // YA EXISTE EL PEDIDO
+              // Aquí antes hacíamos manejo de impresión, ahora se maneja arriba con useRef
+              // Simplemente no hacemos nada extra aquí, el pedido se mantiene sincronizado por el map inicial
             }
           }
         });
@@ -349,7 +445,7 @@ const Pedidos = () => {
         return updated;
       });
     }
-  }, [mesasWS]);
+  }, [mesasWS, defaultPrinter, allProductos, allCategorias, restaurante?.nombre]);
 
   // Cargar más
   const loadMore = () => {
@@ -374,10 +470,38 @@ const Pedidos = () => {
         await pedidosApi.updateEstado(token, pedido.id, nuevoEstado)
       }
 
+
       // Actualizar localmente
       setPedidos(prev => prev.map(p =>
         p.id === pedido.id ? { ...p, estado: nuevoEstado as PedidoData['estado'] } : p
       ))
+
+      // IMPRESIÓN AUTOMÁTICA
+      if (nuevoEstado === 'preparing' && defaultPrinter) {
+        // Filtrar bebidas y agregar categorías
+        const itemsToPrint = pedido.items
+          .map(item => {
+            const producto = allProductos.find(p => p.id === item.productoId);
+            const categoria = producto && producto.categoriaId
+              ? allCategorias.find(c => c.id === producto.categoriaId)
+              : null;
+            return { ...item, producto, categoria };
+          })
+          .filter(data => {
+            if (!data.producto || !data.categoria) return true;
+            return !data.categoria.nombre.toLowerCase().includes('bebida');
+          })
+          .map(data => ({
+            ...data,
+            categoriaNombre: data.categoria ? data.categoria.nombre : undefined
+          }));
+
+        if (itemsToPrint.length > 0) {
+          const comandaData = formatComanda(pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
+          print(defaultPrinter, comandaData).catch(err => console.error("Error auto-printing:", err));
+          toast.success('Comanda enviada a cocina');
+        }
+      }
 
       const estadoLabels: Record<string, string> = {
         preparing: 'En cocina',
@@ -482,6 +606,108 @@ const Pedidos = () => {
       toast.error('Error de conexión al confirmar pago')
     } finally {
       setUpdatingPago(null)
+    }
+  }
+
+  // Cerrar y Pagar TODO (Acción masiva)
+  const handleCerrarYPagar = async () => {
+    if (!token || !pedidoACerrarYPagar) return
+
+    setIsClosingAndPaying(true)
+    const pedidoId = pedidoACerrarYPagar.id
+
+    try {
+      // 1. Obtener subtotales si no existen (para saber qué pagar)
+      let subtotales = pedidosSubtotales[pedidoId]
+      if (!subtotales) {
+        try {
+          const response = await mercadopagoApi.getSubtotales(pedidoId) as any
+          if (response.success) {
+            let allSubtotales = response.subtotales || []
+            if (response.mozoItems && Array.isArray(response.mozoItems)) {
+              allSubtotales = [...allSubtotales, ...response.mozoItems.map((m: any) => ({ ...m, isMozoItem: true }))]
+            }
+            subtotales = allSubtotales
+            // Guardamos en estado por si falla algo visualmente, tener la data
+            setPedidosSubtotales(prev => ({ ...prev, [pedidoId]: allSubtotales }))
+          }
+        } catch (e) {
+          console.error("Error fetching subtotales for mass close", e)
+        }
+      }
+
+      if (!subtotales) {
+        toast.error("No se pudo obtener información de pagos. Intente nuevamente.")
+        return
+      }
+
+      toast.message("Procesando cierre...", { description: "Actualizando items y pagos..." })
+
+      // 2. Marcar items como served/entregados (si no lo están)
+      // Lo hacemos masivamente si podemos, o item por item. Como no hay endpoint masivo público expuesto aquí (salvo updateEstado que cambia TODO el pedido),
+      // usaremos 'updateEstado' a 'served' si queremos mover todo el pedido, pero el usuario pidió "poner todos sus productos en entregados".
+      // Si cambiamos el estado del pedido a 'closed', implícitamente se cierra, pero los items pueden quedar en delivered.
+      // Vamos a iterar sobre los items que no estén 'served' para marcarlos.
+      // O mejor: Si el pedido pasa a 'closed', ya no importa tanto el estado individual visualmente en el kanban activo, 
+      // pero para consistencia, marquemos los items.
+
+      const itemsToServe = pedidoACerrarYPagar.items.filter(i => i.estado !== 'served' && i.estado !== 'cancelled')
+      if (itemsToServe.length > 0) {
+        // Opción A: Llamada paralela (puede ser mucho)
+        // Opción B: Si tuviéramos endpoint masivo.
+        // Opción C: Asumir que al cerrar el pedido, se dan por entregados.
+        // El requerimiento dice: "poner todos sus productos en entregados".
+        await Promise.all(itemsToServe.map(i => pedidosApi.updateItemEstado(token, pedidoId, i.id, 'served')))
+      }
+
+      // 3. Cerrar pedido (Requisito previo para pagar en efectivo)
+      await pedidosApi.cerrar(token, pedidoId)
+
+      // 4. Pagar todo (Efectivo y Confirmar)
+      // Copiamos la lógica de handleConfirmarPagoTotal
+      const pendientes = subtotales.filter((s: SubtotalInfo) => !s.pagado && s.estado !== 'paid')
+
+      if (pendientes.length > 0) {
+        const regularClients: string[] = []
+        const mozoItemIds: number[] = []
+
+        pendientes.forEach((p: SubtotalInfo) => {
+          if (p.isMozoItem && p.itemId) {
+            mozoItemIds.push(p.itemId)
+          } else if (p.clienteNombre.startsWith('Mozo:item:')) {
+            const id = parseInt(p.clienteNombre.split('Mozo:item:')[1])
+            if (!isNaN(id)) mozoItemIds.push(id)
+          } else {
+            regularClients.push(p.clienteNombre)
+          }
+        })
+
+        // 4a. Marcar como efectivo
+        await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, "", mozoItemIds)
+
+        // 4b. Confirmar pago
+        await Promise.all(
+          pendientes.map((sub: SubtotalInfo) => mercadopagoApi.confirmarEfectivo(token, pedidoId, sub.clienteNombre))
+        )
+      }
+
+      toast.success("Pedido cerrado y pagado correctamente")
+
+      // Actualizar estado local
+      setPedidos(prev => prev.map(p =>
+        p.id === pedidoId
+          ? { ...p, estado: 'closed', items: p.items.map(i => ({ ...i, estado: 'served' })) as any }
+          : p
+      ))
+
+      // Cerrar modal
+      setPedidoACerrarYPagar(null)
+
+    } catch (error) {
+      console.error(error)
+      toast.error("Ocurrió un error al procesar el cierre completo")
+    } finally {
+      setIsClosingAndPaying(false)
     }
   }
 
@@ -1030,19 +1256,40 @@ const Pedidos = () => {
             <span className="text-xs text-muted-foreground">#{pedido.id}</span>
 
             <div className="flex gap-2">
-              {/* Botón eliminar (solo en pending?) */}
-              {status === 'pending' && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground/50 hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPedidoAEliminar(pedido)
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              {/* Botón eliminar (visible en pending, preparing, delivered, served) */}
+              {(status === 'pending' || status === 'preparing' || status === 'delivered' || status === 'served') && (
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground/50 hover:text-destructive"
+                    title="Eliminar pedido completo"
+                    disabled={isUpdating}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPedidoAEliminar(pedido)
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+
+                  {/* Botón Confirmar y Cerrar Todo (Check Circle) */}
+                  {(status === 'preparing' || status === 'delivered' || status === 'served') && !esCarrito && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground/50 hover:text-emerald-600 hover:bg-emerald-50"
+                      title="Cerrar y Confirmar todo Pagado"
+                      disabled={isUpdating}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPedidoACerrarYPagar(pedido)
+                      }}
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               )}
 
               {groupAction && (
@@ -1468,6 +1715,41 @@ const Pedidos = () => {
                 </>
               ) : (
                 'Eliminar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmación para CERRAR Y PAGAR TODO */}
+      <Dialog open={!!pedidoACerrarYPagar} onOpenChange={(open) => !open && setPedidoACerrarYPagar(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-600">
+              <CheckCircle className="h-5 w-5" />
+              ¿Cerrar y Confirmar Todo?
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              Se realizarán las siguientes acciones para el pedido de <strong className="text-foreground">{pedidoACerrarYPagar?.mesaNombre || 'la mesa'}</strong>:
+              <ul className="list-disc list-inside mt-2 space-y-1 text-foreground/80">
+                <li>Marcar todos los productos como <strong>Entregados</strong>.</li>
+                <li>Marcar todos los pagos como <strong>Cobrados en Efectivo</strong>.</li>
+                <li><strong>Cerrar</strong> el pedido definitivamente.</li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPedidoACerrarYPagar(null)} disabled={isClosingAndPaying}>
+              Cancelar
+            </Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCerrarYPagar} disabled={isClosingAndPaying}>
+              {isClosingAndPaying ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                'Confirmar Todo'
               )}
             </Button>
           </DialogFooter>

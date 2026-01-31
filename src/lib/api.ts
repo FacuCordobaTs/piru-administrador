@@ -407,6 +407,7 @@ export const pedidosApi = {
       productoId: number
       cantidad?: number
       clienteNombre?: string
+      ingredientesExcluidos?: number[]
     }
   ) => {
     return fetchApi(`/pedido/${pedidoId}/items`, {
@@ -417,7 +418,8 @@ export const pedidosApi = {
       body: JSON.stringify({
         productoId: data.productoId,
         cantidad: data.cantidad || 1,
-        clienteNombre: data.clienteNombre || 'Mozo'
+        clienteNombre: data.clienteNombre || 'Mozo',
+        ingredientesExcluidos: data.ingredientesExcluidos
       }),
     })
   },

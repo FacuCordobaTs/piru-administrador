@@ -27,8 +27,11 @@ import {
   Unlink,
   ExternalLink,
   CheckCircle2,
-  ShoppingCart
+  ShoppingCart,
+  Printer,
+  List
 } from 'lucide-react'
+import { useQZ } from '@/context/QZContext'
 
 // Configuración de MercadoPago
 const MP_APP_ID = 38638191854826
@@ -53,6 +56,12 @@ const Perfil = () => {
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
+
+  // QZ Tray State
+  const { isConnected, findPrinters, print, defaultPrinter, setDefaultPrinter } = useQZ()
+  const [printers, setPrinters] = useState<string[]>([])
+  const [isListingPrinters, setIsListingPrinters] = useState(false)
+  const [isPrintingTest, setIsPrintingTest] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
@@ -87,6 +96,53 @@ const Perfil = () => {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
+
+  const handleListPrinters = async () => {
+    setIsListingPrinters(true)
+    try {
+      const foundPrinters = await findPrinters()
+      setPrinters(foundPrinters)
+      if (foundPrinters.length > 0) {
+        toast.success(`Se encontraron ${foundPrinters.length} impresoras`)
+      } else {
+        toast.info('No se encontraron impresoras')
+      }
+    } finally {
+      setIsListingPrinters(false)
+    }
+  }
+
+  const handleTestPrint = async () => {
+    if (!defaultPrinter) {
+      toast.error('Selecciona una impresora predeterminada primero')
+      return;
+    }
+
+    setIsPrintingTest(true)
+    try {
+      const data = [
+        '\x1B\x40', // Init
+        '\x1B\x61\x01', // Center
+        '\x1B\x45\x01', // Bold on
+        'PRUEBA DE COMANDA\n',
+        '\x1B\x45\x00', // Bold off
+        '\x1B\x61\x00', // Left align
+        '--------------------------------\n',
+        'Hamburguesa x1\n',
+        '  SIN: Cebolla\n',
+        'Papas Fritas x1\n',
+        '--------------------------------\n',
+        '\n\n\n',
+        '\x1D\x56\x41', // Cut
+      ];
+
+      await print(defaultPrinter, data)
+    } catch (error) {
+      // El error ya se maneja en el context
+    } finally {
+      setIsPrintingTest(false)
+    }
+  }
 
   // Generar URL de vinculación con MercadoPago
   const getMercadoPagoAuthUrl = () => {
@@ -576,6 +632,76 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
+          {/* Tarjeta de Impresoras (QZ Tray) */}
+          <Card className={isConnected ? "border-green-500/50 bg-green-50/50 dark:bg-green-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Printer className="h-5 w-5" />
+                Impresora de Comandas (Cocina)
+              </CardTitle>
+              <CardDescription>
+                {isConnected
+                  ? 'Conexión establecida con QZ Tray'
+                  : 'Requiere QZ Tray ejecutándose en esta PC'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isConnected ? (
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-2">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="font-medium">QZ Tray Conectado</span>
+                </div>
+              ) : (
+                <div className="text-sm text-yellow-600 dark:text-yellow-400 mb-2">
+                  <p>Asegúrate de tener instalado y ejecutando QZ Tray.</p>
+                </div>
+              )}
+
+              <div className="grid gap-4">
+                <Button
+                  variant="outline"
+                  onClick={handleListPrinters}
+                  disabled={isListingPrinters || !isConnected}
+                  className="w-full justify-start"
+                >
+                  {isListingPrinters ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <List className="mr-2 h-4 w-4" />}
+                  Listar / Actualizar Impresoras
+                </Button>
+
+                {printers.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Seleccionar Impresora Predeterminada</Label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={defaultPrinter || ''}
+                      onChange={(e) => setDefaultPrinter(e.target.value)}
+                      disabled={!isConnected}
+                    >
+                      <option value="">Seleccionar impresora...</option>
+                      {printers.map((p, i) => (
+                        <option key={i} value={p}>{p}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      Esta impresora se usará automáticamente para las comandas de cocina.
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  variant="outline"
+                  onClick={handleTestPrint}
+                  disabled={isPrintingTest || !isConnected || !defaultPrinter}
+                  className="w-full justify-start"
+                >
+                  {isPrintingTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+                  Imprimir Prueba de Comanda
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Estadísticas Rápidas</CardTitle>
@@ -719,4 +845,3 @@ const Perfil = () => {
 }
 
 export default Perfil
-

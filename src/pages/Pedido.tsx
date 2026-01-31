@@ -20,6 +20,9 @@ import {
   Receipt, CheckCircle2, XCircle, Search,
   Bell, Package
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { useQZ } from '@/context/QZContext'
+import { formatComanda } from '@/utils/printerUtils'
 
 // Types
 interface ItemPedido {
@@ -46,6 +49,11 @@ interface PagoInfo {
   createdAt: string
 }
 
+interface Ingrediente {
+  id: number
+  nombre: string
+}
+
 interface Producto {
   id: number
   nombre: string
@@ -53,6 +61,7 @@ interface Producto {
   precio: string
   activo: boolean
   imagenUrl: string | null
+  ingredientes?: Ingrediente[]
 }
 
 interface PedidoDetalle {
@@ -150,6 +159,7 @@ const Pedido = () => {
   const token = useAuthStore((state) => state.token)
   const { restaurante } = useRestauranteStore()
   const esCarrito = restaurante?.esCarrito || false
+  const { print, defaultPrinter } = useQZ()
 
   // WebSocket y Estados
   const { mesas: mesasWS, isConnected, subtotalesUpdates, marcarPedidoListo } = useAdminWebSocket()
@@ -167,6 +177,10 @@ const Pedido = () => {
   const [itemAEliminar, setItemAEliminar] = useState<ItemPedido | null>(null)
   const [showDeletePedidoDialog, setShowDeletePedidoDialog] = useState(false)
   const [marcandoPagoEfectivo, setMarcandoPagoEfectivo] = useState<string | null>(null)
+
+  // Configuración de producto (Ingredientes)
+  const [configuringProduct, setConfiguringProduct] = useState<Producto | null>(null)
+  const [excludedIngredients, setExcludedIngredients] = useState<number[]>([])
 
   // NUEVO: Detectar si es mobile para la dirección del Sheet
   const [isMobile, setIsMobile] = useState(false)
@@ -295,15 +309,61 @@ const Pedido = () => {
   useEffect(() => { if (addProductSheet && productos.length === 0) fetchProductos() }, [addProductSheet, fetchProductos, productos.length])
 
   const handleAddProducto = async (producto: Producto) => {
+    // Si tiene ingredientes, abrir dialogo de configuración
+    if (producto.ingredientes && producto.ingredientes.length > 0) {
+      setExcludedIngredients([]) // Reset exclusions
+      setConfiguringProduct(producto)
+      return
+    }
+
+    // Si no tiene ingredientes, agregar directamente
+    await confirmAddProducto(producto, [])
+  }
+
+  const confirmAddProducto = async (producto: Producto, exclusiones: number[]) => {
     if (!token || !pedido) return
     setAddingProducto(producto.id)
     try {
       const cantidad = cantidadProducto[producto.id] || 1
-      await pedidosApi.addItem(token, pedido.id, { productoId: producto.id, cantidad, clienteNombre: 'Mozo' })
+      await pedidosApi.addItem(token, pedido.id, {
+        productoId: producto.id,
+        cantidad,
+        clienteNombre: 'Mozo',
+        ingredientesExcluidos: exclusiones.length > 0 ? exclusiones : undefined
+      })
       toast.success('Producto agregado')
       setCantidadProducto(prev => ({ ...prev, [producto.id]: 1 }))
+      setConfiguringProduct(null) // Cerrar dialogo si estaba abierto
+
+      // IMPRESIÓN AUTOMÁTICA (Si el pedido está en cocina)
+      if ((pedido.estado === 'preparing' || pedido.estado === 'delivered') && defaultPrinter) {
+        // Obtener categoría para el formato correcto
+        // Necesitamos las categorías del store, asumo que estan disponibles o las busco en productos si vinieran
+        const categorias = useRestauranteStore.getState().categorias;
+        const categoria = categorias.find(c => c.id === (producto as any).categoriaId); // Casting as any because interface might be missing it but API returns it
+
+        // Filtrar bebidas
+        if (!categoria || !categoria.nombre.toLowerCase().includes('bebida')) {
+          const itemToPrint = {
+            cantidad,
+            nombreProducto: producto.nombre,
+            ingredientesExcluidosNombres: exclusiones.map(id => producto.ingredientes?.find(i => i.id === id)?.nombre || ''),
+            categoriaNombre: categoria?.nombre
+          };
+
+          console.log("🖨️ Auto-printing new admin item:", itemToPrint);
+          const comandaData = formatComanda({ id: pedido.id, mesaNombre: pedido.mesaNombre, nombrePedido: pedido.nombrePedido }, [itemToPrint], restaurante?.nombre || 'Restaurante');
+          print(defaultPrinter, comandaData).catch(err => console.error("Error printing admin item:", err));
+          toast.info('Imprimiendo comanda en cocina...');
+        }
+      }
+
       await fetchPedido()
-    } catch (error: any) { toast.error(error.message || 'Error') } finally { setAddingProducto(null) }
+    } catch (error: any) {
+      toast.error(error.message || 'Error')
+    } finally {
+      setAddingProducto(null)
+    }
   }
 
   const handleDeleteItem = async () => {
@@ -693,6 +753,65 @@ const Pedido = () => {
         <DialogContent className="max-w-md rounded-xl">
           <DialogHeader><DialogTitle>¿Eliminar Pedido Completo?</DialogTitle><DialogDescription>Esta acción es irreversible.</DialogDescription></DialogHeader>
           <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setShowDeletePedidoDialog(false)}>Cancelar</Button><Button variant="destructive" onClick={handleDeletePedido}>Eliminar Todo</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Configuración de Ingredientes */}
+      <Dialog open={!!configuringProduct} onOpenChange={(open) => !open && setConfiguringProduct(null)}>
+        <DialogContent className="max-w-md rounded-xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Personalizar {configuringProduct?.nombre}</DialogTitle>
+            <DialogDescription>
+              Selecciona los ingredientes para EXCLUIR.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-2">
+            {configuringProduct?.ingredientes?.length ? (
+              <div className="space-y-2">
+                {configuringProduct.ingredientes.map(ing => {
+                  const isExcluded = excludedIngredients.includes(ing.id)
+                  return (
+                    <div
+                      key={ing.id}
+                      className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${isExcluded
+                        ? 'bg-destructive/10 border-destructive/30'
+                        : 'bg-card border-border hover:bg-accent'
+                        }`}
+                      onClick={() => {
+                        setExcludedIngredients(prev =>
+                          prev.includes(ing.id)
+                            ? prev.filter(id => id !== ing.id)
+                            : [...prev, ing.id]
+                        )
+                      }}
+                    >
+                      <Checkbox checked={!isExcluded} />
+                      <span className={isExcluded ? 'line-through text-muted-foreground' : 'font-medium'}>
+                        {ing.nombre}
+                      </span>
+                      {isExcluded && <span className="text-xs text-destructive ml-auto font-semibold">Excluido</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-center py-4">Este producto no tiene ingredientes configurables.</p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
+            <Button variant="outline" onClick={() => setConfiguringProduct(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => configuringProduct && confirmAddProducto(configuringProduct, excludedIngredients)}
+              disabled={addingProducto === configuringProduct?.id}
+            >
+              {addingProducto === configuringProduct?.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              Agregar al Pedido
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
