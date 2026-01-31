@@ -588,115 +588,114 @@ const Pedido = () => {
           )}
           {isActive && (
             <>
-              <>
-                {/* Botón Agregar Producto (DESKTOP) - Sin Sheet wrapper, solo el botón */}
-                <Button variant="outline" onClick={() => setAddProductSheet(true)}>
-                  <Plus className="mr-2 h-4 w-4" /> Agregar Producto
-                </Button>
+              {/* Botón Agregar Producto (DESKTOP) - Sin Sheet wrapper, solo el botón */}
+              <Button variant="outline" onClick={() => setAddProductSheet(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Agregar Producto
+              </Button>
 
-                {pedido.estado === 'pending' && <Button onClick={handleConfirmarPedido} disabled={isUpdating || pedido.items.length === 0}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <ChefHat className="mr-2" />} Confirmar</Button>}
-                {pedido.estado === 'preparing' && <Button onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <Utensils className="mr-2" />} Entregado</Button>}
-                {pedido.estado === 'delivered' && <Button variant="secondary" onClick={handleCerrarPedido} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <CheckCircle className="mr-2" />} Cerrar</Button>}
-              </>
+              {pedido.estado === 'pending' && <Button onClick={handleConfirmarPedido} disabled={isUpdating || pedido.items.length === 0}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <ChefHat className="mr-2" />} Confirmar</Button>}
+              {pedido.estado === 'preparing' && <Button onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <Utensils className="mr-2" />} Entregado</Button>}
+              {pedido.estado === 'delivered' && <Button variant="secondary" onClick={handleCerrarPedido} disabled={isUpdating}>{isUpdating ? <Loader2 className="mr-2 animate-spin" /> : <CheckCircle className="mr-2" />} Cerrar</Button>}
+            </>
           )}
-            </div>
         </div>
-
-        {/* --- DESKTOP VIEW (Grid Original) --- */}
-        <div className="hidden md:grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-6">
-            <ItemsList isMobile={false} />
-          </div>
-          <div className="space-y-6">
-            <InfoAndPayments isMobile={false} />
-          </div>
-        </div>
-
-        {/* --- MOBILE VIEW (Tabs + Diseño Optimizado) --- */}
-        <div className="md:hidden">
-          <Tabs defaultValue="items" value={mobileTab} onValueChange={(v) => setMobileTab(v as 'items' | 'info')} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4">
-              <TabsTrigger value="items">Items ({pedido.totalItems})</TabsTrigger>
-              <TabsTrigger value="info">Detalles & Pagos</TabsTrigger>
-            </TabsList>
-            <TabsContent value="items" className="space-y-4">
-              <ItemsList isMobile={true} />
-            </TabsContent>
-            <TabsContent value="info">
-              <InfoAndPayments isMobile={true} />
-              <div className="mt-8">
-                <Button variant="outline" className="w-full text-destructive" onClick={() => setShowDeletePedidoDialog(true)}>
-                  <Trash2 className="mr-2 h-4 w-4" /> Eliminar Pedido Completo
-                </Button>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
-
-        {/* --- MOBILE STICKY BOTTOM ACTION BAR (La clave del diseño ergonómico) --- */}
-        <div className="md:hidden fixed bottom-0 left-0 w-full bg-background border-t p-4 z-40 flex items-center justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-          <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground">Total</span>
-            <span className="text-xl font-bold text-primary">${parseFloat(pedido.total || '0').toFixed(2)}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isActive && (
-              <Button
-                size="icon"
-                variant="outline"
-                className="h-12 w-12 rounded-full border-dashed border-2"
-                onClick={() => setAddProductSheet(true)}
-              >
-                <Plus className="h-6 w-6" />
-              </Button>
-            )}
-
-            {/* Main Action Button Logic for Mobile */}
-            {pedido.estado === 'pending' && (
-              <Button className="h-12 px-6 rounded-full text-base font-semibold shadow-lg shadow-primary/20" onClick={handleConfirmarPedido} disabled={isUpdating}>
-                {isUpdating ? <Loader2 className="animate-spin" /> : "Confirmar"}
-              </Button>
-            )}
-            {pedido.estado === 'preparing' && (
-              esCarrito ? (
-                <Button className="h-12 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20" onClick={() => pedido.mesaId && marcarPedidoListo(pedido.id, pedido.mesaId)}>
-                  <Bell className="mr-2 h-4 w-4" /> Listo
-                </Button>
-              ) : (
-                <Button className="h-12 px-6 rounded-full" onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>
-                  {isUpdating ? <Loader2 className="animate-spin" /> : "Marcar Entregado"}
-                </Button>
-              )
-            )}
-            {pedido.estado === 'delivered' && (
-              <Button variant="secondary" className="h-12 px-6 rounded-full bg-slate-900 text-white hover:bg-slate-800" onClick={handleCerrarPedido} disabled={isUpdating}>
-                {isUpdating ? <Loader2 className="animate-spin" /> : "Cerrar Mesa"}
-              </Button>
-            )}
-            {pedido.estado === 'closed' && (
-              <Button variant="outline" className="h-12 px-6 rounded-full" onClick={() => navigate('/dashboard')}>
-                <ArrowLeft className="mr-2 h-4 w-4" /> Volver
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Dialogs de Eliminar (Mismo que antes) */}
-        <Dialog open={!!itemAEliminar} onOpenChange={(open) => !open && setItemAEliminar(null)}>
-          <DialogContent className="max-w-md rounded-xl">
-            <DialogHeader><DialogTitle>¿Eliminar producto?</DialogTitle><DialogDescription>Se eliminará {itemAEliminar?.nombreProducto}.</DialogDescription></DialogHeader>
-            <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setItemAEliminar(null)}>Cancelar</Button><Button variant="destructive" onClick={handleDeleteItem}>Eliminar</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={showDeletePedidoDialog} onOpenChange={setShowDeletePedidoDialog}>
-          <DialogContent className="max-w-md rounded-xl">
-            <DialogHeader><DialogTitle>¿Eliminar Pedido Completo?</DialogTitle><DialogDescription>Esta acción es irreversible.</DialogDescription></DialogHeader>
-            <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setShowDeletePedidoDialog(false)}>Cancelar</Button><Button variant="destructive" onClick={handleDeletePedido}>Eliminar Todo</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
+
+      {/* --- DESKTOP VIEW (Grid Original) --- */}
+      <div className="hidden md:grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6">
+          <ItemsList isMobile={false} />
+        </div>
+        <div className="space-y-6">
+          <InfoAndPayments isMobile={false} />
+        </div>
+      </div>
+
+      {/* --- MOBILE VIEW (Tabs + Diseño Optimizado) --- */}
+      <div className="md:hidden">
+        <Tabs defaultValue="items" value={mobileTab} onValueChange={(v) => setMobileTab(v as 'items' | 'info')} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="items">Items ({pedido.totalItems})</TabsTrigger>
+            <TabsTrigger value="info">Detalles & Pagos</TabsTrigger>
+          </TabsList>
+          <TabsContent value="items" className="space-y-4">
+            <ItemsList isMobile={true} />
+          </TabsContent>
+          <TabsContent value="info">
+            <InfoAndPayments isMobile={true} />
+            <div className="mt-8">
+              <Button variant="outline" className="w-full text-destructive" onClick={() => setShowDeletePedidoDialog(true)}>
+                <Trash2 className="mr-2 h-4 w-4" /> Eliminar Pedido Completo
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* --- MOBILE STICKY BOTTOM ACTION BAR (La clave del diseño ergonómico) --- */}
+      <div className="md:hidden fixed bottom-0 left-0 w-full bg-background border-t p-4 z-40 flex items-center justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+        <div className="flex flex-col">
+          <span className="text-xs text-muted-foreground">Total</span>
+          <span className="text-xl font-bold text-primary">${parseFloat(pedido.total || '0').toFixed(2)}</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {isActive && (
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-12 w-12 rounded-full border-dashed border-2"
+              onClick={() => setAddProductSheet(true)}
+            >
+              <Plus className="h-6 w-6" />
+            </Button>
+          )}
+
+          {/* Main Action Button Logic for Mobile */}
+          {pedido.estado === 'pending' && (
+            <Button className="h-12 px-6 rounded-full text-base font-semibold shadow-lg shadow-primary/20" onClick={handleConfirmarPedido} disabled={isUpdating}>
+              {isUpdating ? <Loader2 className="animate-spin" /> : "Confirmar"}
+            </Button>
+          )}
+          {pedido.estado === 'preparing' && (
+            esCarrito ? (
+              <Button className="h-12 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20" onClick={() => pedido.mesaId && marcarPedidoListo(pedido.id, pedido.mesaId)}>
+                <Bell className="mr-2 h-4 w-4" /> Listo
+              </Button>
+            ) : (
+              <Button className="h-12 px-6 rounded-full" onClick={() => handleChangeEstado('delivered')} disabled={isUpdating}>
+                {isUpdating ? <Loader2 className="animate-spin" /> : "Marcar Entregado"}
+              </Button>
+            )
+          )}
+          {pedido.estado === 'delivered' && (
+            <Button variant="secondary" className="h-12 px-6 rounded-full bg-slate-900 text-white hover:bg-slate-800" onClick={handleCerrarPedido} disabled={isUpdating}>
+              {isUpdating ? <Loader2 className="animate-spin" /> : "Cerrar Mesa"}
+            </Button>
+          )}
+          {pedido.estado === 'closed' && (
+            <Button variant="outline" className="h-12 px-6 rounded-full" onClick={() => navigate('/dashboard')}>
+              <ArrowLeft className="mr-2 h-4 w-4" /> Volver
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Dialogs de Eliminar (Mismo que antes) */}
+      <Dialog open={!!itemAEliminar} onOpenChange={(open) => !open && setItemAEliminar(null)}>
+        <DialogContent className="max-w-md rounded-xl">
+          <DialogHeader><DialogTitle>¿Eliminar producto?</DialogTitle><DialogDescription>Se eliminará {itemAEliminar?.nombreProducto}.</DialogDescription></DialogHeader>
+          <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setItemAEliminar(null)}>Cancelar</Button><Button variant="destructive" onClick={handleDeleteItem}>Eliminar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeletePedidoDialog} onOpenChange={setShowDeletePedidoDialog}>
+        <DialogContent className="max-w-md rounded-xl">
+          <DialogHeader><DialogTitle>¿Eliminar Pedido Completo?</DialogTitle><DialogDescription>Esta acción es irreversible.</DialogDescription></DialogHeader>
+          <DialogFooter className="flex gap-2"><Button variant="outline" onClick={() => setShowDeletePedidoDialog(false)}>Cancelar</Button><Button variant="destructive" onClick={handleDeletePedido}>Eliminar Todo</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* --- MASTER SHEET DE PRODUCTOS (Único para evitar duplicados) --- */}
       <Sheet open={addProductSheet} onOpenChange={setAddProductSheet}>
