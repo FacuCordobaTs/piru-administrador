@@ -40,6 +40,47 @@ export const QZProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
         try {
             if (!window.qz.websocket.isActive()) {
+                // Configure security BEFORE connecting to avoid permission popups
+                window.qz.security.setCertificatePromise(function (_resolve: (cert: string) => void, _reject: (err: any) => void) {
+                    _resolve(`-----BEGIN CERTIFICATE-----
+MIIECzCCAvOgAwIBAgIGAZwalXoEMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
+EwJVUzELMAkGA1UECAwCTlkxEjAQBgNVBAcMCUNhbmFzdG90YTEbMBkGA1UECgwS
+UVogSW5kdXN0cmllcywgTExDMRswGQYDVQQLDBJRWiBJbmR1c3RyaWVzLCBMTEMx
+HDAaBgkqhkiG9w0BCQEWDXN1cHBvcnRAcXouaW8xGjAYBgNVBAMMEVFaIFRyYXkg
+RGVtbyBDZXJ0MB4XDTI2MDEzMTE5MDIwOVoXDTQ2MDEzMTE5MDIwOVowgaIxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJOWTESMBAGA1UEBwwJQ2FuYXN0b3RhMRswGQYD
+VQQKDBJRWiBJbmR1c3RyaWVzLCBMTEMxGzAZBgNVBAsMElFaIEluZHVzdHJpZXMs
+IExMQzEcMBoGCSqGSIb3DQEJARYNc3VwcG9ydEBxei5pbzEaMBgGA1UEAwwRUVog
+VHJheSBEZW1vIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDK
+vPA7hG6+ym/JhPZ9jDBToQ58FIMt/vyzixTmk0v5QF/EOkg3f7cR3y/gC6es/iso
+wrfRfosBZUI4SlDYSQgWz9D/iC4Bi9sRgE+zr9AUTqlII4tTgCu7vJ8/Q71uEmIS
+RXPj0FG/Aqt2Dg39hyKMaEWm0CaJ+otebWOQHHYUqxmysWmdT74rTue4ndCXYZU8
+PNwQY1ZjUW8N2AwJVy+N7pTfajPpVCCSXFZ0qGKc3F5CuogsgoXHvW3RfvHgGWFP
+uWTflDozUd2WvXnTIeeGFA1LlGFJopOTCZeq059G5z2Mx+jePbs540UN21mXi933
++jHout8vKJKXWoIQnWnDAgMBAAGjRTBDMBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYD
+VR0PAQH/BAQDAgEGMB0GA1UdDgQWBBRmzM2mzKPUZZ/fayF00KEFhM46MjANBgkq
+hkiG9w0BAQsFAAOCAQEAMv3J4MJYViQtzq1UqxByfhyjg+x3y3jP17u2m2ptcGwX
+am7NX2UTRzNedOqzBaXE4yZTYpnapNGmop8tJWbDs2i3fv6AAZ9oWBua3jumhKCS
+AdsXcADhpGyGcfYtyvAydK5XB93JZ1RoAqw4zbF8CT24V5zLWiOyOy7RO5LEq40k
+wsIHfIYI5u7sKx/b26D/u95e8ensQZQy9pdwFbbzgFsWlhHMSBMfUs4hqI7xU/sl
+svvblr6m5HkXJ74FhEWmxOQvd12CZ2jhFwIgIuPlTGPmnJVCkSXfeVbW4Dsf8/Lg
+wt5TtMJj9X9CluIdwvjCpbf0T9pbI9WIBAF/AkiUIw==
+-----END CERTIFICATE-----`);
+                });
+
+                window.qz.security.setSignaturePromise(function (_resolve: (sig: string) => void, _reject: (err: any) => void) {
+                    return function (toSign: string) {
+                        fetch('https://api.piru.app/qz/sign', {
+                            method: 'POST',
+                            body: toSign,
+                            headers: { 'Content-Type': 'text/plain' }
+                        })
+                            .then(response => response.text())
+                            .then(signature => _resolve(signature))
+                            .catch(err => _reject(err));
+                    };
+                });
+
                 await window.qz.websocket.connect();
                 setIsConnected(true);
                 console.log('Connected to QZ Tray');
