@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-// Definimos los tipos para qz-tray ya que no tiene tipos oficiales de TS por defecto importados asi
 declare global {
     interface Window {
         qz: any;
@@ -22,6 +21,8 @@ const QZContext = createContext<QZContextType | undefined>(undefined);
 
 export const QZProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isConnected, setIsConnected] = useState(false);
+
+    // Recuperar impresora guardada al iniciar
     const [defaultPrinter, setDefaultPrinter] = useState<string | null>(() => {
         return localStorage.getItem('qz_default_printer');
     });
@@ -38,60 +39,79 @@ export const QZProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             return;
         }
 
+        if (window.qz.websocket.isActive()) {
+            setIsConnected(true);
+            return;
+        }
+
         try {
-            if (!window.qz.websocket.isActive()) {
-                // Configure security BEFORE connecting to avoid permission popups
-                window.qz.security.setCertificatePromise(function (_resolve: (cert: string) => void, _reject: (err: any) => void) {
-                    _resolve(`-----BEGIN CERTIFICATE-----
-MIIECzCCAvOgAwIBAgIGAZwalXoEMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
-EwJVUzELMAkGA1UECAwCTlkxEjAQBgNVBAcMCUNhbmFzdG90YTEbMBkGA1UECgwS
-UVogSW5kdXN0cmllcywgTExDMRswGQYDVQQLDBJRWiBJbmR1c3RyaWVzLCBMTEMx
-HDAaBgkqhkiG9w0BCQEWDXN1cHBvcnRAcXouaW8xGjAYBgNVBAMMEVFaIFRyYXkg
-RGVtbyBDZXJ0MB4XDTI2MDEzMTE5MDIwOVoXDTQ2MDEzMTE5MDIwOVowgaIxCzAJ
-BgNVBAYTAlVTMQswCQYDVQQIDAJOWTESMBAGA1UEBwwJQ2FuYXN0b3RhMRswGQYD
-VQQKDBJRWiBJbmR1c3RyaWVzLCBMTEMxGzAZBgNVBAsMElFaIEluZHVzdHJpZXMs
-IExMQzEcMBoGCSqGSIb3DQEJARYNc3VwcG9ydEBxei5pbzEaMBgGA1UEAwwRUVog
-VHJheSBEZW1vIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDK
-vPA7hG6+ym/JhPZ9jDBToQ58FIMt/vyzixTmk0v5QF/EOkg3f7cR3y/gC6es/iso
-wrfRfosBZUI4SlDYSQgWz9D/iC4Bi9sRgE+zr9AUTqlII4tTgCu7vJ8/Q71uEmIS
-RXPj0FG/Aqt2Dg39hyKMaEWm0CaJ+otebWOQHHYUqxmysWmdT74rTue4ndCXYZU8
-PNwQY1ZjUW8N2AwJVy+N7pTfajPpVCCSXFZ0qGKc3F5CuogsgoXHvW3RfvHgGWFP
-uWTflDozUd2WvXnTIeeGFA1LlGFJopOTCZeq059G5z2Mx+jePbs540UN21mXi933
-+jHout8vKJKXWoIQnWnDAgMBAAGjRTBDMBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYD
-VR0PAQH/BAQDAgEGMB0GA1UdDgQWBBRmzM2mzKPUZZ/fayF00KEFhM46MjANBgkq
-hkiG9w0BAQsFAAOCAQEAMv3J4MJYViQtzq1UqxByfhyjg+x3y3jP17u2m2ptcGwX
-am7NX2UTRzNedOqzBaXE4yZTYpnapNGmop8tJWbDs2i3fv6AAZ9oWBua3jumhKCS
-AdsXcADhpGyGcfYtyvAydK5XB93JZ1RoAqw4zbF8CT24V5zLWiOyOy7RO5LEq40k
-wsIHfIYI5u7sKx/b26D/u95e8ensQZQy9pdwFbbzgFsWlhHMSBMfUs4hqI7xU/sl
-svvblr6m5HkXJ74FhEWmxOQvd12CZ2jhFwIgIuPlTGPmnJVCkSXfeVbW4Dsf8/Lg
-wt5TtMJj9X9CluIdwvjCpbf0T9pbI9WIBAF/AkiUIw==
+            // --- CONFIGURACIÓN DE SEGURIDAD ---
+
+            // 1. Certificado (Público)
+            window.qz.security.setCertificatePromise((resolve: (cert: string) => void) => {
+                resolve(`-----BEGIN CERTIFICATE-----
+MIIDazCCAlOgAwIBAgIUJ20M7YBS/0OkbIbwxH1tzNzsCigwDQYJKoZIhvcNAQEL
+BQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yNjAyMDEyMTE1MDRaFw0yNzAy
+MDEyMTE1MDRaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw
+HwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEB
+AQUAA4IBDwAwggEKAoIBAQDpRbFwvH+tCaQC01hdQIeupgoD70YN0ZIOMA8Yf9vi
+MCFgZPrzuPiY5p85UM3h2Ufu/n01qs7f5L6mRyv6kuv/TYR7ZJFj64tvrfl4QsPY
+epNUw4TfsxHyyUklWIQp9PzvOhVz01j/OceO4/qfu9ZHwJFpCzdkNVEd2m/QdtuJ
+NQ3V1izboisrTAfQdQZgaa+zD+WNwikBlspK385Qoxh3EBGIVn4kcCJjTWa0XUTi
+5TaNtDZu+uXZG+wHrSwSgR6mx41KWFvWWtWyRfMDoOiYL4hXbuZ/FOqamujhM2w/
+8n8xe/30MHnTQcjEG5vgh6IpSfVAU7Lmp5Fk56WW5CJdAgMBAAGjUzBRMB0GA1Ud
+DgQWBBSL76/F9tJJ4IRSK9QFEa4xaoaBCzAfBgNVHSMEGDAWgBSL76/F9tJJ4IRS
+K9QFEa4xaoaBCzAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAc
+Kdgp73HXtydJPhFh/cLWnqIVtiLjsTz6mb9h0QjECfgLANxH+hKjqvfj5X6fEss6
+UIBqlKH87xxc2lP3bG09x80Ow5NN5pKJVDHbofc2KbE9s1ILz2WexeH7AwxYGydD
+mN2BsCHLcUtS6uVGGv1LdoWBcyeSs1C5Q81215rLx7SG7M99qsjRIRAVFxnIw8+x
+H3UU1x9oq+JubB+fKNIqlKH9LzqZClvRxNk+QAM0XgI+SF0xWzWFjBAxqyz7tnZL
+ozgsxjjJlkIgN7rRGwSPC/W9hbmdJNJdF+EL9ADxCacQ+hXvpE+8WboSxX5PJljU
+4rxHQukQL8M9w4xK10BZ
 -----END CERTIFICATE-----`);
-                });
+            });
 
-                window.qz.security.setSignaturePromise(function (_resolve: (sig: string) => void, _reject: (err: any) => void) {
-                    return function (toSign: string) {
-                        fetch('https://api.piru.app/qz/sign', {
-                            method: 'POST',
-                            body: toSign,
-                            headers: { 'Content-Type': 'text/plain' }
+            // 2. Firma (Privada - via Backend)
+            // SOLUCIÓN: Devolvemos una función (resolve, reject), no una promesa directa.
+            // Esto evita el error "Promise resolver is not a function"
+            window.qz.security.setSignaturePromise((toSign: string) => {
+                return function (resolve: any, reject: any) {
+                    fetch('https://api.piru.app/qz/sign', {
+                        method: 'POST',
+                        body: toSign, // QZ envía esto limpio, está bien
+                        headers: { 'Content-Type': 'text/plain' }
+                    })
+                        .then(response => {
+                            if (!response.ok) throw new Error(response.statusText);
+                            return response.text();
                         })
-                            .then(response => response.text())
-                            .then(signature => _resolve(signature))
-                            .catch(err => _reject(err));
-                    };
-                });
+                        .then(signature => {
+                            // ✅ LA SOLUCIÓN: Limpiamos la firma recibida
+                            console.log("Firma recibida:", signature);
+                            resolve(signature.trim());
+                        })
+                        .catch(error => reject(error));
+                };
+            });
 
-                await window.qz.websocket.connect();
-                setIsConnected(true);
-                console.log('Connected to QZ Tray');
-            } else {
-                setIsConnected(true);
-            }
+            // Configurar callback de desconexión
+            window.qz.websocket.setClosedCallbacks(() => {
+                setIsConnected(false);
+            });
+
+            // Conectar
+            await window.qz.websocket.connect({
+                retries: 3,
+                delay: 1
+            });
+
+            setIsConnected(true);
+            console.log('Connected to QZ Tray');
+
         } catch (err) {
             console.error('Error connecting to QZ Tray:', err);
             setIsConnected(false);
-            // No mostramos toast de error al iniciar para no molestar si no lo usan, 
-            // pero si fallara en una acción explícita sí se mostraría.
         }
     };
 
@@ -100,36 +120,36 @@ wt5TtMJj9X9CluIdwvjCpbf0T9pbI9WIBAF/AkiUIw==
             try {
                 await window.qz.websocket.disconnect();
                 setIsConnected(false);
-                console.log('Disconnected from QZ Tray');
             } catch (err) {
-                console.error('Error disconnecting QZ Tray:', err);
+                console.error('Error disconnecting:', err);
             }
         }
     };
 
     useEffect(() => {
         connect();
-
-        return () => {
-            // Opcional: desconectar al desmontar, pero en una SPA usualmente queremos mantener la conexión
-            // disconnect();
-        };
     }, []);
 
     const findPrinters = async (): Promise<string[]> => {
         if (!isConnected) {
-            await connect();
+            try {
+                // Intentar conectar silenciosamente
+                await connect();
+            } catch (e) { return [] }
         }
 
         try {
             if (!window.qz || !window.qz.websocket.isActive()) {
-                throw new Error('No hay conexión con QZ Tray');
+                return [];
             }
             const printers = await window.qz.printers.find();
             return printers;
         } catch (err) {
             console.error('Error finding printers:', err);
-            toast.error('Error al buscar impresoras. Verifique que QZ Tray esté ejecutándose.');
+            // Si el error es de firma, mostrarlo
+            if (err instanceof Error && err.message.includes('Sign')) {
+                toast.error('Error de firma digital. Verifica el backend.');
+            }
             return [];
         }
     };
@@ -153,10 +173,10 @@ wt5TtMJj9X9CluIdwvjCpbf0T9pbI9WIBAF/AkiUIw==
 
             const config = window.qz.configs.create(targetPrinter);
             await window.qz.print(config, data);
-            toast.success('Impresión enviada correctamente');
+            toast.success('Comanda enviada a cocina');
         } catch (err) {
             console.error('Error printing:', err);
-            toast.error('Error al imprimir. Verifique la impresora y QZ Tray.');
+            toast.error('Error al imprimir.');
             throw err;
         }
     };
