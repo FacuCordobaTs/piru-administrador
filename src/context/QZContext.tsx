@@ -19,6 +19,8 @@ interface QZContextType {
 
 const QZContext = createContext<QZContextType | undefined>(undefined);
 
+
+
 export const QZProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isConnected, setIsConnected] = useState(false);
 
@@ -47,58 +49,34 @@ export const QZProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         try {
             // --- CONFIGURACIÓN DE SEGURIDAD ---
 
-            // 1. Certificado (Público)
-            window.qz.security.setCertificatePromise((resolve: (cert: string) => void) => {
-                resolve(`-----BEGIN CERTIFICATE-----
-MIIDazCCAlOgAwIBAgIUJ20M7YBS/0OkbIbwxH1tzNzsCigwDQYJKoZIhvcNAQEL
-BQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
-GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yNjAyMDEyMTE1MDRaFw0yNzAy
-MDEyMTE1MDRaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw
-HwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEB
-AQUAA4IBDwAwggEKAoIBAQDpRbFwvH+tCaQC01hdQIeupgoD70YN0ZIOMA8Yf9vi
-MCFgZPrzuPiY5p85UM3h2Ufu/n01qs7f5L6mRyv6kuv/TYR7ZJFj64tvrfl4QsPY
-epNUw4TfsxHyyUklWIQp9PzvOhVz01j/OceO4/qfu9ZHwJFpCzdkNVEd2m/QdtuJ
-NQ3V1izboisrTAfQdQZgaa+zD+WNwikBlspK385Qoxh3EBGIVn4kcCJjTWa0XUTi
-5TaNtDZu+uXZG+wHrSwSgR6mx41KWFvWWtWyRfMDoOiYL4hXbuZ/FOqamujhM2w/
-8n8xe/30MHnTQcjEG5vgh6IpSfVAU7Lmp5Fk56WW5CJdAgMBAAGjUzBRMB0GA1Ud
-DgQWBBSL76/F9tJJ4IRSK9QFEa4xaoaBCzAfBgNVHSMEGDAWgBSL76/F9tJJ4IRS
-K9QFEa4xaoaBCzAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAc
-Kdgp73HXtydJPhFh/cLWnqIVtiLjsTz6mb9h0QjECfgLANxH+hKjqvfj5X6fEss6
-UIBqlKH87xxc2lP3bG09x80Ow5NN5pKJVDHbofc2KbE9s1ILz2WexeH7AwxYGydD
-mN2BsCHLcUtS6uVGGv1LdoWBcyeSs1C5Q81215rLx7SG7M99qsjRIRAVFxnIw8+x
-H3UU1x9oq+JubB+fKNIqlKH9LzqZClvRxNk+QAM0XgI+SF0xWzWFjBAxqyz7tnZL
-ozgsxjjJlkIgN7rRGwSPC/W9hbmdJNJdF+EL9ADxCacQ+hXvpE+8WboSxX5PJljU
-4rxHQukQL8M9w4xK10BZ
------END CERTIFICATE-----`);
-            });
+            // 🔴 SOLUCIÓN CRÍTICA: Forzar el uso de SHA512 en el frontend
+            // Esto alinea el algoritmo con el que usa tu backend (Bun/Node crypto)
+            window.qz.security.setSignatureAlgorithm("SHA512");
 
-            // 2. Firma (Privada - via Backend)
-            // SOLUCIÓN: Devolvemos una función (resolve, reject), no una promesa directa.
-            // Esto evita el error "Promise resolver is not a function"
-            window.qz.security.setSignaturePromise((toSign: string) => {
-                return function (resolve: any, reject: any) {
-                    fetch('https://api.piru.app/qz/sign', {
-                        method: 'POST',
-                        body: toSign, // QZ envía esto limpio, está bien
-                        headers: { 'Content-Type': 'text/plain' }
+            // 1. Certificado (Público)
+            window.qz.security.setCertificatePromise((resolve: (cert: string) => void, reject: (err: any) => void) => {
+                fetch('https://api.piru.app/qz/certificate')
+                    .then(response => {
+                        if (!response.ok) throw new Error(response.statusText);
+                        return response.text();
                     })
-                        .then(response => {
-                            if (!response.ok) throw new Error(response.statusText);
-                            return response.text();
-                        })
-                        .then(signature => {
-                            // ✅ LA SOLUCIÓN: Limpiamos la firma recibida
-                            console.log("Firma recibida:", signature);
-                            resolve(signature.trim());
-                        })
-                        .catch(error => reject(error));
-                };
+                    .then(cert => {
+                        // Resolvemos con el certificado exacto que tiene el servidor
+                        resolve(cert);
+                    })
+                    .catch(error => {
+                        console.error("Error obteniendo certificado:", error);
+                        reject(error);
+                    });
             });
 
             // Configurar callback de desconexión
             window.qz.websocket.setClosedCallbacks(() => {
                 setIsConnected(false);
             });
+
+            setIsConnected(true);
+            console.log('Connected to QZ Tray (Modo Local)');
 
             // Conectar
             await window.qz.websocket.connect({
@@ -133,7 +111,6 @@ ozgsxjjJlkIgN7rRGwSPC/W9hbmdJNJdF+EL9ADxCacQ+hXvpE+8WboSxX5PJljU
     const findPrinters = async (): Promise<string[]> => {
         if (!isConnected) {
             try {
-                // Intentar conectar silenciosamente
                 await connect();
             } catch (e) { return [] }
         }
@@ -146,7 +123,6 @@ ozgsxjjJlkIgN7rRGwSPC/W9hbmdJNJdF+EL9ADxCacQ+hXvpE+8WboSxX5PJljU
             return printers;
         } catch (err) {
             console.error('Error finding printers:', err);
-            // Si el error es de firma, mostrarlo
             if (err instanceof Error && err.message.includes('Sign')) {
                 toast.error('Error de firma digital. Verifica el backend.');
             }
