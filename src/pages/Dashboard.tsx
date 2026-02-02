@@ -18,14 +18,13 @@ import MesaQRCode from '@/components/MesaQRCode'
 import {
   ShoppingCart, Users, Loader2, QrCode, Plus,
   Clock, CheckCircle, Coffee,
-  Utensils, ChefHat, RefreshCw, Trash2,
+  Utensils, ChefHat, Trash2,
   User, Minus, Search, Package,
-  AlertTriangle, Play
+  AlertTriangle, Play, LayoutGrid, List, ArrowLeft
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 
 // Types
-// Extended ItemPedido with estado for kanban
 interface ItemPedidoConEstado extends WSItemPedido {
   estado?: 'pending' | 'preparing' | 'delivered' | 'served' | 'cancelled'
 }
@@ -76,7 +75,6 @@ interface KanbanCardData {
   status: string
 }
 
-// Helper functions
 const getMinutesAgo = (dateString: string) => {
   const date = new Date(dateString)
   const adjustedDate = new Date(date.getTime() + 3 * 60 * 60 * 1000)
@@ -105,7 +103,6 @@ const getEstadoBadge = (estado: string | null | undefined) => {
   return estados[estado || 'pending'] || { label: 'Disponible', variant: 'outline', icon: Coffee }
 }
 
-// Columns for Kanban
 const COLUMNS = [
   { id: 'pending', title: 'Pendientes', icon: Clock, color: 'text-amber-600', bgHeader: 'bg-amber-100 dark:bg-amber-900/30' },
   { id: 'preparing', title: 'En Cocina', icon: ChefHat, color: 'text-blue-600', bgHeader: 'bg-blue-100 dark:bg-blue-900/30' },
@@ -119,9 +116,8 @@ const Dashboard = () => {
   const token = useAuthStore((state) => state.token)
   const restaurante = useAuthStore((state) => state.restaurante)
   const { restaurante: restauranteStore } = useRestauranteStore()
-  const splitPayment = restauranteStore?.splitPayment ?? true // Default to split payment
+  const splitPayment = restauranteStore?.splitPayment ?? true
 
-  // Admin WebSocket for real-time updates
   const {
     mesas: mesasWS,
     notifications,
@@ -130,24 +126,22 @@ const Dashboard = () => {
     markAsRead
   } = useAdminContext()
 
-  // Local state
   const [mesas, setMesas] = useState<MesaConPedido[]>([])
   const [pedidos, setPedidos] = useState<PedidoData[]>([])
-  const [closedPedidosFromAPI, setClosedPedidosFromAPI] = useState<PedidoData[]>([]) // Closed orders from REST API
+  const [closedPedidosFromAPI, setClosedPedidosFromAPI] = useState<PedidoData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMesaId, setSelectedMesaId] = useState<number | null>(null)
+  const [selectedPedidoFromKanban, setSelectedPedidoFromKanban] = useState<PedidoData | null>(null)
   const [verQR, setVerQR] = useState(false)
   const [crearMesaDialog, setCrearMesaDialog] = useState(false)
   const [nombreMesa, setNombreMesa] = useState('')
   const [isCreating, setIsCreating] = useState(false)
 
-  // Pedido detail state
   const [subtotales, setSubtotales] = useState<SubtotalInfo[]>([])
   const [loadingSubtotales, setLoadingSubtotales] = useState(false)
   const [marcandoPagoEfectivo, setMarcandoPagoEfectivo] = useState<string | null>(null)
   const [updatingPedido, setUpdatingPedido] = useState<number | null>(null)
 
-  // Add product state
   const [addProductSheet, setAddProductSheet] = useState(false)
   const [productos, setProductos] = useState<Producto[]>([])
   const [loadingProductos, setLoadingProductos] = useState(false)
@@ -157,20 +151,47 @@ const Dashboard = () => {
   const [configuringProduct, setConfiguringProduct] = useState<Producto | null>(null)
   const [excludedIngredients, setExcludedIngredients] = useState<number[]>([])
 
-  // Delete states
   const [showDeletePedidoDialog, setShowDeletePedidoDialog] = useState(false)
   const [itemAEliminar, setItemAEliminar] = useState<ItemPedidoConEstado | null>(null)
 
-  // Payment states for kanban
   const [pedidosSubtotales, setPedidosSubtotales] = useState<Record<number, SubtotalInfo[]>>({})
   const [updatingPago, setUpdatingPago] = useState<string | null>(null)
 
-  // Get selected mesa
+  // Mobile-specific state
+  const [mobileView, setMobileView] = useState<'mesas' | 'detail' | 'orders'>('mesas')
+
   const selectedMesa = useMemo(() => {
     return mesas.find(m => m.id === selectedMesaId) || null
   }, [mesas, selectedMesaId])
 
-  // Get notifications grouped by mesa
+  const displayedPedido = useMemo(() => {
+    if (selectedPedidoFromKanban) {
+      return selectedPedidoFromKanban
+    }
+    if (selectedMesa?.pedido) {
+      return {
+        id: selectedMesa.pedido.id,
+        mesaId: selectedMesa.id,
+        mesaNombre: selectedMesa.nombre,
+        estado: selectedMesa.pedido.estado as PedidoData['estado'],
+        total: selectedMesa.pedido.total,
+        createdAt: selectedMesa.pedido.createdAt,
+        closedAt: selectedMesa.pedido.closedAt,
+        items: selectedMesa.items as ItemPedidoConEstado[],
+        totalItems: selectedMesa.totalItems,
+        nombrePedido: selectedMesa.pedido.nombrePedido
+      }
+    }
+    // Fallback: try to find pedido for this mesa in the pedidos array
+    if (selectedMesa) {
+      const pedidoFromList = pedidos.find(p => p.mesaId === selectedMesa.id)
+      if (pedidoFromList) {
+        return pedidoFromList
+      }
+    }
+    return null
+  }, [selectedPedidoFromKanban, selectedMesa?.pedido, selectedMesa?.items, selectedMesa?.id, selectedMesa?.nombre, selectedMesa?.totalItems, pedidos])
+
   const mesaNotifications = useMemo(() => {
     const map = new Map<number, number>()
     notifications.filter(n => !n.leida && n.mesaId).forEach(n => {
@@ -180,15 +201,13 @@ const Dashboard = () => {
     return map
   }, [notifications])
 
-  // Update mesas from WebSocket
   useEffect(() => {
     if (mesasWS.length > 0) {
       setMesas(mesasWS)
       setIsLoading(false)
 
-      // Also update pedidos for kanban - include closed orders since we need to show items not yet served
       const pedidosFromMesas: PedidoData[] = mesasWS
-        .filter(m => m.pedido) // Include all orders including closed
+        .filter(m => m.pedido)
         .map(m => ({
           id: m.pedido!.id,
           mesaId: m.id,
@@ -205,7 +224,6 @@ const Dashboard = () => {
     }
   }, [mesasWS])
 
-  // Fetch mesas via REST API
   const fetchMesasREST = useCallback(async () => {
     if (!token) return
 
@@ -226,7 +244,6 @@ const Dashboard = () => {
     }
   }, [token])
 
-  // Fetch closed orders from REST API (these may not be in mesasWS anymore)
   const fetchClosedPedidos = useCallback(async () => {
     if (!token) return
 
@@ -237,7 +254,6 @@ const Dashboard = () => {
       }
 
       if (response.success && response.data) {
-        // Filter only closed orders
         const closed = response.data.filter(p => p.estado === 'closed')
         setClosedPedidosFromAPI(closed)
       }
@@ -246,28 +262,30 @@ const Dashboard = () => {
     }
   }, [token])
 
-  // Initial fetch
   useEffect(() => {
     fetchMesasREST()
     fetchClosedPedidos()
   }, [fetchMesasREST, fetchClosedPedidos])
 
-  // Handle mesa selection - mark notifications as read
   const handleSelectMesa = (mesaId: number) => {
     setSelectedMesaId(mesaId)
+    setSelectedPedidoFromKanban(null)
 
-    // Mark notifications for this mesa as read
+    // On mobile, switch to detail view
+    if (window.innerWidth < 1024) {
+      setMobileView('detail')
+    }
+
     notifications
       .filter(n => n.mesaId === mesaId && !n.leida)
       .forEach(n => markAsRead(n.id))
   }
 
-  // Fetch subtotales for selected mesa
   const fetchSubtotales = useCallback(async () => {
-    if (!selectedMesa?.pedido) return
+    if (!displayedPedido) return
     setLoadingSubtotales(true)
     try {
-      const response = await mercadopagoApi.getSubtotales(selectedMesa.pedido.id) as {
+      const response = await mercadopagoApi.getSubtotales(displayedPedido.id) as {
         success: boolean
         subtotales: SubtotalInfo[]
         mozoItems?: SubtotalInfo[]
@@ -284,20 +302,18 @@ const Dashboard = () => {
     } finally {
       setLoadingSubtotales(false)
     }
-  }, [selectedMesa?.pedido])
+  }, [displayedPedido])
 
   useEffect(() => {
-    if (selectedMesa?.pedido?.estado === 'closed') {
+    if (displayedPedido?.estado === 'closed') {
       fetchSubtotales()
     } else {
       setSubtotales([])
     }
-  }, [selectedMesa?.pedido?.estado, fetchSubtotales])
+  }, [displayedPedido?.estado, fetchSubtotales])
 
-  // Fetch subtotales for closed orders in kanban
   useEffect(() => {
     const fetchKanbanSubtotales = async () => {
-      // Merge closed orders from both sources
       const closedFromWS = pedidos.filter(p => p.estado === 'closed')
       const allClosedIds = new Set<number>()
       const allClosedPedidos: PedidoData[] = []
@@ -320,7 +336,6 @@ const Dashboard = () => {
 
       await Promise.all(
         allClosedPedidos.map(async (pedido) => {
-          // Skip if already fetched
           if (pedidosSubtotales[pedido.id]) return
 
           try {
@@ -350,7 +365,6 @@ const Dashboard = () => {
     fetchKanbanSubtotales()
   }, [pedidos, closedPedidosFromAPI, pedidosSubtotales])
 
-  // Compute which closed pedidos are fully paid
   const pedidosCerradosPagados = useMemo(() => {
     const setPagados = new Set<number>()
     Object.entries(pedidosSubtotales).forEach(([pedidoId, subs]) => {
@@ -361,7 +375,6 @@ const Dashboard = () => {
     return setPagados
   }, [pedidosSubtotales])
 
-  // Kanban data - includes closed orders when items not all served
   const kanbanData = useMemo(() => {
     const grouped: Record<string, KanbanCardData[]> = {
       pending: [],
@@ -372,14 +385,10 @@ const Dashboard = () => {
       closedPaid: [],
     }
 
-    // Merge pedidos from WebSocket with closed orders from API
-    // Use a Map to deduplicate by pedido.id
     const allPedidosMap = new Map<number, PedidoData>()
 
-    // First add WebSocket pedidos (these have the most up-to-date item states)
     pedidos.forEach(p => allPedidosMap.set(p.id, p))
 
-    // Then add closed orders from API (only if not already in map)
     closedPedidosFromAPI.forEach(p => {
       if (!allPedidosMap.has(p.id)) {
         allPedidosMap.set(p.id, p)
@@ -389,18 +398,15 @@ const Dashboard = () => {
     const allPedidos = Array.from(allPedidosMap.values())
 
     allPedidos.forEach(pedido => {
-      // 1. Pending: If order is pending with items, goes to pending column
       if (pedido.estado === 'pending' && pedido.items.length > 0) {
         grouped.pending.push({ id: `${pedido.id}-pending`, pedido, items: pedido.items, status: 'pending' })
         return
       }
 
-      // 2. Closed: Only move to closed columns if ALL items are served
       if (pedido.estado === 'closed') {
         const allItemsServed = pedido.items.every(i => i.estado === 'served' || i.estado === 'cancelled')
 
         if (allItemsServed) {
-          // All items served - move to closed columns
           const target = pedidosCerradosPagados.has(pedido.id) ? 'closedPaid' : 'closedPending'
           grouped[target].push({
             id: `${pedido.id}-closed`,
@@ -410,10 +416,8 @@ const Dashboard = () => {
           })
           return
         }
-        // If not all items served, continue to distribute items by estado
       }
 
-      // 3. Active or closed with items not served: Separate items by estado
       const itemsPreparing = pedido.items.filter(i => !i.estado || i.estado === 'preparing' || i.estado === 'pending')
       if (itemsPreparing.length > 0) {
         grouped.preparing.push({ id: `${pedido.id}-preparing`, pedido, items: itemsPreparing, status: 'preparing' })
@@ -430,16 +434,13 @@ const Dashboard = () => {
       }
     })
 
-    // Sort by time
     Object.keys(grouped).forEach(key => {
       grouped[key].sort((a, b) => {
         const dateA = new Date(a.pedido.createdAt).getTime()
         const dateB = new Date(b.pedido.createdAt).getTime()
-        // For closed columns, newest first
         if (key === 'closedPending' || key === 'closedPaid') {
           return dateB - dateA
         }
-        // For active columns, oldest first (FIFO)
         return dateA - dateB
       })
     })
@@ -447,7 +448,6 @@ const Dashboard = () => {
     return grouped
   }, [pedidos, closedPedidosFromAPI, pedidosCerradosPagados])
 
-  // Handle create mesa
   const handleCrearMesa = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!token || !nombreMesa.trim()) {
@@ -469,11 +469,9 @@ const Dashboard = () => {
     }
   }
 
-  // Change item estado
   const handleChangeItemEstado = async (pedidoId: number, itemId: number, nuevoEstado: string) => {
     if (!token) return
 
-    // Optimistic update
     setPedidos(prev => prev.map(p => {
       if (p.id !== pedidoId) return p
       return { ...p, items: p.items.map(i => i.id === itemId ? { ...i, estado: nuevoEstado as any } : i) }
@@ -488,7 +486,6 @@ const Dashboard = () => {
     }
   }
 
-  // Confirm pedido
   const handleConfirmarPedido = async (pedido: PedidoData) => {
     if (!token) return
     setUpdatingPedido(pedido.id)
@@ -503,7 +500,6 @@ const Dashboard = () => {
     }
   }
 
-  // Confirm pago efectivo
   const handleConfirmarPagoEfectivo = async (clienteNombre: string) => {
     if (!token || !selectedMesa?.pedido) return
     setMarcandoPagoEfectivo(clienteNombre)
@@ -522,14 +518,11 @@ const Dashboard = () => {
     }
   }
 
-
-  // Confirm pago total (for non-split payment mode)
   const handleConfirmarPagoTotal = async (pedidoId: number, subtotalesData: SubtotalInfo[]) => {
     if (!token) return
     setUpdatingPago(`all-${pedidoId}`)
 
     try {
-      // Filter pending payments
       const pendientes = subtotalesData.filter(s => !s.pagado && s.estado !== 'paid')
 
       if (pendientes.length === 0) {
@@ -537,7 +530,6 @@ const Dashboard = () => {
         return
       }
 
-      // Prepare data for pagarEfectivo
       const regularClients: string[] = []
       const mozoItemIds: number[] = []
 
@@ -552,7 +544,6 @@ const Dashboard = () => {
         }
       })
 
-      // Step 1: Mark as cash payment (pending_cash)
       const responsePagar = await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, '', mozoItemIds) as { success: boolean; error?: string }
 
       if (!responsePagar.success) {
@@ -560,7 +551,6 @@ const Dashboard = () => {
         return
       }
 
-      // Step 2: Confirm payment (paid) individually
       const results = await Promise.allSettled(
         pendientes.map(sub => mercadopagoApi.confirmarEfectivo(token, pedidoId, sub.clienteNombre))
       )
@@ -570,7 +560,6 @@ const Dashboard = () => {
       if (successCount > 0) {
         toast.success(`Pago total confirmado (${successCount}/${pendientes.length} cuentas procesadas)`)
 
-        // Update UI locally
         setPedidosSubtotales(prev => {
           const subs = prev[pedidoId] || []
           return {
@@ -590,7 +579,6 @@ const Dashboard = () => {
     }
   }
 
-  // Fetch productos
   const fetchProductos = useCallback(async () => {
     if (!token) return
     setLoadingProductos(true)
@@ -610,7 +598,6 @@ const Dashboard = () => {
     if (addProductSheet && productos.length === 0) fetchProductos()
   }, [addProductSheet, fetchProductos, productos.length])
 
-  // Add producto
   const handleAddProducto = async (producto: Producto) => {
     if (producto.ingredientes && producto.ingredientes.length > 0) {
       setExcludedIngredients([])
@@ -642,7 +629,6 @@ const Dashboard = () => {
     }
   }
 
-  // Delete pedido
   const handleDeletePedido = async () => {
     if (!token || !selectedMesa?.pedido) return
     try {
@@ -656,7 +642,6 @@ const Dashboard = () => {
     }
   }
 
-  // Delete item
   const handleDeleteItem = async () => {
     if (!token || !selectedMesa?.pedido || !itemAEliminar) return
     try {
@@ -669,10 +654,19 @@ const Dashboard = () => {
     }
   }
 
-  // Kanban card click - select mesa
   const handleKanbanCardClick = (pedido: PedidoData) => {
     if (pedido.mesaId) {
-      handleSelectMesa(pedido.mesaId)
+      setSelectedMesaId(pedido.mesaId)
+      setSelectedPedidoFromKanban(pedido)
+
+      // On mobile, switch to detail view when clicking a kanban card
+      if (window.innerWidth < 1024) {
+        setMobileView('detail')
+      }
+
+      notifications
+        .filter(n => n.mesaId === pedido.mesaId && !n.leida)
+        .forEach(n => markAsRead(n.id))
     }
   }
 
@@ -681,18 +675,28 @@ const Dashboard = () => {
     p.descripcion?.toLowerCase().includes(searchProducto.toLowerCase())
   )
 
-  // Group items by client for selected mesa
   const itemsPorCliente = useMemo(() => {
-    if (!selectedMesa) return {} as Record<string, ItemPedidoConEstado[]>
-    // Cast items to include estado property (may come from WebSocket or API)
-    const items = selectedMesa.items as ItemPedidoConEstado[]
+    if (!displayedPedido) return {} as Record<string, ItemPedidoConEstado[]>
+    const items = displayedPedido.items as ItemPedidoConEstado[]
     return items.reduce((acc, item) => {
       const cliente = item.clienteNombre || 'Sin nombre'
       if (!acc[cliente]) acc[cliente] = []
       acc[cliente].push(item)
       return acc
     }, {} as Record<string, ItemPedidoConEstado[]>)
-  }, [selectedMesa])
+  }, [displayedPedido])
+
+  // Mobile back button handler
+  const handleBackToMesas = () => {
+    setMobileView('mesas')
+    setSelectedMesaId(null)
+    setSelectedPedidoFromKanban(null)
+  }
+
+  // Calculate active orders count for badge
+  const activeOrdersCount = useMemo(() => {
+    return Object.values(kanbanData).reduce((acc, arr) => acc + arr.length, 0)
+  }, [kanbanData])
 
   if (isLoading && mesas.length === 0) {
     return (
@@ -703,360 +707,458 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 bg-background border-b px-4 py-3">
+    <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden bg-background">
+      {/* Header - Responsive */}
+      <div className="shrink-0 bg-background border-b px-3 py-2 lg:px-4 lg:py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight">{restaurante?.nombre || 'Dashboard'}</h1>
+          <div className="flex items-center gap-2 lg:gap-3">
+            {/* Mobile back button */}
+            {mobileView !== 'mesas' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden h-8 w-8 -ml-2"
+                onClick={handleBackToMesas}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            )}
+            <h1 className="text-lg lg:text-xl font-bold tracking-tight truncate">
+              {mobileView === 'detail' && selectedMesa ? selectedMesa.nombre : (restaurante?.nombre || 'Dashboard')}
+            </h1>
             {isConnected ? (
-              <Badge variant="outline" className="gap-1 text-xs bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300">
+              <Badge variant="outline" className="gap-1 text-[10px] lg:text-xs bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 hidden sm:flex">
                 <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 En vivo
               </Badge>
             ) : (
-              <Badge variant="outline" className="gap-1 text-xs bg-orange-50 dark:bg-orange-950/30 border-orange-300">
+              <Badge variant="outline" className="gap-1 text-[10px] lg:text-xs bg-orange-50 dark:bg-orange-950/30 border-orange-300 hidden sm:flex">
                 Offline
               </Badge>
             )}
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { refresh(); fetchMesasREST() }}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Actualizar
-            </Button>
+
+          {/* Desktop Create Button */}
+          <div className="hidden lg:flex gap-2">
             <Button size="sm" onClick={() => setCrearMesaDialog(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Nueva Mesa
             </Button>
           </div>
+
+          {/* Mobile Create Button (Icon only) */}
+          <Button
+            size="icon"
+            className="lg:hidden h-8 w-8"
+            onClick={() => setCrearMesaDialog(true)}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Mobile Navigation Tabs */}
+        <div className="lg:hidden mt-2 -mx-3 px-3 border-t pt-2">
+          <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+            <Button
+              variant={mobileView === 'mesas' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="flex-1 h-8 text-xs"
+              onClick={() => setMobileView('mesas')}
+            >
+              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
+              Mesas
+            </Button>
+            <Button
+              variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="flex-1 h-8 text-xs relative"
+              onClick={() => selectedMesaId ? setMobileView('detail') : toast.info('Selecciona una mesa')}
+              disabled={!selectedMesaId}
+            >
+              <List className="h-3.5 w-3.5 mr-1.5" />
+              Detalle
+            </Button>
+            <Button
+              variant={mobileView === 'orders' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="flex-1 h-8 text-xs relative"
+              onClick={() => setMobileView('orders')}
+            >
+              <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+              Pedidos
+              {activeOrdersCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {activeOrdersCount}
+                </span>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Main 3-Column Layout */}
+      {/* Main Content - Desktop: 3 columns, Mobile: Single view based on state */}
       <div className="flex-1 flex overflow-hidden">
 
-        {/* LEFT: Mesa Selector */}
-        <div className="w-48 shrink-0 border-r bg-muted/20 p-3 overflow-auto">
-          <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Mesas</p>
-          <div className="grid grid-cols-2 gap-2">
-            {mesas.map((mesa) => {
-              const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed'
-              const notifCount = mesaNotifications.get(mesa.id) || 0
-              const isSelected = selectedMesaId === mesa.id
+        {/* LEFT: Mesa Selector - Desktop always visible, Mobile conditional */}
+        <div className={`
+          ${mobileView === 'mesas' ? 'flex' : 'hidden'} 
+          lg:flex lg:w-48 flex-col border-r bg-muted/20 overflow-hidden
+          w-full
+        `}>
+          <div className="p-3 lg:p-3 overflow-auto flex-1">
+            <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide hidden lg:block">Mesas</p>
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-2">
+              {mesas.map((mesa) => {
+                const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed'
+                const notifCount = mesaNotifications.get(mesa.id) || 0
+                const isSelected = selectedMesaId === mesa.id
 
-              return (
-                <button
-                  key={mesa.id}
-                  onClick={() => handleSelectMesa(mesa.id)}
-                  className={`relative aspect-square rounded-lg border-2 flex flex-col items-center justify-center text-center p-1 transition-all hover:scale-105 ${isSelected
-                    ? 'border-primary bg-primary/10 shadow-md'
-                    : hasActiveOrder
-                      ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
-                      : 'border-border bg-card hover:bg-accent'
-                    }`}
-                >
-                  {notifCount > 0 && (
-                    <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
-                      {notifCount}
+                return (
+                  <button
+                    key={mesa.id}
+                    onClick={() => handleSelectMesa(mesa.id)}
+                    className={`relative aspect-square rounded-lg border-2 flex flex-col items-center justify-center text-center p-1 transition-all active:scale-95 lg:hover:scale-105 ${isSelected
+                      ? 'border-primary bg-primary/10 shadow-md'
+                      : hasActiveOrder
+                        ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
+                        : 'border-border bg-card hover:bg-accent'
+                      }`}
+                  >
+                    {notifCount > 0 && (
+                      <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+                        {notifCount}
+                      </div>
+                    )}
+                    <span className="font-semibold text-xs truncate w-full px-1">{mesa.nombre}</span>
+                    {mesa.clientesConectados.length > 0 && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
+                        <Users className="h-2.5 w-2.5" />
+                        {mesa.clientesConectados.length}
+                      </span>
+                    )}
+                    {/* Mobile-only: show mini status indicator */}
+                    <div className="lg:hidden mt-1">
+                      {hasActiveOrder ? (
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      ) : (
+                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                      )}
                     </div>
-                  )}
-                  <span className="font-semibold text-xs truncate w-full">{mesa.nombre}</span>
-                  {mesa.clientesConectados.length > 0 && (
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                      <Users className="h-2.5 w-2.5" />
-                      {mesa.clientesConectados.length}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
 
-        {/* CENTER: Detail View */}
-        <div className="flex-1 overflow-auto p-4">
-          {selectedMesa ? (
-            <div className="space-y-4 max-w-3xl mx-auto">
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold">{selectedMesa.nombre}</h2>
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    {selectedMesa.pedido ? (
+        {/* CENTER: Detail View - Desktop always visible when mesa selected, Mobile conditional */}
+        <div className={`
+          ${mobileView === 'detail' ? 'flex' : 'hidden'} 
+          lg:flex lg:flex-1 flex-col overflow-hidden
+          w-full
+        `}>
+          <div className="flex-1 overflow-auto p-3 lg:p-4">
+            {selectedMesa ? (
+              <div className="space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0">
+                {/* Mobile: Compact Header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h2 className="text-xl lg:text-2xl font-bold truncate">{selectedMesa.nombre}</h2>
+                    <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+                      {displayedPedido ? (
+                        <>
+                          <span className="truncate">Pedido #{displayedPedido.id}</span>
+                          <Badge variant={getEstadoBadge(displayedPedido.estado).variant} className="text-[10px] lg:text-xs">
+                            {getEstadoBadge(displayedPedido.estado).label}
+                          </Badge>
+                          {selectedPedidoFromKanban && selectedMesa.pedido && selectedPedidoFromKanban.id !== selectedMesa.pedido.id && (
+                            <Badge variant="outline" className="text-[10px]">Historial</Badge>
+                          )}
+                        </>
+                      ) : 'Sin pedido activo'}
+                    </p>
+                  </div>
+                  <div className="flex gap-1 lg:gap-2 shrink-0">
+                    <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setVerQR(true)}>
+                      <QrCode className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" className="hidden lg:flex" onClick={() => setVerQR(true)}>
+                      <QrCode className="mr-2 h-4 w-4" />
+                      QR
+                    </Button>
+
+                    {selectedMesa.pedido && (
                       <>
-                        Pedido #{selectedMesa.pedido.id}
-                        <Badge variant={getEstadoBadge(selectedMesa.pedido.estado).variant}>
-                          {getEstadoBadge(selectedMesa.pedido.estado).label}
-                        </Badge>
+                        <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setAddProductSheet(true)}>
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" className="hidden lg:flex" onClick={() => setAddProductSheet(true)}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Agregar
+                        </Button>
+
+                        <Button variant="outline" size="icon" className="text-destructive lg:hidden h-9 w-9" onClick={() => setShowDeletePedidoDialog(true)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" className="text-destructive hidden lg:flex" onClick={() => setShowDeletePedidoDialog(true)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Eliminar
+                        </Button>
                       </>
-                    ) : 'Sin pedido activo'}
-                  </p>
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setVerQR(true)}>
-                    <QrCode className="mr-2 h-4 w-4" />
-                    QR
-                  </Button>
-                  {selectedMesa.pedido && (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => setAddProductSheet(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Agregar
-                      </Button>
-                      <Button variant="outline" size="sm" className="text-destructive" onClick={() => setShowDeletePedidoDialog(true)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
 
-              {/* Connected Clients */}
-              {selectedMesa.clientesConectados.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      Clientes Conectados ({selectedMesa.clientesConectados.length})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedMesa.clientesConectados.map((cliente) => (
-                        <Badge key={cliente.id} variant="secondary">{cliente.nombre}</Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Order Items */}
-              {selectedMesa.pedido ? (
-                <>
-                  <Card>
-                    <CardHeader className="pb-2">
+                {/* Connected Clients - Compact on mobile */}
+                {selectedMesa.clientesConectados.length > 0 && (
+                  <Card className="lg:shadow-sm">
+                    <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
                       <CardTitle className="text-sm flex items-center gap-2">
-                        <ShoppingCart className="h-4 w-4" />
-                        Productos ({selectedMesa.totalItems})
+                        <Users className="h-4 w-4" />
+                        <span className="hidden sm:inline">Clientes Conectados</span>
+                        <span className="sm:hidden">Conectados</span>
+                        <span className="text-muted-foreground">({selectedMesa.clientesConectados.length})</span>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      {Object.keys(itemsPorCliente).length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                          <p>No hay productos</p>
-                        </div>
-                      ) : (
-                        Object.entries(itemsPorCliente).map(([cliente, items]) => (
-                          <div key={cliente}>
-                            <div className="flex items-center justify-between mb-2">
-                              <Badge variant="secondary" className="gap-1">
-                                <User className="h-3 w-3" />
-                                {cliente}
-                              </Badge>
-                              <span className="text-sm font-medium">
-                                ${items.reduce((sum, i) => sum + (parseFloat(i.precioUnitario) * i.cantidad), 0).toFixed(2)}
-                              </span>
-                            </div>
-                            <div className="space-y-2 ml-2">
-                              {items.map((item) => {
-                                const estadoBadge = getEstadoBadge(item.estado)
-                                return (
-                                  <div key={item.id} className={`flex items-center justify-between p-2 rounded-lg ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
-                                        <Badge variant={estadoBadge.variant} className="h-5 text-[10px]">{estadoBadge.label}</Badge>
-                                        {item.postConfirmacion && <Badge variant="outline" className="h-5 text-[10px] border-amber-500 text-amber-600">Nuevo</Badge>}
+                    <CardContent className="px-3 lg:px-6 pb-3 lg:pb-6">
+                      <div className="flex flex-wrap gap-1.5 lg:gap-2">
+                        {selectedMesa.clientesConectados.map((cliente) => (
+                          <Badge key={cliente.id} variant="secondary" className="text-xs">
+                            {cliente.nombre}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Order Items */}
+                {displayedPedido ? (
+                  <>
+                    <Card className="lg:shadow-sm">
+                      <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <ShoppingCart className="h-4 w-4" />
+                          Productos ({displayedPedido.totalItems})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3 lg:space-y-4 px-3 lg:px-6 pb-3 lg:pb-6">
+                        {Object.keys(itemsPorCliente).length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">
+                            <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p>No hay productos</p>
+                          </div>
+                        ) : (
+                          Object.entries(itemsPorCliente).map(([cliente, items]) => (
+                            <div key={cliente}>
+                              <div className="flex items-center justify-between mb-2">
+                                <Badge variant="secondary" className="gap-1 text-xs">
+                                  <User className="h-3 w-3" />
+                                  {cliente}
+                                </Badge>
+                                <span className="text-sm font-medium">
+                                  ${items.reduce((sum, i) => sum + (parseFloat(i.precioUnitario) * i.cantidad), 0).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="space-y-2 ml-0 lg:ml-2">
+                                {items.map((item) => {
+                                  const estadoBadge = getEstadoBadge(item.estado)
+                                  return (
+                                    <div key={item.id} className={`flex items-start lg:items-center justify-between p-2 rounded-lg gap-2 ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
+                                          <Badge variant={estadoBadge.variant} className="h-5 text-[10px] lg:text-xs">{estadoBadge.label}</Badge>
+                                          {item.postConfirmacion && <Badge variant="outline" className="h-5 text-[10px] border-amber-500 text-amber-600">Nuevo</Badge>}
+                                        </div>
+                                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                          <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                                        )}
                                       </div>
-                                      {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                        <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                                      )}
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="font-bold text-sm">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
+                                        <div className="flex gap-1">
+                                          {(item.estado === 'preparing' || item.estado === 'pending' || !item.estado) && (
+                                            <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-emerald-600" onClick={() => handleChangeItemEstado(displayedPedido!.id, item.id, 'delivered')}>
+                                              <CheckCircle className="h-4 w-4" />
+                                            </Button>
+                                          )}
+                                          {item.estado === 'delivered' && (
+                                            <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-indigo-600" onClick={() => handleChangeItemEstado(displayedPedido!.id, item.id, 'served')}>
+                                              <Utensils className="h-4 w-4" />
+                                            </Button>
+                                          )}
+                                          {displayedPedido?.estado !== 'closed' && (
+                                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
+                                              <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-bold">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
-                                      {/* Always show item action buttons (including for closed orders) */}
-                                      <div className="flex gap-1">
-                                        {(item.estado === 'preparing' || item.estado === 'pending' || !item.estado) && (
-                                          <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-emerald-600" onClick={() => handleChangeItemEstado(selectedMesa.pedido!.id, item.id, 'delivered')}>
-                                            <CheckCircle className="h-4 w-4" />
-                                          </Button>
-                                        )}
-                                        {item.estado === 'delivered' && (
-                                          <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-indigo-600" onClick={() => handleChangeItemEstado(selectedMesa.pedido!.id, item.id, 'served')}>
-                                            <Utensils className="h-4 w-4" />
-                                          </Button>
-                                        )}
-                                        {selectedMesa.pedido?.estado !== 'closed' && (
-                                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => setItemAEliminar(item)}>
-                                            <Trash2 className="h-4 w-4" />
-                                          </Button>
-                                        )}
-                                      </div>
+                                  )
+                                })}
+                              </div>
+                              <Separator className="my-3" />
+                            </div>
+                          ))
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Total & Payments */}
+                    <Card className="bg-primary/5 border-primary/20 lg:shadow-sm">
+                      <CardContent className="py-4 px-3 lg:px-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium">Total del Pedido</p>
+                            <p className="text-xs text-muted-foreground">{displayedPedido.totalItems} productos</p>
+                          </div>
+                          <p className="text-2xl lg:text-3xl font-bold text-primary">
+                            ${parseFloat(displayedPedido.total).toFixed(2)}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Payments (when closed) */}
+                    {displayedPedido.estado === 'closed' && (
+                      <Card className="lg:shadow-sm">
+                        <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            Pagos
+                            {subtotales.length > 0 && subtotales.every(s => s.pagado) ? (
+                              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-300 text-[10px]">
+                                💳 Pagado
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-300 text-[10px]">
+                                📋 Cuenta Pedida
+                              </Badge>
+                            )}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-3 lg:px-6 pb-3 lg:pb-6">
+                          {loadingSubtotales ? (
+                            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                          ) : (
+                            <div className="space-y-3">
+                              {!splitPayment && subtotales.length > 0 && (
+                                <div className="p-3 bg-muted/30 rounded-lg border">
+                                  <div className="flex justify-between items-center mb-2">
+                                    <span className="font-medium">Total Mesa</span>
+                                    <span className="text-xl font-bold">
+                                      ${subtotales.reduce((acc, s) => acc + parseFloat(s.subtotal), 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {subtotales.every(s => s.pagado) ? (
+                                    <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
+                                      <CheckCircle className="h-4 w-4" />
+                                      Mesa Pagada
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                                      onClick={() => handleConfirmarPagoTotal(selectedMesa.pedido!.id, subtotales)}
+                                      disabled={updatingPago === `all-${selectedMesa.pedido!.id}`}
+                                    >
+                                      {updatingPago === `all-${selectedMesa.pedido!.id}` ? (
+                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                      ) : (
+                                        <span className="mr-2">💵</span>
+                                      )}
+                                      Confirmar Pago Total
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+
+                              {splitPayment && Object.keys(itemsPorCliente).map((cliente) => {
+                                if (cliente === 'Mozo') return null
+                                const clienteItems = itemsPorCliente[cliente]
+                                const clienteTotal = clienteItems.reduce((sum, item) => sum + (parseFloat(item.precioUnitario) * item.cantidad), 0)
+                                const subtotalInfo = subtotales.find(s => s.clienteNombre === cliente)
+                                const estaPagado = subtotalInfo?.pagado === true
+                                const esperandoConfirmacion = subtotalInfo?.estado === 'pending_cash'
+
+                                return (
+                                  <div
+                                    key={cliente}
+                                    className={`flex items-center justify-between p-3 rounded-lg border ${estaPagado
+                                      ? 'bg-green-50 border-green-200 dark:bg-green-900/20'
+                                      : esperandoConfirmacion
+                                        ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/40'
+                                        : 'bg-card'
+                                      }`}
+                                  >
+                                    <div className="min-w-0">
+                                      <span className={`font-medium text-sm block ${estaPagado ? 'text-green-700' : esperandoConfirmacion ? 'text-amber-700' : ''}`}>
+                                        {cliente}
+                                      </span>
+                                      {estaPagado && <span className="text-[10px] text-green-600">✓ Pagado</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className={`font-semibold ${estaPagado ? 'text-green-600' : esperandoConfirmacion ? 'text-amber-600' : ''}`}>
+                                        ${clienteTotal.toFixed(2)}
+                                      </span>
+                                      {esperandoConfirmacion && (
+                                        <Button
+                                          size="sm"
+                                          className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                                          onClick={() => handleConfirmarPagoEfectivo(cliente)}
+                                          disabled={marcandoPagoEfectivo === cliente}
+                                        >
+                                          {marcandoPagoEfectivo === cliente ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar Pago'}
+                                        </Button>
+                                      )}
                                     </div>
                                   </div>
                                 )
                               })}
                             </div>
-                            <Separator className="my-3" />
-                          </div>
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Total & Payments */}
-                  <Card className="bg-primary/5 border-primary/20">
-                    <CardContent className="py-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">Total del Pedido</p>
-                          <p className="text-xs text-muted-foreground">{selectedMesa.totalItems} productos</p>
-                        </div>
-                        <p className="text-3xl font-bold text-primary">
-                          ${parseFloat(selectedMesa.pedido.total).toFixed(2)}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Payments (when closed) */}
-                  {selectedMesa.pedido.estado === 'closed' && (
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Users className="h-4 w-4" />
-                          Pagos
-                          {/* Badge for payment status */}
-                          {subtotales.length > 0 && subtotales.every(s => s.pagado) ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-300 text-[10px]">
-                              💳 Pagado
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-300 text-[10px]">
-                              📋 Cuenta Pedida
-                            </Badge>
                           )}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {loadingSubtotales ? (
-                          <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                        ) : (
-                          <div className="space-y-3">
-                            {/* Unified Payment (Non-Split Payment Mode) */}
-                            {!splitPayment && subtotales.length > 0 && (
-                              <div className="p-3 bg-muted/30 rounded-lg border">
-                                <div className="flex justify-between items-center mb-2">
-                                  <span className="font-medium">Total Mesa</span>
-                                  <span className="text-xl font-bold">
-                                    ${subtotales.reduce((acc, s) => acc + parseFloat(s.subtotal), 0).toLocaleString()}
-                                  </span>
-                                </div>
-                                {subtotales.every(s => s.pagado) ? (
-                                  <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
-                                    <CheckCircle className="h-4 w-4" />
-                                    Mesa Pagada
-                                  </div>
-                                ) : (
-                                  <Button
-                                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                                    onClick={() => handleConfirmarPagoTotal(selectedMesa.pedido!.id, subtotales)}
-                                    disabled={updatingPago === `all-${selectedMesa.pedido!.id}`}
-                                  >
-                                    {updatingPago === `all-${selectedMesa.pedido!.id}` ? (
-                                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                    ) : (
-                                      <span className="mr-2">💵</span>
-                                    )}
-                                    Confirmar Pago Total
-                                  </Button>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Split Payment Mode - Show individual clients */}
-                            {splitPayment && Object.keys(itemsPorCliente).map((cliente) => {
-                              if (cliente === 'Mozo') return null
-                              const clienteItems = itemsPorCliente[cliente]
-                              const clienteTotal = clienteItems.reduce((sum, item) => sum + (parseFloat(item.precioUnitario) * item.cantidad), 0)
-                              const subtotalInfo = subtotales.find(s => s.clienteNombre === cliente)
-                              const estaPagado = subtotalInfo?.pagado === true
-                              const esperandoConfirmacion = subtotalInfo?.estado === 'pending_cash'
-
-                              return (
-                                <div
-                                  key={cliente}
-                                  className={`flex items-center justify-between p-3 rounded-lg border ${estaPagado
-                                    ? 'bg-green-50 border-green-200 dark:bg-green-900/20'
-                                    : esperandoConfirmacion
-                                      ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/40'
-                                      : 'bg-card'
-                                    }`}
-                                >
-                                  <div>
-                                    <span className={`font-medium text-sm ${estaPagado ? 'text-green-700' : esperandoConfirmacion ? 'text-amber-700' : ''}`}>
-                                      {cliente}
-                                    </span>
-                                    {estaPagado && <span className="text-[10px] text-green-600 ml-2">✓ Pagado</span>}
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`font-semibold ${estaPagado ? 'text-green-600' : esperandoConfirmacion ? 'text-amber-600' : ''}`}>
-                                      ${clienteTotal.toFixed(2)}
-                                    </span>
-                                    {esperandoConfirmacion && (
-                                      <Button
-                                        size="sm"
-                                        className="h-7 text-xs bg-green-600 hover:bg-green-700"
-                                        onClick={() => handleConfirmarPagoEfectivo(cliente)}
-                                        disabled={marcandoPagoEfectivo === cliente}
-                                      >
-                                        {marcandoPagoEfectivo === cliente ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar Pago'}
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                </>
-              ) : (
-                <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">
-                    <Coffee className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                    <p className="text-lg font-medium">Sin pedido actual</p>
-                    <p className="text-sm">Esta mesa está disponible</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          ) : (
-            <div className="h-full flex items-center justify-center text-muted-foreground">
-              <div className="text-center">
-                <ShoppingCart className="h-16 w-16 mx-auto mb-4 opacity-20" />
-                <p className="text-lg">Selecciona una mesa</p>
-                <p className="text-sm">para ver su detalle</p>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
+                ) : (
+                  <Card className="lg:shadow-sm">
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <Coffee className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                      <p className="text-lg font-medium">Sin pedido actual</p>
+                      <p className="text-sm">Esta mesa está disponible</p>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="h-full flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <ShoppingCart className="h-16 w-16 mx-auto mb-4 opacity-20" />
+                  <p className="text-lg">Selecciona una mesa</p>
+                  <p className="text-sm">para ver su detalle</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* RIGHT: Kanban Panel (Mobile Style) */}
-        <div className="w-80 shrink-0 border-l bg-muted/10 overflow-auto">
-          <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10">
+        {/* RIGHT: Kanban Panel - Desktop always visible, Mobile conditional */}
+        <div className={`
+          ${mobileView === 'orders' ? 'flex' : 'hidden'} 
+          lg:flex lg:w-80 flex-col border-l bg-muted/10 overflow-hidden
+          w-full
+        `}>
+          <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center justify-between">
             <p className="text-sm font-semibold">Pedidos</p>
+            <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
           </div>
-          <div className="p-3 space-y-4">
+          <div className="flex-1 overflow-auto p-3 space-y-4">
             {COLUMNS.map((column) => {
               const columnCards = kanbanData[column.id] || []
               const ColumnIcon = column.icon
 
-              // Always show all columns (even if empty)
               return (
                 <div key={column.id}>
                   <div className={`flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg ${column.bgHeader}`}>
@@ -1075,7 +1177,6 @@ const Dashboard = () => {
                         const hasExclusions = card.items.some(i => i.ingredientesExcluidosNombres?.length)
                         const isUpdating = updatingPedido === card.pedido.id
 
-                        // Payment info for closed orders
                         const isClosed = card.pedido.estado === 'closed'
                         const subtotalesData = pedidosSubtotales[card.pedido.id] || []
                         const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
@@ -1085,16 +1186,15 @@ const Dashboard = () => {
                         return (
                           <Card
                             key={card.id}
-                            className={`cursor-pointer transition-all hover:border-primary/50 ${selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
+                            className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
                               }`}
                             onClick={() => handleKanbanCardClick(card.pedido)}
                           >
                             <CardContent className="p-3">
                               <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-bold text-sm">{card.pedido.mesaNombre || 'Sin mesa'}</span>
                                   {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
-                                  {/* Badge for closed orders */}
                                   {isClosed && (
                                     <Badge
                                       variant="outline"
@@ -1106,10 +1206,9 @@ const Dashboard = () => {
                                     </Badge>
                                   )}
                                 </div>
-                                <span className="text-xs text-muted-foreground">{formatTimeAgo(card.pedido.createdAt)}</span>
+                                <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(card.pedido.createdAt)}</span>
                               </div>
 
-                              {/* Unified Payment for closed orders (non-split mode) */}
                               {showUnifiedPayment && subtotalesData.length > 0 && (
                                 <div className="mb-2 p-2 bg-muted/30 rounded-md">
                                   <div className="flex justify-between items-center mb-1">
@@ -1141,11 +1240,10 @@ const Dashboard = () => {
                                 </div>
                               )}
 
-                              {/* Items */}
                               <div className="space-y-1.5">
                                 {card.items.slice(0, 3).map((item) => (
                                   <div key={item.id} className="flex items-start gap-2 text-xs">
-                                    <span className="font-bold bg-muted rounded px-1">{item.cantidad}</span>
+                                    <span className="font-bold bg-muted rounded px-1 shrink-0">{item.cantidad}</span>
                                     <div className="flex-1 min-w-0">
                                       <span className="truncate block">{item.nombreProducto}</span>
                                       {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
@@ -1171,7 +1269,6 @@ const Dashboard = () => {
                                 )}
                               </div>
 
-                              {/* Action */}
                               {card.status === 'pending' && (
                                 <Button
                                   size="sm"
@@ -1206,19 +1303,17 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Dialogs */}
-      {/* QR Dialog */}
+      {/* Dialogs remain unchanged */}
       {verQR && selectedMesa && (
         <Dialog open={verQR} onOpenChange={(open) => setVerQR(open)}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md mx-4">
             <MesaQRCode qrToken={selectedMesa.qrToken} mesaNombre={selectedMesa.nombre} />
           </DialogContent>
         </Dialog>
       )}
 
-      {/* Create Mesa Dialog */}
       <Dialog open={crearMesaDialog} onOpenChange={setCrearMesaDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md mx-4">
           <DialogHeader>
             <DialogTitle>Crear Nueva Mesa</DialogTitle>
             <DialogDescription>Agrega una nueva mesa a tu restaurante</DialogDescription>
@@ -1247,9 +1342,8 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Pedido Dialog */}
       <Dialog open={showDeletePedidoDialog} onOpenChange={setShowDeletePedidoDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md mx-4">
           <DialogHeader>
             <DialogTitle>¿Eliminar Pedido?</DialogTitle>
             <DialogDescription>Esta acción es irreversible.</DialogDescription>
@@ -1261,9 +1355,8 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Item Dialog */}
       <Dialog open={!!itemAEliminar} onOpenChange={(open) => !open && setItemAEliminar(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md mx-4">
           <DialogHeader>
             <DialogTitle>¿Eliminar producto?</DialogTitle>
             <DialogDescription>Se eliminará {itemAEliminar?.nombreProducto}.</DialogDescription>
@@ -1275,9 +1368,8 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Ingredient Config Dialog */}
       <Dialog open={!!configuringProduct} onOpenChange={(open) => !open && setConfiguringProduct(null)}>
-        <DialogContent className="max-w-md max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-md max-h-[90vh] flex flex-col mx-4">
           <DialogHeader>
             <DialogTitle>Personalizar {configuringProduct?.nombre}</DialogTitle>
             <DialogDescription>Selecciona los ingredientes para EXCLUIR.</DialogDescription>
@@ -1314,60 +1406,67 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Add Product Sheet */}
+      {/* Add Product Sheet - Full screen on mobile */}
       <Sheet open={addProductSheet} onOpenChange={setAddProductSheet}>
-        <SheetContent side="right" className="w-full sm:max-w-lg">
-          <SheetHeader className="text-left">
-            <SheetTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Agregar Producto</SheetTitle>
-            <SheetDescription>Selecciona los productos para agregar al pedido.</SheetDescription>
-          </SheetHeader>
+        <SheetContent side="right" className="w-full sm:max-w-lg p-0">
+          <div className="flex flex-col h-full">
+            <SheetHeader className="text-left p-4 pb-2 border-b shrink-0">
+              <SheetTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Agregar Producto</SheetTitle>
+              <SheetDescription>Selecciona los productos para agregar al pedido.</SheetDescription>
+            </SheetHeader>
 
-          <div className="relative mt-4 mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar producto..." value={searchProducto} onChange={(e) => setSearchProducto(e.target.value)} className="pl-10 h-11" />
-          </div>
+            <div className="relative px-4 py-3 shrink-0 border-b">
+              <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar producto..."
+                value={searchProducto}
+                onChange={(e) => setSearchProducto(e.target.value)}
+                className="pl-10 h-11"
+              />
+            </div>
 
-          <ScrollArea className="h-[calc(100vh-200px)] pr-4">
-            {loadingProductos ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-            ) : productosFiltrados.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No se encontraron productos</div>
-            ) : (
-              <div className="space-y-3 pb-8">
-                {productosFiltrados.map((producto) => (
-                  <div key={producto.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
-                    <div className="shrink-0">
-                      {producto.imagenUrl ? (
-                        <img src={producto.imagenUrl} alt={producto.nombre} className="w-14 h-14 rounded-lg object-cover bg-muted" />
-                      ) : (
-                        <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
-                          <Package className="h-6 w-6 text-muted-foreground/40" />
+            <ScrollArea className="flex-1 px-4 py-2">
+              {loadingProductos ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+              ) : productosFiltrados.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No se encontraron productos</div>
+              ) : (
+                <div className="space-y-3 pb-8">
+                  {productosFiltrados.map((producto) => (
+                    <div key={producto.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+                      <div className="shrink-0">
+                        {producto.imagenUrl ? (
+                          <img src={producto.imagenUrl} alt={producto.nombre} className="w-14 h-14 rounded-lg object-cover bg-muted" />
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
+                            <Package className="h-6 w-6 text-muted-foreground/40" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{producto.nombre}</p>
+                        <p className="font-bold text-primary">${parseFloat(producto.precio).toFixed(2)}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center border rounded-lg bg-background h-9">
+                          <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1) }))}>
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <span className="w-6 text-center text-sm font-medium">{cantidadProducto[producto.id] || 1}</span>
+                          <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: (prev[producto.id] || 1) + 1 }))}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
                         </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{producto.nombre}</p>
-                      <p className="font-bold text-primary">${parseFloat(producto.precio).toFixed(2)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center border rounded-lg bg-background h-9">
-                        <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1) }))}>
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <span className="w-6 text-center text-sm font-medium">{cantidadProducto[producto.id] || 1}</span>
-                        <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: (prev[producto.id] || 1) + 1 }))}>
-                          <Plus className="h-3 w-3" />
+                        <Button size="icon" className="h-9 w-9 shrink-0" onClick={() => handleAddProducto(producto)} disabled={addingProducto === producto.id}>
+                          {addingProducto === producto.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                         </Button>
                       </div>
-                      <Button size="icon" className="h-9 w-9" onClick={() => handleAddProducto(producto)} disabled={addingProducto === producto.id}>
-                        {addingProducto === producto.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      </Button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
         </SheetContent>
       </Sheet>
     </div>
