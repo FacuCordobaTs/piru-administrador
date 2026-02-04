@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,9 +20,11 @@ import {
   Clock, CheckCircle, Coffee,
   Utensils, ChefHat, Trash2,
   User, Minus, Search, Package,
-  AlertTriangle, Play, LayoutGrid, List, ArrowLeft
+  AlertTriangle, Play, LayoutGrid, List, ArrowLeft, Printer
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
+import { usePrinter } from '@/context/PrinterContext'
+import { formatComanda, formatFactura, commandsToBytes } from '@/utils/printerUtils'
 
 // Types
 interface ItemPedidoConEstado extends WSItemPedido {
@@ -115,8 +117,12 @@ const COLUMNS = [
 const Dashboard = () => {
   const token = useAuthStore((state) => state.token)
   const restaurante = useAuthStore((state) => state.restaurante)
-  const { restaurante: restauranteStore } = useRestauranteStore()
+  const { restaurante: restauranteStore, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
   const splitPayment = restauranteStore?.splitPayment ?? true
+  const { printRaw, selectedPrinter } = usePrinter()
+
+  // Ref para rastrear pedidos procesados para impresión automática
+  const processedOrdersRef = useRef<Map<number, { status: string, itemIds: Set<number> }>>(new Map())
 
   const {
     mesas: mesasWS,
@@ -201,10 +207,107 @@ const Dashboard = () => {
     return map
   }, [notifications])
 
+  // Efecto para sincronizar pedidos con WS y manejar IMPRESIÓN AUTOMÁTICA
   useEffect(() => {
     if (mesasWS.length > 0) {
       setMesas(mesasWS)
       setIsLoading(false)
+
+      // Lógica de impresión automática
+      if (selectedPrinter) {
+        mesasWS.forEach(mesa => {
+          if (!mesa.pedido) return
+
+          const pedidoId = mesa.pedido.id
+          const currentStatus = mesa.pedido.estado
+          const currentItemIds = new Set(mesa.items.map(i => i.id))
+
+          const prevData = processedOrdersRef.current.get(pedidoId)
+
+          // 1. Detectar transición PENDING -> PREPARING (Confirmación desde App Cliente)
+          if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
+            const itemsToPrint = mesa.items
+              .map(item => {
+                const producto = allProductos.find(p => p.id === item.productoId)
+                const categoria = producto && producto.categoriaId
+                  ? allCategorias.find(c => c.id === producto.categoriaId)
+                  : null
+                return { ...item, producto, categoria }
+              })
+              .filter(data => {
+                if (!data.producto || !data.categoria) return true
+                return !data.categoria.nombre.toLowerCase().includes('bebidas')
+              })
+              .map(data => ({
+                ...data,
+                categoriaNombre: data.categoria ? data.categoria.nombre : undefined
+              }))
+
+            if (itemsToPrint.length > 0) {
+              console.log("🖨️ [Dashboard] Auto-printing confirmed order:", pedidoId)
+              console.log("Items to print:", itemsToPrint)
+              const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante')
+              printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err))
+              toast.success(`Imprimiendo comanda #${pedidoId}`)
+            }
+          }
+
+          // 2. Detectar NUEVOS ITEMS en pedido ya confirmado (PREPARING)
+          else if (currentStatus === 'preparing' && prevData) {
+            const newItems = mesa.items.filter(item => !prevData.itemIds.has(item.id))
+
+            if (newItems.length > 0) {
+              const itemsToPrint = newItems
+                .map(item => {
+                  const producto = allProductos.find(p => p.id === item.productoId)
+                  const categoria = producto && producto.categoriaId
+                    ? allCategorias.find(c => c.id === producto.categoriaId)
+                    : null
+                  return { ...item, producto, categoria }
+                })
+                .filter(data => {
+                  if (!data.producto || !data.categoria) return true
+                  return !data.categoria.nombre.toLowerCase().includes('bebida')
+                })
+                .map(data => ({
+                  ...data,
+                  categoriaNombre: data.categoria ? data.categoria.nombre : undefined
+                }))
+
+              if (itemsToPrint.length > 0) {
+                console.log("🖨️ [Dashboard] Auto-printing new items for order:", pedidoId)
+                console.log("Items to print:", itemsToPrint)
+                const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err))
+                toast.info(`Imprimiendo ${itemsToPrint.length} items nuevos`)
+              }
+            }
+          }
+
+          // 3. Detectar transición a CLOSED (Cliente pidió la cuenta) -> Imprimir FACTURA automáticamente
+          if (prevData && prevData.status !== 'closed' && currentStatus === 'closed') {
+            console.log("🧾 [Dashboard] Auto-printing factura for closed order:", pedidoId)
+            const facturaData = formatFactura(
+              {
+                id: mesa.pedido.id,
+                mesaNombre: mesa.nombre,
+                nombrePedido: mesa.pedido.nombrePedido,
+                total: mesa.pedido.total
+              },
+              mesa.items,
+              restaurante?.nombre || 'Restaurante'
+            )
+            printRaw(commandsToBytes(facturaData)).catch((err: Error) => console.error("Error printing factura:", err))
+            toast.success(`Imprimiendo factura #${pedidoId}`)
+          }
+
+          // Actualizar Ref
+          processedOrdersRef.current.set(pedidoId, {
+            status: currentStatus,
+            itemIds: currentItemIds
+          })
+        })
+      }
 
       const pedidosFromMesas: PedidoData[] = mesasWS
         .filter(m => m.pedido)
@@ -222,7 +325,7 @@ const Dashboard = () => {
         }))
       setPedidos(pedidosFromMesas)
     }
-  }, [mesasWS])
+  }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw])
 
   const fetchMesasREST = useCallback(async () => {
     if (!token) return
@@ -859,7 +962,19 @@ const Dashboard = () => {
         `}>
           <div className="flex-1 overflow-auto p-3 lg:p-4">
             {selectedMesa ? (
-              <div className="space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0">
+              <div className={`space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0 ${displayedPedido?.estado === 'closed' ? 'relative' : ''}`}>
+                {/* Banner de pedido cerrado */}
+                {displayedPedido?.estado === 'closed' && (
+                  <div className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-lg p-4 flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center">
+                      <CheckCircle className="h-5 w-5 text-neutral-500" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-neutral-700 dark:text-neutral-300">Pedido Cerrado</p>
+                      <p className="text-sm text-neutral-500">Este pedido ha sido finalizado y está pendiente de pago o ya fue pagado</p>
+                    </div>
+                  </div>
+                )}
                 {/* Mobile: Compact Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -887,7 +1002,7 @@ const Dashboard = () => {
                       QR
                     </Button>
 
-                    {selectedMesa.pedido && (
+                    {displayedPedido && (
                       <>
                         <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setAddProductSheet(true)}>
                           <Plus className="h-4 w-4" />
@@ -895,6 +1010,61 @@ const Dashboard = () => {
                         <Button variant="outline" size="sm" className="hidden lg:flex" onClick={() => setAddProductSheet(true)}>
                           <Plus className="mr-2 h-4 w-4" />
                           Agregar
+                        </Button>
+
+                        {/* Imprimir Factura Button */}
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="lg:hidden h-9 w-9"
+                          onClick={() => {
+                            if (!selectedPrinter) {
+                              toast.error('Seleccione una impresora en Configuración')
+                              return
+                            }
+                            const facturaData = formatFactura(
+                              {
+                                id: displayedPedido.id,
+                                mesaNombre: selectedMesa?.nombre,
+                                nombrePedido: displayedPedido.nombrePedido,
+                                total: displayedPedido.total
+                              },
+                              displayedPedido.items,
+                              restaurante?.nombre || 'Restaurante'
+                            )
+                            printRaw(commandsToBytes(facturaData))
+                              .then(() => toast.success('Factura enviada a imprimir'))
+                              .catch((err: Error) => toast.error(`Error: ${err.message}`))
+                          }}
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="hidden lg:flex"
+                          onClick={() => {
+                            if (!selectedPrinter) {
+                              toast.error('Seleccione una impresora en Configuración')
+                              return
+                            }
+                            const facturaData = formatFactura(
+                              {
+                                id: displayedPedido.id,
+                                mesaNombre: selectedMesa?.nombre,
+                                nombrePedido: displayedPedido.nombrePedido,
+                                total: displayedPedido.total
+                              },
+                              displayedPedido.items,
+                              restaurante?.nombre || 'Restaurante'
+                            )
+                            printRaw(commandsToBytes(facturaData))
+                              .then(() => toast.success('Factura enviada a imprimir'))
+                              .catch((err: Error) => toast.error(`Error: ${err.message}`))
+                          }}
+                        >
+                          <Printer className="mr-2 h-4 w-4" />
+                          Factura
                         </Button>
 
                         <Button variant="outline" size="icon" className="text-destructive lg:hidden h-9 w-9" onClick={() => setShowDeletePedidoDialog(true)}>
@@ -935,7 +1105,7 @@ const Dashboard = () => {
                 {/* Order Items */}
                 {displayedPedido ? (
                   <>
-                    <Card className="lg:shadow-sm">
+                    <Card className={`lg:shadow-sm ${displayedPedido.estado === 'closed' ? 'opacity-60 grayscale-[30%]' : ''}`}>
                       <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
                         <CardTitle className="text-sm flex items-center gap-2">
                           <ShoppingCart className="h-4 w-4" />
@@ -1007,14 +1177,14 @@ const Dashboard = () => {
                     </Card>
 
                     {/* Total & Payments */}
-                    <Card className="bg-primary/5 border-primary/20 lg:shadow-sm">
+                    <Card className={`lg:shadow-sm ${displayedPedido.estado === 'closed' ? 'bg-neutral-100 dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600' : 'bg-primary/5 border-primary/20'}`}>
                       <CardContent className="py-4 px-3 lg:px-6">
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm font-medium">Total del Pedido</p>
                             <p className="text-xs text-muted-foreground">{displayedPedido.totalItems} productos</p>
                           </div>
-                          <p className="text-2xl lg:text-3xl font-bold text-primary">
+                          <p className={`text-2xl lg:text-3xl font-bold ${displayedPedido.estado === 'closed' ? 'text-neutral-500' : 'text-primary'}`}>
                             ${parseFloat(displayedPedido.total).toFixed(2)}
                           </p>
                         </div>

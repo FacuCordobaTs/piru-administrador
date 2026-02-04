@@ -21,8 +21,8 @@ import {
   Bell, Package
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
-import { useQZ } from '@/context/QZContext'
-import { formatComanda } from '@/utils/printerUtils'
+import { usePrinter } from '@/context/PrinterContext'
+import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 
 // Types
 interface ItemPedido {
@@ -159,7 +159,7 @@ const Pedido = () => {
   const token = useAuthStore((state) => state.token)
   const { restaurante } = useRestauranteStore()
   const esCarrito = restaurante?.esCarrito || false
-  const { print, defaultPrinter } = useQZ()
+  const { printRaw, selectedPrinter } = usePrinter()
 
   // WebSocket y Estados
   const { mesas: mesasWS, isConnected, subtotalesUpdates, marcarPedidoListo } = useAdminWebSocket()
@@ -336,7 +336,7 @@ const Pedido = () => {
       setConfiguringProduct(null) // Cerrar dialogo si estaba abierto
 
       // IMPRESIÓN AUTOMÁTICA (Si el pedido está en cocina)
-      if ((pedido.estado === 'preparing' || pedido.estado === 'delivered') && defaultPrinter) {
+      if ((pedido.estado === 'preparing' || pedido.estado === 'delivered') && selectedPrinter) {
         // Obtener categoría para el formato correcto
         // Necesitamos las categorías del store, asumo que estan disponibles o las busco en productos si vinieran
         const categorias = useRestauranteStore.getState().categorias;
@@ -353,7 +353,7 @@ const Pedido = () => {
 
           console.log("🖨️ Auto-printing new admin item:", itemToPrint);
           const comandaData = formatComanda({ id: pedido.id, mesaNombre: pedido.mesaNombre, nombrePedido: pedido.nombrePedido }, [itemToPrint], restaurante?.nombre || 'Restaurante');
-          print(defaultPrinter, comandaData).catch(err => console.error("Error printing admin item:", err));
+          printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing admin item:", err));
           toast.info('Imprimiendo comanda en cocina...');
         }
       }

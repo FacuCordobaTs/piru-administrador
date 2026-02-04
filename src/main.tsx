@@ -14,7 +14,7 @@ import Pedidos from './pages/Pedidos'
 import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
 import Perfil from './pages/Perfil'
-import { QZProvider } from './context/QZContext'
+import { PrinterProvider } from './context/PrinterContext'
 
 
 
@@ -73,7 +73,7 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QZProvider>
+    <PrinterProvider>
       <RouterProvider router={router} />
       <Toaster
         position="top-right"
@@ -89,6 +89,6 @@ createRoot(document.getElementById('root')!).render(
           },
         }}
       />
-    </QZProvider>
+    </PrinterProvider>
   </StrictMode>,
 )

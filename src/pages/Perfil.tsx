@@ -31,7 +31,8 @@ import {
   Printer,
   List
 } from 'lucide-react'
-import { useQZ } from '@/context/QZContext'
+import { usePrinter } from '@/context/PrinterContext'
+import { commandsToBytes } from '@/utils/printerUtils'
 
 // Configuración de MercadoPago
 const MP_APP_ID = 38638191854826
@@ -57,9 +58,8 @@ const Perfil = () => {
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
 
-  // QZ Tray State
-  const { isConnected, findPrinters, print, defaultPrinter, setDefaultPrinter } = useQZ()
-  const [printers, setPrinters] = useState<string[]>([])
+  // Tauri Printer State
+  const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
   const [isListingPrinters, setIsListingPrinters] = useState(false)
   const [isPrintingTest, setIsPrintingTest] = useState(false)
 
@@ -100,10 +100,9 @@ const Perfil = () => {
   const handleListPrinters = async () => {
     setIsListingPrinters(true)
     try {
-      const foundPrinters = await findPrinters()
-      setPrinters(foundPrinters)
-      if (foundPrinters.length > 0) {
-        toast.success(`Se encontraron ${foundPrinters.length} impresoras`)
+      await refreshPrinters()
+      if (printers.length > 0) {
+        toast.success(`Se encontraron ${printers.length} impresoras`)
       } else {
         toast.info('No se encontraron impresoras')
       }
@@ -113,7 +112,7 @@ const Perfil = () => {
   }
 
   const handleTestPrint = async () => {
-    if (!defaultPrinter) {
+    if (!selectedPrinter) {
       toast.error('Selecciona una impresora predeterminada primero')
       return;
     }
@@ -136,7 +135,7 @@ const Perfil = () => {
         '\x1D\x56\x41', // Cut
       ];
 
-      await print(defaultPrinter, data)
+      await printRaw(commandsToBytes(data))
     } catch (error) {
       // El error ya se maneja en el context
     } finally {
@@ -632,29 +631,29 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
-          {/* Tarjeta de Impresoras (QZ Tray) */}
-          <Card className={isConnected ? "border-green-500/50 bg-green-50/50 dark:bg-green-950/20" : ""}>
+          {/* Tarjeta de Impresoras (Tauri Native) */}
+          <Card className={selectedPrinter ? "border-green-500/50 bg-green-50/50 dark:bg-green-950/20" : ""}>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Printer className="h-5 w-5" />
                 Impresora de Comandas (Cocina)
               </CardTitle>
               <CardDescription>
-                {isConnected
-                  ? 'Conexión establecida con QZ Tray'
-                  : 'Requiere QZ Tray ejecutándose en esta PC'
+                {selectedPrinter
+                  ? `Impresora seleccionada: ${selectedPrinter}`
+                  : 'Selecciona una impresora para las comandas'
                 }
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {isConnected ? (
+              {selectedPrinter ? (
                 <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-2">
                   <CheckCircle2 className="h-5 w-5" />
-                  <span className="font-medium">QZ Tray Conectado</span>
+                  <span className="font-medium">Impresora configurada</span>
                 </div>
               ) : (
                 <div className="text-sm text-yellow-600 dark:text-yellow-400 mb-2">
-                  <p>Asegúrate de tener instalado y ejecutando QZ Tray.</p>
+                  <p>Selecciona una impresora de la lista.</p>
                 </div>
               )}
 
@@ -662,11 +661,11 @@ const Perfil = () => {
                 <Button
                   variant="outline"
                   onClick={handleListPrinters}
-                  disabled={isListingPrinters || !isConnected}
+                  disabled={isListingPrinters}
                   className="w-full justify-start"
                 >
                   {isListingPrinters ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <List className="mr-2 h-4 w-4" />}
-                  Listar / Actualizar Impresoras
+                  Actualizar Lista de Impresoras
                 </Button>
 
                 {printers.length > 0 && (
@@ -674,9 +673,8 @@ const Perfil = () => {
                     <Label>Seleccionar Impresora Predeterminada</Label>
                     <select
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      value={defaultPrinter || ''}
-                      onChange={(e) => setDefaultPrinter(e.target.value)}
-                      disabled={!isConnected}
+                      value={selectedPrinter || ''}
+                      onChange={(e) => setSelectedPrinter(e.target.value)}
                     >
                       <option value="">Seleccionar impresora...</option>
                       {printers.map((p, i) => (
@@ -692,7 +690,7 @@ const Perfil = () => {
                 <Button
                   variant="outline"
                   onClick={handleTestPrint}
-                  disabled={isPrintingTest || !isConnected || !defaultPrinter}
+                  disabled={isPrintingTest || !selectedPrinter}
                   className="w-full justify-start"
                 >
                   {isPrintingTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}

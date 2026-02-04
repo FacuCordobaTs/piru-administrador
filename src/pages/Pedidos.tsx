@@ -17,8 +17,8 @@ import {
   ShoppingCart, RefreshCw, Wifi, WifiOff, Trash2,
   AlertTriangle, Play, X
 } from 'lucide-react'
-import { useQZ } from '@/context/QZContext'
-import { formatComanda } from '@/utils/printerUtils'
+import { usePrinter } from '@/context/PrinterContext'
+import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import { useRef } from 'react'
 
 // Types
@@ -160,7 +160,7 @@ const Pedidos = () => {
   const { restaurante, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
   const esCarrito = restaurante?.esCarrito || false
   const splitPayment = restaurante?.splitPayment ?? true // Default to true if undefined
-  const { print, defaultPrinter } = useQZ()
+  const { printRaw, selectedPrinter } = usePrinter()
 
   const {
     mesas: mesasWS,
@@ -267,7 +267,7 @@ const Pedidos = () => {
     if (mesasWS.length > 0) {
 
       // Lógica de impresión automática (Side Effect)
-      if (defaultPrinter) {
+      if (selectedPrinter) {
         mesasWS.forEach(mesa => {
           if (!mesa.pedido) return;
 
@@ -290,7 +290,7 @@ const Pedidos = () => {
               })
               .filter(data => {
                 if (!data.producto || !data.categoria) return true; // Si falta info, lo dejamos pasar por seguridad (irá a OTROS)
-                return !data.categoria.nombre.toLowerCase().includes('bebida');
+                return !data.categoria.nombre.toLowerCase().includes('bebidas');
               })
               .map(data => ({
                 ...data,
@@ -300,7 +300,7 @@ const Pedidos = () => {
             if (itemsToPrint.length > 0) {
               console.log("🖨️ Auto-printing confirmed order:", pedidoId);
               const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
-              print(defaultPrinter, comandaData).catch(err => console.error("Error printing confirmed order:", err));
+              printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err));
               toast.success(`Imprimiendo comanda #${pedidoId}`);
             }
           }
@@ -331,7 +331,7 @@ const Pedidos = () => {
               if (itemsToPrint.length > 0) {
                 console.log("🖨️ Auto-printing new items for order:", pedidoId);
                 const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
-                print(defaultPrinter, comandaData).catch(err => console.error("Error printing new items:", err));
+                printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err));
                 toast.info(`Imprimiendo ${itemsToPrint.length} items nuevos`);
               }
             }
@@ -445,7 +445,7 @@ const Pedidos = () => {
         return updated;
       });
     }
-  }, [mesasWS, defaultPrinter, allProductos, allCategorias, restaurante?.nombre]);
+  }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw]);
 
   // Cargar más
   const loadMore = () => {
@@ -477,7 +477,7 @@ const Pedidos = () => {
       ))
 
       // IMPRESIÓN AUTOMÁTICA
-      if (nuevoEstado === 'preparing' && defaultPrinter) {
+      if (nuevoEstado === 'preparing' && selectedPrinter) {
         // Filtrar bebidas y agregar categorías
         const itemsToPrint = pedido.items
           .map(item => {
@@ -498,7 +498,7 @@ const Pedidos = () => {
 
         if (itemsToPrint.length > 0) {
           const comandaData = formatComanda(pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
-          print(defaultPrinter, comandaData).catch(err => console.error("Error auto-printing:", err));
+          printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error auto-printing:", err));
           toast.success('Comanda enviada a cocina');
         }
       }
