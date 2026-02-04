@@ -1105,7 +1105,7 @@ const Dashboard = () => {
                 {/* Order Items */}
                 {displayedPedido ? (
                   <>
-                    <Card className={`lg:shadow-sm ${displayedPedido.estado === 'closed' ? 'opacity-60 grayscale-[30%]' : ''}`}>
+                    <Card className={`lg:shadow-sm ${displayedPedido.estado === 'closed' ? 'opacity-60 grayscale-30' : ''}`}>
                       <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
                         <CardTitle className="text-sm flex items-center gap-2">
                           <ShoppingCart className="h-4 w-4" />
