@@ -647,3 +647,76 @@ export const notificacionesApi = {
   },
 }
 
+// Delivery API
+export const deliveryApi = {
+  // Obtener todos los pedidos de delivery con paginación
+  getAll: async (token: string, page = 1, limit = 20, estado?: string) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    })
+    if (estado) params.append('estado', estado)
+
+    return fetchApi(`/delivery/list?${params}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Obtener un pedido de delivery específico
+  getById: async (token: string, id: number) => {
+    return fetchApi(`/delivery/${id}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Crear nuevo pedido de delivery
+  create: async (
+    token: string,
+    data: {
+      direccion: string
+      nombreCliente?: string
+      telefono?: string
+      notas?: string
+      items: Array<{
+        productoId: number
+        cantidad: number
+        ingredientesExcluidos?: number[]
+      }>
+    }
+  ) => {
+    return fetchApi('/delivery/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  // Actualizar estado del pedido de delivery
+  updateEstado: async (token: string, id: number, estado: string) => {
+    return fetchApi(`/delivery/${id}/estado`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ estado }),
+    })
+  },
+
+  // Eliminar pedido de delivery
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/delivery/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
