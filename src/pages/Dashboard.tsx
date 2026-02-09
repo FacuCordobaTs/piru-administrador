@@ -1631,10 +1631,10 @@ const Dashboard = () => {
                                       ) : (
                                         <Button
                                           className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                                          onClick={() => handleConfirmarPagoTotal(selectedMesa.pedido!.id, subtotales)}
-                                          disabled={updatingPago === `all-${selectedMesa.pedido!.id}`}
+                                          onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales)}
+                                          disabled={updatingPago === `all-${displayedPedido.id}`}
                                         >
-                                          {updatingPago === `all-${selectedMesa.pedido!.id}` ? (
+                                          {updatingPago === `all-${displayedPedido.id}` ? (
                                             <Loader2 className="h-4 w-4 animate-spin mr-2" />
                                           ) : (
                                             <span className="mr-2">💵</span>
