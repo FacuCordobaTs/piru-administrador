@@ -24,3 +24,6 @@ package-lock.json
 *.sln
 *.sw?
 .env
+
+piru_nueva.key
+piru_nueva.key.pub
