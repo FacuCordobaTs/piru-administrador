@@ -1,0 +1,11 @@
+{
+    "version": "1.0.1",
+    "notes": "Mejoras en la impresión y arreglos varios.",
+    "pub_date": "2026-02-11T14:55:00Z",
+    "platforms": {
+        "windows-x86_64": {
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSOUIxRk1aL29jZFJsQUhjNGxPaGxmWG5sT2x3VDZYUEY3UnZ6ZXBxb2ZHYkxjZGs4ZUxpZGxMNms0UFgvWnFwbUtxenpTeHhKMnJrSjV3bG1tNjFMZklZRlp0TFF5TEE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzcwODM3MDgyCWZpbGU6cGlydV8xLjAuMV94NjRfZW4tVVMubXNpCjdmZHk0Um9VQjd6NnV1VGUxYkF1bTVQUUVFUk51TTMwV2xpQmFlbzdiaG93VTRkK2gwVmR1K3RtakpGblNjc25YeXdVd25ScDJaZmF4OE9PbHAwbUFRPT0K",
+            "url": "https://api.piru.app/updates/piru_1.0.1_x64_en-US.msi"
+        }
+    }
+}

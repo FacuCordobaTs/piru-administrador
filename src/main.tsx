@@ -1,9 +1,11 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { createBrowserRouter, Navigate } from "react-router";
 import { RouterProvider } from "react-router/dom";
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ProtectedLayout from './components/ProtectedLayout'
@@ -71,10 +73,35 @@ const router = createBrowserRouter([
   },
 ]);
 
+function App() {
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      try {
+        const update = await check();
+        if (update?.available) {
+          toast.info(`Descargando actualización v${update.version}...`);
+          await update.downloadAndInstall();
+
+          toast.success("Actualización lista. Reiniciando...");
+          await new Promise(r => setTimeout(r, 2000)); // Espera un poco
+          await relaunch();
+        }
+      } catch (error) {
+        console.error("Error buscando actualizaciones:", error);
+      }
+    };
+
+    checkForUpdates();
+  }, []);
+
+  return <RouterProvider router={router} />;
+}
+
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <PrinterProvider>
-      <RouterProvider router={router} />
+      <App />
       <Toaster
         position="top-right"
         richColors

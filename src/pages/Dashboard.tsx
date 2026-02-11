@@ -10,7 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, ApiError } from '@/lib/api'
+import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi, ApiError } from '@/lib/api'
 import { type MesaConPedido, type ItemPedido as WSItemPedido } from '@/hooks/useAdminWebSocket'
 import { useAdminContext } from '@/context/AdminContext'
 import { toast } from 'sonner'
@@ -18,9 +18,9 @@ import MesaQRCode from '@/components/MesaQRCode'
 import {
   ShoppingCart, Users, Loader2, QrCode, Plus,
   Clock, CheckCircle, Coffee,
-  Utensils, ChefHat, Trash2,
+  Utensils, ChefHat, Trash2, Archive,
   User, Minus, Search, Package,
-  AlertTriangle, Play, LayoutGrid, List, ArrowLeft, Printer, Truck, MapPin, Phone, X
+  AlertTriangle, Play, LayoutGrid, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePrinter } from '@/context/PrinterContext'
@@ -35,7 +35,7 @@ interface PedidoData {
   id: number
   mesaId: number | null
   mesaNombre: string | null
-  estado: 'pending' | 'preparing' | 'delivered' | 'served' | 'closed'
+  estado: 'pending' | 'preparing' | 'delivered' | 'served' | 'closed' | 'archived'
   total: string
   createdAt: string
   closedAt?: string | null
@@ -94,12 +94,41 @@ interface DeliveryPedido {
   direccion: string
   nombreCliente: string | null
   telefono: string | null
-  estado: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled'
+  estado: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled' | 'archived'
   total: string
   notas: string | null
   createdAt: string
   deliveredAt: string | null
   items: DeliveryItem[]
+  totalItems: number
+}
+
+interface TakeawayPedido {
+  id: number
+  nombreCliente: string | null
+  telefono: string | null
+  estado: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled' | 'archived'
+  total: string
+  notas: string | null
+  createdAt: string
+  deliveredAt: string | null
+  items: DeliveryItem[]
+  totalItems: number
+}
+
+// Unified order type for the all-orders list
+interface UnifiedPedido {
+  id: number
+  tipo: 'mesa' | 'delivery' | 'takeaway'
+  estado: string
+  total: string
+  createdAt: string
+  nombreCliente: string | null
+  telefono: string | null
+  direccion?: string | null
+  mesaNombre?: string | null
+  notas?: string | null
+  items: DeliveryItem[] | ItemPedidoConEstado[]
   totalItems: number
 }
 
@@ -133,6 +162,7 @@ const getEstadoBadge = (estado: string | null | undefined) => {
     delivered: { label: 'Listo', variant: 'secondary', icon: Utensils },
     served: { label: 'Entregado', variant: 'secondary', icon: CheckCircle },
     closed: { label: 'Cerrado', variant: 'secondary', icon: CheckCircle },
+    archived: { label: 'Archivado', variant: 'outline', icon: Archive },
   }
   return estados[estado || 'pending'] || { label: 'Disponible', variant: 'outline', icon: Coffee }
 }
@@ -144,6 +174,7 @@ const COLUMNS = [
   { id: 'served', title: 'Entregados', icon: CheckCircle, color: 'text-indigo-600', bgHeader: 'bg-indigo-100 dark:bg-indigo-900/30' },
   { id: 'closedPending', title: 'Sin Pagar', icon: Clock, color: 'text-orange-600', bgHeader: 'bg-orange-100 dark:bg-orange-900/30' },
   { id: 'closedPaid', title: 'Pagados', icon: CheckCircle, color: 'text-green-600', bgHeader: 'bg-green-100 dark:bg-green-900/30' },
+  { id: 'archived', title: 'Archivados', icon: Archive, color: 'text-slate-600', bgHeader: 'bg-slate-100 dark:bg-slate-900/30' },
 ]
 
 const Dashboard = () => {
@@ -198,13 +229,22 @@ const Dashboard = () => {
   // Mobile-specific state
   const [mobileView, setMobileView] = useState<'mesas' | 'detail' | 'orders'>('mesas')
 
-  // Dashboard mode: mesas vs delivery
-  const [dashboardMode, setDashboardMode] = useState<'mesas' | 'delivery'>('mesas')
+  // Dashboard mode: mesas vs pedidos vs nuevoPedido
+  const [dashboardMode, setDashboardMode] = useState<'mesas' | 'pedidos' | 'nuevoPedido'>('mesas')
+  const previousDashboardMode = useRef<'mesas' | 'pedidos'>('mesas')
+
+  const enterNuevoPedidoMode = () => {
+    previousDashboardMode.current = dashboardMode === 'nuevoPedido' ? previousDashboardMode.current : (dashboardMode as 'mesas' | 'pedidos')
+    setDashboardMode('nuevoPedido')
+  }
+
+  const exitNuevoPedidoMode = () => {
+    setDashboardMode(previousDashboardMode.current)
+  }
 
   // Delivery state
   const [deliveryPedidos, setDeliveryPedidos] = useState<DeliveryPedido[]>([])
   const [loadingDelivery, setLoadingDelivery] = useState(false)
-  const [newDeliverySheet, setNewDeliverySheet] = useState(false)
   const [newDeliveryItems, setNewDeliveryItems] = useState<NewDeliveryItem[]>([])
   const [newDeliveryDireccion, setNewDeliveryDireccion] = useState('')
   const [newDeliveryNombre, setNewDeliveryNombre] = useState('')
@@ -213,6 +253,9 @@ const Dashboard = () => {
   const [creatingDelivery, setCreatingDelivery] = useState(false)
   const [updatingDeliveryEstado, setUpdatingDeliveryEstado] = useState<number | null>(null)
   const [expandedDeliveryItems, setExpandedDeliveryItems] = useState<number[]>([])
+
+  // Takeaway state
+  const [takeawayPedidos, setTakeawayPedidos] = useState<TakeawayPedido[]>([])
 
   const handleToggleDeliveryIngredient = (idx: number, ingredientId: number) => {
     setNewDeliveryItems(prev => prev.map((item, index) => {
@@ -547,6 +590,7 @@ const Dashboard = () => {
       served: [],
       closedPending: [],
       closedPaid: [],
+      archived: [],
     }
 
     const allPedidosMap = new Map<number, PedidoData>()
@@ -562,6 +606,16 @@ const Dashboard = () => {
     const allPedidos = Array.from(allPedidosMap.values())
 
     allPedidos.forEach(pedido => {
+      if (pedido.estado === 'archived') {
+        grouped.archived.push({
+          id: `${pedido.id}-archived`,
+          pedido,
+          items: pedido.items,
+          status: 'archived'
+        })
+        return
+      }
+
       if (pedido.estado === 'pending' && pedido.items.length > 0) {
         grouped.pending.push({ id: `${pedido.id}-pending`, pedido, items: pedido.items, status: 'pending' })
         return
@@ -882,15 +936,31 @@ const Dashboard = () => {
     }
   }, [token])
 
-  useEffect(() => {
-    if (dashboardMode === 'delivery') {
-      fetchDeliveryPedidos()
+  const fetchTakeawayPedidos = useCallback(async () => {
+    if (!token) return
+    try {
+      const response = await takeawayApi.getAll(token) as {
+        success: boolean
+        data: TakeawayPedido[]
+      }
+      if (response.success && response.data) {
+        setTakeawayPedidos(response.data)
+      }
+    } catch (error) {
+      console.error('Error fetching takeaway pedidos:', error)
     }
-  }, [dashboardMode, fetchDeliveryPedidos])
+  }, [token])
 
   useEffect(() => {
-    if (newDeliverySheet && productos.length === 0) fetchProductos()
-  }, [newDeliverySheet, fetchProductos, productos.length])
+    if (dashboardMode === 'pedidos') {
+      fetchDeliveryPedidos()
+      fetchTakeawayPedidos()
+    }
+  }, [dashboardMode, fetchDeliveryPedidos, fetchTakeawayPedidos])
+
+  useEffect(() => {
+    if (dashboardMode === 'nuevoPedido' && productos.length === 0) fetchProductos()
+  }, [dashboardMode, fetchProductos, productos.length])
 
   const handleAddDeliveryItem = (producto: Producto) => {
     const existingIndex = newDeliveryItems.findIndex(i => i.productoId === producto.id)
@@ -917,22 +987,33 @@ const Dashboard = () => {
     ))
   }
 
-  const handleCreateDelivery = async () => {
-    if (!token || !newDeliveryDireccion.trim() || newDeliveryItems.length === 0) {
-      toast.error('Ingresa la dirección y al menos un producto')
+  const handleCreatePedido = async () => {
+    if (!token || newDeliveryItems.length === 0) {
+      toast.error('Agrega al menos un producto')
       return
     }
+    const isDelivery = newDeliveryDireccion.trim().length > 0
     setCreatingDelivery(true)
     try {
-      const response = await deliveryApi.create(token, {
-        direccion: newDeliveryDireccion,
-        nombreCliente: newDeliveryNombre || undefined,
-        telefono: newDeliveryTelefono || undefined,
-        notas: newDeliveryNotas || undefined,
-        items: newDeliveryItems
-      }) as { success: boolean }
+      let response: { success: boolean }
+      if (isDelivery) {
+        response = await deliveryApi.create(token, {
+          direccion: newDeliveryDireccion,
+          nombreCliente: newDeliveryNombre || undefined,
+          telefono: newDeliveryTelefono || undefined,
+          notas: newDeliveryNotas || undefined,
+          items: newDeliveryItems
+        }) as { success: boolean }
+      } else {
+        response = await takeawayApi.create(token, {
+          nombreCliente: newDeliveryNombre || undefined,
+          telefono: newDeliveryTelefono || undefined,
+          notas: newDeliveryNotas || undefined,
+          items: newDeliveryItems
+        }) as { success: boolean }
+      }
       if (response.success) {
-        toast.success('Pedido de delivery creado')
+        toast.success(isDelivery ? 'Pedido de delivery creado' : 'Pedido take away creado')
 
         // Print factura automatically
         if (selectedPrinter) {
@@ -955,9 +1036,9 @@ const Dashboard = () => {
 
           const facturaData = formatFactura(
             {
-              id: Date.now(), // Temporary ID since we don't have the real one yet
-              mesaNombre: `Delivery: ${newDeliveryDireccion}`,
-              nombrePedido: newDeliveryNombre || 'Delivery',
+              id: Date.now(),
+              mesaNombre: isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away',
+              nombrePedido: newDeliveryNombre || (isDelivery ? 'Delivery' : 'Take Away'),
               total
             },
             itemsForPrint,
@@ -965,20 +1046,21 @@ const Dashboard = () => {
           )
 
           printRaw(commandsToBytes(facturaData))
-            .then(() => toast.success('Factura de delivery enviada a imprimir'))
-            .catch((err: Error) => console.error('Error printing delivery factura:', err))
+            .then(() => toast.success('Factura enviada a imprimir'))
+            .catch((err: Error) => console.error('Error printing factura:', err))
         }
 
-        setNewDeliverySheet(false)
+        exitNuevoPedidoMode()
         setNewDeliveryItems([])
         setNewDeliveryDireccion('')
         setNewDeliveryNombre('')
         setNewDeliveryTelefono('')
         setNewDeliveryNotas('')
         fetchDeliveryPedidos()
+        fetchTakeawayPedidos()
       }
     } catch (error) {
-      toast.error('Error al crear pedido de delivery')
+      toast.error(isDelivery ? 'Error al crear pedido de delivery' : 'Error al crear pedido take away')
     } finally {
       setCreatingDelivery(false)
     }
@@ -1022,6 +1104,7 @@ const Dashboard = () => {
       ready: { label: 'Listo', className: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
       delivered: { label: 'Entregado', className: 'bg-gray-100 text-gray-600 border-gray-300' },
       cancelled: { label: 'Cancelado', className: 'bg-red-100 text-red-700 border-red-300' },
+      archived: { label: 'Archivado', className: 'bg-slate-100 text-slate-500 border-slate-300' },
     }
     return estados[estado] || estados.pending
   }
@@ -1032,6 +1115,150 @@ const Dashboard = () => {
       return total + (producto ? parseFloat(producto.precio) * item.cantidad : 0)
     }, 0)
   }, [newDeliveryItems, productos])
+
+  const handleUpdateTakeawayEstado = async (pedidoId: number, nuevoEstado: string) => {
+    if (!token) return
+    setUpdatingDeliveryEstado(pedidoId)
+    try {
+      const response = await takeawayApi.updateEstado(token, pedidoId, nuevoEstado) as { success: boolean }
+      if (response.success) {
+        toast.success('Estado actualizado')
+        setTakeawayPedidos(prev => prev.map(p =>
+          p.id === pedidoId ? { ...p, estado: nuevoEstado as TakeawayPedido['estado'] } : p
+        ))
+      }
+    } catch (error) {
+      toast.error('Error al actualizar estado')
+    } finally {
+      setUpdatingDeliveryEstado(null)
+    }
+  }
+
+  const handleDeleteTakeaway = async (pedidoId: number) => {
+    if (!token) return
+    try {
+      const response = await takeawayApi.delete(token, pedidoId) as { success: boolean }
+      if (response.success) {
+        toast.success('Pedido eliminado')
+        setTakeawayPedidos(prev => prev.filter(p => p.id !== pedidoId))
+      }
+    } catch (error) {
+      toast.error('Error al eliminar pedido')
+    }
+  }
+
+  // Archive handlers
+  const handleArchiveDelivery = async (pedidoId: number) => {
+    if (!token) return
+    try {
+      const response = await deliveryApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
+      if (response.success) {
+        toast.success('Pedido archivado')
+        setDeliveryPedidos(prev => prev.map(p =>
+          p.id === pedidoId ? { ...p, estado: 'archived' as DeliveryPedido['estado'] } : p
+        ))
+      }
+    } catch (error) {
+      toast.error('Error al archivar pedido')
+    }
+  }
+
+  const handleArchiveTakeaway = async (pedidoId: number) => {
+    if (!token) return
+    try {
+      const response = await takeawayApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
+      if (response.success) {
+        toast.success('Pedido archivado')
+        setTakeawayPedidos(prev => prev.map(p =>
+          p.id === pedidoId ? { ...p, estado: 'archived' as TakeawayPedido['estado'] } : p
+        ))
+      }
+    } catch (error) {
+      toast.error('Error al archivar pedido')
+    }
+  }
+
+  const handleArchiveMesaPedido = async (pedidoId: number) => {
+    if (!token) return
+    try {
+      const response = await pedidosApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
+      if (response.success) {
+        toast.success('Pedido archivado')
+        setPedidos(prev => prev.map(p =>
+          p.id === pedidoId ? { ...p, estado: 'archived' as PedidoData['estado'] } : p
+        ))
+      }
+    } catch (error) {
+      toast.error('Error al archivar pedido')
+    }
+  }
+
+  // Unified all-orders list
+  const allUnifiedPedidos = useMemo((): UnifiedPedido[] => {
+    const unified: UnifiedPedido[] = []
+
+    // Add mesa pedidos
+    pedidos.forEach(p => {
+      unified.push({
+        id: p.id,
+        tipo: 'mesa',
+        estado: p.estado,
+        total: p.total,
+        createdAt: p.createdAt,
+        nombreCliente: p.nombrePedido || null,
+        telefono: null,
+        mesaNombre: p.mesaNombre,
+        items: p.items,
+        totalItems: p.totalItems,
+      })
+    })
+
+    // Add delivery pedidos
+    deliveryPedidos.forEach(p => {
+      unified.push({
+        id: p.id,
+        tipo: 'delivery',
+        estado: p.estado,
+        total: p.total,
+        createdAt: p.createdAt,
+        nombreCliente: p.nombreCliente,
+        telefono: p.telefono,
+        direccion: p.direccion,
+        notas: p.notas,
+        items: p.items,
+        totalItems: p.totalItems,
+      })
+    })
+
+    // Add takeaway pedidos
+    takeawayPedidos.forEach(p => {
+      unified.push({
+        id: p.id,
+        tipo: 'takeaway',
+        estado: p.estado,
+        total: p.total,
+        createdAt: p.createdAt,
+        nombreCliente: p.nombreCliente,
+        telefono: p.telefono,
+        notas: p.notas,
+        items: p.items,
+        totalItems: p.totalItems,
+      })
+    })
+
+    // Sort chronologically (newest first)
+    unified.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    // Filter out archived orders
+    return unified.filter(p => p.estado !== 'archived')
+  }, [pedidos, deliveryPedidos, takeawayPedidos])
+
+  const getTipoBadge = (tipo: 'mesa' | 'delivery' | 'takeaway') => {
+    switch (tipo) {
+      case 'mesa': return { label: '🍽️ Mesa', className: 'bg-violet-100 text-violet-700 border-violet-300' }
+      case 'delivery': return { label: '🚚 Delivery', className: 'bg-sky-100 text-sky-700 border-sky-300' }
+      case 'takeaway': return { label: '🛍️ Take Away', className: 'bg-amber-100 text-amber-700 border-amber-300' }
+    }
+  }
 
   if (isLoading && mesas.length === 0) {
     return (
@@ -1075,49 +1302,55 @@ const Dashboard = () => {
 
           {/* Desktop Create Button and Mode Toggle */}
           <div className="hidden lg:flex gap-2">
-            {/* Mode Toggle */}
-            <div className="flex gap-1 bg-muted/50 p-1 rounded-lg mr-2">
-              <Button
-                variant={dashboardMode === 'mesas' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setDashboardMode('mesas')}
-              >
-                <Utensils className="h-3.5 w-3.5 mr-1.5" />
-                Mesas
-              </Button>
-              <Button
-                variant={dashboardMode === 'delivery' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setDashboardMode('delivery')}
-              >
-                <Truck className="h-3.5 w-3.5 mr-1.5" />
-                Delivery
-              </Button>
-            </div>
+            <>
+              {/* Mode Toggle */}
+              <div className="flex gap-1 bg-muted/50 p-1 rounded-lg mr-2">
+                <Button
+                  variant={dashboardMode === 'mesas' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setDashboardMode('mesas')}
+                >
+                  <Utensils className="h-3.5 w-3.5 mr-1.5" />
+                  Mesas
+                </Button>
+                <Button
+                  variant={dashboardMode === 'pedidos' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setDashboardMode('pedidos')}
+                >
+                  <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+                  Pedidos
+                </Button>
+              </div>
 
-            {dashboardMode === 'mesas' ? (
-              <Button size="sm" onClick={() => setCrearMesaDialog(true)}>
+              <Button size="sm" onClick={enterNuevoPedidoMode}>
                 <Plus className="mr-2 h-4 w-4" />
-                Nueva Mesa
+                Nuevo Pedido
               </Button>
-            ) : (
-              <Button size="sm" onClick={() => setNewDeliverySheet(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Delivery
-              </Button>
-            )}
+            </>
           </div>
 
           {/* Mobile Create Button (Icon only) */}
-          <Button
-            size="icon"
-            className="lg:hidden h-8 w-8"
-            onClick={() => setCrearMesaDialog(true)}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          {dashboardMode === 'nuevoPedido' ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden h-8 w-8"
+              onClick={exitNuevoPedidoMode}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className="lg:hidden h-8 w-8"
+              onClick={enterNuevoPedidoMode}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         {/* Mobile Navigation Tabs */}
@@ -1163,20 +1396,19 @@ const Dashboard = () => {
       {/* Main Content - Desktop: 3 columns, Mobile: Single view based on state */}
       <div className="flex-1 flex overflow-hidden">
 
-        {/* DELIVERY MODE VIEW */}
-        {dashboardMode === 'delivery' && (
+        {/* PEDIDOS (UNIFIED) MODE VIEW */}
+        {dashboardMode === 'pedidos' && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Delivery List */}
             <div className="flex-1 overflow-auto p-4">
               {loadingDelivery ? (
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-              ) : deliveryPedidos.length === 0 ? (
+              ) : allUnifiedPedidos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                  <Truck className="h-16 w-16 text-muted-foreground/30" />
-                  <p className="text-lg font-medium">No hay pedidos de delivery</p>
-                  <Button onClick={() => setNewDeliverySheet(true)}>
+                  <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
+                  <p className="text-lg font-medium">No hay pedidos</p>
+                  <Button onClick={enterNuevoPedidoMode}>
                     <Plus className="mr-2 h-4 w-4" />
                     Crear primer pedido
                   </Button>
@@ -1184,16 +1416,20 @@ const Dashboard = () => {
               ) : (
                 <div className="max-w-4xl mx-auto space-y-3">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold">Pedidos de Delivery ({deliveryPedidos.length})</h2>
+                    <h2 className="text-lg font-semibold">Todos los Pedidos ({allUnifiedPedidos.length})</h2>
                   </div>
-                  {deliveryPedidos.map((pedido) => {
+                  {allUnifiedPedidos.map((pedido) => {
                     const estadoBadge = getDeliveryEstadoBadge(pedido.estado)
+                    const tipoBadge = getTipoBadge(pedido.tipo)
                     return (
-                      <Card key={pedido.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                      <Card key={`${pedido.tipo}-${pedido.id}`} className="overflow-hidden hover:shadow-md transition-shadow">
                         <div className="p-4">
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <Badge className={`${tipoBadge.className} border`}>
+                                  {tipoBadge.label}
+                                </Badge>
                                 <Badge className={`${estadoBadge.className} border`}>
                                   {estadoBadge.label}
                                 </Badge>
@@ -1201,10 +1437,18 @@ const Dashboard = () => {
                                   {formatTimeAgo(pedido.createdAt)}
                                 </span>
                               </div>
-                              <div className="flex items-start gap-2 mb-1">
-                                <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                <p className="font-medium">{pedido.direccion}</p>
-                              </div>
+                              {pedido.tipo === 'delivery' && pedido.direccion && (
+                                <div className="flex items-start gap-2 mb-1">
+                                  <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                                  <p className="font-medium">{pedido.direccion}</p>
+                                </div>
+                              )}
+                              {pedido.tipo === 'mesa' && pedido.mesaNombre && (
+                                <div className="flex items-start gap-2 mb-1">
+                                  <Utensils className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                                  <p className="font-medium">{pedido.mesaNombre}</p>
+                                </div>
+                              )}
                               {pedido.nombreCliente && (
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                   <User className="h-3.5 w-3.5" />
@@ -1223,52 +1467,72 @@ const Dashboard = () => {
                               </p>
                             </div>
                             <div className="flex flex-col gap-2 shrink-0">
-                              {pedido.estado === 'pending' && (
+                              {(pedido.tipo === 'delivery' || pedido.tipo === 'takeaway') && (
+                                <>
+                                  {pedido.estado === 'pending' && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => pedido.tipo === 'delivery' ? handleUpdateDeliveryEstado(pedido.id, 'preparing') : handleUpdateTakeawayEstado(pedido.id, 'preparing')}
+                                      disabled={updatingDeliveryEstado === pedido.id}
+                                    >
+                                      {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChefHat className="h-4 w-4 mr-1" />}
+                                      Preparar
+                                    </Button>
+                                  )}
+                                  {pedido.estado === 'preparing' && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => pedido.tipo === 'delivery' ? handleUpdateDeliveryEstado(pedido.id, 'ready') : handleUpdateTakeawayEstado(pedido.id, 'ready')}
+                                      disabled={updatingDeliveryEstado === pedido.id}
+                                    >
+                                      {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1" />}
+                                      Listo
+                                    </Button>
+                                  )}
+                                  {pedido.estado === 'ready' && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => pedido.tipo === 'delivery' ? handleUpdateDeliveryEstado(pedido.id, 'delivered') : handleUpdateTakeawayEstado(pedido.id, 'delivered')}
+                                      disabled={updatingDeliveryEstado === pedido.id}
+                                    >
+                                      {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : pedido.tipo === 'delivery' ? <Truck className="h-4 w-4 mr-1" /> : <ShoppingBag className="h-4 w-4 mr-1" />}
+                                      Entregado
+                                    </Button>
+                                  )}
+                                </>
+                              )}
+                              <div className="flex gap-1">
                                 <Button
                                   size="sm"
-                                  onClick={() => handleUpdateDeliveryEstado(pedido.id, 'preparing')}
-                                  disabled={updatingDeliveryEstado === pedido.id}
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  title="Archivar pedido"
+                                  onClick={() => {
+                                    if (pedido.tipo === 'delivery') handleArchiveDelivery(pedido.id)
+                                    else if (pedido.tipo === 'takeaway') handleArchiveTakeaway(pedido.id)
+                                    else handleArchiveMesaPedido(pedido.id)
+                                  }}
                                 >
-                                  {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChefHat className="h-4 w-4 mr-1" />}
-                                  Preparado
+                                  <Archive className="h-4 w-4" />
                                 </Button>
-                              )}
-                              {pedido.estado === 'preparing' && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleUpdateDeliveryEstado(pedido.id, 'ready')}
-                                  disabled={updatingDeliveryEstado === pedido.id}
-                                >
-                                  {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1" />}
-                                  Listo
-                                </Button>
-                              )}
-                              {pedido.estado === 'ready' && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleUpdateDeliveryEstado(pedido.id, 'delivered')}
-                                  disabled={updatingDeliveryEstado === pedido.id}
-                                >
-                                  {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4 mr-1" />}
-                                  Entregado
-                                </Button>
-                              )}
-
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => handleDeleteDelivery(pedido.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-
+                                {(pedido.tipo === 'delivery' || pedido.tipo === 'takeaway') && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-destructive hover:text-destructive"
+                                    title="Eliminar pedido"
+                                    onClick={() => pedido.tipo === 'delivery' ? handleDeleteDelivery(pedido.id) : handleDeleteTakeaway(pedido.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
                             </div>
                           </div>
                           {/* Items Preview */}
                           <div className="mt-3 pt-3 border-t">
                             <div className="space-y-1.5">
-                              {pedido.items.slice(0, 6).map((item) => (
+                              {pedido.items.slice(0, 6).map((item: any) => (
                                 <div key={item.id} className="flex flex-col">
                                   <div className="flex items-center gap-2">
                                     <Badge variant="secondary" className="font-normal">
@@ -1300,6 +1564,249 @@ const Dashboard = () => {
           </div>
         )}
 
+        {/* NUEVO PEDIDO MODE VIEW - Full screen 2-column layout */}
+        {dashboardMode === 'nuevoPedido' && (
+          <div className="flex-1 flex overflow-hidden">
+            {/* LEFT: Client data + Selected items + Submit */}
+            <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col border-r overflow-hidden bg-background">
+              <div className="flex-1 overflow-auto p-4 space-y-5">
+                {/* Datos del Cliente */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Datos del Cliente</h3>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="np-direccion" className="flex items-center gap-2 text-sm">
+                        <MapPin className="h-3.5 w-3.5" />
+                        Dirección
+                        <span className="text-muted-foreground text-xs font-normal">(vacío = Take Away)</span>
+                      </Label>
+                      <Input
+                        id="np-direccion"
+                        placeholder="Ej: Av. Principal 123"
+                        value={newDeliveryDireccion}
+                        onChange={(e) => setNewDeliveryDireccion(e.target.value)}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="np-nombre" className="text-sm">
+                          <User className="h-3.5 w-3.5 inline mr-1" />
+                          Nombre
+                        </Label>
+                        <Input
+                          id="np-nombre"
+                          placeholder="Nombre del cliente"
+                          value={newDeliveryNombre}
+                          onChange={(e) => setNewDeliveryNombre(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="np-telefono" className="text-sm">
+                          <Phone className="h-3.5 w-3.5 inline mr-1" />
+                          Teléfono
+                        </Label>
+                        <Input
+                          id="np-telefono"
+                          placeholder="Ej: 11-1234-5678"
+                          value={newDeliveryTelefono}
+                          onChange={(e) => setNewDeliveryTelefono(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="np-notas" className="text-sm">Notas</Label>
+                      <Input
+                        id="np-notas"
+                        placeholder="Instrucciones especiales..."
+                        value={newDeliveryNotas}
+                        onChange={(e) => setNewDeliveryNotas(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tipo badge indicator */}
+                <div className="flex items-center gap-2">
+                  {newDeliveryDireccion.trim() ? (
+                    <Badge className="bg-sky-100 text-sky-700 border-sky-300 border">
+                      <Truck className="h-3 w-3 mr-1" />
+                      Delivery
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-amber-100 text-amber-700 border-amber-300 border">
+                      <ShoppingBag className="h-3 w-3 mr-1" />
+                      Take Away
+                    </Badge>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Productos seleccionados */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Productos Seleccionados</h3>
+                    {newDeliveryItems.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">{newDeliveryItems.length}</Badge>
+                    )}
+                  </div>
+                  {newDeliveryItems.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-lg">
+                      <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Seleccioná productos de la lista</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        {newDeliveryItems.map((item, idx) => {
+                          const producto = productos.find(p => p.id === item.productoId)
+                          if (!producto) return null
+                          const isExpanded = !expandedDeliveryItems.includes(idx)
+                          return (
+                            <div key={`${item.productoId}-${idx}`} className="flex flex-col gap-2 p-3 rounded-lg border bg-card">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium truncate text-sm">{producto.nombre}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs text-muted-foreground">${parseFloat(producto.precio).toFixed(2)} c/u</p>
+                                    {producto.ingredientes && producto.ingredientes.length > 0 && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-5 text-[10px] px-1.5 text-muted-foreground hover:text-foreground"
+                                        onClick={() => setExpandedDeliveryItems(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
+                                      >
+                                        {isExpanded ? 'Ocultar' : 'Ingredientes'}
+                                      </Button>
+                                    )}
+                                  </div>
+                                  {item.ingredientesExcluidos && item.ingredientesExcluidos.length > 0 && !isExpanded && (
+                                    <p className="text-[10px] text-orange-600 mt-0.5">Sin: {producto.ingredientes?.filter(i => item.ingredientesExcluidos?.includes(i.id)).map(i => i.nombre).join(', ')}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center border rounded-lg bg-background h-7">
+                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateDeliveryItemCantidad(item.productoId, item.cantidad - 1)}>
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
+                                    <span className="w-5 text-center text-xs font-medium">{item.cantidad}</span>
+                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateDeliveryItemCantidad(item.productoId, item.cantidad + 1)}>
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleRemoveDeliveryItem(item.productoId)}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                              {isExpanded && producto.ingredientes && (
+                                <div className="space-y-1 pl-1 border-l-2 border-muted ml-1">
+                                  {producto.ingredientes.map(ing => {
+                                    const isExcluded = item.ingredientesExcluidos?.includes(ing.id)
+                                    return (
+                                      <div
+                                        key={ing.id}
+                                        className={`flex items-center gap-2 p-1 rounded cursor-pointer text-xs ${isExcluded ? 'text-muted-foreground line-through opacity-70' : ''}`}
+                                        onClick={() => handleToggleDeliveryIngredient(idx, ing.id)}
+                                      >
+                                        <Checkbox checked={!isExcluded} className="h-3 w-3" />
+                                        <span>{ing.nombre}</span>
+                                        {isExcluded && <span className="text-[10px] text-destructive ml-auto font-medium">Excluido</span>}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
+                        <span className="font-semibold">Total:</span>
+                        <span className="text-xl font-bold text-primary">${deliveryItemsTotal.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Submit button fixed at bottom */}
+              <div className="p-4 border-t bg-background shrink-0">
+                <Button
+                  className="w-full h-11"
+                  onClick={handleCreatePedido}
+                  disabled={creatingDelivery || newDeliveryItems.length === 0}
+                >
+                  {creatingDelivery ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : newDeliveryDireccion.trim() ? (
+                    <Truck className="h-4 w-4 mr-2" />
+                  ) : (
+                    <ShoppingBag className="h-4 w-4 mr-2" />
+                  )}
+                  {newDeliveryDireccion.trim() ? 'Crear Pedido Delivery' : 'Crear Pedido Take Away'}
+                  {newDeliveryItems.length > 0 && ` \u2022 $${deliveryItemsTotal.toFixed(2)}`}
+                </Button>
+              </div>
+            </div>
+
+            {/* RIGHT: Product catalog */}
+            <div className="hidden lg:flex flex-1 flex-col overflow-hidden bg-muted/10">
+              <div className="p-4 border-b bg-background/95 backdrop-blur shrink-0">
+                <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-3">Agregar Productos</h3>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar producto..."
+                    value={searchProducto}
+                    onChange={(e) => setSearchProducto(e.target.value)}
+                    className="pl-10 h-10"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto p-4">
+                {loadingProductos ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                    {productosFiltrados.map((producto) => {
+                      const existingItem = newDeliveryItems.find(i => i.productoId === producto.id)
+                      return (
+                        <div
+                          key={producto.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${existingItem ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
+                          onClick={() => handleAddDeliveryItem(producto)}
+                        >
+                          <div className="shrink-0">
+                            {producto.imagenUrl ? (
+                              <img src={producto.imagenUrl} alt={producto.nombre} className="w-12 h-12 rounded-lg object-cover bg-muted" />
+                            ) : (
+                              <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                                <Package className="h-5 w-5 text-muted-foreground/40" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{producto.nombre}</p>
+                            <p className="font-bold text-primary text-sm">${parseFloat(producto.precio).toFixed(2)}</p>
+                          </div>
+                          {existingItem && (
+                            <Badge variant="secondary" className="font-mono">{existingItem.cantidad}</Badge>
+                          )}
+                          <Plus className="h-5 w-5 text-muted-foreground shrink-0" />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* MESAS MODE VIEW */}
         {dashboardMode === 'mesas' && (
           <>
@@ -1310,10 +1817,20 @@ const Dashboard = () => {
           w-full
         `}>
               <div className="p-3 lg:p-3 overflow-auto flex-1">
-                <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide hidden lg:block">Mesas</p>
+                <div className="items-center justify-between mb-3 hidden lg:flex">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mesas</p>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    onClick={() => setCrearMesaDialog(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-2">
                   {mesas.map((mesa) => {
-                    const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed'
+                    const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed' && mesa.pedido.estado !== 'archived'
                     const notifCount = mesaNotifications.get(mesa.id) || 0
                     const isSelected = selectedMesaId === mesa.id
 
@@ -1363,7 +1880,19 @@ const Dashboard = () => {
         `}>
               <div className="flex-1 overflow-auto p-3 lg:p-4">
                 {selectedMesa ? (
-                  <div className={`space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0 ${displayedPedido?.estado === 'closed' ? 'relative' : ''}`}>
+                  <div className={`space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0 ${(displayedPedido?.estado === 'closed' || displayedPedido?.estado === 'archived') ? 'relative' : ''}`}>
+                    {/* Banner de pedido archivado */}
+                    {displayedPedido?.estado === 'archived' && (
+                      <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4 flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                          <Archive className="h-5 w-5 text-slate-500" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-700 dark:text-slate-300">Pedido Archivado</p>
+                          <p className="text-sm text-slate-500">Este pedido ha sido archivado.</p>
+                        </div>
+                      </div>
+                    )}
                     {/* Banner de pedido cerrado */}
                     {displayedPedido?.estado === 'closed' && (
                       <div className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-lg p-4 flex items-center gap-3">
@@ -1468,6 +1997,24 @@ const Dashboard = () => {
                               Factura
                             </Button>
 
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="text-muted-foreground hover:text-foreground lg:hidden h-9 w-9"
+                              onClick={() => handleArchiveMesaPedido(displayedPedido.id)}
+                            >
+                              <Archive className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-muted-foreground hover:text-foreground hidden lg:flex"
+                              onClick={() => handleArchiveMesaPedido(displayedPedido.id)}
+                            >
+                              <Archive className="mr-2 h-4 w-4" />
+                              Archivar
+                            </Button>
+
                             <Button variant="outline" size="icon" className="text-destructive lg:hidden h-9 w-9" onClick={() => setShowDeletePedidoDialog(true)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -1506,7 +2053,7 @@ const Dashboard = () => {
                     {/* Order Items */}
                     {displayedPedido ? (
                       <>
-                        <Card className={`lg:shadow-sm ${displayedPedido.estado === 'closed' ? 'opacity-60 grayscale-30' : ''}`}>
+                        <Card className={`lg:shadow-sm ${(displayedPedido.estado === 'closed' || displayedPedido.estado === 'archived') ? 'opacity-60 grayscale-30' : ''}`}>
                           <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
                             <CardTitle className="text-sm flex items-center gap-2">
                               <ShoppingCart className="h-4 w-4" />
@@ -1559,7 +2106,7 @@ const Dashboard = () => {
                                                   <Utensils className="h-4 w-4" />
                                                 </Button>
                                               )}
-                                              {displayedPedido?.estado !== 'closed' && (
+                                              {displayedPedido?.estado !== 'closed' && displayedPedido?.estado !== 'archived' && (
                                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
                                                   <Trash2 className="h-4 w-4" />
                                                 </Button>
@@ -1578,14 +2125,14 @@ const Dashboard = () => {
                         </Card>
 
                         {/* Total & Payments */}
-                        <Card className={`lg:shadow-sm ${displayedPedido.estado === 'closed' ? 'bg-neutral-100 dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600' : 'bg-primary/5 border-primary/20'}`}>
+                        <Card className={`lg:shadow-sm ${(displayedPedido.estado === 'closed' || displayedPedido.estado === 'archived') ? 'bg-neutral-100 dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600' : 'bg-primary/5 border-primary/20'}`}>
                           <CardContent className="py-4 px-3 lg:px-6">
                             <div className="flex items-center justify-between">
                               <div>
                                 <p className="text-sm font-medium">Total del Pedido</p>
                                 <p className="text-xs text-muted-foreground">{displayedPedido.totalItems} productos</p>
                               </div>
-                              <p className={`text-2xl lg:text-3xl font-bold ${displayedPedido.estado === 'closed' ? 'text-neutral-500' : 'text-primary'}`}>
+                              <p className={`text-2xl lg:text-3xl font-bold ${(displayedPedido.estado === 'closed' || displayedPedido?.estado === 'archived') ? 'text-neutral-500' : 'text-primary'}`}>
                                 ${parseFloat(displayedPedido.total).toFixed(2)}
                               </p>
                             </div>
@@ -1854,6 +2401,21 @@ const Dashboard = () => {
                                       Confirmar
                                     </Button>
                                   )}
+
+                                  {card.status !== 'archived' && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="w-full mt-1 h-6 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleArchiveMesaPedido(card.pedido.id)
+                                      }}
+                                    >
+                                      <Archive className="h-3 w-3 mr-1" />
+                                      Archivar
+                                    </Button>
+                                  )}
                                 </CardContent>
                               </Card>
                             )
@@ -2045,249 +2607,6 @@ const Dashboard = () => {
         </SheetContent>
       </Sheet>
 
-      {/* New Delivery Sheet */}
-      <Sheet open={newDeliverySheet} onOpenChange={setNewDeliverySheet}>
-        <SheetContent side="right" className="w-full sm:max-w-xl p-0">
-          <div className="flex flex-col h-full">
-            <SheetHeader className="text-left p-4 pb-2 border-b shrink-0">
-              <SheetTitle className="flex items-center gap-2">
-                <Truck className="h-5 w-5" />
-                Nuevo Pedido Delivery
-              </SheetTitle>
-              <SheetDescription>Ingresa los datos del cliente y selecciona los productos.</SheetDescription>
-            </SheetHeader>
-
-            <ScrollArea className="flex-1">
-              <div className="p-4 space-y-6">
-                {/* Datos del Cliente */}
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Datos del Cliente</h3>
-                  <div className="space-y-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="direccion" className="flex items-center gap-2">
-                        <MapPin className="h-3.5 w-3.5" />
-                        Dirección *
-                      </Label>
-                      <Input
-                        id="direccion"
-                        placeholder="Ej: Av. Principal 123"
-                        value={newDeliveryDireccion}
-                        onChange={(e) => setNewDeliveryDireccion(e.target.value)}
-                        className="h-10"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="nombre">
-                          <User className="h-3.5 w-3.5 inline mr-1" />
-                          Nombre
-                        </Label>
-                        <Input
-                          id="nombre"
-                          placeholder="Nombre del cliente"
-                          value={newDeliveryNombre}
-                          onChange={(e) => setNewDeliveryNombre(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="telefono">
-                          <Phone className="h-3.5 w-3.5 inline mr-1" />
-                          Teléfono
-                        </Label>
-                        <Input
-                          id="telefono"
-                          placeholder="Ej: 11-1234-5678"
-                          value={newDeliveryTelefono}
-                          onChange={(e) => setNewDeliveryTelefono(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="notas">Notas</Label>
-                      <Input
-                        id="notas"
-                        placeholder="Instrucciones especiales..."
-                        value={newDeliveryNotas}
-                        onChange={(e) => setNewDeliveryNotas(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Productos seleccionados */}
-                {newDeliveryItems.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Productos Seleccionados</h3>
-                    <div className="space-y-2">
-                      {newDeliveryItems.map((item, idx) => {
-                        const producto = productos.find(p => p.id === item.productoId)
-                        if (!producto) return null
-                        const isExpanded = !expandedDeliveryItems.includes(idx)
-                        return (
-                          <div key={`${item.productoId}-${idx}`} className="flex flex-col gap-2 p-3 rounded-lg border bg-card">
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium truncate">{producto.nombre}</p>
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm text-muted-foreground">${parseFloat(producto.precio).toFixed(2)} c/u</p>
-                                  {producto.ingredientes && producto.ingredientes.length > 0 && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-6 text-[10px] px-2 text-muted-foreground hover:text-foreground"
-                                      onClick={() => setExpandedDeliveryItems(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
-                                    >
-                                      {isExpanded ? 'Ocultar ingredientes' : 'Modificar ingredientes'}
-                                    </Button>
-                                  )}
-                                </div>
-                                {item.ingredientesExcluidos && item.ingredientesExcluidos.length > 0 && !isExpanded && (
-                                  <p className="text-[10px] text-orange-600 mt-1">Sin: {producto.ingredientes?.filter(i => item.ingredientesExcluidos?.includes(i.id)).map(i => i.nombre).join(', ')}</p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex items-center border rounded-lg bg-background h-8">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-full w-7 rounded-none"
-                                    onClick={() => handleUpdateDeliveryItemCantidad(item.productoId, item.cantidad - 1)}
-                                  >
-                                    <Minus className="h-3 w-3" />
-                                  </Button>
-                                  <span className="w-6 text-center text-sm font-medium">{item.cantidad}</span>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-full w-7 rounded-none"
-                                    onClick={() => handleUpdateDeliveryItemCantidad(item.productoId, item.cantidad + 1)}
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
-                                  onClick={() => handleRemoveDeliveryItem(item.productoId)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-
-                            {/* Ingredients Expansion */}
-                            {isExpanded && producto.ingredientes && (
-                              <div className="mt-2 space-y-1 pl-1 border-l-2 border-muted ml-1">
-                                {producto.ingredientes.map(ing => {
-                                  const isExcluded = item.ingredientesExcluidos?.includes(ing.id)
-                                  return (
-                                    <div
-                                      key={ing.id}
-                                      className={`flex items-center gap-2 p-1.5 rounded cursor-pointer text-sm ${isExcluded ? 'text-muted-foreground line-through opacity-70' : ''}`}
-                                      onClick={() => handleToggleDeliveryIngredient(idx, ing.id)}
-                                    >
-                                      <Checkbox
-                                        checked={!isExcluded}
-                                        className="h-3.5 w-3.5"
-                                      />
-                                      <span>{ing.nombre}</span>
-                                      {isExcluded && <span className="text-[10px] text-destructive ml-auto font-medium">Excluido</span>}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
-                      <span className="font-semibold">Total:</span>
-                      <span className="text-xl font-bold text-primary">${deliveryItemsTotal.toFixed(2)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {newDeliveryItems.length > 0 && <Separator />}
-
-                {/* Agregar Productos */}
-                <div className="space-y-3">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Agregar Productos</h3>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar producto..."
-                      value={searchProducto}
-                      onChange={(e) => setSearchProducto(e.target.value)}
-                      className="pl-10 h-10"
-                    />
-                  </div>
-                  {loadingProductos ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-2">
-                      {productosFiltrados.slice(0, 10).map((producto) => {
-                        const existingItem = newDeliveryItems.find(i => i.productoId === producto.id)
-                        return (
-                          <div
-                            key={producto.id}
-                            className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${existingItem ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'
-                              }`}
-                            onClick={() => handleAddDeliveryItem(producto)}
-                          >
-                            <div className="shrink-0">
-                              {producto.imagenUrl ? (
-                                <img src={producto.imagenUrl} alt={producto.nombre} className="w-10 h-10 rounded-lg object-cover bg-muted" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                                  <Package className="h-4 w-4 text-muted-foreground/40" />
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{producto.nombre}</p>
-                              <p className="font-bold text-primary text-sm">${parseFloat(producto.precio).toFixed(2)}</p>
-                            </div>
-                            {existingItem && (
-                              <Badge variant="secondary">{existingItem.cantidad}</Badge>
-                            )}
-                            <Plus className="h-5 w-5 text-muted-foreground shrink-0" />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </ScrollArea>
-
-            {/* Footer con botón de crear */}
-            <div className="p-4 border-t bg-background shrink-0">
-              <Button
-                className="w-full h-11"
-                onClick={handleCreateDelivery}
-                disabled={creatingDelivery || !newDeliveryDireccion.trim() || newDeliveryItems.length === 0}
-              >
-                {creatingDelivery ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Truck className="h-4 w-4 mr-2" />
-                )}
-                Crear Pedido de Delivery
-                {newDeliveryItems.length > 0 && ` • $${deliveryItemsTotal.toFixed(2)}`}
-              </Button>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
     </div>
   )
 }

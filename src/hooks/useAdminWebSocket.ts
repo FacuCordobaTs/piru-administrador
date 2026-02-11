@@ -38,7 +38,7 @@ export interface ItemPedido {
 
 export interface Pedido {
   id: number
-  estado: 'pending' | 'preparing' | 'delivered' | 'closed'
+  estado: 'pending' | 'preparing' | 'delivered' | 'closed' | 'archived'
   total: string
   createdAt: string
   closedAt?: string | null

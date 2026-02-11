@@ -39,7 +39,7 @@ interface PedidoData {
   id: number
   mesaId: number | null
   mesaNombre: string | null
-  estado: 'pending' | 'preparing' | 'delivered' | 'served' | 'closed'
+  estado: 'pending' | 'preparing' | 'delivered' | 'served' | 'closed' | 'archived'
   total: string
   createdAt: string
   closedAt?: string | null

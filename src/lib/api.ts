@@ -720,3 +720,76 @@ export const deliveryApi = {
     })
   },
 }
+
+// Takeaway API
+export const takeawayApi = {
+  // Obtener todos los pedidos take away con paginación
+  getAll: async (token: string, page = 1, limit = 20, estado?: string) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    })
+    if (estado) params.append('estado', estado)
+
+    return fetchApi(`/takeaway/list?${params}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Obtener un pedido take away específico
+  getById: async (token: string, id: number) => {
+    return fetchApi(`/takeaway/${id}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Crear nuevo pedido take away
+  create: async (
+    token: string,
+    data: {
+      nombreCliente?: string
+      telefono?: string
+      notas?: string
+      items: Array<{
+        productoId: number
+        cantidad: number
+        ingredientesExcluidos?: number[]
+      }>
+    }
+  ) => {
+    return fetchApi('/takeaway/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  // Actualizar estado del pedido take away
+  updateEstado: async (token: string, id: number, estado: string) => {
+    return fetchApi(`/takeaway/${id}/estado`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ estado }),
+    })
+  },
+
+  // Eliminar pedido take away
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/takeaway/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}

@@ -16,6 +16,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react'
+import { check } from '@tauri-apps/plugin-updater';
 
 const DashboardLayout = () => {
   const navigate = useNavigate()
@@ -27,6 +28,7 @@ const DashboardLayout = () => {
     return window.matchMedia('(prefers-color-scheme: dark)').matches
   })
   const [menuOpen, setMenuOpen] = useState(false)
+  const [version, setVersion] = useState('')
 
   // Apply theme on mount
   useEffect(() => {
@@ -47,6 +49,17 @@ const DashboardLayout = () => {
   const toggleTheme = () => {
     setIsDark(!isDark)
   }
+
+  useEffect(() => {
+    const checkVersion = async () => {
+      console.log('a');
+      const update = await check();
+      console.log(update);
+      if (update)
+        setVersion(update.version);
+    }
+    checkVersion();
+  }, []);
 
   const handleLogout = () => {
     logout()
@@ -84,8 +97,8 @@ const DashboardLayout = () => {
               <SheetContent side="left" className="w-72 p-0">
                 {/* Logo */}
                 <div className="flex items-center px-6 h-14 border-b">
-                  <h1 className="text-2xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                    PIRU
+                  <h1 className="text-2x l font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                    PIRU {version}
                   </h1>
                 </div>
 
@@ -98,8 +111,8 @@ const DashboardLayout = () => {
                         key={item.path}
                         variant={isActive(item.path) ? 'default' : 'ghost'}
                         className={`w-full justify-start h-11 ${isActive(item.path)
-                            ? 'bg-primary text-primary-foreground shadow-md'
-                            : 'hover:bg-accent'
+                          ? 'bg-primary text-primary-foreground shadow-md'
+                          : 'hover:bg-accent'
                           }`}
                         onClick={() => handleNavigation(item.path)}
                       >
@@ -157,7 +170,7 @@ const DashboardLayout = () => {
             </Sheet>
 
             <h1 className="text-xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              PIRU
+              PIRU {version}
             </h1>
           </div>
 

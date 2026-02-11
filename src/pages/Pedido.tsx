@@ -69,7 +69,7 @@ interface PedidoDetalle {
   mesaId: number | null
   mesaNombre: string | null
   mesaQrToken?: string | null
-  estado: 'pending' | 'preparing' | 'delivered' | 'closed'
+  estado: 'pending' | 'preparing' | 'delivered' | 'closed' | 'archived'
   total: string
   createdAt: string
   closedAt?: string | null
