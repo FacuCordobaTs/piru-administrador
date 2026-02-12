@@ -248,6 +248,7 @@ export const productosApi = {
       image?: string // Base64 string
       categoriaId?: number
       ingredienteIds?: number[]
+      etiquetas?: string[]
     }
   ) => {
     return fetchApi('/producto/create', {
@@ -270,6 +271,7 @@ export const productosApi = {
       categoriaId?: number | null
       ingredienteIds?: number[]
       activo?: boolean
+      etiquetas?: string[]
     }
   ) => {
     return fetchApi('/producto/update', {
@@ -284,6 +286,15 @@ export const productosApi = {
   delete: async (token: string, id: number) => {
     return fetchApi(`/producto/delete/${id}`, {
       method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  backfillEtiquetas: async (token: string) => {
+    return fetchApi('/producto/backfill-etiquetas', {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
       },

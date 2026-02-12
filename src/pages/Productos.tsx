@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
-import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X, Power, Settings2, AlertTriangle } from 'lucide-react'
+import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X, Power, Settings2, AlertTriangle, Tag } from 'lucide-react'
 
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
@@ -53,6 +53,11 @@ const Productos = () => {
   const [dialogEliminarCategoriaAbierto, setDialogEliminarCategoriaAbierto] = useState(false)
   const [categoriaAEliminar, setCategoriaAEliminar] = useState<typeof categorias[0] | null>(null)
   const [isEliminandoCategoria, setIsEliminandoCategoria] = useState(false)
+
+  // Estados para etiquetas
+  const [etiquetasProducto, setEtiquetasProducto] = useState<string[]>([])
+  const [nuevaEtiqueta, setNuevaEtiqueta] = useState('')
+  const [isBackfillingEtiquetas, setIsBackfillingEtiquetas] = useState(false)
 
   useEffect(() => {
     if (!restaurante) {
@@ -194,16 +199,47 @@ const Productos = () => {
     return productos.filter(p => p.categoriaId === categoriaId).length
   }
 
-  const productosFiltrados = productos.filter(p => 
-    p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-    (p.descripcion && p.descripcion.toLowerCase().includes(busqueda.toLowerCase()))
-  )
+  const productosFiltrados = productos.filter(p => {
+    const term = busqueda.toLowerCase()
+    return p.nombre.toLowerCase().includes(term) ||
+      (p.descripcion && p.descripcion.toLowerCase().includes(term)) ||
+      (p.etiquetas && p.etiquetas.some(e => e.nombre.toLowerCase().includes(term)))
+  })
+
+  const productosSinEtiqueta = productos.filter(p => !p.etiquetas || p.etiquetas.length === 0).length
+
+  const backfillEtiquetas = async () => {
+    if (!token) return
+    setIsBackfillingEtiquetas(true)
+    try {
+      const response = await productosApi.backfillEtiquetas(token) as {
+        success: boolean
+        asignadas?: number
+        message?: string
+      }
+      if (response.success) {
+        toast.success(response.message || `Etiquetas asignadas: ${response.asignadas || 0}`)
+        await fetchData()
+      }
+    } catch (error) {
+      console.error('Error al asignar etiquetas:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al asignar etiquetas', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsBackfillingEtiquetas(false)
+    }
+  }
 
   const abrirDialogNuevo = () => {
     setProductoEditando(null)
     setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
+    setEtiquetasProducto([])
+    setNuevaEtiqueta('')
     setDialogAbierto(true)
   }
 
@@ -216,6 +252,10 @@ const Productos = () => {
       categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
     })
     setImageBase64(producto.imagenUrl || null)
+    
+    // Cargar etiquetas del producto
+    setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
+    setNuevaEtiqueta('')
     
     // Cargar ingredientes del producto
     if (token) {
@@ -282,6 +322,7 @@ const Productos = () => {
           image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
           categoriaId: categoriaId !== undefined ? categoriaId : null,
           ingredienteIds: ingredientesSeleccionados,
+          etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
         })
         toast.success('Producto actualizado')
         await fetchData()
@@ -294,6 +335,7 @@ const Productos = () => {
           image: imageBase64 || undefined,
           categoriaId: categoriaId,
           ingredienteIds: ingredientesSeleccionados,
+          etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
         })
         toast.success('Producto creado')
         await fetchData()
@@ -303,6 +345,8 @@ const Productos = () => {
       setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
       setImageBase64(null)
       setIngredientesSeleccionados([])
+      setEtiquetasProducto([])
+      setNuevaEtiqueta('')
     } catch (error) {
       console.error('Error al guardar producto:', error)
       if (error instanceof ApiError) {
@@ -419,12 +463,28 @@ const Productos = () => {
             <div className="relative flex-1 md:flex-none">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar productos..."
+                placeholder="Buscar productos o etiquetas..."
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
                 className="pl-10 w-full md:w-64"
               />
             </div>
+            {/* Botón asignar etiquetas a productos sin etiqueta */}
+            {productosSinEtiqueta > 0 && (
+              <Button
+                variant="outline"
+                onClick={backfillEtiquetas}
+                disabled={isBackfillingEtiquetas}
+                className="hidden md:flex cursor-pointer"
+              >
+                {isBackfillingEtiquetas ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Tag className="mr-2 h-4 w-4" />
+                )}
+                Etiquetar ({productosSinEtiqueta})
+              </Button>
+            )}
             {/* Botón Nuevo en Desktop */}
             <Button onClick={abrirDialogNuevo} className="hidden md:flex cursor-pointer">
               <Plus className="mr-2 h-4 w-4" />
@@ -450,112 +510,141 @@ const Productos = () => {
           </CardContent>
         </Card>
       ) : (
-        /* GRID RESPONSIVO OPTIMIZADO */
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {productosFiltrados.map((producto) => (
-            <Card 
-              key={producto.id}
-              className={`
-                group overflow-hidden transition-all duration-300 hover:shadow-md border-muted
-                flex flex-row md:flex-col
-                ${!producto.activo ? 'opacity-60 bg-muted/20' : ''}
-              `}
-            >
-              {/* IMAGEN: 
-                  - Mobile: Cuadrada a la izquierda (w-28 o w-32)
-                  - Desktop: Aspecto video arriba
-              */}
-              <div className="w-32 h-32 md:w-full md:h-48 md:aspect-video shrink-0 bg-muted relative overflow-hidden">
-                {producto.imagenUrl ? (
-                  <img 
-                    src={producto.imagenUrl} 
-                    alt={producto.nombre}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-secondary/50">
-                    <Package className="h-8 w-8 text-muted-foreground/50" />
-                  </div>
-                )}
-                
-                {/* Badge de estado (Desktop y Mobile superpuesto) */}
-                <div className="absolute top-2 left-2 md:left-auto md:right-2">
-                   <Badge 
-                    variant={producto.activo ? 'default' : 'secondary'}
-                    className={`shadow-sm backdrop-blur-sm h-5 text-[10px] px-1.5 ${producto.activo ? 'bg-primary/90' : 'bg-secondary/90'}`}
-                  >
-                    {producto.activo ? 'Activo' : 'Inactivo'}
-                  </Badge>
+        /* PRODUCTOS AGRUPADOS POR CATEGORÍA */
+        <div className="space-y-8">
+          {(() => {
+            const porCategoria = productosFiltrados.reduce((acc, producto) => {
+              const cat = producto.categoria || 'Sin categoría'
+              if (!acc[cat]) acc[cat] = []
+              acc[cat].push(producto)
+              return acc
+            }, {} as Record<string, typeof productosFiltrados>)
+
+            const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
+              if (a === 'Sin categoría') return 1
+              if (b === 'Sin categoría') return -1
+              return a.localeCompare(b)
+            })
+
+            return categoriasOrdenadas.map((categoriaNombre) => (
+              <div key={categoriaNombre} className="space-y-3">
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                  {categoriaNombre}
+                  <Badge variant="secondary" className="ml-2 text-xs font-normal">{porCategoria[categoriaNombre].length}</Badge>
+                </h2>
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {porCategoria[categoriaNombre].map((producto) => (
+                    <Card 
+                      key={producto.id}
+                      className={`
+                        group overflow-hidden transition-all duration-300 hover:shadow-md border-muted
+                        flex flex-row md:flex-col
+                        ${!producto.activo ? 'opacity-60 bg-muted/20' : ''}
+                      `}
+                    >
+                      <div className="w-32 h-32 md:w-full md:h-48 md:aspect-video shrink-0 bg-muted relative overflow-hidden">
+                        {producto.imagenUrl ? (
+                          <img 
+                            src={producto.imagenUrl} 
+                            alt={producto.nombre}
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-secondary/50">
+                            <Package className="h-8 w-8 text-muted-foreground/50" />
+                          </div>
+                        )}
+                        <div className="absolute top-2 left-2 md:left-auto md:right-2">
+                          <Badge 
+                            variant={producto.activo ? 'default' : 'secondary'}
+                            className={`shadow-sm backdrop-blur-sm h-5 text-[10px] px-1.5 ${producto.activo ? 'bg-primary/90' : 'bg-secondary/90'}`}
+                          >
+                            {producto.activo ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 flex flex-col justify-between p-3 min-w-0">
+                        <div className="space-y-1">
+                          <h3 className="font-semibold text-base leading-tight truncate">
+                            {producto.nombre}
+                          </h3>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {producto.descripcion || 'Sin descripción'}
+                          </p>
+                          {producto.etiquetas && producto.etiquetas.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {producto.etiquetas.map((etiqueta) => (
+                                <Badge
+                                  key={etiqueta.id}
+                                  variant="outline"
+                                  className="text-[10px] px-1.5 py-0 h-4 bg-violet-50 dark:bg-violet-950/30 border-violet-300 text-violet-700 dark:text-violet-400"
+                                >
+                                  <Tag className="h-2.5 w-2.5 mr-0.5" />
+                                  {etiqueta.nombre}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between mt-3">
+                          <span className="text-lg font-bold text-primary">
+                            ${parseFloat(producto.precio).toFixed(0)}
+                          </span>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
+                              onClick={() => abrirDialogEditar(producto)}
+                              title="Editar producto"
+                            >
+                              <Edit className="h-4 w-4" />
+                              <span className="sr-only">Editar</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={`h-8 w-8 ${
+                                producto.activo 
+                                  ? 'hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
+                                  : 'hover:bg-green-100 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
+                              }`}
+                              onClick={() => abrirDialogToggleActivo(producto)}
+                              title={producto.activo ? 'Desactivar producto' : 'Activar producto'}
+                            >
+                              {producto.activo ? (
+                                <Package className="h-4 w-4" />
+                              ) : (
+                                <Power className="h-4 w-4" />
+                              )}
+                              <span className="sr-only">{producto.activo ? 'Desactivar' : 'Activar'}</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={`h-8 w-8 ${producto.activo ? 'hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-green-100 hover:text-green-600'}`}
+                              onClick={() => producto.activo ? abrirDialogEliminar(producto) : null}
+                              disabled={!producto.activo}
+                              title={producto.activo ? 'Eliminar producto' : 'Producto inactivo'}
+                            >
+                              {producto.activo ? (
+                                <Trash2 className="h-4 w-4" />
+                              ) : (
+                                <Package className="h-4 w-4" />
+                              )}
+                              <span className="sr-only">{producto.activo ? 'Eliminar' : 'Inactivo'}</span>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
                 </div>
               </div>
-
-              {/* CONTENIDO */}
-              <div className="flex-1 flex flex-col justify-between p-3 min-w-0">
-                <div className="space-y-1">
-                  <h3 className="font-semibold text-base leading-tight truncate">
-                    {producto.nombre}
-                  </h3>
-                  
-                  <p className="text-xs text-muted-foreground line-clamp-2">
-                    {producto.descripcion || 'Sin descripción'}
-                  </p>
-                </div>
-
-                {/* Footer: Precio + Botones */}
-                <div className="flex items-center justify-between mt-3">
-                  <span className="text-lg font-bold text-primary">
-                    ${parseFloat(producto.precio).toFixed(0)}
-                  </span>
-                  
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
-                      onClick={() => abrirDialogEditar(producto)}
-                      title="Editar producto"
-                    >
-                      <Edit className="h-4 w-4" />
-                      <span className="sr-only">Editar</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={`h-8 w-8 ${
-                        producto.activo 
-                          ? 'hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
-                          : 'hover:bg-green-100 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
-                      }`}
-                      onClick={() => abrirDialogToggleActivo(producto)}
-                      title={producto.activo ? 'Desactivar producto' : 'Activar producto'}
-                    >
-                      {producto.activo ? (
-                        <Package className="h-4 w-4" />
-                      ) : (
-                        <Power className="h-4 w-4" />
-                      )}
-                      <span className="sr-only">{producto.activo ? 'Desactivar' : 'Activar'}</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={`h-8 w-8 ${producto.activo ? 'hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-green-100 hover:text-green-600'}`}
-                      onClick={() => producto.activo ? abrirDialogEliminar(producto) : null}
-                      disabled={!producto.activo}
-                      title={producto.activo ? 'Eliminar producto' : 'Producto inactivo'}
-                    >
-                      {producto.activo ? (
-                        <Trash2 className="h-4 w-4" />
-                      ) : (
-                        <Package className="h-4 w-4" />
-                      )}
-                      <span className="sr-only">{producto.activo ? 'Eliminar' : 'Inactivo'}</span>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))}
+            ))
+          })()}
         </div>
       )}
 
@@ -735,6 +824,72 @@ const Productos = () => {
                   {ingredientesSeleccionados.length} ingrediente{ingredientesSeleccionados.length !== 1 ? 's' : ''} seleccionado{ingredientesSeleccionados.length !== 1 ? 's' : ''}
                 </p>
               )}
+            </div>
+
+            {/* Etiquetas */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="etiquetas">Etiquetas</Label>
+                <span className="text-xs text-muted-foreground">
+                  {etiquetasProducto.length > 0 ? `${etiquetasProducto.length} etiqueta${etiquetasProducto.length !== 1 ? 's' : ''}` : 'Se genera automáticamente'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  id="nuevaEtiqueta"
+                  value={nuevaEtiqueta}
+                  onChange={(e) => setNuevaEtiqueta(e.target.value)}
+                  placeholder="Ej: PM, PIZ, HAM..."
+                  disabled={isSubmitting}
+                  className="flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      const tag = nuevaEtiqueta.trim().toLowerCase()
+                      if (tag && !etiquetasProducto.includes(tag)) {
+                        setEtiquetasProducto([...etiquetasProducto, tag])
+                        setNuevaEtiqueta('')
+                      }
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={!nuevaEtiqueta.trim() || etiquetasProducto.includes(nuevaEtiqueta.trim().toLowerCase())}
+                  onClick={() => {
+                    const tag = nuevaEtiqueta.trim().toLowerCase()
+                    if (tag && !etiquetasProducto.includes(tag)) {
+                      setEtiquetasProducto([...etiquetasProducto, tag])
+                      setNuevaEtiqueta('')
+                    }
+                  }}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Agregar
+                </Button>
+              </div>
+              {etiquetasProducto.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 p-2 border rounded-lg bg-muted/30">
+                  {etiquetasProducto.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="secondary"
+                      className="gap-1 text-xs cursor-pointer hover:bg-destructive/20 transition-colors"
+                      onClick={() => setEtiquetasProducto(etiquetasProducto.filter(t => t !== tag))}
+                    >
+                      <Tag className="h-3 w-3" />
+                      {tag}
+                      <X className="h-3 w-3" />
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Si no agregás etiquetas, se genera una automáticamente con las iniciales del producto.
+              </p>
             </div>
 
             <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-background pb-2">

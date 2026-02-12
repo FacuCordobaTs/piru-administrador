@@ -10,10 +10,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi, ApiError } from '@/lib/api'
+import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi } from '@/lib/api'
 import { type MesaConPedido, type ItemPedido as WSItemPedido } from '@/hooks/useAdminWebSocket'
 import { useAdminContext } from '@/context/AdminContext'
-import { toast } from 'sonner'
 import MesaQRCode from '@/components/MesaQRCode'
 import {
   ShoppingCart, Users, Loader2, QrCode, Plus,
@@ -60,6 +59,11 @@ interface Ingrediente {
   nombre: string
 }
 
+interface Etiqueta {
+  id: number
+  nombre: string
+}
+
 interface Producto {
   id: number
   nombre: string
@@ -67,7 +71,10 @@ interface Producto {
   precio: string
   activo: boolean
   imagenUrl: string | null
+  categoriaId?: number | null
+  categoria?: string | null
   ingredientes?: Ingrediente[]
+  etiquetas?: Etiqueta[]
 }
 
 interface KanbanCardData {
@@ -352,7 +359,6 @@ const Dashboard = () => {
               console.log("Items to print:", itemsToPrint)
               const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante')
               printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err))
-              toast.success(`Imprimiendo comanda #${pedidoId}`)
             }
           }
 
@@ -383,7 +389,6 @@ const Dashboard = () => {
                 console.log("Items to print:", itemsToPrint)
                 const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante')
                 printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err))
-                toast.info(`Imprimiendo ${itemsToPrint.length} items nuevos`)
               }
             }
           }
@@ -402,7 +407,6 @@ const Dashboard = () => {
               restaurante?.nombre || 'Restaurante'
             )
             printRaw(commandsToBytes(facturaData)).catch((err: Error) => console.error("Error printing factura:", err))
-            toast.success(`Imprimiendo factura #${pedidoId}`)
           }
 
           // Actualizar Ref
@@ -669,19 +673,16 @@ const Dashboard = () => {
   const handleCrearMesa = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!token || !nombreMesa.trim()) {
-      toast.error('El nombre de la mesa es requerido')
       return
     }
     setIsCreating(true)
     try {
       await mesasApi.create(token, nombreMesa)
-      toast.success('Mesa creada correctamente')
       setCrearMesaDialog(false)
       setNombreMesa('')
       refresh()
       await fetchMesasREST()
     } catch (error) {
-      if (error instanceof ApiError) toast.error(error.message)
     } finally {
       setIsCreating(false)
     }
@@ -697,9 +698,7 @@ const Dashboard = () => {
 
     try {
       await pedidosApi.updateItemEstado(token, pedidoId, itemId, nuevoEstado)
-      toast.success('Item actualizado')
     } catch (error) {
-      toast.error('Error al actualizar item')
       refresh()
     }
   }
@@ -709,10 +708,8 @@ const Dashboard = () => {
     setUpdatingPedido(pedido.id)
     try {
       await pedidosApi.confirmar(token, pedido.id)
-      toast.success('Pedido confirmado')
       refresh()
     } catch (error) {
-      toast.error('Error al confirmar')
     } finally {
       setUpdatingPedido(null)
     }
@@ -724,13 +721,10 @@ const Dashboard = () => {
     try {
       const response = await mercadopagoApi.confirmarEfectivo(token, selectedMesa.pedido.id, clienteNombre) as { success: boolean; error?: string }
       if (response.success) {
-        toast.success('Pago confirmado')
         await fetchSubtotales()
       } else {
-        toast.error(response.error || 'Error')
       }
     } catch (error) {
-      toast.error('Error conexión')
     } finally {
       setMarcandoPagoEfectivo(null)
     }
@@ -744,7 +738,6 @@ const Dashboard = () => {
       const pendientes = subtotalesData.filter(s => !s.pagado && s.estado !== 'paid')
 
       if (pendientes.length === 0) {
-        toast.info('Ya está todo pagado')
         return
       }
 
@@ -765,7 +758,6 @@ const Dashboard = () => {
       const responsePagar = await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, '', mozoItemIds) as { success: boolean; error?: string }
 
       if (!responsePagar.success) {
-        toast.error(responsePagar.error || 'Error al iniciar pago en efectivo')
         return
       }
 
@@ -776,7 +768,6 @@ const Dashboard = () => {
       const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length
 
       if (successCount > 0) {
-        toast.success(`Pago total confirmado (${successCount}/${pendientes.length} cuentas procesadas)`)
 
         setPedidosSubtotales(prev => {
           const subs = prev[pedidoId] || []
@@ -786,12 +777,10 @@ const Dashboard = () => {
           }
         })
       } else {
-        toast.error('No se pudo confirmar el pago')
       }
 
     } catch (error) {
       console.error('Error en pago total:', error)
-      toast.error('Error al procesar el pago total')
     } finally {
       setUpdatingPago(null)
     }
@@ -836,12 +825,10 @@ const Dashboard = () => {
         clienteNombre: 'Mozo',
         ingredientesExcluidos: exclusiones.length > 0 ? exclusiones : undefined
       })
-      toast.success('Producto agregado')
       setCantidadProducto(prev => ({ ...prev, [producto.id]: 1 }))
       setConfiguringProduct(null)
       refresh()
     } catch (error: any) {
-      toast.error(error.message || 'Error')
     } finally {
       setAddingProducto(null)
     }
@@ -851,12 +838,10 @@ const Dashboard = () => {
     if (!token || !selectedMesa?.pedido) return
     try {
       await pedidosApi.delete(token, selectedMesa.pedido.id)
-      toast.success('Pedido eliminado')
       setShowDeletePedidoDialog(false)
       setSelectedMesaId(null)
       refresh()
     } catch (error) {
-      toast.error('Error al eliminar pedido')
     }
   }
 
@@ -864,11 +849,9 @@ const Dashboard = () => {
     if (!token || !selectedMesa?.pedido || !itemAEliminar) return
     try {
       await pedidosApi.deleteItem(token, selectedMesa.pedido.id, itemAEliminar.id)
-      toast.success('Producto eliminado')
       setItemAEliminar(null)
       refresh()
     } catch (error) {
-      toast.error('Error al eliminar')
     }
   }
 
@@ -888,10 +871,12 @@ const Dashboard = () => {
     }
   }
 
-  const productosFiltrados = productos.filter(p =>
-    p.nombre.toLowerCase().includes(searchProducto.toLowerCase()) ||
-    p.descripcion?.toLowerCase().includes(searchProducto.toLowerCase())
-  )
+  const productosFiltrados = productos.filter(p => {
+    const term = searchProducto.toLowerCase()
+    return p.nombre.toLowerCase().includes(term) ||
+      p.descripcion?.toLowerCase().includes(term) ||
+      (p.etiquetas && p.etiquetas.some(e => e.nombre.toLowerCase().includes(term)))
+  })
 
   const itemsPorCliente = useMemo(() => {
     if (!displayedPedido) return {} as Record<string, ItemPedidoConEstado[]>
@@ -989,7 +974,6 @@ const Dashboard = () => {
 
   const handleCreatePedido = async () => {
     if (!token || newDeliveryItems.length === 0) {
-      toast.error('Agrega al menos un producto')
       return
     }
     const isDelivery = newDeliveryDireccion.trim().length > 0
@@ -1013,51 +997,49 @@ const Dashboard = () => {
         }) as { success: boolean }
       }
       if (response.success) {
-        toast.success(isDelivery ? 'Pedido de delivery creado' : 'Pedido take away creado')
 
-        // Print comanda automatically (kitchen order - excludes beverages)
+        // Print factura automatically (full invoice with all items including beverages)
         if (selectedPrinter) {
-          const itemsForPrint = newDeliveryItems
-            .map(item => {
-              const producto = productos.find(p => p.id === item.productoId)
-              const storeProducto = allProductos.find(p => p.id === item.productoId)
-              const categoria = storeProducto && storeProducto.categoriaId
-                ? allCategorias.find(c => c.id === storeProducto.categoriaId)
-                : null
-              return {
-                id: item.productoId,
-                nombreProducto: producto?.nombre || 'Producto',
-                cantidad: item.cantidad,
-                precioUnitario: producto?.precio || '0',
-                ingredientesExcluidosNombres: producto?.ingredientes
-                  ?.filter(ing => item.ingredientesExcluidos?.includes(ing.id))
-                  .map(ing => ing.nombre) || [],
-                categoriaNombre: categoria ? categoria.nombre : undefined,
-                _isBebida: categoria ? categoria.nombre.toLowerCase().includes('bebida') : false
-              }
+          const itemsForPrint = newDeliveryItems.map(item => {
+            const producto = productos.find(p => p.id === item.productoId)
+            return {
+              id: item.productoId,
+              nombreProducto: producto?.nombre || 'Producto',
+              cantidad: item.cantidad,
+              precioUnitario: producto?.precio || '0',
+              ingredientesExcluidosNombres: producto?.ingredientes
+                ?.filter(ing => item.ingredientesExcluidos?.includes(ing.id))
+                .map(ing => ing.nombre) || []
+            }
+          })
+
+          // Add delivery fee item for delivery orders
+          if (isDelivery) {
+            itemsForPrint.push({
+              id: 0,
+              nombreProducto: 'Delivery',
+              cantidad: 1,
+              precioUnitario: String(DELIVERY_FEE),
+              ingredientesExcluidosNombres: []
             })
-            .filter(item => !item._isBebida)
-
-          if (itemsForPrint.length > 0) {
-            const total = itemsForPrint.reduce((sum, item) =>
-              sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
-            ).toFixed(2)
-
-            const comandaData = formatComanda(
-              {
-                id: Date.now(),
-                mesaNombre: isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away',
-                nombrePedido: newDeliveryNombre || (isDelivery ? 'Delivery' : 'Take Away'),
-                total
-              },
-              itemsForPrint,
-              restaurante?.nombre || 'Restaurante'
-            )
-
-            printRaw(commandsToBytes(comandaData))
-              .then(() => toast.success('Comanda enviada a imprimir'))
-              .catch((err: Error) => console.error('Error printing comanda:', err))
           }
+
+          const total = itemsForPrint.reduce((sum, item) =>
+            sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
+          ).toFixed(2)
+
+          const facturaData = formatFactura(
+            {
+              id: Date.now(),
+              mesaNombre: isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away',
+              nombrePedido: newDeliveryNombre || (isDelivery ? 'Delivery' : 'Take Away'),
+              total
+            },
+            itemsForPrint,
+            restaurante?.nombre || 'Restaurante'
+          )
+
+          printRaw(commandsToBytes(facturaData))
         }
 
         exitNuevoPedidoMode()
@@ -1070,7 +1052,6 @@ const Dashboard = () => {
         fetchTakeawayPedidos()
       }
     } catch (error) {
-      toast.error(isDelivery ? 'Error al crear pedido de delivery' : 'Error al crear pedido take away')
     } finally {
       setCreatingDelivery(false)
     }
@@ -1082,13 +1063,11 @@ const Dashboard = () => {
     try {
       const response = await deliveryApi.updateEstado(token, pedidoId, nuevoEstado) as { success: boolean }
       if (response.success) {
-        toast.success('Estado actualizado')
         setDeliveryPedidos(prev => prev.map(p =>
           p.id === pedidoId ? { ...p, estado: nuevoEstado as DeliveryPedido['estado'] } : p
         ))
       }
     } catch (error) {
-      toast.error('Error al actualizar estado')
     } finally {
       setUpdatingDeliveryEstado(null)
     }
@@ -1099,11 +1078,9 @@ const Dashboard = () => {
     try {
       const response = await deliveryApi.delete(token, pedidoId) as { success: boolean }
       if (response.success) {
-        toast.success('Pedido eliminado')
         setDeliveryPedidos(prev => prev.filter(p => p.id !== pedidoId))
       }
     } catch (error) {
-      toast.error('Error al eliminar pedido')
     }
   }
 
@@ -1119,12 +1096,16 @@ const Dashboard = () => {
     return estados[estado] || estados.pending
   }
 
+  const DELIVERY_FEE = 800
+
   const deliveryItemsTotal = useMemo(() => {
-    return newDeliveryItems.reduce((total, item) => {
+    const itemsTotal = newDeliveryItems.reduce((total, item) => {
       const producto = productos.find(p => p.id === item.productoId)
       return total + (producto ? parseFloat(producto.precio) * item.cantidad : 0)
     }, 0)
-  }, [newDeliveryItems, productos])
+    const deliveryFee = newDeliveryDireccion.trim() ? DELIVERY_FEE : 0
+    return itemsTotal + deliveryFee
+  }, [newDeliveryItems, productos, newDeliveryDireccion])
 
   const handleUpdateTakeawayEstado = async (pedidoId: number, nuevoEstado: string) => {
     if (!token) return
@@ -1132,13 +1113,11 @@ const Dashboard = () => {
     try {
       const response = await takeawayApi.updateEstado(token, pedidoId, nuevoEstado) as { success: boolean }
       if (response.success) {
-        toast.success('Estado actualizado')
         setTakeawayPedidos(prev => prev.map(p =>
           p.id === pedidoId ? { ...p, estado: nuevoEstado as TakeawayPedido['estado'] } : p
         ))
       }
     } catch (error) {
-      toast.error('Error al actualizar estado')
     } finally {
       setUpdatingDeliveryEstado(null)
     }
@@ -1149,11 +1128,9 @@ const Dashboard = () => {
     try {
       const response = await takeawayApi.delete(token, pedidoId) as { success: boolean }
       if (response.success) {
-        toast.success('Pedido eliminado')
         setTakeawayPedidos(prev => prev.filter(p => p.id !== pedidoId))
       }
     } catch (error) {
-      toast.error('Error al eliminar pedido')
     }
   }
 
@@ -1163,13 +1140,11 @@ const Dashboard = () => {
     try {
       const response = await deliveryApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
       if (response.success) {
-        toast.success('Pedido archivado')
         setDeliveryPedidos(prev => prev.map(p =>
           p.id === pedidoId ? { ...p, estado: 'archived' as DeliveryPedido['estado'] } : p
         ))
       }
     } catch (error) {
-      toast.error('Error al archivar pedido')
     }
   }
 
@@ -1178,13 +1153,11 @@ const Dashboard = () => {
     try {
       const response = await takeawayApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
       if (response.success) {
-        toast.success('Pedido archivado')
         setTakeawayPedidos(prev => prev.map(p =>
           p.id === pedidoId ? { ...p, estado: 'archived' as TakeawayPedido['estado'] } : p
         ))
       }
     } catch (error) {
-      toast.error('Error al archivar pedido')
     }
   }
 
@@ -1193,13 +1166,11 @@ const Dashboard = () => {
     try {
       const response = await pedidosApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
       if (response.success) {
-        toast.success('Pedido archivado')
         setPedidos(prev => prev.map(p =>
           p.id === pedidoId ? { ...p, estado: 'archived' as PedidoData['estado'] } : p
         ))
       }
     } catch (error) {
-      toast.error('Error al archivar pedido')
     }
   }
 
@@ -1379,7 +1350,7 @@ const Dashboard = () => {
               variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
               size="sm"
               className="flex-1 h-8 text-xs relative"
-              onClick={() => selectedMesaId ? setMobileView('detail') : toast.info('Selecciona una mesa')}
+              onClick={() => selectedMesaId ? setMobileView('detail') : null}
               disabled={!selectedMesaId}
             >
               <List className="h-3.5 w-3.5 mr-1.5" />
@@ -1473,7 +1444,9 @@ const Dashboard = () => {
                               )}
                               <p className="text-sm text-muted-foreground mt-2">
                                 {pedido.totalItems} producto{pedido.totalItems !== 1 ? 's' : ''} •
-                                <span className="font-semibold text-foreground ml-1">${parseFloat(pedido.total).toFixed(2)}</span>
+                                <span className="font-semibold text-foreground ml-1">
+                                  ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                </span>
                               </p>
                             </div>
                             <div className="flex flex-col gap-2 shrink-0">
@@ -1519,25 +1492,36 @@ const Dashboard = () => {
                                   title="Imprimir factura"
                                   onClick={() => {
                                     if (!selectedPrinter) {
-                                      toast.error('Seleccione una impresora en Configuración')
                                       return
                                     }
+                                    const facturaItems: any[] = pedido.items.map((item: any) => ({
+                                      ...item,
+                                      precioUnitario: item.precioUnitario || '0'
+                                    }))
+                                    // Add delivery fee for delivery orders
+                                    if (pedido.tipo === 'delivery') {
+                                      facturaItems.push({
+                                        id: 0,
+                                        nombreProducto: 'Delivery',
+                                        cantidad: 1,
+                                        precioUnitario: String(DELIVERY_FEE),
+                                        ingredientesExcluidosNombres: []
+                                      })
+                                    }
+                                    const deliveryTotal = pedido.tipo === 'delivery'
+                                      ? String(parseFloat(pedido.total) + DELIVERY_FEE)
+                                      : pedido.total
                                     const facturaData = formatFactura(
                                       {
                                         id: pedido.id,
                                         mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
                                         nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
-                                        total: pedido.total
+                                        total: deliveryTotal
                                       },
-                                      pedido.items.map((item: any) => ({
-                                        ...item,
-                                        precioUnitario: item.precioUnitario || '0'
-                                      })),
+                                      facturaItems,
                                       restaurante?.nombre || 'Restaurante'
                                     )
                                     printRaw(commandsToBytes(facturaData))
-                                      .then(() => toast.success('Factura enviada a imprimir'))
-                                      .catch((err: Error) => toast.error(`Error: ${err.message}`))
                                   }}
                                 >
                                   <Printer className="h-4 w-4" />
@@ -1591,6 +1575,14 @@ const Dashboard = () => {
                               ))}
                               {pedido.items.length > 6 && (
                                 <Badge variant="outline">+{pedido.items.length - 6} más</Badge>
+                              )}
+                              {pedido.tipo === 'delivery' && (
+                                <div className="flex items-center gap-2">
+                                  <Badge className="font-normal bg-sky-100 text-sky-700 border-sky-300 border">
+                                    <Truck className="h-3 w-3 mr-1" />
+                                    Delivery — ${DELIVERY_FEE.toFixed(2)}
+                                  </Badge>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -1762,6 +1754,19 @@ const Dashboard = () => {
                           )
                         })}
                       </div>
+                      {/* Delivery fee line item */}
+                      {newDeliveryDireccion.trim() && (
+                        <div className="flex items-center gap-3 p-3 rounded-lg border bg-sky-50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-800">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm flex items-center gap-1.5">
+                              <Truck className="h-3.5 w-3.5 text-sky-600" />
+                              Delivery
+                            </p>
+                            <p className="text-xs text-muted-foreground">Costo de envío</p>
+                          </div>
+                          <span className="font-bold text-sm">${DELIVERY_FEE.toFixed(2)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
                         <span className="font-semibold">Total:</span>
                         <span className="text-xl font-bold text-primary">${deliveryItemsTotal.toFixed(2)}</span>
@@ -1798,10 +1803,26 @@ const Dashboard = () => {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar producto..."
+                    placeholder="Buscar producto o etiqueta... (Enter para agregar)"
                     value={searchProducto}
                     onChange={(e) => setSearchProducto(e.target.value)}
                     className="pl-10 h-10"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && searchProducto.trim()) {
+                        e.preventDefault()
+                        const term = searchProducto.trim().toLowerCase()
+                        // Buscar por match exacto de etiqueta primero
+                        const matchByTag = productos.find(p =>
+                          p.etiquetas?.some(et => et.nombre.toLowerCase() === term)
+                        )
+                        // Si no hay match exacto por etiqueta, usar el primer resultado filtrado
+                        const matchProduct = matchByTag || productosFiltrados[0]
+                        if (matchProduct) {
+                          handleAddDeliveryItem(matchProduct)
+                          setSearchProducto('')
+                        }
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -1811,35 +1832,67 @@ const Dashboard = () => {
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
-                    {productosFiltrados.map((producto) => {
-                      const existingItem = newDeliveryItems.find(i => i.productoId === producto.id)
-                      return (
-                        <div
-                          key={producto.id}
-                          className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${existingItem ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
-                          onClick={() => handleAddDeliveryItem(producto)}
-                        >
-                          <div className="shrink-0">
-                            {producto.imagenUrl ? (
-                              <img src={producto.imagenUrl} alt={producto.nombre} className="w-12 h-12 rounded-lg object-cover bg-muted" />
-                            ) : (
-                              <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                                <Package className="h-5 w-5 text-muted-foreground/40" />
-                              </div>
-                            )}
+                  <div className="space-y-6">
+                    {(() => {
+                      const porCategoria = productosFiltrados.reduce((acc, producto) => {
+                        const cat = producto.categoria || 'Sin categoría'
+                        if (!acc[cat]) acc[cat] = []
+                        acc[cat].push(producto)
+                        return acc
+                      }, {} as Record<string, Producto[]>)
+
+                      const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
+                        if (a === 'Sin categoría') return 1
+                        if (b === 'Sin categoría') return -1
+                        return a.localeCompare(b)
+                      })
+
+                      return categoriasOrdenadas.map((categoriaNombre) => (
+                        <div key={categoriaNombre} className="space-y-2">
+                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 sticky top-0 bg-muted/10 py-1 backdrop-blur-sm z-1">
+                            {categoriaNombre}
+                            <Badge variant="secondary" className="ml-2 text-[10px] font-normal">{porCategoria[categoriaNombre].length}</Badge>
+                          </h4>
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                            {porCategoria[categoriaNombre].map((producto) => {
+                              const existingItem = newDeliveryItems.find(i => i.productoId === producto.id)
+                              return (
+                                <div
+                                  key={producto.id}
+                                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${existingItem ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
+                                  onClick={() => handleAddDeliveryItem(producto)}
+                                >
+                                  <div className="shrink-0">
+                                    {producto.imagenUrl ? (
+                                      <img src={producto.imagenUrl} alt={producto.nombre} className="w-12 h-12 rounded-lg object-cover bg-muted" />
+                                    ) : (
+                                      <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                                        <Package className="h-5 w-5 text-muted-foreground/40" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <p className="font-medium truncate">{producto.nombre}</p>
+                                      {producto.etiquetas && producto.etiquetas.map(et => (
+                                        <Badge key={et.id} variant="outline" className="text-[10px] px-1 py-0 h-4 bg-violet-50 dark:bg-violet-950/30 border-violet-300 text-violet-700 dark:text-violet-400 font-mono">
+                                          {et.nombre}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                    <p className="font-bold text-primary text-sm">${parseFloat(producto.precio).toFixed(2)}</p>
+                                  </div>
+                                  {existingItem && (
+                                    <Badge variant="secondary" className="font-mono">{existingItem.cantidad}</Badge>
+                                  )}
+                                  <Plus className="h-5 w-5 text-muted-foreground shrink-0" />
+                                </div>
+                              )
+                            })}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{producto.nombre}</p>
-                            <p className="font-bold text-primary text-sm">${parseFloat(producto.precio).toFixed(2)}</p>
-                          </div>
-                          {existingItem && (
-                            <Badge variant="secondary" className="font-mono">{existingItem.cantidad}</Badge>
-                          )}
-                          <Plus className="h-5 w-5 text-muted-foreground shrink-0" />
                         </div>
-                      )
-                    })}
+                      ))
+                    })()}
                   </div>
                 )}
               </div>
@@ -1989,7 +2042,6 @@ const Dashboard = () => {
                               className="lg:hidden h-9 w-9"
                               onClick={() => {
                                 if (!selectedPrinter) {
-                                  toast.error('Seleccione una impresora en Configuración')
                                   return
                                 }
                                 const facturaData = formatFactura(
@@ -2003,8 +2055,6 @@ const Dashboard = () => {
                                   restaurante?.nombre || 'Restaurante'
                                 )
                                 printRaw(commandsToBytes(facturaData))
-                                  .then(() => toast.success('Factura enviada a imprimir'))
-                                  .catch((err: Error) => toast.error(`Error: ${err.message}`))
                               }}
                             >
                               <Printer className="h-4 w-4" />
@@ -2014,8 +2064,7 @@ const Dashboard = () => {
                               size="sm"
                               className="hidden lg:flex"
                               onClick={() => {
-                                if (!selectedPrinter) {
-                                  toast.error('Seleccione una impresora en Configuración')
+                                if (!selectedPrinter) { 
                                   return
                                 }
                                 const facturaData = formatFactura(
@@ -2029,8 +2078,6 @@ const Dashboard = () => {
                                   restaurante?.nombre || 'Restaurante'
                                 )
                                 printRaw(commandsToBytes(facturaData))
-                                  .then(() => toast.success('Factura enviada a imprimir'))
-                                  .catch((err: Error) => toast.error(`Error: ${err.message}`))
                               }}
                             >
                               <Printer className="mr-2 h-4 w-4" />
@@ -2595,7 +2642,7 @@ const Dashboard = () => {
             <div className="relative px-4 py-3 shrink-0 border-b">
               <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar producto..."
+                placeholder="Buscar producto o etiqueta..."
                 value={searchProducto}
                 onChange={(e) => setSearchProducto(e.target.value)}
                 className="pl-10 h-11"
@@ -2608,38 +2655,63 @@ const Dashboard = () => {
               ) : productosFiltrados.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No se encontraron productos</div>
               ) : (
-                <div className="space-y-3 pb-8">
-                  {productosFiltrados.map((producto) => (
-                    <div key={producto.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
-                      <div className="shrink-0">
-                        {producto.imagenUrl ? (
-                          <img src={producto.imagenUrl} alt={producto.nombre} className="w-14 h-14 rounded-lg object-cover bg-muted" />
-                        ) : (
-                          <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
-                            <Package className="h-6 w-6 text-muted-foreground/40" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{producto.nombre}</p>
-                        <p className="font-bold text-primary">${parseFloat(producto.precio).toFixed(2)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center border rounded-lg bg-background h-9">
-                          <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1) }))}>
-                            <Minus className="h-3 w-3" />
-                          </Button>
-                          <span className="w-6 text-center text-sm font-medium">{cantidadProducto[producto.id] || 1}</span>
-                          <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: (prev[producto.id] || 1) + 1 }))}>
-                            <Plus className="h-3 w-3" />
-                          </Button>
+                <div className="space-y-5 pb-8">
+                  {(() => {
+                    const porCategoria = productosFiltrados.reduce((acc, producto) => {
+                      const cat = producto.categoria || 'Sin categoría'
+                      if (!acc[cat]) acc[cat] = []
+                      acc[cat].push(producto)
+                      return acc
+                    }, {} as Record<string, Producto[]>)
+
+                    const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
+                      if (a === 'Sin categoría') return 1
+                      if (b === 'Sin categoría') return -1
+                      return a.localeCompare(b)
+                    })
+
+                    return categoriasOrdenadas.map((categoriaNombre) => (
+                      <div key={categoriaNombre} className="space-y-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 sticky top-0 bg-background/95 backdrop-blur-sm py-1 z-1">
+                          {categoriaNombre}
+                          <Badge variant="secondary" className="ml-2 text-[10px] font-normal">{porCategoria[categoriaNombre].length}</Badge>
+                        </h4>
+                        <div className="space-y-2">
+                          {porCategoria[categoriaNombre].map((producto) => (
+                            <div key={producto.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+                              <div className="shrink-0">
+                                {producto.imagenUrl ? (
+                                  <img src={producto.imagenUrl} alt={producto.nombre} className="w-14 h-14 rounded-lg object-cover bg-muted" />
+                                ) : (
+                                  <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
+                                    <Package className="h-6 w-6 text-muted-foreground/40" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{producto.nombre}</p>
+                                <p className="font-bold text-primary">${parseFloat(producto.precio).toFixed(2)}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center border rounded-lg bg-background h-9">
+                                  <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1) }))}>
+                                    <Minus className="h-3 w-3" />
+                                  </Button>
+                                  <span className="w-6 text-center text-sm font-medium">{cantidadProducto[producto.id] || 1}</span>
+                                  <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: (prev[producto.id] || 1) + 1 }))}>
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                                <Button size="icon" className="h-9 w-9 shrink-0" onClick={() => handleAddProducto(producto)} disabled={addingProducto === producto.id}>
+                                  {addingProducto === producto.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <Button size="icon" className="h-9 w-9 shrink-0" onClick={() => handleAddProducto(producto)} disabled={addingProducto === producto.id}>
-                          {addingProducto === producto.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                        </Button>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  })()}
                 </div>
               )}
             </ScrollArea>
