@@ -1015,39 +1015,49 @@ const Dashboard = () => {
       if (response.success) {
         toast.success(isDelivery ? 'Pedido de delivery creado' : 'Pedido take away creado')
 
-        // Print factura automatically
+        // Print comanda automatically (kitchen order - excludes beverages)
         if (selectedPrinter) {
-          const itemsForPrint = newDeliveryItems.map(item => {
-            const producto = productos.find(p => p.id === item.productoId)
-            return {
-              id: item.productoId,
-              nombreProducto: producto?.nombre || 'Producto',
-              cantidad: item.cantidad,
-              precioUnitario: producto?.precio || '0',
-              ingredientesExcluidosNombres: producto?.ingredientes
-                ?.filter(ing => item.ingredientesExcluidos?.includes(ing.id))
-                .map(ing => ing.nombre) || []
-            }
-          })
+          const itemsForPrint = newDeliveryItems
+            .map(item => {
+              const producto = productos.find(p => p.id === item.productoId)
+              const storeProducto = allProductos.find(p => p.id === item.productoId)
+              const categoria = storeProducto && storeProducto.categoriaId
+                ? allCategorias.find(c => c.id === storeProducto.categoriaId)
+                : null
+              return {
+                id: item.productoId,
+                nombreProducto: producto?.nombre || 'Producto',
+                cantidad: item.cantidad,
+                precioUnitario: producto?.precio || '0',
+                ingredientesExcluidosNombres: producto?.ingredientes
+                  ?.filter(ing => item.ingredientesExcluidos?.includes(ing.id))
+                  .map(ing => ing.nombre) || [],
+                categoriaNombre: categoria ? categoria.nombre : undefined,
+                _isBebida: categoria ? categoria.nombre.toLowerCase().includes('bebida') : false
+              }
+            })
+            .filter(item => !item._isBebida)
 
-          const total = itemsForPrint.reduce((sum, item) =>
-            sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
-          ).toFixed(2)
+          if (itemsForPrint.length > 0) {
+            const total = itemsForPrint.reduce((sum, item) =>
+              sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
+            ).toFixed(2)
 
-          const facturaData = formatFactura(
-            {
-              id: Date.now(),
-              mesaNombre: isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away',
-              nombrePedido: newDeliveryNombre || (isDelivery ? 'Delivery' : 'Take Away'),
-              total
-            },
-            itemsForPrint,
-            restaurante?.nombre || 'Restaurante'
-          )
+            const comandaData = formatComanda(
+              {
+                id: Date.now(),
+                mesaNombre: isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away',
+                nombrePedido: newDeliveryNombre || (isDelivery ? 'Delivery' : 'Take Away'),
+                total
+              },
+              itemsForPrint,
+              restaurante?.nombre || 'Restaurante'
+            )
 
-          printRaw(commandsToBytes(facturaData))
-            .then(() => toast.success('Factura enviada a imprimir'))
-            .catch((err: Error) => console.error('Error printing factura:', err))
+            printRaw(commandsToBytes(comandaData))
+              .then(() => toast.success('Comanda enviada a imprimir'))
+              .catch((err: Error) => console.error('Error printing comanda:', err))
+          }
         }
 
         exitNuevoPedidoMode()
@@ -1502,6 +1512,36 @@ const Dashboard = () => {
                                 </>
                               )}
                               <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  title="Imprimir factura"
+                                  onClick={() => {
+                                    if (!selectedPrinter) {
+                                      toast.error('Seleccione una impresora en Configuración')
+                                      return
+                                    }
+                                    const facturaData = formatFactura(
+                                      {
+                                        id: pedido.id,
+                                        mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
+                                        nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
+                                        total: pedido.total
+                                      },
+                                      pedido.items.map((item: any) => ({
+                                        ...item,
+                                        precioUnitario: item.precioUnitario || '0'
+                                      })),
+                                      restaurante?.nombre || 'Restaurante'
+                                    )
+                                    printRaw(commandsToBytes(facturaData))
+                                      .then(() => toast.success('Factura enviada a imprimir'))
+                                      .catch((err: Error) => toast.error(`Error: ${err.message}`))
+                                  }}
+                                >
+                                  <Printer className="h-4 w-4" />
+                                </Button>
                                 <Button
                                   size="sm"
                                   variant="ghost"
