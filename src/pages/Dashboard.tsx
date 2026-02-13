@@ -258,11 +258,16 @@ const Dashboard = () => {
   const [newDeliveryTelefono, setNewDeliveryTelefono] = useState('')
   const [newDeliveryNotas, setNewDeliveryNotas] = useState('')
   const [creatingDelivery, setCreatingDelivery] = useState(false)
-  const [updatingDeliveryEstado, setUpdatingDeliveryEstado] = useState<number | null>(null)
   const [expandedDeliveryItems, setExpandedDeliveryItems] = useState<number[]>([])
 
   // Takeaway state
   const [takeawayPedidos, setTakeawayPedidos] = useState<TakeawayPedido[]>([])
+
+  // Pedido filter state
+  const [pedidoFilter, setPedidoFilter] = useState<'all' | 'mesa' | 'delivery' | 'takeaway'>('all')
+
+  // Selected unified pedido (for showing delivery/takeaway detail in center)
+  const [selectedUnifiedPedido, setSelectedUnifiedPedido] = useState<UnifiedPedido | null>(null)
 
   const handleToggleDeliveryIngredient = (idx: number, ingredientId: number) => {
     setNewDeliveryItems(prev => prev.map((item, index) => {
@@ -481,6 +486,7 @@ const Dashboard = () => {
   const handleSelectMesa = (mesaId: number) => {
     setSelectedMesaId(mesaId)
     setSelectedPedidoFromKanban(null)
+    setSelectedUnifiedPedido(null)
 
     // On mobile, switch to detail view
     if (window.innerWidth < 1024) {
@@ -859,6 +865,7 @@ const Dashboard = () => {
     if (pedido.mesaId) {
       setSelectedMesaId(pedido.mesaId)
       setSelectedPedidoFromKanban(pedido)
+      setSelectedUnifiedPedido(null)
 
       // On mobile, switch to detail view when clicking a kanban card
       if (window.innerWidth < 1024) {
@@ -868,6 +875,30 @@ const Dashboard = () => {
       notifications
         .filter(n => n.mesaId === pedido.mesaId && !n.leida)
         .forEach(n => markAsRead(n.id))
+    }
+  }
+
+  const handleUnifiedPedidoClick = (pedido: UnifiedPedido) => {
+    if (pedido.tipo === 'mesa') {
+      // For mesa orders, find the mesa and use existing flow
+      const mesa = mesas.find(m => m.nombre === pedido.mesaNombre)
+      if (mesa) {
+        setSelectedMesaId(mesa.id)
+        const pedidoData = pedidos.find(p => p.id === pedido.id)
+        if (pedidoData) {
+          setSelectedPedidoFromKanban(pedidoData)
+        }
+        setSelectedUnifiedPedido(null)
+      }
+    } else {
+      // For delivery/takeaway, show in center with dedicated view
+      setSelectedUnifiedPedido(pedido)
+      setSelectedMesaId(null)
+      setSelectedPedidoFromKanban(null)
+    }
+    // On mobile, switch to detail view
+    if (window.innerWidth < 1024) {
+      setMobileView('detail')
     }
   }
 
@@ -937,11 +968,9 @@ const Dashboard = () => {
   }, [token])
 
   useEffect(() => {
-    if (dashboardMode === 'pedidos') {
-      fetchDeliveryPedidos()
-      fetchTakeawayPedidos()
-    }
-  }, [dashboardMode, fetchDeliveryPedidos, fetchTakeawayPedidos])
+    fetchDeliveryPedidos()
+    fetchTakeawayPedidos()
+  }, [ ])
 
   useEffect(() => {
     if (dashboardMode === 'nuevoPedido' && productos.length === 0) fetchProductos()
@@ -1057,21 +1086,6 @@ const Dashboard = () => {
     }
   }
 
-  const handleUpdateDeliveryEstado = async (pedidoId: number, nuevoEstado: string) => {
-    if (!token) return
-    setUpdatingDeliveryEstado(pedidoId)
-    try {
-      const response = await deliveryApi.updateEstado(token, pedidoId, nuevoEstado) as { success: boolean }
-      if (response.success) {
-        setDeliveryPedidos(prev => prev.map(p =>
-          p.id === pedidoId ? { ...p, estado: nuevoEstado as DeliveryPedido['estado'] } : p
-        ))
-      }
-    } catch (error) {
-    } finally {
-      setUpdatingDeliveryEstado(null)
-    }
-  }
 
   const handleDeleteDelivery = async (pedidoId: number) => {
     if (!token) return
@@ -1082,18 +1096,6 @@ const Dashboard = () => {
       }
     } catch (error) {
     }
-  }
-
-  const getDeliveryEstadoBadge = (estado: string) => {
-    const estados: Record<string, { label: string; className: string }> = {
-      pending: { label: 'Pendiente', className: 'bg-amber-100 text-amber-700 border-amber-300' },
-      preparing: { label: 'Preparando', className: 'bg-blue-100 text-blue-700 border-blue-300' },
-      ready: { label: 'Listo', className: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
-      delivered: { label: 'Entregado', className: 'bg-gray-100 text-gray-600 border-gray-300' },
-      cancelled: { label: 'Cancelado', className: 'bg-red-100 text-red-700 border-red-300' },
-      archived: { label: 'Archivado', className: 'bg-slate-100 text-slate-500 border-slate-300' },
-    }
-    return estados[estado] || estados.pending
   }
 
   const DELIVERY_FEE = 800
@@ -1107,21 +1109,6 @@ const Dashboard = () => {
     return itemsTotal + deliveryFee
   }, [newDeliveryItems, productos, newDeliveryDireccion])
 
-  const handleUpdateTakeawayEstado = async (pedidoId: number, nuevoEstado: string) => {
-    if (!token) return
-    setUpdatingDeliveryEstado(pedidoId)
-    try {
-      const response = await takeawayApi.updateEstado(token, pedidoId, nuevoEstado) as { success: boolean }
-      if (response.success) {
-        setTakeawayPedidos(prev => prev.map(p =>
-          p.id === pedidoId ? { ...p, estado: nuevoEstado as TakeawayPedido['estado'] } : p
-        ))
-      }
-    } catch (error) {
-    } finally {
-      setUpdatingDeliveryEstado(null)
-    }
-  }
 
   const handleDeleteTakeaway = async (pedidoId: number) => {
     if (!token) return
@@ -1175,7 +1162,7 @@ const Dashboard = () => {
   }
 
   // Unified all-orders list
-  const allUnifiedPedidos = useMemo((): UnifiedPedido[] => {
+  const { allUnifiedPedidos, archivedUnifiedPedidos } = useMemo(() => {
     const unified: UnifiedPedido[] = []
 
     // Add mesa pedidos
@@ -1229,15 +1216,42 @@ const Dashboard = () => {
 
     // Sort chronologically (newest first)
     unified.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    // Filter out archived orders
-    return unified.filter(p => p.estado !== 'archived')
+
+    return {
+      allUnifiedPedidos: unified.filter(p => p.estado !== 'archived'),
+      archivedUnifiedPedidos: unified.filter(p => p.estado === 'archived'),
+    }
   }, [pedidos, deliveryPedidos, takeawayPedidos])
+
+  const filteredUnifiedPedidos = useMemo(() => {
+    if (pedidoFilter === 'all') return allUnifiedPedidos
+    return allUnifiedPedidos.filter(p => p.tipo === pedidoFilter)
+  }, [allUnifiedPedidos, pedidoFilter])
+
+  const filteredArchivedPedidos = useMemo(() => {
+    if (pedidoFilter === 'all') return archivedUnifiedPedidos
+    return archivedUnifiedPedidos.filter(p => p.tipo === pedidoFilter)
+  }, [archivedUnifiedPedidos, pedidoFilter])
+
+  // Keep selectedUnifiedPedido in sync with latest data
+  const displayedUnifiedPedido = useMemo(() => {
+    if (!selectedUnifiedPedido) return null
+    const allPedidos = [...allUnifiedPedidos, ...archivedUnifiedPedidos]
+    return allPedidos.find(p => p.id === selectedUnifiedPedido.id && p.tipo === selectedUnifiedPedido.tipo) || selectedUnifiedPedido
+  }, [selectedUnifiedPedido, allUnifiedPedidos, archivedUnifiedPedidos])
+
+  const pedidoCounts = useMemo(() => ({
+    all: allUnifiedPedidos.length,
+    mesa: allUnifiedPedidos.filter(p => p.tipo === 'mesa').length,
+    delivery: allUnifiedPedidos.filter(p => p.tipo === 'delivery').length,
+    takeaway: allUnifiedPedidos.filter(p => p.tipo === 'takeaway').length,
+  }), [allUnifiedPedidos])
 
   const getTipoBadge = (tipo: 'mesa' | 'delivery' | 'takeaway') => {
     switch (tipo) {
-      case 'mesa': return { label: '🍽️ Mesa', className: 'bg-violet-100 text-violet-700 border-violet-300' }
-      case 'delivery': return { label: '🚚 Delivery', className: 'bg-sky-100 text-sky-700 border-sky-300' }
-      case 'takeaway': return { label: '🛍️ Take Away', className: 'bg-amber-100 text-amber-700 border-amber-300' }
+      case 'mesa': return { label: '🍽️ Mesa', className: '' }
+      case 'delivery': return { label: '🚚 Delivery', className: '' }
+      case 'takeaway': return { label: '🛍️ Take Away', className: '' }
     }
   }
 
@@ -1285,17 +1299,16 @@ const Dashboard = () => {
           <div className="hidden lg:flex gap-2">
             <>
               {/* Mode Toggle */}
-              <div className="flex gap-1 bg-muted/50 p-1 rounded-lg mr-2">
+              {/* <div className="flex gap-1 bg-muted/50 p-1 rounded-lg mr-2"> */}
                 <Button
-                  variant={dashboardMode === 'mesas' ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="h-7 text-xs"
+                  className=""
                   onClick={() => setDashboardMode('mesas')}
                 >
-                  <Utensils className="h-3.5 w-3.5 mr-1.5" />
+                  <Utensils className="h-4 w-4 mr-1.5" />
                   Mesas
                 </Button>
-                <Button
+                {/* <Button
                   variant={dashboardMode === 'pedidos' ? 'secondary' : 'ghost'}
                   size="sm"
                   className="h-7 text-xs"
@@ -1303,8 +1316,8 @@ const Dashboard = () => {
                 >
                   <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
                   Pedidos
-                </Button>
-              </div>
+                </Button> */}
+              {/* </div> */}
 
               <Button size="sm" onClick={enterNuevoPedidoMode}>
                 <Plus className="mr-2 h-4 w-4" />
@@ -1350,8 +1363,8 @@ const Dashboard = () => {
               variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
               size="sm"
               className="flex-1 h-8 text-xs relative"
-              onClick={() => selectedMesaId ? setMobileView('detail') : null}
-              disabled={!selectedMesaId}
+              onClick={() => (selectedMesaId || selectedUnifiedPedido) ? setMobileView('detail') : null}
+              disabled={!selectedMesaId && !selectedUnifiedPedido}
             >
               <List className="h-3.5 w-3.5 mr-1.5" />
               Detalle
@@ -1379,221 +1392,177 @@ const Dashboard = () => {
 
         {/* PEDIDOS (UNIFIED) MODE VIEW */}
         {dashboardMode === 'pedidos' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-auto p-4">
-              {loadingDelivery ? (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className={`
+            ${mobileView === 'orders' ? 'flex' : 'hidden'} 
+            lg:flex lg:w-80 flex-col border-l bg-muted/10 overflow-hidden
+            w-full
+          `}>
+                <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center justify-between">
+                  <p className="text-sm font-semibold">Pedidos</p>
+                  <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
                 </div>
-              ) : allUnifiedPedidos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                  <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
-                  <p className="text-lg font-medium">No hay pedidos</p>
-                  <Button onClick={enterNuevoPedidoMode}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Crear primer pedido
-                  </Button>
-                </div>
-              ) : (
-                <div className="max-w-4xl mx-auto space-y-3">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold">Todos los Pedidos ({allUnifiedPedidos.length})</h2>
-                  </div>
-                  {allUnifiedPedidos.map((pedido) => {
-                    const estadoBadge = getDeliveryEstadoBadge(pedido.estado)
-                    const tipoBadge = getTipoBadge(pedido.tipo)
+                <div className="flex-1 overflow-auto p-3 space-y-4">
+                  {COLUMNS.map((column) => {
+                    const columnCards = kanbanData[column.id] || []
+                    const ColumnIcon = column.icon
+  
                     return (
-                      <Card key={`${pedido.tipo}-${pedido.id}`} className="overflow-hidden hover:shadow-md transition-shadow">
-                        <div className="p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                <Badge className={`${tipoBadge.className} border`}>
-                                  {tipoBadge.label}
-                                </Badge>
-                                <Badge className={`${estadoBadge.className} border`}>
-                                  {estadoBadge.label}
-                                </Badge>
-                                <span className="text-sm text-muted-foreground">
-                                  {formatTimeAgo(pedido.createdAt)}
-                                </span>
-                              </div>
-                              {pedido.tipo === 'delivery' && pedido.direccion && (
-                                <div className="flex items-start gap-2 mb-1">
-                                  <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                  <p className="font-medium">{pedido.direccion}</p>
-                                </div>
-                              )}
-                              {pedido.tipo === 'mesa' && pedido.mesaNombre && (
-                                <div className="flex items-start gap-2 mb-1">
-                                  <Utensils className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                  <p className="font-medium">{pedido.mesaNombre}</p>
-                                </div>
-                              )}
-                              {pedido.nombreCliente && (
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  <User className="h-3.5 w-3.5" />
-                                  <span>{pedido.nombreCliente}</span>
-                                </div>
-                              )}
-                              {pedido.telefono && (
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  <Phone className="h-3.5 w-3.5" />
-                                  <span>{pedido.telefono}</span>
-                                </div>
-                              )}
-                              <p className="text-sm text-muted-foreground mt-2">
-                                {pedido.totalItems} producto{pedido.totalItems !== 1 ? 's' : ''} •
-                                <span className="font-semibold text-foreground ml-1">
-                                  ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
-                                </span>
-                              </p>
-                            </div>
-                            <div className="flex flex-col gap-2 shrink-0">
-                              {(pedido.tipo === 'delivery' || pedido.tipo === 'takeaway') && (
-                                <>
-                                  {pedido.estado === 'pending' && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => pedido.tipo === 'delivery' ? handleUpdateDeliveryEstado(pedido.id, 'preparing') : handleUpdateTakeawayEstado(pedido.id, 'preparing')}
-                                      disabled={updatingDeliveryEstado === pedido.id}
-                                    >
-                                      {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChefHat className="h-4 w-4 mr-1" />}
-                                      Preparar
-                                    </Button>
-                                  )}
-                                  {pedido.estado === 'preparing' && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => pedido.tipo === 'delivery' ? handleUpdateDeliveryEstado(pedido.id, 'ready') : handleUpdateTakeawayEstado(pedido.id, 'ready')}
-                                      disabled={updatingDeliveryEstado === pedido.id}
-                                    >
-                                      {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1" />}
-                                      Listo
-                                    </Button>
-                                  )}
-                                  {pedido.estado === 'ready' && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => pedido.tipo === 'delivery' ? handleUpdateDeliveryEstado(pedido.id, 'delivered') : handleUpdateTakeawayEstado(pedido.id, 'delivered')}
-                                      disabled={updatingDeliveryEstado === pedido.id}
-                                    >
-                                      {updatingDeliveryEstado === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : pedido.tipo === 'delivery' ? <Truck className="h-4 w-4 mr-1" /> : <ShoppingBag className="h-4 w-4 mr-1" />}
-                                      Entregado
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-                              <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-muted-foreground hover:text-foreground"
-                                  title="Imprimir factura"
-                                  onClick={() => {
-                                    if (!selectedPrinter) {
-                                      return
-                                    }
-                                    const facturaItems: any[] = pedido.items.map((item: any) => ({
-                                      ...item,
-                                      precioUnitario: item.precioUnitario || '0'
-                                    }))
-                                    // Add delivery fee for delivery orders
-                                    if (pedido.tipo === 'delivery') {
-                                      facturaItems.push({
-                                        id: 0,
-                                        nombreProducto: 'Delivery',
-                                        cantidad: 1,
-                                        precioUnitario: String(DELIVERY_FEE),
-                                        ingredientesExcluidosNombres: []
-                                      })
-                                    }
-                                    const deliveryTotal = pedido.tipo === 'delivery'
-                                      ? String(parseFloat(pedido.total) + DELIVERY_FEE)
-                                      : pedido.total
-                                    const facturaData = formatFactura(
-                                      {
-                                        id: pedido.id,
-                                        mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
-                                        nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
-                                        total: deliveryTotal
-                                      },
-                                      facturaItems,
-                                      restaurante?.nombre || 'Restaurante'
-                                    )
-                                    printRaw(commandsToBytes(facturaData))
-                                  }}
-                                >
-                                  <Printer className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-muted-foreground hover:text-foreground"
-                                  title="Archivar pedido"
-                                  onClick={() => {
-                                    if (pedido.tipo === 'delivery') handleArchiveDelivery(pedido.id)
-                                    else if (pedido.tipo === 'takeaway') handleArchiveTakeaway(pedido.id)
-                                    else handleArchiveMesaPedido(pedido.id)
-                                  }}
-                                >
-                                  <Archive className="h-4 w-4" />
-                                </Button>
-                                {(pedido.tipo === 'delivery' || pedido.tipo === 'takeaway') && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-destructive hover:text-destructive"
-                                    title="Eliminar pedido"
-                                    onClick={() => pedido.tipo === 'delivery' ? handleDeleteDelivery(pedido.id) : handleDeleteTakeaway(pedido.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          {/* Items Preview */}
-                          <div className="mt-3 pt-3 border-t">
-                            <div className="space-y-1.5">
-                              {pedido.items.slice(0, 6).map((item: any) => (
-                                <div key={item.id} className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <Badge variant="secondary" className="font-normal">
-                                      {item.cantidad}x {item.nombreProducto}
-                                    </Badge>
-                                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                      <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
-                                    )}
-                                  </div>
-                                  {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                    <p className="text-[10px] text-orange-600 ml-1 mt-0.5">
-                                      ⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
-                              {pedido.items.length > 6 && (
-                                <Badge variant="outline">+{pedido.items.length - 6} más</Badge>
-                              )}
-                              {pedido.tipo === 'delivery' && (
-                                <div className="flex items-center gap-2">
-                                  <Badge className="font-normal bg-sky-100 text-sky-700 border-sky-300 border">
-                                    <Truck className="h-3 w-3 mr-1" />
-                                    Delivery — ${DELIVERY_FEE.toFixed(2)}
-                                  </Badge>
-                                </div>
-                              )}
-                            </div>
-                          </div>
+                      <div key={column.id}>
+                        <div className={`flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg ${column.bgHeader}`}>
+                          <ColumnIcon className={`h-4 w-4 ${column.color}`} />
+                          <span className="font-semibold text-sm flex-1">{column.title}</span>
+                          <Badge variant="secondary" className="font-mono text-xs">{columnCards.length}</Badge>
                         </div>
-                      </Card>
+  
+                        {columnCards.length === 0 ? (
+                          <div className="text-center py-3 text-muted-foreground text-xs opacity-50">
+                            Sin pedidos
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {columnCards.map((card) => {
+                              const hasExclusions = card.items.some(i => i.ingredientesExcluidosNombres?.length)
+                              const isUpdating = updatingPedido === card.pedido.id
+  
+                              const isClosed = card.pedido.estado === 'closed'
+                              const subtotalesData = pedidosSubtotales[card.pedido.id] || []
+                              const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
+                              const totalPedido = subtotalesData.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
+                              const showUnifiedPayment = !splitPayment && isClosed
+  
+                              return (
+                                <Card
+                                  key={card.id}
+                                  className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
+                                    }`}
+                                  onClick={() => handleKanbanCardClick(card.pedido)}
+                                >
+                                  <CardContent className="p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold text-sm">{card.pedido.mesaNombre || 'Sin mesa'}</span>
+                                        {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
+                                        {isClosed && (
+                                          <Badge
+                                            variant="outline"
+                                            className={isFullyPaid
+                                              ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 text-[10px] px-1.5 py-0"
+                                              : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 text-[10px] px-1.5 py-0"}
+                                          >
+                                            {isFullyPaid ? "💳 Pagado" : "📋 Cuenta"}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(card.pedido.createdAt)}</span>
+                                    </div>
+  
+                                    {showUnifiedPayment && subtotalesData.length > 0 && (
+                                      <div className="mb-2 p-2 bg-muted/30 rounded-md">
+                                        <div className="flex justify-between items-center mb-1">
+                                          <span className="text-xs font-medium">Total Mesa</span>
+                                          <span className="text-sm font-bold">${totalPedido.toLocaleString()}</span>
+                                        </div>
+                                        {!isFullyPaid ? (
+                                          <Button
+                                            className="w-full h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleConfirmarPagoTotal(card.pedido.id, subtotalesData)
+                                            }}
+                                            disabled={updatingPago === `all-${card.pedido.id}`}
+                                          >
+                                            {updatingPago === `all-${card.pedido.id}` ? (
+                                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                            ) : (
+                                              <span className="mr-1">💵</span>
+                                            )}
+                                            Confirmar Pago Total
+                                          </Button>
+                                        ) : (
+                                          <div className="w-full py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded text-center text-xs font-medium flex items-center justify-center gap-1">
+                                            <CheckCircle className="h-3 w-3" />
+                                            Pagado
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+  
+                                    <div className="space-y-1.5">
+                                      {card.items.slice(0, 3).map((item) => (
+                                        <div key={item.id} className="flex items-start gap-2 text-xs">
+                                          <span className="font-bold bg-muted rounded px-1 shrink-0">{item.cantidad}</span>
+                                          <div className="flex-1 min-w-0">
+                                            <span className="truncate block">{item.nombreProducto}</span>
+                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                              <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
+                                            )}
+                                          </div>
+                                          <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                                            {card.status === 'preparing' && (
+                                              <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
+                                                <CheckCircle className="h-3 w-3" />
+                                              </Button>
+                                            )}
+                                            {card.status === 'delivered' && (
+                                              <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
+                                                <Utensils className="h-3 w-3" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                      {card.items.length > 3 && (
+                                        <p className="text-[10px] text-muted-foreground">+{card.items.length - 3} más</p>
+                                      )}
+                                    </div>
+  
+                                    {card.status === 'pending' && (
+                                      <Button
+                                        size="sm"
+                                        className="w-full mt-2 h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleConfirmarPedido(card.pedido)
+                                        }}
+                                        disabled={isUpdating}
+                                      >
+                                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                                        Confirmar
+                                      </Button>
+                                    )}
+  
+                                    {card.status !== 'archived' && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="w-full mt-1 h-6 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleArchiveMesaPedido(card.pedido.id)
+                                        }}
+                                      >
+                                        <Archive className="h-3 w-3 mr-1" />
+                                        Archivar
+                                      </Button>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
+  
+                  {Object.values(kanbanData).every(arr => arr.length === 0) && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Coffee className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Sin pedidos activos</p>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
         )}
 
         {/* NUEVO PEDIDO MODE VIEW - Full screen 2-column layout */}
@@ -1972,7 +1941,263 @@ const Dashboard = () => {
           w-full
         `}>
               <div className="flex-1 overflow-auto p-3 lg:p-4">
-                {selectedMesa ? (
+                {/* Delivery/Takeaway Detail View */}
+                {displayedUnifiedPedido && displayedUnifiedPedido.tipo !== 'mesa' ? (
+                  <div className="space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h2 className="text-xl lg:text-2xl font-bold truncate">
+                            {displayedUnifiedPedido.tipo === 'delivery' ? '🚚 Delivery' : '🛍️ Take Away'}
+                          </h2>
+                          {displayedUnifiedPedido.estado === 'archived' && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">Archivado</Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
+                          <span>Pedido #{displayedUnifiedPedido.id}</span>
+                          <span>·</span>
+                          <span>{formatTimeAgo(displayedUnifiedPedido.createdAt)}</span>
+                        </p>
+                      </div>
+                      <div className="flex gap-1 lg:gap-2 shrink-0">
+                        {/* Print */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="hidden lg:flex"
+                          onClick={() => {
+                            if (!selectedPrinter) return
+                            const facturaItems: any[] = displayedUnifiedPedido.items.map((item: any) => ({
+                              ...item,
+                              precioUnitario: item.precioUnitario || '0'
+                            }))
+                            if (displayedUnifiedPedido.tipo === 'delivery') {
+                              facturaItems.push({
+                                id: 0,
+                                nombreProducto: 'Delivery',
+                                cantidad: 1,
+                                precioUnitario: String(DELIVERY_FEE),
+                                ingredientesExcluidosNombres: []
+                              })
+                            }
+                            const total = displayedUnifiedPedido.tipo === 'delivery'
+                              ? String(parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE)
+                              : displayedUnifiedPedido.total
+                            const facturaData = formatFactura(
+                              {
+                                id: displayedUnifiedPedido.id,
+                                mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
+                                nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
+                                total
+                              },
+                              facturaItems,
+                              restaurante?.nombre || 'Restaurante'
+                            )
+                            printRaw(commandsToBytes(facturaData))
+                          }}
+                        >
+                          <Printer className="mr-2 h-4 w-4" />
+                          Factura
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="lg:hidden h-9 w-9"
+                          onClick={() => {
+                            if (!selectedPrinter) return
+                            const facturaItems: any[] = displayedUnifiedPedido.items.map((item: any) => ({
+                              ...item,
+                              precioUnitario: item.precioUnitario || '0'
+                            }))
+                            if (displayedUnifiedPedido.tipo === 'delivery') {
+                              facturaItems.push({
+                                id: 0,
+                                nombreProducto: 'Delivery',
+                                cantidad: 1,
+                                precioUnitario: String(DELIVERY_FEE),
+                                ingredientesExcluidosNombres: []
+                              })
+                            }
+                            const total = displayedUnifiedPedido.tipo === 'delivery'
+                              ? String(parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE)
+                              : displayedUnifiedPedido.total
+                            const facturaData = formatFactura(
+                              {
+                                id: displayedUnifiedPedido.id,
+                                mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
+                                nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
+                                total
+                              },
+                              facturaItems,
+                              restaurante?.nombre || 'Restaurante'
+                            )
+                            printRaw(commandsToBytes(facturaData))
+                          }}
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
+
+                        {/* Archive */}
+                        {displayedUnifiedPedido.estado !== 'archived' && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-muted-foreground hover:text-foreground hidden lg:flex"
+                              onClick={() => {
+                                if (displayedUnifiedPedido.tipo === 'delivery') handleArchiveDelivery(displayedUnifiedPedido.id)
+                                else handleArchiveTakeaway(displayedUnifiedPedido.id)
+                                setSelectedUnifiedPedido(null)
+                              }}
+                            >
+                              <Archive className="mr-2 h-4 w-4" />
+                              Archivar
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="text-muted-foreground hover:text-foreground lg:hidden h-9 w-9"
+                              onClick={() => {
+                                if (displayedUnifiedPedido.tipo === 'delivery') handleArchiveDelivery(displayedUnifiedPedido.id)
+                                else handleArchiveTakeaway(displayedUnifiedPedido.id)
+                                setSelectedUnifiedPedido(null)
+                              }}
+                            >
+                              <Archive className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+
+                        {/* Delete */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hidden lg:flex"
+                          onClick={() => {
+                            if (displayedUnifiedPedido.tipo === 'delivery') handleDeleteDelivery(displayedUnifiedPedido.id)
+                            else handleDeleteTakeaway(displayedUnifiedPedido.id)
+                            setSelectedUnifiedPedido(null)
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Eliminar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="text-destructive lg:hidden h-9 w-9"
+                          onClick={() => {
+                            if (displayedUnifiedPedido.tipo === 'delivery') handleDeleteDelivery(displayedUnifiedPedido.id)
+                            else handleDeleteTakeaway(displayedUnifiedPedido.id)
+                            setSelectedUnifiedPedido(null)
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Archived banner */}
+                    {displayedUnifiedPedido.estado === 'archived' && (
+                      <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4 flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                          <Archive className="h-5 w-5 text-slate-500" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-700 dark:text-slate-300">Pedido Archivado</p>
+                          <p className="text-sm text-slate-500">Este pedido ha sido archivado.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Client Info */}
+                    <Card className="lg:shadow-sm">
+                      <CardContent className="py-4 px-3 lg:px-6 space-y-2">
+                        {displayedUnifiedPedido.nombreCliente && (
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="font-medium">{displayedUnifiedPedido.nombreCliente}</span>
+                          </div>
+                        )}
+                        {displayedUnifiedPedido.telefono && (
+                          <div className="flex items-center gap-2">
+                            <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span>{displayedUnifiedPedido.telefono}</span>
+                          </div>
+                        )}
+                        {displayedUnifiedPedido.tipo === 'delivery' && displayedUnifiedPedido.direccion && (
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span>{displayedUnifiedPedido.direccion}</span>
+                          </div>
+                        )}
+                        {displayedUnifiedPedido.notas && (
+                          <div className="flex items-start gap-2 text-muted-foreground">
+                            <span className="text-sm italic">📝 {displayedUnifiedPedido.notas}</span>
+                          </div>
+                        )}
+                        {!displayedUnifiedPedido.nombreCliente && !displayedUnifiedPedido.telefono && !displayedUnifiedPedido.direccion && !displayedUnifiedPedido.notas && (
+                          <p className="text-sm text-muted-foreground">Sin datos del cliente</p>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Products */}
+                    <Card className={`lg:shadow-sm ${displayedUnifiedPedido.estado === 'archived' ? 'opacity-60' : ''}`}>
+                      <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <ShoppingCart className="h-4 w-4" />
+                          Productos ({displayedUnifiedPedido.totalItems})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 px-3 lg:px-6 pb-3 lg:pb-6">
+                        {displayedUnifiedPedido.items.map((item: any) => (
+                          <div key={item.id} className="flex items-start justify-between p-2 rounded-lg bg-muted/50 gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
+                              </div>
+                              {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                              )}
+                            </div>
+                            <span className="font-bold text-sm shrink-0">
+                              ${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                        {displayedUnifiedPedido.tipo === 'delivery' && (
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                            <div className="flex items-center gap-2">
+                              <Truck className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-medium text-sm">Delivery</span>
+                            </div>
+                            <span className="font-bold text-sm">${DELIVERY_FEE.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Total */}
+                    <Card className={`lg:shadow-sm ${displayedUnifiedPedido.estado === 'archived' ? 'bg-neutral-100 dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600' : 'bg-primary/5 border-primary/20'}`}>
+                      <CardContent className="py-4 px-3 lg:px-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium">Total del Pedido</p>
+                            <p className="text-xs text-muted-foreground">{displayedUnifiedPedido.totalItems} productos</p>
+                          </div>
+                          <p className={`text-2xl lg:text-3xl font-bold ${displayedUnifiedPedido.estado === 'archived' ? 'text-neutral-500' : 'text-primary'}`}>
+                            ${displayedUnifiedPedido.tipo === 'delivery'
+                              ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toFixed(2)
+                              : parseFloat(displayedUnifiedPedido.total).toFixed(2)}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : selectedMesa ? (
                   <div className={`space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0 ${(displayedPedido?.estado === 'closed' || displayedPedido?.estado === 'archived') ? 'relative' : ''}`}>
                     {/* Banner de pedido archivado */}
                     {displayedPedido?.estado === 'archived' && (
@@ -2341,7 +2566,7 @@ const Dashboard = () => {
                   <div className="h-full flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <ShoppingCart className="h-16 w-16 mx-auto mb-4 opacity-20" />
-                      <p className="text-lg">Selecciona una mesa</p>
+                      <p className="text-lg">Selecciona una mesa o pedido</p>
                       <p className="text-sm">para ver su detalle</p>
                     </div>
                   </div>
@@ -2350,177 +2575,287 @@ const Dashboard = () => {
             </div>
 
             {/* RIGHT: Kanban Panel - Desktop always visible, Mobile conditional */}
-            <div className={`
-          ${mobileView === 'orders' ? 'flex' : 'hidden'} 
-          lg:flex lg:w-80 flex-col border-l bg-muted/10 overflow-hidden
-          w-full
-        `}>
-              <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center justify-between">
-                <p className="text-sm font-semibold">Pedidos</p>
-                <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
+            <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full lg:w-[450px]' : 'hidden lg:flex'}`}>
+            {/* Filter tabs */}
+            <div className="border-b bg-background/95 backdrop-blur shrink-0 px-4 pt-3 pb-0">
+              <div className="grid grid-cols-2 gap-1 overflow-x-auto">
+                {([
+                  { key: 'all', label: 'Todos', icon: '📋' },
+                  { key: 'mesa', label: 'Mesas', icon: '🍽️' },
+                  { key: 'delivery', label: 'Delivery', icon: '🚚' },
+                  { key: 'takeaway', label: 'Take Away', icon: '🛍️' },
+                ] as const).map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setPedidoFilter(tab.key)}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border-b-2 transition-colors whitespace-nowrap ${
+                      pedidoFilter === tab.key
+                        ? 'border-transparent text-foreground bg-accent'
+                        : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    }`}
+                  >
+                    <span>{tab.icon}</span>
+                    {tab.label}
+                    {pedidoCounts[tab.key] > 0 && (
+                      <Badge className="ml-1 text-[10px] px-1.5 py-0 h-4 min-w-5 justify-center">
+                        {pedidoCounts[tab.key]}
+                      </Badge>
+                    )}
+                  </button>
+                ))}
               </div>
-              <div className="flex-1 overflow-auto p-3 space-y-4">
-                {COLUMNS.map((column) => {
-                  const columnCards = kanbanData[column.id] || []
-                  const ColumnIcon = column.icon
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {loadingDelivery ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : allUnifiedPedidos.length === 0 && archivedUnifiedPedidos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                  <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
+                  <p className="text-lg font-medium">No hay pedidos</p>
+                  <Button onClick={enterNuevoPedidoMode}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Crear primer pedido
+                  </Button>
+                </div>
+              ) : filteredUnifiedPedidos.length === 0 && filteredArchivedPedidos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                  <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
+                  <p className="text-lg font-medium">No hay pedidos de este tipo</p>
+                  <Button variant="outline" onClick={() => setPedidoFilter('all')}>
+                    Ver todos los pedidos
+                  </Button>
+                </div>
+              ) : (
+                <div className="max-w-4xl space-y-3">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold">
+                      {pedidoFilter === 'all' ? 'Todos los Pedidos' : pedidoFilter === 'mesa' ? 'Pedidos de Mesa' : pedidoFilter === 'delivery' ? 'Pedidos Delivery' : 'Pedidos Take Away'} ({filteredUnifiedPedidos.length})
+                    </h2>
+                  </div>
+                  {filteredUnifiedPedidos.map((pedido) => {
+                    const tipoBadge = getTipoBadge(pedido.tipo)
+                    const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                      || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
+                    return (
+                      <Card
+                        key={`${pedido.tipo}-${pedido.id}`}
+                        className={`overflow-hidden hover:shadow-md transition-all pl-4 pr-8 min-w-[330px] cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary shadow-md' : ''}`}
+                        onClick={() => handleUnifiedPedidoClick(pedido)}
+                      >
+                        <div className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <CardTitle className={`${tipoBadge.className} text-lg`}>
+                                  {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
+                                    <span className="text-sm"> {pedido.mesaNombre}</span>
+                                  )}
+                                </CardTitle>
+                              </div>
 
-                  return (
-                    <div key={column.id}>
-                      <div className={`flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg ${column.bgHeader}`}>
-                        <ColumnIcon className={`h-4 w-4 ${column.color}`} />
-                        <span className="font-semibold text-sm flex-1">{column.title}</span>
-                        <Badge variant="secondary" className="font-mono text-xs">{columnCards.length}</Badge>
-                      </div>
-
-                      {columnCards.length === 0 ? (
-                        <div className="text-center py-3 text-muted-foreground text-xs opacity-50">
-                          Sin pedidos
+                              {pedido.tipo === 'delivery' && pedido.direccion && (
+                                <div className="flex items-start gap-2 mb-1">
+                                  <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                                  <p className="font-medium">{pedido.direccion}</p>
+                                </div>
+                              )}
+                              <div className="flex items-start gap-2 mb-1 text-muted-foreground">
+                                <Clock className="h-4 w-4 shrink-0 mt-0.5" />
+                                <p className="text-sm">{formatTimeAgo(pedido.createdAt)}</p>
+                              </div>
+                              <p className="mt-2">
+                                <span className="font-semibold text-foreground text-lg">
+                                  ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="flex flex-col gap-2 shrink-0">
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  title="Imprimir factura"
+                                  onClick={() => {
+                                    if (!selectedPrinter) {
+                                      return
+                                    }
+                                    const facturaItems: any[] = pedido.items.map((item: any) => ({
+                                      ...item,
+                                      precioUnitario: item.precioUnitario || '0'
+                                    }))
+                                    // Add delivery fee for delivery orders
+                                    if (pedido.tipo === 'delivery') {
+                                      facturaItems.push({
+                                        id: 0,
+                                        nombreProducto: 'Delivery',
+                                        cantidad: 1,
+                                        precioUnitario: String(DELIVERY_FEE),
+                                        ingredientesExcluidosNombres: []
+                                      })
+                                    }
+                                    const deliveryTotal = pedido.tipo === 'delivery'
+                                      ? String(parseFloat(pedido.total) + DELIVERY_FEE)
+                                      : pedido.total
+                                    const facturaData = formatFactura(
+                                      {
+                                        id: pedido.id,
+                                        mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
+                                        nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
+                                        total: deliveryTotal
+                                      },
+                                      facturaItems,
+                                      restaurante?.nombre || 'Restaurante'
+                                    )
+                                    printRaw(commandsToBytes(facturaData))
+                                  }}
+                                >
+                                  <Printer className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  title="Archivar pedido"
+                                  onClick={() => {
+                                    if (pedido.tipo === 'delivery') handleArchiveDelivery(pedido.id)
+                                    else if (pedido.tipo === 'takeaway') handleArchiveTakeaway(pedido.id)
+                                    else handleArchiveMesaPedido(pedido.id)
+                                  }}
+                                >
+                                  <Archive className="h-4 w-4" />
+                                </Button>
+                                {(pedido.tipo === 'delivery' || pedido.tipo === 'takeaway') && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-destructive hover:text-destructive"
+                                    title="Eliminar pedido"
+                                    onClick={() => pedido.tipo === 'delivery' ? handleDeleteDelivery(pedido.id) : handleDeleteTakeaway(pedido.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {/* Items Preview */}
+                          <div className="mt-3 pt-3 border-t">
+                            <div className="space-y-1.5">
+                              {pedido.items.map((item: any) => (
+                                <div key={item.id} className="flex flex-col bg-muted p-3 rounded-sm mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="font-normal text-sm">
+                                      {item.cantidad}x {item.nombreProducto}
+                                    </div>
+                                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                      <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
+                                    )}
+                                  </div>
+                                  {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                    <p className="text-[10px] text-orange-600 ml-1 mt-0.5">
+                                      ⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                              {pedido.tipo === 'delivery' && (
+                                <div className="flex items-center gap-2 bg-muted p-3 rounded-sm">
+                                  <div className="font-normal flex items-center text-sm">
+                                    <Truck className="h-3 w-3 mr-1" />
+                                    Delivery — ${DELIVERY_FEE.toFixed(2)}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {columnCards.map((card) => {
-                            const hasExclusions = card.items.some(i => i.ingredientesExcluidosNombres?.length)
-                            const isUpdating = updatingPedido === card.pedido.id
+                      </Card>
+                    )
+                  })}
 
-                            const isClosed = card.pedido.estado === 'closed'
-                            const subtotalesData = pedidosSubtotales[card.pedido.id] || []
-                            const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
-                            const totalPedido = subtotalesData.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
-                            const showUnifiedPayment = !splitPayment && isClosed
-
-                            return (
-                              <Card
-                                key={card.id}
-                                className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
-                                  }`}
-                                onClick={() => handleKanbanCardClick(card.pedido)}
-                              >
-                                <CardContent className="p-3">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="font-bold text-sm">{card.pedido.mesaNombre || 'Sin mesa'}</span>
-                                      {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
-                                      {isClosed && (
-                                        <Badge
-                                          variant="outline"
-                                          className={isFullyPaid
-                                            ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 text-[10px] px-1.5 py-0"
-                                            : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 text-[10px] px-1.5 py-0"}
-                                        >
-                                          {isFullyPaid ? "💳 Pagado" : "📋 Cuenta"}
-                                        </Badge>
+                  {/* Archived orders section */}
+                  {filteredArchivedPedidos.length > 0 && (
+                    <>
+                      <Separator className="my-6" />
+                      <div className="flex items-center gap-2 mb-3">
+                        <Archive className="h-4 w-4 text-muted-foreground/60" />
+                        <h3 className="text-sm font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
+                      </div>
+                      {filteredArchivedPedidos.map((pedido) => {
+                        const tipoBadge = getTipoBadge(pedido.tipo)
+                        const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                          || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
+                        return (
+                          <Card
+                            key={`archived-${pedido.tipo}-${pedido.id}`}
+                            className={`overflow-hidden opacity-50 hover:opacity-70 transition-all min-w-[330px] cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary opacity-70' : ''}`}
+                            onClick={() => handleUnifiedPedidoClick(pedido)}
+                          >
+                            <div className="p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                    <span className={`${tipoBadge.className} text-sm font-medium`}>
+                                      {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
+                                        <span className="text-xs"> {pedido.mesaNombre}</span>
                                       )}
-                                    </div>
-                                    <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(card.pedido.createdAt)}</span>
+                                    </span>
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground border-muted-foreground/30">
+                                      Archivado
+                                    </Badge>
                                   </div>
-
-                                  {showUnifiedPayment && subtotalesData.length > 0 && (
-                                    <div className="mb-2 p-2 bg-muted/30 rounded-md">
-                                      <div className="flex justify-between items-center mb-1">
-                                        <span className="text-xs font-medium">Total Mesa</span>
-                                        <span className="text-sm font-bold">${totalPedido.toLocaleString()}</span>
-                                      </div>
-                                      {!isFullyPaid ? (
-                                        <Button
-                                          className="w-full h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleConfirmarPagoTotal(card.pedido.id, subtotalesData)
-                                          }}
-                                          disabled={updatingPago === `all-${card.pedido.id}`}
-                                        >
-                                          {updatingPago === `all-${card.pedido.id}` ? (
-                                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                          ) : (
-                                            <span className="mr-1">💵</span>
-                                          )}
-                                          Confirmar Pago Total
-                                        </Button>
-                                      ) : (
-                                        <div className="w-full py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded text-center text-xs font-medium flex items-center justify-center gap-1">
-                                          <CheckCircle className="h-3 w-3" />
-                                          Pagado
-                                        </div>
-                                      )}
+                                  {pedido.tipo === 'delivery' && pedido.direccion && (
+                                    <div className="flex items-start gap-1.5 mb-0.5">
+                                      <MapPin className="h-3 w-3 text-muted-foreground/60 shrink-0 mt-0.5" />
+                                      <p className="text-xs text-muted-foreground">{pedido.direccion}</p>
                                     </div>
                                   )}
-
-                                  <div className="space-y-1.5">
-                                    {card.items.slice(0, 3).map((item) => (
-                                      <div key={item.id} className="flex items-start gap-2 text-xs">
-                                        <span className="font-bold bg-muted rounded px-1 shrink-0">{item.cantidad}</span>
-                                        <div className="flex-1 min-w-0">
-                                          <span className="truncate block">{item.nombreProducto}</span>
-                                          {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                            <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
-                                          )}
-                                        </div>
-                                        <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                                          {card.status === 'preparing' && (
-                                            <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
-                                              <CheckCircle className="h-3 w-3" />
-                                            </Button>
-                                          )}
-                                          {card.status === 'delivered' && (
-                                            <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
-                                              <Utensils className="h-3 w-3" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                    {card.items.length > 3 && (
-                                      <p className="text-[10px] text-muted-foreground">+{card.items.length - 3} más</p>
-                                    )}
-                                  </div>
-
-                                  {card.status === 'pending' && (
-                                    <Button
-                                      size="sm"
-                                      className="w-full mt-2 h-7 text-xs bg-blue-600 hover:bg-blue-700"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleConfirmarPedido(card.pedido)
-                                      }}
-                                      disabled={isUpdating}
-                                    >
-                                      {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-                                      Confirmar
-                                    </Button>
-                                  )}
-
-                                  {card.status !== 'archived' && (
+                                  <p className="text-sm text-muted-foreground">
+                                    ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                  </p>
+                                </div>
+                                <div className="shrink-0">
+                                  {(pedido.tipo === 'delivery' || pedido.tipo === 'takeaway') && (
                                     <Button
                                       size="sm"
                                       variant="ghost"
-                                      className="w-full mt-1 h-6 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleArchiveMesaPedido(card.pedido.id)
-                                      }}
+                                      className="text-destructive/60 hover:text-destructive h-8 w-8 p-0"
+                                      title="Eliminar pedido"
+                                      onClick={() => pedido.tipo === 'delivery' ? handleDeleteDelivery(pedido.id) : handleDeleteTakeaway(pedido.id)}
                                     >
-                                      <Archive className="h-3 w-3 mr-1" />
-                                      Archivar
+                                      <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
                                   )}
-                                </CardContent>
-                              </Card>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-
-                {Object.values(kanbanData).every(arr => arr.length === 0) && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Coffee className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">Sin pedidos activos</p>
-                  </div>
-                )}
-              </div>
+                                </div>
+                              </div>
+                              {/* Compact items list */}
+                              <div className="mt-2 pt-2 border-t border-muted/50">
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                  {pedido.items.map((item: any) => (
+                                    <span key={item.id} className="text-xs text-muted-foreground">
+                                      {item.cantidad}x {item.nombreProducto}
+                                    </span>
+                                  ))}
+                                  {pedido.tipo === 'delivery' && (
+                                    <span className="text-xs text-muted-foreground">
+                                      + Delivery ${DELIVERY_FEE.toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+          </div>
           </>
         )}
       </div>
