@@ -21,6 +21,7 @@ import {
   User, Minus, Search, Package,
   AlertTriangle, Play, LayoutGrid, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag
 } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, formatFactura, commandsToBytes } from '@/utils/printerUtils'
@@ -247,6 +248,7 @@ const Dashboard = () => {
 
   const exitNuevoPedidoMode = () => {
     setDashboardMode(previousDashboardMode.current)
+    setNewPedidoMesaId(null)
   }
 
   // Delivery state
@@ -257,6 +259,7 @@ const Dashboard = () => {
   const [newDeliveryNombre, setNewDeliveryNombre] = useState('')
   const [newDeliveryTelefono, setNewDeliveryTelefono] = useState('')
   const [newDeliveryNotas, setNewDeliveryNotas] = useState('')
+  const [newPedidoMesaId, setNewPedidoMesaId] = useState<number | null>(null)
   const [creatingDelivery, setCreatingDelivery] = useState(false)
   const [expandedDeliveryItems, setExpandedDeliveryItems] = useState<number[]>([])
 
@@ -968,8 +971,8 @@ const Dashboard = () => {
   }, [token])
 
   useEffect(() => {
-    fetchDeliveryPedidos()
-    fetchTakeawayPedidos()
+      fetchDeliveryPedidos()
+      fetchTakeawayPedidos()
   }, [ ])
 
   useEffect(() => {
@@ -1005,28 +1008,48 @@ const Dashboard = () => {
     if (!token || newDeliveryItems.length === 0) {
       return
     }
-    const isDelivery = newDeliveryDireccion.trim().length > 0
+    const isMesa = newPedidoMesaId !== null
+    const isDelivery = !isMesa && newDeliveryDireccion.trim().length > 0
     setCreatingDelivery(true)
     try {
-      let response: { success: boolean }
-      if (isDelivery) {
-        response = await deliveryApi.create(token, {
+      let success = false
+
+      if (isMesa) {
+        // Create mesa pedido: first create the pedido, then add items
+        const createRes = await pedidosApi.createManual(token, newPedidoMesaId) as { success: boolean; data?: { pedidoId: number } }
+        if (createRes.success && createRes.data?.pedidoId) {
+          const pedidoId = createRes.data.pedidoId
+          // Add all items to the pedido
+          for (const item of newDeliveryItems) {
+            await pedidosApi.addItem(token, pedidoId, {
+              productoId: item.productoId,
+              cantidad: item.cantidad,
+              clienteNombre: newDeliveryNombre || 'Mozo',
+              ingredientesExcluidos: item.ingredientesExcluidos
+            })
+          }
+          success = true
+        }
+      } else if (isDelivery) {
+        const response = await deliveryApi.create(token, {
           direccion: newDeliveryDireccion,
           nombreCliente: newDeliveryNombre || undefined,
           telefono: newDeliveryTelefono || undefined,
           notas: newDeliveryNotas || undefined,
           items: newDeliveryItems
         }) as { success: boolean }
+        success = response.success
       } else {
-        response = await takeawayApi.create(token, {
+        const response = await takeawayApi.create(token, {
           nombreCliente: newDeliveryNombre || undefined,
           telefono: newDeliveryTelefono || undefined,
           notas: newDeliveryNotas || undefined,
           items: newDeliveryItems
         }) as { success: boolean }
+        success = response.success
       }
-      if (response.success) {
 
+      if (success) {
         // Print factura automatically (full invoice with all items including beverages)
         if (selectedPrinter) {
           const itemsForPrint = newDeliveryItems.map(item => {
@@ -1057,11 +1080,15 @@ const Dashboard = () => {
             sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
           ).toFixed(2)
 
+          const mesaNombre = isMesa
+            ? (mesas.find(m => m.id === newPedidoMesaId)?.nombre || 'Mesa')
+            : isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away'
+
           const facturaData = formatFactura(
             {
               id: Date.now(),
-              mesaNombre: isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away',
-              nombrePedido: newDeliveryNombre || (isDelivery ? 'Delivery' : 'Take Away'),
+              mesaNombre,
+              nombrePedido: newDeliveryNombre || (isMesa ? 'Mesa' : isDelivery ? 'Delivery' : 'Take Away'),
               total
             },
             itemsForPrint,
@@ -1077,6 +1104,10 @@ const Dashboard = () => {
         setNewDeliveryNombre('')
         setNewDeliveryTelefono('')
         setNewDeliveryNotas('')
+        setNewPedidoMesaId(null)
+        if (isMesa) {
+          fetchMesasREST()
+        }
         fetchDeliveryPedidos()
         fetchTakeawayPedidos()
       }
@@ -1116,6 +1147,17 @@ const Dashboard = () => {
       const response = await takeawayApi.delete(token, pedidoId) as { success: boolean }
       if (response.success) {
         setTakeawayPedidos(prev => prev.filter(p => p.id !== pedidoId))
+      }
+    } catch (error) {
+    }
+  }
+
+  const handleDeleteMesaPedido = async (pedidoId: number) => {
+    if (!token) return
+    try {
+      const response = await pedidosApi.delete(token, pedidoId) as { success: boolean }
+      if (response.success) {
+        setPedidos(prev => prev.filter(p => p.id !== pedidoId))
       }
     } catch (error) {
     }
@@ -1165,8 +1207,9 @@ const Dashboard = () => {
   const { allUnifiedPedidos, archivedUnifiedPedidos } = useMemo(() => {
     const unified: UnifiedPedido[] = []
 
-    // Add mesa pedidos
+    // Add mesa pedidos (only those with at least 1 item)
     pedidos.forEach(p => {
+      if (p.totalItems === 0) return
       unified.push({
         id: p.id,
         tipo: 'mesa',
@@ -1571,10 +1614,46 @@ const Dashboard = () => {
             {/* LEFT: Client data + Selected items + Submit */}
             <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col border-r overflow-hidden bg-background">
               <div className="flex-1 overflow-auto p-4 space-y-5">
+                {/* Mesa selector */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Tipo de Pedido</h3>
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-2 text-sm">
+                      <Utensils className="h-3.5 w-3.5" />
+                      Mesa
+                      <span className="text-muted-foreground text-xs font-normal">(opcional)</span>
+                    </Label>
+                    <Select
+                      value={newPedidoMesaId ? String(newPedidoMesaId) : 'none'}
+                      onValueChange={(val) => {
+                        if (val === 'none') {
+                          setNewPedidoMesaId(null)
+                        } else {
+                          setNewPedidoMesaId(Number(val))
+                          setNewDeliveryDireccion('')
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full h-10">
+                        <SelectValue placeholder="Sin mesa (Delivery / Take Away)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin mesa (Delivery / Take Away)</SelectItem>
+                        {mesas.map((mesa) => (
+                          <SelectItem key={mesa.id} value={String(mesa.id)}>
+                            {mesa.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 {/* Datos del Cliente */}
                 <div className="space-y-3">
                   <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Datos del Cliente</h3>
                   <div className="space-y-3">
+                    {!newPedidoMesaId && (
                     <div className="space-y-1.5">
                       <Label htmlFor="np-direccion" className="flex items-center gap-2 text-sm">
                         <MapPin className="h-3.5 w-3.5" />
@@ -1589,6 +1668,7 @@ const Dashboard = () => {
                         className="h-10"
                       />
                     </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="np-nombre" className="text-sm">
@@ -1629,7 +1709,12 @@ const Dashboard = () => {
 
                 {/* Tipo badge indicator */}
                 <div className="flex items-center gap-2">
-                  {newDeliveryDireccion.trim() ? (
+                  {newPedidoMesaId ? (
+                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 border">
+                      <Utensils className="h-3 w-3 mr-1" />
+                      Mesa {mesas.find(m => m.id === newPedidoMesaId)?.nombre || ''}
+                    </Badge>
+                  ) : newDeliveryDireccion.trim() ? (
                     <Badge className="bg-sky-100 text-sky-700 border-sky-300 border">
                       <Truck className="h-3 w-3 mr-1" />
                       Delivery
@@ -1754,12 +1839,16 @@ const Dashboard = () => {
                 >
                   {creatingDelivery ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : newPedidoMesaId ? (
+                    <Utensils className="h-4 w-4 mr-2" />
                   ) : newDeliveryDireccion.trim() ? (
                     <Truck className="h-4 w-4 mr-2" />
                   ) : (
                     <ShoppingBag className="h-4 w-4 mr-2" />
                   )}
-                  {newDeliveryDireccion.trim() ? 'Crear Pedido Delivery' : 'Crear Pedido Take Away'}
+                  {newPedidoMesaId
+                    ? `Crear Pedido Mesa ${mesas.find(m => m.id === newPedidoMesaId)?.nombre || ''}`
+                    : newDeliveryDireccion.trim() ? 'Crear Pedido Delivery' : 'Crear Pedido Take Away'}
                   {newDeliveryItems.length > 0 && ` \u2022 $${deliveryItemsTotal.toFixed(2)}`}
                 </Button>
               </div>
@@ -1892,7 +1981,7 @@ const Dashboard = () => {
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-2">
                   {mesas.map((mesa) => {
-                    const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed' && mesa.pedido.estado !== 'archived'
+                    const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed' && mesa.pedido.estado !== 'archived' && mesa.totalItems > 0
                     const notifCount = mesaNotifications.get(mesa.id) || 0
                     const isSelected = selectedMesaId === mesa.id
 
@@ -2605,47 +2694,47 @@ const Dashboard = () => {
                 ))}
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              {loadingDelivery ? (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
+            <div className="flex-1 overflow-auto p-4">
+              {loadingDelivery ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
               ) : allUnifiedPedidos.length === 0 && archivedUnifiedPedidos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                  <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
-                  <p className="text-lg font-medium">No hay pedidos</p>
-                  <Button onClick={enterNuevoPedidoMode}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Crear primer pedido
-                  </Button>
-                </div>
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                  <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
+                  <p className="text-lg font-medium">No hay pedidos</p>
+                  <Button onClick={enterNuevoPedidoMode}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Crear primer pedido
+                  </Button>
+                </div>
               ) : filteredUnifiedPedidos.length === 0 && filteredArchivedPedidos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
                   <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
                   <p className="text-lg font-medium">No hay pedidos de este tipo</p>
                   <Button variant="outline" onClick={() => setPedidoFilter('all')}>
                     Ver todos los pedidos
-                  </Button>
-                </div>
-              ) : (
-                <div className="max-w-4xl space-y-3">
-                  <div className="flex items-center justify-between mb-4">
+                  </Button>
+                </div>
+              ) : (
+                <div className="max-w-4xl space-y-3">
+                  <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold">
                       {pedidoFilter === 'all' ? 'Todos los Pedidos' : pedidoFilter === 'mesa' ? 'Pedidos de Mesa' : pedidoFilter === 'delivery' ? 'Pedidos Delivery' : 'Pedidos Take Away'} ({filteredUnifiedPedidos.length})
                     </h2>
-                  </div>
+                  </div>
                   {filteredUnifiedPedidos.map((pedido) => {
-                    const tipoBadge = getTipoBadge(pedido.tipo)
+                    const tipoBadge = getTipoBadge(pedido.tipo)
                     const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                       || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
-                    return (
+                    return (
                       <Card
                         key={`${pedido.tipo}-${pedido.id}`}
                         className={`overflow-hidden hover:shadow-md transition-all pl-4 pr-8 min-w-[330px] cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary shadow-md' : ''}`}
                         onClick={() => handleUnifiedPedidoClick(pedido)}
                       >
-                        <div className="p-4">
-                          <div className="flex items-start justify-between gap-4">
+                        <div className="p-4">
+                          <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <CardTitle className={`${tipoBadge.className} text-lg`}>
@@ -2727,17 +2816,15 @@ const Dashboard = () => {
                                 >
                                   <Archive className="h-4 w-4" />
                                 </Button>
-                                {(pedido.tipo === 'delivery' || pedido.tipo === 'takeaway') && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     className="text-destructive hover:text-destructive"
                                     title="Eliminar pedido"
-                                    onClick={() => pedido.tipo === 'delivery' ? handleDeleteDelivery(pedido.id) : handleDeleteTakeaway(pedido.id)}
+                                    onClick={() => pedido.tipo === 'delivery' ? handleDeleteDelivery(pedido.id) : pedido.tipo === 'takeaway' ? handleDeleteTakeaway(pedido.id) : handleDeleteMesaPedido(pedido.id)}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -2768,13 +2855,13 @@ const Dashboard = () => {
                                     Delivery — ${DELIVERY_FEE.toFixed(2)}
                                   </div>
                                 </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    )
-                  })}
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    )
+                  })}
 
                   {/* Archived orders section */}
                   {filteredArchivedPedidos.length > 0 && (
@@ -2783,7 +2870,7 @@ const Dashboard = () => {
                       <div className="flex items-center gap-2 mb-3">
                         <Archive className="h-4 w-4 text-muted-foreground/60" />
                         <h3 className="text-sm font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
-                      </div>
+                </div>
                       {filteredArchivedPedidos.map((pedido) => {
                         const tipoBadge = getTipoBadge(pedido.tipo)
                         const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
@@ -2806,7 +2893,7 @@ const Dashboard = () => {
                                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground border-muted-foreground/30">
                                       Archivado
                                     </Badge>
-                                  </div>
+            </div>
                                   {pedido.tipo === 'delivery' && pedido.direccion && (
                                     <div className="flex items-start gap-1.5 mb-0.5">
                                       <MapPin className="h-3 w-3 text-muted-foreground/60 shrink-0 mt-0.5" />
@@ -2855,7 +2942,7 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-          </div>
+          </div>
           </>
         )}
       </div>
