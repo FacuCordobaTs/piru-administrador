@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -161,6 +161,20 @@ const formatTimeAgo = (dateString: string) => {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ${minutes % 60}m`
   return new Date(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+}
+
+const getDateLabel = (dateString: string) => {
+  const date = new Date(dateString)
+  const today = new Date()
+  if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()) {
+    return 'Hoy'
+  }
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (date.getFullYear() === yesterday.getFullYear() && date.getMonth() === yesterday.getMonth() && date.getDate() === yesterday.getDate()) {
+    return 'Ayer'
+  }
+  return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`
 }
 
 const getEstadoBadge = (estado: string | null | undefined) => {
@@ -2047,7 +2061,8 @@ const Dashboard = () => {
                         <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
                           <span>Pedido #{displayedUnifiedPedido.id}</span>
                           <span>·</span>
-                          <span>{formatTimeAgo(displayedUnifiedPedido.createdAt)}</span>
+                          <span>{getDateLabel(displayedUnifiedPedido.createdAt)}, {new Date(displayedUnifiedPedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-muted-foreground/60">({formatTimeAgo(displayedUnifiedPedido.createdAt)})</span>
                         </p>
                       </div>
                       <div className="flex gap-1 lg:gap-2 shrink-0">
@@ -2329,6 +2344,13 @@ const Dashboard = () => {
                             </>
                           ) : 'Sin pedido activo'}
                         </p>
+                        {displayedPedido && (
+                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                            <Clock className="h-3 w-3" />
+                            <span>{getDateLabel(displayedPedido.createdAt)}, {new Date(displayedPedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-muted-foreground/60">({formatTimeAgo(displayedPedido.createdAt)})</span>
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-1 lg:gap-2 shrink-0">
                         <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setVerQR(true)}>
@@ -2347,81 +2369,6 @@ const Dashboard = () => {
                             <Button variant="outline" size="sm" className="hidden lg:flex" onClick={() => setAddProductSheet(true)}>
                               <Plus className="mr-2 h-4 w-4" />
                               Agregar
-                            </Button>
-
-                            {/* Imprimir Factura Button */}
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="lg:hidden h-9 w-9"
-                              onClick={() => {
-                                if (!selectedPrinter) {
-                                  return
-                                }
-                                const facturaData = formatFactura(
-                                  {
-                                    id: displayedPedido.id,
-                                    mesaNombre: selectedMesa?.nombre,
-                                    nombrePedido: displayedPedido.nombrePedido,
-                                    total: displayedPedido.total
-                                  },
-                                  displayedPedido.items,
-                                  restaurante?.nombre || 'Restaurante'
-                                )
-                                printRaw(commandsToBytes(facturaData))
-                              }}
-                            >
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="hidden lg:flex"
-                              onClick={() => {
-                                if (!selectedPrinter) { 
-                                  return
-                                }
-                                const facturaData = formatFactura(
-                                  {
-                                    id: displayedPedido.id,
-                                    mesaNombre: selectedMesa?.nombre,
-                                    nombrePedido: displayedPedido.nombrePedido,
-                                    total: displayedPedido.total
-                                  },
-                                  displayedPedido.items,
-                                  restaurante?.nombre || 'Restaurante'
-                                )
-                                printRaw(commandsToBytes(facturaData))
-                              }}
-                            >
-                              <Printer className="mr-2 h-4 w-4" />
-                              Factura
-                            </Button>
-
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="text-muted-foreground hover:text-foreground lg:hidden h-9 w-9"
-                              onClick={() => handleArchiveMesaPedido(displayedPedido.id)}
-                            >
-                              <Archive className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-muted-foreground hover:text-foreground hidden lg:flex"
-                              onClick={() => handleArchiveMesaPedido(displayedPedido.id)}
-                            >
-                              <Archive className="mr-2 h-4 w-4" />
-                              Archivar
-                            </Button>
-
-                            <Button variant="outline" size="icon" className="text-destructive lg:hidden h-9 w-9" onClick={() => setShowDeletePedidoDialog(true)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                            <Button variant="outline" size="sm" className="text-destructive hidden lg:flex" onClick={() => setShowDeletePedidoDialog(true)}>
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Eliminar
                             </Button>
                           </>
                         )}
@@ -2723,13 +2670,22 @@ const Dashboard = () => {
                       {pedidoFilter === 'all' ? 'Todos los Pedidos' : pedidoFilter === 'mesa' ? 'Pedidos de Mesa' : pedidoFilter === 'delivery' ? 'Pedidos Delivery' : 'Pedidos Take Away'} ({filteredUnifiedPedidos.length})
                     </h2>
                   </div>
-                  {filteredUnifiedPedidos.map((pedido) => {
-                    const tipoBadge = getTipoBadge(pedido.tipo)
+                  {filteredUnifiedPedidos.map((pedido, index) => {
+                    const tipoBadge = getTipoBadge(pedido.tipo)
                     const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                       || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
-                    return (
+                    const dateLabel = getDateLabel(pedido.createdAt)
+                    const prevDateLabel = index > 0 ? getDateLabel(filteredUnifiedPedidos[index - 1].createdAt) : null
+                    const showDateSeparator = dateLabel !== prevDateLabel
+                    return (
+                      <Fragment key={`${pedido.tipo}-${pedido.id}`}>
+                      {showDateSeparator && (
+                        <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-3'}`}>
+                          <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
+                          <Separator className="flex-1" />
+                        </div>
+                      )}
                       <Card
-                        key={`${pedido.tipo}-${pedido.id}`}
                         className={`overflow-hidden hover:shadow-md transition-all pl-4 pr-8 min-w-[330px] cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary shadow-md' : ''}`}
                         onClick={() => handleUnifiedPedidoClick(pedido)}
                       >
@@ -2859,9 +2815,10 @@ const Dashboard = () => {
                             </div>
                           </div>
                         </div>
-                      </Card>
-                    )
-                  })}
+                      </Card>
+                      </Fragment>
+                    )
+                  })}
 
                   {/* Archived orders section */}
                   {filteredArchivedPedidos.length > 0 && (
@@ -2871,13 +2828,22 @@ const Dashboard = () => {
                         <Archive className="h-4 w-4 text-muted-foreground/60" />
                         <h3 className="text-sm font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
                 </div>
-                      {filteredArchivedPedidos.map((pedido) => {
+                      {filteredArchivedPedidos.map((pedido, index) => {
                         const tipoBadge = getTipoBadge(pedido.tipo)
                         const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                           || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
+                        const dateLabel = getDateLabel(pedido.createdAt)
+                        const prevDateLabel = index > 0 ? getDateLabel(filteredArchivedPedidos[index - 1].createdAt) : null
+                        const showDateSeparator = dateLabel !== prevDateLabel
                         return (
+                          <Fragment key={`archived-${pedido.tipo}-${pedido.id}`}>
+                          {showDateSeparator && (
+                            <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-3'}`}>
+                              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
+                              <Separator className="flex-1" />
+                            </div>
+                          )}
                           <Card
-                            key={`archived-${pedido.tipo}-${pedido.id}`}
                             className={`overflow-hidden opacity-50 hover:opacity-70 transition-all min-w-[330px] cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary opacity-70' : ''}`}
                             onClick={() => handleUnifiedPedidoClick(pedido)}
                           >
@@ -2935,6 +2901,7 @@ const Dashboard = () => {
                               </div>
                             </div>
                           </Card>
+                          </Fragment>
                         )
                       })}
                     </>
@@ -2942,7 +2909,7 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-          </div>
+          </div>
           </>
         )}
       </div>
