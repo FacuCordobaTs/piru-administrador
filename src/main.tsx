@@ -49,11 +49,11 @@ const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Pedidos />,
+            element: <Dashboard />,
           },
           {
-            path: "mesas",
-            element: <Dashboard />,
+            path: "pedidos",
+            element: <Pedidos />,
           },
           {
             path: "pedidos/:id",

@@ -70,8 +70,8 @@ const DashboardLayout = () => {
   }
 
   const menuItems = [
-    { icon: ClipboardList, label: 'Pedidos', path: '/dashboard' },
-    { icon: LayoutDashboard, label: 'Mesas', path: '/dashboard/mesas' },
+    { icon: LayoutDashboard, label: 'Mesas', path: '/dashboard/' },
+    { icon: ClipboardList, label: 'Pedidos', path: '/dashboard/pedidos' },
     { icon: Package, label: 'Productos', path: '/dashboard/productos' },
   ]
 
