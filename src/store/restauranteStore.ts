@@ -48,6 +48,7 @@ interface RestauranteData {
   esCarrito: boolean | null
   // Configuraciones
   splitPayment: boolean | null
+  itemTracking: boolean | null
 }
 
 interface RestauranteState {

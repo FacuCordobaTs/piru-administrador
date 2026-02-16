@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { toast } from 'sonner';
 
 const STORAGE_KEY = 'tauri_printer_name';
 
@@ -35,14 +34,12 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setPrinters(printerList);
         } catch (error) {
             console.error('Error al obtener impresoras:', error);
-            toast.error('Error al obtener lista de impresoras');
         }
     }, []);
 
     // Enviar datos raw a la impresora seleccionada
     const printRaw = useCallback(async (data: number[]) => {
         if (!selectedPrinter) {
-            toast.error('Seleccione una impresora');
             throw new Error('No hay impresora seleccionada');
         }
 
@@ -51,10 +48,8 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 printerName: selectedPrinter,
                 content: data
             });
-            toast.success('Enviado a impresora');
         } catch (error) {
             console.error('Error al imprimir:', error);
-            toast.error(`Error al imprimir: ${error}`);
             throw error;
         }
     }, [selectedPrinter]);

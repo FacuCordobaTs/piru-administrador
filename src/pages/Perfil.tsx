@@ -29,7 +29,8 @@ import {
   CheckCircle2,
   ShoppingCart,
   Printer,
-  List
+  List,
+  ClipboardList
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -57,6 +58,7 @@ const Perfil = () => {
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
+  const [isTogglingItemTracking, setIsTogglingItemTracking] = useState(false)
 
   // Tauri Printer State
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
@@ -219,6 +221,29 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración de pagos')
     } finally {
       setIsTogglingSplitPayment(false)
+    }
+  }
+
+  // Toggle seguimiento de items
+  const handleToggleItemTracking = async () => {
+    if (!token) return
+
+    setIsTogglingItemTracking(true)
+    try {
+      const response = await restauranteApi.toggleItemTracking(token) as { success: boolean; itemTracking: boolean }
+      if (response.success) {
+        toast.success(response.itemTracking ? 'Seguimiento de items activado' : 'Seguimiento de items desactivado', {
+          description: response.itemTracking
+            ? 'Podrás gestionar el estado de cada producto del pedido'
+            : 'Los pedidos se mostrarán como un listado simple'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar seguimiento de items:', error)
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingItemTracking(false)
     }
   }
 
@@ -625,6 +650,65 @@ const Perfil = () => {
                         Activar Split Payment
                       </>
                     )}
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Seguimiento de Items */}
+          <Card className={restaurante?.itemTracking ? "border-violet-500/50 bg-violet-50/50 dark:bg-violet-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ClipboardList className="h-5 w-5" />
+                Seguimiento de Items
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.itemTracking
+                  ? 'Gestión detallada del estado de cada producto'
+                  : 'Los pedidos se muestran como un listado simple'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.itemTracking ? (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Cada producto pasa por estados: pendiente → en cocina → listo → entregado</p>
+                    <p>• Vista Kanban para organizar el flujo de trabajo</p>
+                    <p>• Ideal para restaurantes con cocina y mozos</p>
+                  </div>
+                  <Badge variant="secondary" className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                    Seguimiento Activo
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Los pedidos se listan sin gestión de estados</p>
+                    <p>• Vista simplificada para operaciones rápidas</p>
+                    <p>• Ideal para carritos o locales de comida rápida</p>
+                  </div>
+                  <Badge variant="secondary">
+                    Seguimiento Inactivo
+                  </Badge>
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleToggleItemTracking}
+                disabled={isTogglingItemTracking}
+              >
+                {isTogglingItemTracking ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cambiando...
+                  </>
+                ) : (
+                  <>
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    {restaurante?.itemTracking ? 'Desactivar Seguimiento' : 'Activar Seguimiento'}
                   </>
                 )}
               </Button>

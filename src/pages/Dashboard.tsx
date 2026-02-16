@@ -487,11 +487,10 @@ const Dashboard = () => {
       }
 
       if (response.success && response.data) {
-        const closed = response.data.filter(p => p.estado === 'closed')
-        setClosedPedidosFromAPI(closed)
+        setClosedPedidosFromAPI(response.data)
       }
     } catch (error) {
-      console.error('Error fetching closed pedidos:', error)
+      console.error('Error fetching pedidos:', error)
     }
   }, [token])
 
@@ -559,7 +558,7 @@ const Dashboard = () => {
         }
       })
 
-      closedPedidosFromAPI.forEach(p => {
+      closedPedidosFromAPI.filter(p => p.estado === 'closed').forEach(p => {
         if (!allClosedIds.has(p.id)) {
           allClosedIds.add(p.id)
           allClosedPedidos.push(p)
@@ -1220,9 +1219,29 @@ const Dashboard = () => {
   // Unified all-orders list
   const { allUnifiedPedidos, archivedUnifiedPedidos } = useMemo(() => {
     const unified: UnifiedPedido[] = []
+    const addedMesaPedidoIds = new Set<number>()
 
-    // Add mesa pedidos (only those with at least 1 item)
+    // Add mesa pedidos from WS (real-time, only those with at least 1 item)
     pedidos.forEach(p => {
+      if (p.totalItems === 0) return
+      addedMesaPedidoIds.add(p.id)
+      unified.push({
+        id: p.id,
+        tipo: 'mesa',
+        estado: p.estado,
+        total: p.total,
+        createdAt: p.createdAt,
+        nombreCliente: p.nombrePedido || null,
+        telefono: null,
+        mesaNombre: p.mesaNombre,
+        items: p.items,
+        totalItems: p.totalItems,
+      })
+    })
+
+    // Add historical mesa pedidos from API (closed, archived, etc. not already in WS)
+    closedPedidosFromAPI.forEach(p => {
+      if (addedMesaPedidoIds.has(p.id)) return
       if (p.totalItems === 0) return
       unified.push({
         id: p.id,
@@ -1278,7 +1297,7 @@ const Dashboard = () => {
       allUnifiedPedidos: unified.filter(p => p.estado !== 'archived'),
       archivedUnifiedPedidos: unified.filter(p => p.estado === 'archived'),
     }
-  }, [pedidos, deliveryPedidos, takeawayPedidos])
+  }, [pedidos, closedPedidosFromAPI, deliveryPedidos, takeawayPedidos])
 
   const filteredUnifiedPedidos = useMemo(() => {
     if (pedidoFilter === 'all') return allUnifiedPedidos
@@ -2067,12 +2086,12 @@ const Dashboard = () => {
                       </div>
                       <div className="flex gap-1 lg:gap-2 shrink-0">
                         {/* Print */}
+                        {selectedPrinter && (
                         <Button
                           variant="outline"
                           size="sm"
                           className="hidden lg:flex"
                           onClick={() => {
-                            if (!selectedPrinter) return
                             const facturaItems: any[] = displayedUnifiedPedido.items.map((item: any) => ({
                               ...item,
                               precioUnitario: item.precioUnitario || '0'
@@ -2105,12 +2124,13 @@ const Dashboard = () => {
                           <Printer className="mr-2 h-4 w-4" />
                           Factura
                         </Button>
+                        )}
+                        {selectedPrinter && (
                         <Button
                           variant="outline"
                           size="icon"
                           className="lg:hidden h-9 w-9"
                           onClick={() => {
-                            if (!selectedPrinter) return
                             const facturaItems: any[] = displayedUnifiedPedido.items.map((item: any) => ({
                               ...item,
                               precioUnitario: item.precioUnitario || '0'
@@ -2142,6 +2162,7 @@ const Dashboard = () => {
                         >
                           <Printer className="h-4 w-4" />
                         </Button>
+                        )}
 
                         {/* Archive */}
                         {displayedUnifiedPedido.estado !== 'archived' && (
@@ -2718,47 +2739,46 @@ const Dashboard = () => {
                             </div>
                             <div className="flex flex-col gap-2 shrink-0">
                               <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-muted-foreground hover:text-foreground"
-                                  title="Imprimir factura"
-                                  onClick={() => {
-                                    if (!selectedPrinter) {
-                                      return
-                                    }
-                                    const facturaItems: any[] = pedido.items.map((item: any) => ({
-                                      ...item,
-                                      precioUnitario: item.precioUnitario || '0'
-                                    }))
-                                    // Add delivery fee for delivery orders
-                                    if (pedido.tipo === 'delivery') {
-                                      facturaItems.push({
-                                        id: 0,
-                                        nombreProducto: 'Delivery',
-                                        cantidad: 1,
-                                        precioUnitario: String(DELIVERY_FEE),
-                                        ingredientesExcluidosNombres: []
-                                      })
-                                    }
-                                    const deliveryTotal = pedido.tipo === 'delivery'
-                                      ? String(parseFloat(pedido.total) + DELIVERY_FEE)
-                                      : pedido.total
-                                    const facturaData = formatFactura(
-                                      {
-                                        id: pedido.id,
-                                        mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
-                                        nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
-                                        total: deliveryTotal
-                                      },
-                                      facturaItems,
-                                      restaurante?.nombre || 'Restaurante'
-                                    )
-                                    printRaw(commandsToBytes(facturaData))
-                                  }}
-                                >
-                                  <Printer className="h-4 w-4" />
-                                </Button>
+                                {selectedPrinter && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  title="Imprimir factura"
+                                  onClick={() => {
+                                    const facturaItems: any[] = pedido.items.map((item: any) => ({
+                                      ...item,
+                                      precioUnitario: item.precioUnitario || '0'
+                                    }))
+                                    // Add delivery fee for delivery orders
+                                    if (pedido.tipo === 'delivery') {
+                                      facturaItems.push({
+                                        id: 0,
+                                        nombreProducto: 'Delivery',
+                                        cantidad: 1,
+                                        precioUnitario: String(DELIVERY_FEE),
+                                        ingredientesExcluidosNombres: []
+                                      })
+                                    }
+                                    const deliveryTotal = pedido.tipo === 'delivery'
+                                      ? String(parseFloat(pedido.total) + DELIVERY_FEE)
+                                      : pedido.total
+                                    const facturaData = formatFactura(
+                                      {
+                                        id: pedido.id,
+                                        mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
+                                        nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
+                                        total: deliveryTotal
+                                      },
+                                      facturaItems,
+                                      restaurante?.nombre || 'Restaurante'
+                                    )
+                                    printRaw(commandsToBytes(facturaData))
+                                  }}
+                                >
+                                  <Printer className="h-4 w-4" />
+                                </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="ghost"

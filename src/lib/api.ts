@@ -174,6 +174,15 @@ export const restauranteApi = {
       },
     })
   },
+
+  toggleItemTracking: async (token: string) => {
+    return fetchApi('/restaurante/toggle-item-tracking', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Categorías API
