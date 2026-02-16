@@ -83,6 +83,9 @@ interface KanbanCardData {
   pedido: PedidoData
   items: ItemPedidoConEstado[]
   status: string
+  tipo: 'mesa' | 'delivery' | 'takeaway'
+  direccion?: string
+  nombreCliente?: string | null
 }
 
 // Delivery Types
@@ -204,6 +207,7 @@ const Dashboard = () => {
   const restaurante = useAuthStore((state) => state.restaurante)
   const { restaurante: restauranteStore, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
   const splitPayment = restauranteStore?.splitPayment ?? true
+  const itemTracking = restauranteStore?.itemTracking ?? true
   const { printRaw, selectedPrinter } = usePrinter()
 
   // Ref para rastrear pedidos procesados para impresión automática
@@ -258,6 +262,7 @@ const Dashboard = () => {
   const enterNuevoPedidoMode = () => {
     previousDashboardMode.current = dashboardMode === 'nuevoPedido' ? previousDashboardMode.current : (dashboardMode as 'mesas' | 'pedidos')
     setDashboardMode('nuevoPedido')
+    setNuevoPedidoMobileTab('info')
   }
 
   const exitNuevoPedidoMode = () => {
@@ -276,6 +281,7 @@ const Dashboard = () => {
   const [newPedidoMesaId, setNewPedidoMesaId] = useState<number | null>(null)
   const [creatingDelivery, setCreatingDelivery] = useState(false)
   const [expandedDeliveryItems, setExpandedDeliveryItems] = useState<number[]>([])
+  const [nuevoPedidoMobileTab, setNuevoPedidoMobileTab] = useState<'info' | 'productos'>('info')
 
   // Takeaway state
   const [takeawayPedidos, setTakeawayPedidos] = useState<TakeawayPedido[]>([])
@@ -631,19 +637,21 @@ const Dashboard = () => {
 
     const allPedidos = Array.from(allPedidosMap.values())
 
+    // Process mesa pedidos
     allPedidos.forEach(pedido => {
       if (pedido.estado === 'archived') {
         grouped.archived.push({
-          id: `${pedido.id}-archived`,
+          id: `mesa-${pedido.id}-archived`,
           pedido,
           items: pedido.items,
-          status: 'archived'
+          status: 'archived',
+          tipo: 'mesa',
         })
         return
       }
 
       if (pedido.estado === 'pending' && pedido.items.length > 0) {
-        grouped.pending.push({ id: `${pedido.id}-pending`, pedido, items: pedido.items, status: 'pending' })
+        grouped.pending.push({ id: `mesa-${pedido.id}-pending`, pedido, items: pedido.items, status: 'pending', tipo: 'mesa' })
         return
       }
 
@@ -653,10 +661,11 @@ const Dashboard = () => {
         if (allItemsServed) {
           const target = pedidosCerradosPagados.has(pedido.id) ? 'closedPaid' : 'closedPending'
           grouped[target].push({
-            id: `${pedido.id}-closed`,
+            id: `mesa-${pedido.id}-closed`,
             pedido,
             items: pedido.items,
-            status: 'closed'
+            status: 'closed',
+            tipo: 'mesa',
           })
           return
         }
@@ -664,18 +673,112 @@ const Dashboard = () => {
 
       const itemsPreparing = pedido.items.filter(i => !i.estado || i.estado === 'preparing' || i.estado === 'pending')
       if (itemsPreparing.length > 0) {
-        grouped.preparing.push({ id: `${pedido.id}-preparing`, pedido, items: itemsPreparing, status: 'preparing' })
+        grouped.preparing.push({ id: `mesa-${pedido.id}-preparing`, pedido, items: itemsPreparing, status: 'preparing', tipo: 'mesa' })
       }
 
       const itemsDelivered = pedido.items.filter(i => i.estado === 'delivered')
       if (itemsDelivered.length > 0) {
-        grouped.delivered.push({ id: `${pedido.id}-delivered`, pedido, items: itemsDelivered, status: 'delivered' })
+        grouped.delivered.push({ id: `mesa-${pedido.id}-delivered`, pedido, items: itemsDelivered, status: 'delivered', tipo: 'mesa' })
       }
 
       const itemsServed = pedido.items.filter(i => i.estado === 'served')
       if (itemsServed.length > 0) {
-        grouped.served.push({ id: `${pedido.id}-served`, pedido, items: itemsServed, status: 'served' })
+        grouped.served.push({ id: `mesa-${pedido.id}-served`, pedido, items: itemsServed, status: 'served', tipo: 'mesa' })
       }
+    })
+
+    // Helper: map delivery/takeaway estado to kanban column
+    const mapEstadoToColumn = (estado: string): string | null => {
+      switch (estado) {
+        case 'pending': return 'pending'
+        case 'preparing': return 'preparing'
+        case 'ready': return 'delivered'
+        case 'delivered': return 'served'
+        case 'archived': return 'archived'
+        default: return null // cancelled or unknown
+      }
+    }
+
+    // Helper: map delivery/takeaway estado to item-level estado
+    const mapEstadoToItemEstado = (estado: string): ItemPedidoConEstado['estado'] => {
+      switch (estado) {
+        case 'pending': return 'pending'
+        case 'preparing': return 'preparing'
+        case 'ready': return 'delivered'
+        case 'delivered': return 'served'
+        default: return 'preparing'
+      }
+    }
+
+    // Process delivery pedidos
+    deliveryPedidos.forEach(dp => {
+      const column = mapEstadoToColumn(dp.estado)
+      if (!column || !grouped[column]) return
+
+      const itemEstado = mapEstadoToItemEstado(dp.estado)
+      const items: ItemPedidoConEstado[] = dp.items.map(i => ({
+        ...i,
+        clienteNombre: dp.nombreCliente || 'Delivery',
+        estado: itemEstado,
+      }))
+
+      const pseudoPedido: PedidoData = {
+        id: dp.id,
+        mesaId: null,
+        mesaNombre: null,
+        estado: dp.estado === 'ready' ? 'delivered' : dp.estado as PedidoData['estado'],
+        total: dp.total,
+        createdAt: dp.createdAt,
+        closedAt: dp.deliveredAt,
+        items,
+        totalItems: dp.totalItems,
+        nombrePedido: dp.nombreCliente,
+      }
+
+      grouped[column].push({
+        id: `delivery-${dp.id}-${column}`,
+        pedido: pseudoPedido,
+        items,
+        status: column === 'archived' ? 'archived' : dp.estado === 'pending' ? 'pending' : dp.estado === 'preparing' ? 'preparing' : dp.estado === 'ready' ? 'delivered' : 'served',
+        tipo: 'delivery',
+        direccion: dp.direccion,
+        nombreCliente: dp.nombreCliente,
+      })
+    })
+
+    // Process takeaway pedidos
+    takeawayPedidos.forEach(tp => {
+      const column = mapEstadoToColumn(tp.estado)
+      if (!column || !grouped[column]) return
+
+      const itemEstado = mapEstadoToItemEstado(tp.estado)
+      const items: ItemPedidoConEstado[] = tp.items.map(i => ({
+        ...i,
+        clienteNombre: tp.nombreCliente || 'Take Away',
+        estado: itemEstado,
+      }))
+
+      const pseudoPedido: PedidoData = {
+        id: tp.id,
+        mesaId: null,
+        mesaNombre: null,
+        estado: tp.estado === 'ready' ? 'delivered' : tp.estado as PedidoData['estado'],
+        total: tp.total,
+        createdAt: tp.createdAt,
+        closedAt: tp.deliveredAt,
+        items,
+        totalItems: tp.totalItems,
+        nombrePedido: tp.nombreCliente,
+      }
+
+      grouped[column].push({
+        id: `takeaway-${tp.id}-${column}`,
+        pedido: pseudoPedido,
+        items,
+        status: column === 'archived' ? 'archived' : tp.estado === 'pending' ? 'pending' : tp.estado === 'preparing' ? 'preparing' : tp.estado === 'ready' ? 'delivered' : 'served',
+        tipo: 'takeaway',
+        nombreCliente: tp.nombreCliente,
+      })
     })
 
     Object.keys(grouped).forEach(key => {
@@ -690,7 +793,7 @@ const Dashboard = () => {
     })
 
     return grouped
-  }, [pedidos, closedPedidosFromAPI, pedidosCerradosPagados])
+  }, [pedidos, closedPedidosFromAPI, pedidosCerradosPagados, deliveryPedidos, takeawayPedidos])
 
   const handleCrearMesa = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -707,6 +810,22 @@ const Dashboard = () => {
     } catch (error) {
     } finally {
       setIsCreating(false)
+    }
+  }
+
+  // Change estado for delivery/takeaway orders (order-level, since they don't have per-item tracking)
+  const handleDeliveryTakeawayEstadoChange = async (tipo: 'delivery' | 'takeaway', id: number, nuevoEstado: string) => {
+    if (!token) return
+    try {
+      if (tipo === 'delivery') {
+        await deliveryApi.updateEstado(token, id, nuevoEstado)
+        setDeliveryPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: nuevoEstado as DeliveryPedido['estado'] } : p))
+      } else {
+        await takeawayApi.updateEstado(token, id, nuevoEstado)
+        setTakeawayPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: nuevoEstado as TakeawayPedido['estado'] } : p))
+      }
+    } catch (error) {
+      console.error('Error al actualizar estado:', error)
     }
   }
 
@@ -1424,43 +1543,71 @@ const Dashboard = () => {
         </div>
 
         {/* Mobile Navigation Tabs */}
-        <div className="lg:hidden mt-2 -mx-3 px-3 border-t pt-2">
-          <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-            <Button
-              variant={mobileView === 'mesas' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="flex-1 h-8 text-xs"
-              onClick={() => setMobileView('mesas')}
-            >
-              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
-              Mesas
-            </Button>
-            <Button
-              variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="flex-1 h-8 text-xs relative"
-              onClick={() => (selectedMesaId || selectedUnifiedPedido) ? setMobileView('detail') : null}
-              disabled={!selectedMesaId && !selectedUnifiedPedido}
-            >
-              <List className="h-3.5 w-3.5 mr-1.5" />
-              Detalle
-            </Button>
-            <Button
-              variant={mobileView === 'orders' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="flex-1 h-8 text-xs relative"
-              onClick={() => setMobileView('orders')}
-            >
-              <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
-              Pedidos
-              {activeOrdersCount > 0 && (
-                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
-                  {activeOrdersCount}
-                </span>
-              )}
-            </Button>
+        {dashboardMode === 'nuevoPedido' ? (
+          <div className="lg:hidden mt-2 -mx-3 px-3 border-t pt-2">
+            <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+              <Button
+                variant={nuevoPedidoMobileTab === 'info' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="flex-1 h-8 text-xs"
+                onClick={() => setNuevoPedidoMobileTab('info')}
+              >
+                <List className="h-3.5 w-3.5 mr-1.5" />
+                Pedido
+                {newDeliveryItems.length > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 text-[10px] h-4 min-w-4 px-1">{newDeliveryItems.length}</Badge>
+                )}
+              </Button>
+              <Button
+                variant={nuevoPedidoMobileTab === 'productos' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="flex-1 h-8 text-xs"
+                onClick={() => setNuevoPedidoMobileTab('productos')}
+              >
+                <Package className="h-3.5 w-3.5 mr-1.5" />
+                Productos
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="lg:hidden mt-2 -mx-3 px-3 border-t pt-2">
+            <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+              <Button
+                variant={mobileView === 'mesas' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="flex-1 h-8 text-xs"
+                onClick={() => setMobileView('mesas')}
+              >
+                <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
+                Mesas
+              </Button>
+              <Button
+                variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="flex-1 h-8 text-xs relative"
+                onClick={() => (selectedMesaId || selectedUnifiedPedido) ? setMobileView('detail') : null}
+                disabled={!selectedMesaId && !selectedUnifiedPedido}
+              >
+                <List className="h-3.5 w-3.5 mr-1.5" />
+                Detalle
+              </Button>
+              <Button
+                variant={mobileView === 'orders' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="flex-1 h-8 text-xs relative"
+                onClick={() => setMobileView('orders')}
+              >
+                <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+                Pedidos
+                {activeOrdersCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                    {activeOrdersCount}
+                  </span>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Content - Desktop: 3 columns, Mobile: Single view based on state */}
@@ -1499,26 +1646,61 @@ const Dashboard = () => {
                             {columnCards.map((card) => {
                               const hasExclusions = card.items.some(i => i.ingredientesExcluidosNombres?.length)
                               const isUpdating = updatingPedido === card.pedido.id
+                              const isMesa = card.tipo === 'mesa'
   
                               const isClosed = card.pedido.estado === 'closed'
-                              const subtotalesData = pedidosSubtotales[card.pedido.id] || []
+                              const subtotalesData = isMesa ? (pedidosSubtotales[card.pedido.id] || []) : []
                               const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
                               const totalPedido = subtotalesData.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
-                              const showUnifiedPayment = !splitPayment && isClosed
+                              const showUnifiedPayment = !splitPayment && isClosed && isMesa
+
+                              // Card title based on tipo
+                              const cardTitle = card.tipo === 'delivery'
+                                ? `🚚 ${card.nombreCliente || 'Delivery'}`
+                                : card.tipo === 'takeaway'
+                                  ? `🛍️ ${card.nombreCliente || 'Take Away'}`
+                                  : `🍽️ ${card.pedido.mesaNombre || 'Sin mesa'}`
+
+                              // Next estado for delivery/takeaway order-level actions
+                              const getNextEstado = () => {
+                                if (card.status === 'preparing') return { label: 'Marcar Listo', estado: 'ready', color: 'bg-emerald-600 hover:bg-emerald-700' }
+                                if (card.status === 'delivered') return { label: 'Marcar Entregado', estado: 'delivered', color: 'bg-indigo-600 hover:bg-indigo-700' }
+                                return null
+                              }
+                              const nextAction = !isMesa ? getNextEstado() : null
   
                               return (
                                 <Card
                                   key={card.id}
-                                  className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
+                                  className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${isMesa && selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
                                     }`}
-                                  onClick={() => handleKanbanCardClick(card.pedido)}
+                                  onClick={() => {
+                                    if (isMesa) {
+                                      handleKanbanCardClick(card.pedido)
+                                    } else {
+                                      const unified: UnifiedPedido = {
+                                        id: card.pedido.id,
+                                        tipo: card.tipo,
+                                        estado: card.pedido.estado,
+                                        total: card.pedido.total,
+                                        createdAt: card.pedido.createdAt,
+                                        nombreCliente: card.nombreCliente || null,
+                                        telefono: null,
+                                        direccion: card.direccion,
+                                        mesaNombre: null,
+                                        items: card.items,
+                                        totalItems: card.items.length,
+                                      }
+                                      handleUnifiedPedidoClick(unified)
+                                    }
+                                  }}
                                 >
                                   <CardContent className="p-3">
                                     <div className="flex items-center justify-between mb-2">
                                       <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-bold text-sm">{card.pedido.mesaNombre || 'Sin mesa'}</span>
+                                        <span className="font-bold text-sm">{cardTitle}</span>
                                         {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
-                                        {isClosed && (
+                                        {isClosed && isMesa && (
                                           <Badge
                                             variant="outline"
                                             className={isFullyPaid
@@ -1531,6 +1713,13 @@ const Dashboard = () => {
                                       </div>
                                       <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(card.pedido.createdAt)}</span>
                                     </div>
+
+                                    {card.tipo === 'delivery' && card.direccion && (
+                                      <div className="flex items-start gap-1.5 mb-2">
+                                        <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
+                                        <span className="text-xs text-muted-foreground truncate">{card.direccion}</span>
+                                      </div>
+                                    )}
   
                                     {showUnifiedPayment && subtotalesData.length > 0 && (
                                       <div className="mb-2 p-2 bg-muted/30 rounded-md">
@@ -1573,24 +1762,42 @@ const Dashboard = () => {
                                               <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
                                             )}
                                           </div>
-                                          <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                                            {card.status === 'preparing' && (
-                                              <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
-                                                <CheckCircle className="h-3 w-3" />
-                                              </Button>
-                                            )}
-                                            {card.status === 'delivered' && (
-                                              <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
-                                                <Utensils className="h-3 w-3" />
-                                              </Button>
-                                            )}
-                                          </div>
+                                          {/* Per-item actions only for mesa orders */}
+                                          {isMesa && (
+                                            <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                                              {card.status === 'preparing' && (
+                                                <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
+                                                  <CheckCircle className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                              {card.status === 'delivered' && (
+                                                <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
+                                                  <Utensils className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                            </div>
+                                          )}
                                         </div>
                                       ))}
                                       {card.items.length > 3 && (
                                         <p className="text-[10px] text-muted-foreground">+{card.items.length - 3} más</p>
                                       )}
                                     </div>
+
+                                    {/* Order-level action for delivery/takeaway */}
+                                    {!isMesa && nextAction && (
+                                      <Button
+                                        size="sm"
+                                        className={`w-full mt-2 h-7 text-xs text-white ${nextAction.color}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, nextAction.estado)
+                                        }}
+                                      >
+                                        <CheckCircle className="h-3 w-3 mr-1" />
+                                        {nextAction.label}
+                                      </Button>
+                                    )}
   
                                     {card.status === 'pending' && (
                                       <Button
@@ -1598,7 +1805,11 @@ const Dashboard = () => {
                                         className="w-full mt-2 h-7 text-xs bg-blue-600 hover:bg-blue-700"
                                         onClick={(e) => {
                                           e.stopPropagation()
-                                          handleConfirmarPedido(card.pedido)
+                                          if (isMesa) {
+                                            handleConfirmarPedido(card.pedido)
+                                          } else {
+                                            handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'preparing')
+                                          }
                                         }}
                                         disabled={isUpdating}
                                       >
@@ -1614,7 +1825,9 @@ const Dashboard = () => {
                                         className="w-full mt-1 h-6 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
                                         onClick={(e) => {
                                           e.stopPropagation()
-                                          handleArchiveMesaPedido(card.pedido.id)
+                                          if (card.tipo === 'delivery') handleArchiveDelivery(card.pedido.id)
+                                          else if (card.tipo === 'takeaway') handleArchiveTakeaway(card.pedido.id)
+                                          else handleArchiveMesaPedido(card.pedido.id)
                                         }}
                                       >
                                         <Archive className="h-3 w-3 mr-1" />
@@ -1641,11 +1854,12 @@ const Dashboard = () => {
               </div>
         )}
 
-        {/* NUEVO PEDIDO MODE VIEW - Full screen 2-column layout */}
+        {/* NUEVO PEDIDO MODE VIEW - Full screen 3-column layout */}
         {dashboardMode === 'nuevoPedido' && (
           <div className="flex-1 flex overflow-hidden">
-            {/* LEFT: Client data + Selected items + Submit */}
-            <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col border-r overflow-hidden bg-background">
+
+            {/* COLUMN 1 (Desktop only): Client Info */}
+            <div className="hidden lg:flex lg:w-[280px] xl:w-[300px] flex-col border-r overflow-hidden bg-background shrink-0">
               <div className="flex-1 overflow-auto p-4 space-y-5">
                 {/* Mesa selector */}
                 <div className="space-y-3">
@@ -1688,13 +1902,13 @@ const Dashboard = () => {
                   <div className="space-y-3">
                     {!newPedidoMesaId && (
                     <div className="space-y-1.5">
-                      <Label htmlFor="np-direccion" className="flex items-center gap-2 text-sm">
+                      <Label htmlFor="dt-direccion" className="flex items-center gap-2 text-sm">
                         <MapPin className="h-3.5 w-3.5" />
                         Dirección
                         <span className="text-muted-foreground text-xs font-normal">(vacío = Take Away)</span>
                       </Label>
                       <Input
-                        id="np-direccion"
+                        id="dt-direccion"
                         placeholder="Ej: Av. Principal 123"
                         value={newDeliveryDireccion}
                         onChange={(e) => setNewDeliveryDireccion(e.target.value)}
@@ -1702,26 +1916,26 @@ const Dashboard = () => {
                       />
                     </div>
                     )}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="np-nombre" className="text-sm">
+                        <Label htmlFor="dt-nombre" className="text-sm">
                           <User className="h-3.5 w-3.5 inline mr-1" />
                           Nombre
                         </Label>
                         <Input
-                          id="np-nombre"
+                          id="dt-nombre"
                           placeholder="Nombre del cliente"
                           value={newDeliveryNombre}
                           onChange={(e) => setNewDeliveryNombre(e.target.value)}
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="np-telefono" className="text-sm">
+                        <Label htmlFor="dt-telefono" className="text-sm">
                           <Phone className="h-3.5 w-3.5 inline mr-1" />
                           Teléfono
                         </Label>
                         <Input
-                          id="np-telefono"
+                          id="dt-telefono"
                           placeholder="Ej: 11-1234-5678"
                           value={newDeliveryTelefono}
                           onChange={(e) => setNewDeliveryTelefono(e.target.value)}
@@ -1729,9 +1943,9 @@ const Dashboard = () => {
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="np-notas" className="text-sm">Notas</Label>
+                      <Label htmlFor="dt-notas" className="text-sm">Notas</Label>
                       <Input
-                        id="np-notas"
+                        id="dt-notas"
                         placeholder="Instrucciones especiales..."
                         value={newDeliveryNotas}
                         onChange={(e) => setNewDeliveryNotas(e.target.value)}
@@ -1759,8 +1973,130 @@ const Dashboard = () => {
                     </Badge>
                   )}
                 </div>
+              </div>
+            </div>
 
-                <Separator />
+            {/* COLUMN 2: Cart + Submit (Mobile info tab includes client info) */}
+            <div className={`${nuevoPedidoMobileTab === 'info' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[350px] xl:w-[380px] flex-col border-r overflow-hidden bg-background`}>
+              <div className="flex-1 overflow-auto p-4 space-y-5">
+
+                {/* Mobile only: Client info */}
+                <div className="lg:hidden space-y-5">
+                  {/* Mesa selector */}
+                  <div className="space-y-3">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Tipo de Pedido</h3>
+                    <div className="space-y-1.5">
+                      <Label className="flex items-center gap-2 text-sm">
+                        <Utensils className="h-3.5 w-3.5" />
+                        Mesa
+                        <span className="text-muted-foreground text-xs font-normal">(opcional)</span>
+                      </Label>
+                      <Select
+                        value={newPedidoMesaId ? String(newPedidoMesaId) : 'none'}
+                        onValueChange={(val) => {
+                          if (val === 'none') {
+                            setNewPedidoMesaId(null)
+                          } else {
+                            setNewPedidoMesaId(Number(val))
+                            setNewDeliveryDireccion('')
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-full h-10">
+                          <SelectValue placeholder="Sin mesa (Delivery / Take Away)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sin mesa (Delivery / Take Away)</SelectItem>
+                          {mesas.map((mesa) => (
+                            <SelectItem key={mesa.id} value={String(mesa.id)}>
+                              {mesa.nombre}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Datos del Cliente */}
+                  <div className="space-y-3">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Datos del Cliente</h3>
+                    <div className="space-y-3">
+                      {!newPedidoMesaId && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="np-direccion" className="flex items-center gap-2 text-sm">
+                          <MapPin className="h-3.5 w-3.5" />
+                          Dirección
+                          <span className="text-muted-foreground text-xs font-normal">(vacío = Take Away)</span>
+                        </Label>
+                        <Input
+                          id="np-direccion"
+                          placeholder="Ej: Av. Principal 123"
+                          value={newDeliveryDireccion}
+                          onChange={(e) => setNewDeliveryDireccion(e.target.value)}
+                          className="h-10"
+                        />
+                      </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="np-nombre" className="text-sm">
+                            <User className="h-3.5 w-3.5 inline mr-1" />
+                            Nombre
+                          </Label>
+                          <Input
+                            id="np-nombre"
+                            placeholder="Nombre del cliente"
+                            value={newDeliveryNombre}
+                            onChange={(e) => setNewDeliveryNombre(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="np-telefono" className="text-sm">
+                            <Phone className="h-3.5 w-3.5 inline mr-1" />
+                            Teléfono
+                          </Label>
+                          <Input
+                            id="np-telefono"
+                            placeholder="Ej: 11-1234-5678"
+                            value={newDeliveryTelefono}
+                            onChange={(e) => setNewDeliveryTelefono(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="np-notas" className="text-sm">Notas</Label>
+                        <Input
+                          id="np-notas"
+                          placeholder="Instrucciones especiales..."
+                          value={newDeliveryNotas}
+                          onChange={(e) => setNewDeliveryNotas(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tipo badge indicator */}
+                  <div className="flex items-center gap-2">
+                    {newPedidoMesaId ? (
+                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 border">
+                        <Utensils className="h-3 w-3 mr-1" />
+                        Mesa {mesas.find(m => m.id === newPedidoMesaId)?.nombre || ''}
+                      </Badge>
+                    ) : newDeliveryDireccion.trim() ? (
+                      <Badge className="bg-sky-100 text-sky-700 border-sky-300 border">
+                        <Truck className="h-3 w-3 mr-1" />
+                        Delivery
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-100 text-amber-700 border-amber-300 border">
+                        <ShoppingBag className="h-3 w-3 mr-1" />
+                        Take Away
+                      </Badge>
+                    )}
+                  </div>
+
+                  <Separator />
+                </div>
 
                 {/* Productos seleccionados */}
                 <div className="space-y-3">
@@ -1774,6 +2110,15 @@ const Dashboard = () => {
                     <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-lg">
                       <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
                       <p className="text-sm">Seleccioná productos de la lista</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 lg:hidden"
+                        onClick={() => setNuevoPedidoMobileTab('productos')}
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1.5" />
+                        Agregar Productos
+                      </Button>
                     </div>
                   ) : (
                     <>
@@ -1887,8 +2232,8 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* RIGHT: Product catalog */}
-            <div className="hidden lg:flex flex-1 flex-col overflow-hidden bg-muted/10">
+            {/* COLUMN 3: Product catalog */}
+            <div className={`${nuevoPedidoMobileTab === 'productos' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col overflow-hidden bg-muted/10`}>
               <div className="p-4 border-b bg-background/95 backdrop-blur shrink-0">
                 <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-3">Agregar Productos</h3>
                 <div className="relative">
@@ -1987,6 +2332,18 @@ const Dashboard = () => {
                   </div>
                 )}
               </div>
+              {/* Mobile floating cart summary */}
+              {newDeliveryItems.length > 0 && (
+                <div className="lg:hidden p-3 border-t bg-background shrink-0">
+                  <Button
+                    className="w-full h-11"
+                    onClick={() => setNuevoPedidoMobileTab('info')}
+                  >
+                    <ShoppingCart className="h-4 w-4 mr-2" />
+                    Ver Pedido • {newDeliveryItems.reduce((sum, i) => sum + i.cantidad, 0)} {newDeliveryItems.reduce((sum, i) => sum + i.cantidad, 0) === 1 ? 'item' : 'items'} • ${deliveryItemsTotal.toFixed(2)}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2631,7 +2988,242 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* RIGHT: Kanban Panel - Desktop always visible, Mobile conditional */}
+            {/* RIGHT: Orders Panel - Desktop always visible, Mobile conditional */}
+            {itemTracking ? (
+              <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full lg:w-[450px]' : 'hidden lg:flex'}`}>
+                <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center justify-between">
+                  <p className="text-sm font-semibold">Pedidos</p>
+                  <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
+                </div>
+                <div className="flex-1 overflow-auto p-3 space-y-4">
+                  {COLUMNS.map((column) => {
+                    const columnCards = kanbanData[column.id] || []
+                    const ColumnIcon = column.icon
+
+                    return (
+                      <div key={column.id}>
+                        <div className={`flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg ${column.bgHeader}`}>
+                          <ColumnIcon className={`h-4 w-4 ${column.color}`} />
+                          <span className="font-semibold text-sm flex-1">{column.title}</span>
+                          <Badge variant="secondary" className="font-mono text-xs">{columnCards.length}</Badge>
+                        </div>
+
+                        {columnCards.length === 0 ? (
+                          <div className="text-center py-3 text-muted-foreground text-xs opacity-50">
+                            Sin pedidos
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {columnCards.map((card) => {
+                              const hasExclusions = card.items.some(i => i.ingredientesExcluidosNombres?.length)
+                              const isUpdating = updatingPedido === card.pedido.id
+                              const isMesa = card.tipo === 'mesa'
+
+                              const isClosed = card.pedido.estado === 'closed'
+                              const subtotalesData = isMesa ? (pedidosSubtotales[card.pedido.id] || []) : []
+                              const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
+                              const totalPedido = subtotalesData.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
+                              const showUnifiedPayment = !splitPayment && isClosed && isMesa
+
+                              // Card title based on tipo
+                              const cardTitle = card.tipo === 'delivery'
+                                ? `🚚 ${card.nombreCliente || 'Delivery'}`
+                                : card.tipo === 'takeaway'
+                                  ? `🛍️ ${card.nombreCliente || 'Take Away'}`
+                                  : `🍽️ ${card.pedido.mesaNombre || 'Sin mesa'}`
+
+                              // Next estado for delivery/takeaway order-level actions
+                              const getNextEstado = () => {
+                                if (card.status === 'preparing') return { label: 'Marcar Listo', estado: 'ready', color: 'bg-emerald-600 hover:bg-emerald-700' }
+                                if (card.status === 'delivered') return { label: 'Marcar Entregado', estado: 'delivered', color: 'bg-indigo-600 hover:bg-indigo-700' }
+                                return null
+                              }
+                              const nextAction = !isMesa ? getNextEstado() : null
+
+                              return (
+                                <Card
+                                  key={card.id}
+                                  className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${isMesa && selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
+                                    }`}
+                                  onClick={() => {
+                                    if (isMesa) {
+                                      handleKanbanCardClick(card.pedido)
+                                    } else {
+                                      const unified: UnifiedPedido = {
+                                        id: card.pedido.id,
+                                        tipo: card.tipo,
+                                        estado: card.pedido.estado,
+                                        total: card.pedido.total,
+                                        createdAt: card.pedido.createdAt,
+                                        nombreCliente: card.nombreCliente || null,
+                                        telefono: null,
+                                        direccion: card.direccion,
+                                        mesaNombre: null,
+                                        items: card.items,
+                                        totalItems: card.items.length,
+                                      }
+                                      handleUnifiedPedidoClick(unified)
+                                    }
+                                  }}
+                                >
+                                  <CardContent className="p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold text-sm">{cardTitle}</span>
+                                        {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
+                                        {isClosed && isMesa && (
+                                          <Badge
+                                            variant="outline"
+                                            className={isFullyPaid
+                                              ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 text-[10px] px-1.5 py-0"
+                                              : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 text-[10px] px-1.5 py-0"}
+                                          >
+                                            {isFullyPaid ? "💳 Pagado" : "📋 Cuenta"}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(card.pedido.createdAt)}</span>
+                                    </div>
+
+                                    {card.tipo === 'delivery' && card.direccion && (
+                                      <div className="flex items-start gap-1.5 mb-2">
+                                        <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
+                                        <span className="text-xs text-muted-foreground truncate">{card.direccion}</span>
+                                      </div>
+                                    )}
+
+                                    {showUnifiedPayment && subtotalesData.length > 0 && (
+                                      <div className="mb-2 p-2 bg-muted/30 rounded-md">
+                                        <div className="flex justify-between items-center mb-1">
+                                          <span className="text-xs font-medium">Total Mesa</span>
+                                          <span className="text-sm font-bold">${totalPedido.toLocaleString()}</span>
+                                        </div>
+                                        {!isFullyPaid ? (
+                                          <Button
+                                            className="w-full h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleConfirmarPagoTotal(card.pedido.id, subtotalesData)
+                                            }}
+                                            disabled={updatingPago === `all-${card.pedido.id}`}
+                                          >
+                                            {updatingPago === `all-${card.pedido.id}` ? (
+                                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                            ) : (
+                                              <span className="mr-1">💵</span>
+                                            )}
+                                            Confirmar Pago Total
+                                          </Button>
+                                        ) : (
+                                          <div className="w-full py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded text-center text-xs font-medium flex items-center justify-center gap-1">
+                                            <CheckCircle className="h-3 w-3" />
+                                            Pagado
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    <div className="space-y-1.5">
+                                      {card.items.slice(0, 3).map((item) => (
+                                        <div key={item.id} className="flex items-start gap-2 text-xs">
+                                          <span className="font-bold bg-muted rounded px-1 shrink-0">{item.cantidad}</span>
+                                          <div className="flex-1 min-w-0">
+                                            <span className="truncate block">{item.nombreProducto}</span>
+                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                              <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
+                                            )}
+                                          </div>
+                                          {/* Per-item actions only for mesa orders */}
+                                          {isMesa && (
+                                            <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                                              {card.status === 'preparing' && (
+                                                <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
+                                                  <CheckCircle className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                              {card.status === 'delivered' && (
+                                                <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
+                                                  <Utensils className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                      {card.items.length > 3 && (
+                                        <p className="text-[10px] text-muted-foreground">+{card.items.length - 3} más</p>
+                                      )}
+                                    </div>
+
+                                    {/* Order-level action for delivery/takeaway */}
+                                    {!isMesa && nextAction && (
+                                      <Button
+                                        size="sm"
+                                        className={`w-full mt-2 h-7 text-xs text-white ${nextAction.color}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, nextAction.estado)
+                                        }}
+                                      >
+                                        <CheckCircle className="h-3 w-3 mr-1" />
+                                        {nextAction.label}
+                                      </Button>
+                                    )}
+
+                                    {card.status === 'pending' && (
+                                      <Button
+                                        size="sm"
+                                        className="w-full mt-2 h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (isMesa) {
+                                            handleConfirmarPedido(card.pedido)
+                                          } else {
+                                            handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'preparing')
+                                          }
+                                        }}
+                                        disabled={isUpdating}
+                                      >
+                                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                                        Confirmar
+                                      </Button>
+                                    )}
+
+                                    {card.status !== 'archived' && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="w-full mt-1 h-6 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (card.tipo === 'delivery') handleArchiveDelivery(card.pedido.id)
+                                          else if (card.tipo === 'takeaway') handleArchiveTakeaway(card.pedido.id)
+                                          else handleArchiveMesaPedido(card.pedido.id)
+                                        }}
+                                      >
+                                        <Archive className="h-3 w-3 mr-1" />
+                                        Archivar
+                                      </Button>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {Object.values(kanbanData).every(arr => arr.length === 0) && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Coffee className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Sin pedidos activos</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
             <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full lg:w-[450px]' : 'hidden lg:flex'}`}>
             {/* Filter tabs */}
             <div className="border-b bg-background/95 backdrop-blur shrink-0 px-4 pt-3 pb-0">
@@ -2692,13 +3284,13 @@ const Dashboard = () => {
                     </h2>
                   </div>
                   {filteredUnifiedPedidos.map((pedido, index) => {
-                    const tipoBadge = getTipoBadge(pedido.tipo)
+                    const tipoBadge = getTipoBadge(pedido.tipo)
                     const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                       || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
                     const dateLabel = getDateLabel(pedido.createdAt)
                     const prevDateLabel = index > 0 ? getDateLabel(filteredUnifiedPedidos[index - 1].createdAt) : null
                     const showDateSeparator = dateLabel !== prevDateLabel
-                    return (
+                    return (
                       <Fragment key={`${pedido.tipo}-${pedido.id}`}>
                       {showDateSeparator && (
                         <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-3'}`}>
@@ -2740,44 +3332,44 @@ const Dashboard = () => {
                             <div className="flex flex-col gap-2 shrink-0">
                               <div className="flex gap-1">
                                 {selectedPrinter && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-muted-foreground hover:text-foreground"
-                                  title="Imprimir factura"
-                                  onClick={() => {
-                                    const facturaItems: any[] = pedido.items.map((item: any) => ({
-                                      ...item,
-                                      precioUnitario: item.precioUnitario || '0'
-                                    }))
-                                    // Add delivery fee for delivery orders
-                                    if (pedido.tipo === 'delivery') {
-                                      facturaItems.push({
-                                        id: 0,
-                                        nombreProducto: 'Delivery',
-                                        cantidad: 1,
-                                        precioUnitario: String(DELIVERY_FEE),
-                                        ingredientesExcluidosNombres: []
-                                      })
-                                    }
-                                    const deliveryTotal = pedido.tipo === 'delivery'
-                                      ? String(parseFloat(pedido.total) + DELIVERY_FEE)
-                                      : pedido.total
-                                    const facturaData = formatFactura(
-                                      {
-                                        id: pedido.id,
-                                        mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
-                                        nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
-                                        total: deliveryTotal
-                                      },
-                                      facturaItems,
-                                      restaurante?.nombre || 'Restaurante'
-                                    )
-                                    printRaw(commandsToBytes(facturaData))
-                                  }}
-                                >
-                                  <Printer className="h-4 w-4" />
-                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  title="Imprimir factura"
+                                  onClick={() => {
+                                    const facturaItems: any[] = pedido.items.map((item: any) => ({
+                                      ...item,
+                                      precioUnitario: item.precioUnitario || '0'
+                                    }))
+                                    // Add delivery fee for delivery orders
+                                    if (pedido.tipo === 'delivery') {
+                                      facturaItems.push({
+                                        id: 0,
+                                        nombreProducto: 'Delivery',
+                                        cantidad: 1,
+                                        precioUnitario: String(DELIVERY_FEE),
+                                        ingredientesExcluidosNombres: []
+                                      })
+                                    }
+                                    const deliveryTotal = pedido.tipo === 'delivery'
+                                      ? String(parseFloat(pedido.total) + DELIVERY_FEE)
+                                      : pedido.total
+                                    const facturaData = formatFactura(
+                                      {
+                                        id: pedido.id,
+                                        mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
+                                        nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
+                                        total: deliveryTotal
+                                      },
+                                      facturaItems,
+                                      restaurante?.nombre || 'Restaurante'
+                                    )
+                                    printRaw(commandsToBytes(facturaData))
+                                  }}
+                                >
+                                  <Printer className="h-4 w-4" />
+                                </Button>
                                 )}
                                 <Button
                                   size="sm"
@@ -2835,10 +3427,10 @@ const Dashboard = () => {
                             </div>
                           </div>
                         </div>
-                      </Card>
+                      </Card>
                       </Fragment>
-                    )
-                  })}
+                    )
+                  })}
 
                   {/* Archived orders section */}
                   {filteredArchivedPedidos.length > 0 && (
@@ -2929,7 +3521,8 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-          </div>
+          </div>
+            )}
           </>
         )}
       </div>
