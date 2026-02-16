@@ -927,6 +927,32 @@ const Dashboard = () => {
     }
   }
 
+  // Kanban-specific payment handler (doesn't depend on selectedMesa)
+  const handleKanbanPagoEfectivo = async (pedidoId: number, clienteNombre: string) => {
+    if (!token) return
+    setUpdatingPago(`${pedidoId}-${clienteNombre}`)
+    try {
+      const response = await mercadopagoApi.confirmarEfectivo(token, pedidoId, clienteNombre) as { success: boolean; error?: string }
+      if (response.success) {
+        setPedidosSubtotales(prev => {
+          const subs = prev[pedidoId] || []
+          return {
+            ...prev,
+            [pedidoId]: subs.map(s =>
+              s.clienteNombre === clienteNombre
+                ? { ...s, pagado: true, estado: 'paid', metodo: 'efectivo' }
+                : s
+            )
+          }
+        })
+      }
+    } catch (error) {
+      console.error('Error confirming payment:', error)
+    } finally {
+      setUpdatingPago(null)
+    }
+  }
+
   const fetchProductos = useCallback(async () => {
     if (!token) return
     setLoadingProductos(true)
@@ -3032,14 +3058,6 @@ const Dashboard = () => {
                                   ? `🛍️ ${card.nombreCliente || 'Take Away'}`
                                   : `🍽️ ${card.pedido.mesaNombre || 'Sin mesa'}`
 
-                              // Next estado for delivery/takeaway order-level actions
-                              const getNextEstado = () => {
-                                if (card.status === 'preparing') return { label: 'Marcar Listo', estado: 'ready', color: 'bg-emerald-600 hover:bg-emerald-700' }
-                                if (card.status === 'delivered') return { label: 'Marcar Entregado', estado: 'delivered', color: 'bg-indigo-600 hover:bg-indigo-700' }
-                                return null
-                              }
-                              const nextAction = !isMesa ? getNextEstado() : null
-
                               return (
                                 <Card
                                   key={card.id}
@@ -3123,88 +3141,188 @@ const Dashboard = () => {
                                       </div>
                                     )}
 
-                                    <div className="space-y-1.5">
-                                      {card.items.slice(0, 3).map((item) => (
-                                        <div key={item.id} className="flex items-start gap-2 text-xs">
-                                          <span className="font-bold bg-muted rounded px-1 shrink-0">{item.cantidad}</span>
-                                          <div className="flex-1 min-w-0">
-                                            <span className="truncate block">{item.nombreProducto}</span>
-                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                              <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
-                                            )}
-                                          </div>
-                                          {/* Per-item actions only for mesa orders */}
-                                          {isMesa && (
-                                            <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                                              {card.status === 'preparing' && (
-                                                <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
-                                                  <CheckCircle className="h-3 w-3" />
-                                                </Button>
-                                              )}
-                                              {card.status === 'delivered' && (
-                                                <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
-                                                  <Utensils className="h-3 w-3" />
-                                                </Button>
-                                              )}
+                                    {/* Items grouped by client */}
+                                    <div className="space-y-3">
+                                      {(() => {
+                                        const itemsByClient: Record<string, typeof card.items> = {}
+                                        card.items.forEach(item => {
+                                          const name = item.clienteNombre || 'Cliente'
+                                          if (!itemsByClient[name]) itemsByClient[name] = []
+                                          itemsByClient[name].push(item)
+                                        })
+
+                                        // Add mozo items from subtotales if closed
+                                        if (isClosed && subtotalesData.length > 0) {
+                                          subtotalesData.forEach(sub => {
+                                            if (sub.isMozoItem && !itemsByClient[sub.clienteNombre]) {
+                                              itemsByClient[sub.clienteNombre] = []
+                                            }
+                                          })
+                                        }
+
+                                        return Object.entries(itemsByClient).map(([cliente, clientItems]) => {
+                                          const subtotalData = subtotalesData.find(s => s.clienteNombre === cliente)
+                                          const isPaid = subtotalData?.pagado
+                                          const isPendingCash = subtotalData?.estado === 'pending_cash'
+                                          const paymentMethod = subtotalData?.metodo
+                                          const showPaymentControls = isClosed && isMesa
+                                          const showIndividualPayment = showPaymentControls && !showUnifiedPayment
+                                          const isConfirming = updatingPago === `${card.pedido.id}-${cliente}`
+
+                                          return (
+                                            <div key={cliente} className="space-y-1">
+                                              {/* Client header */}
+                                              <div className="flex items-center justify-between pb-0.5">
+                                                <div className="flex items-center gap-1.5">
+                                                  <Badge variant="outline" className="h-5 px-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
+                                                    <span className="font-semibold">{cliente}</span>
+                                                  </Badge>
+                                                  {showIndividualPayment && (
+                                                    <>
+                                                      {isPaid && (
+                                                        <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 gap-1">
+                                                          <CheckCircle className="h-2.5 w-2.5" />
+                                                          {paymentMethod === 'mercadopago' ? 'MP' : 'Efectivo'}
+                                                        </Badge>
+                                                      )}
+                                                      {!isPaid && isPendingCash && (
+                                                        <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 gap-1">
+                                                          <Clock className="h-2.5 w-2.5" /> Efectivo
+                                                        </Badge>
+                                                      )}
+                                                      {!isPaid && !isPendingCash && subtotalData && (
+                                                        <Badge variant="outline" className="h-5 px-1.5 text-[9px] text-muted-foreground border-dashed">
+                                                          Pendiente
+                                                        </Badge>
+                                                      )}
+                                                    </>
+                                                  )}
+                                                </div>
+                                                {showIndividualPayment && !isPaid && isPendingCash && (
+                                                  <Button
+                                                    size="sm"
+                                                    className="h-5 text-[10px] px-2 bg-green-600 hover:bg-green-700 text-white shadow-sm"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      handleKanbanPagoEfectivo(card.pedido.id, cliente)
+                                                    }}
+                                                    disabled={isConfirming}
+                                                  >
+                                                    {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Cobrar"}
+                                                  </Button>
+                                                )}
+                                                {showIndividualPayment && !isPaid && !isPendingCash && subtotalData && (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-5 text-[10px] px-2 hover:bg-emerald-100 hover:text-emerald-700 text-muted-foreground"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      handleKanbanPagoEfectivo(card.pedido.id, cliente)
+                                                    }}
+                                                    disabled={isConfirming}
+                                                  >
+                                                    {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Marcar Pagado"}
+                                                  </Button>
+                                                )}
+                                              </div>
+
+                                              {/* Client items */}
+                                              <div className="space-y-1.5 pl-1">
+                                                {clientItems.map((item) => (
+                                                  <div key={item.id} className="flex items-start gap-2 text-xs group/item">
+                                                    <span className="font-bold bg-muted rounded px-1 shrink-0 text-center w-5 py-0.5 text-[10px]">{item.cantidad}</span>
+                                                    <div className="flex-1 min-w-0">
+                                                      <span className="text-foreground/90 font-medium truncate block leading-tight">{item.nombreProducto}</span>
+                                                      {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                                        <div className="mt-0.5 flex flex-wrap gap-0.5">
+                                                          {item.ingredientesExcluidosNombres.map((ing, i) => (
+                                                            <span key={i} className="text-[9px] px-1 py-0 rounded bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 font-medium border border-orange-200 dark:border-orange-800/50">
+                                                              Sin {ing}
+                                                            </span>
+                                                          ))}
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                    {/* Per-item actions */}
+                                                    {isMesa && (
+                                                      <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                                                        {card.status === 'preparing' && (
+                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600 hover:bg-emerald-100" title="Marcar Listo" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
+                                                            <CheckCircle className="h-3.5 w-3.5" />
+                                                          </Button>
+                                                        )}
+                                                        {card.status === 'delivered' && (
+                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600 hover:bg-indigo-100" title="Marcar Entregado" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
+                                                            <Utensils className="h-3.5 w-3.5" />
+                                                          </Button>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    {/* Per-item actions for delivery/takeaway */}
+                                                    {!isMesa && (
+                                                      <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                                                        {card.status === 'preparing' && (
+                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600 hover:bg-emerald-100" title="Marcar Listo" onClick={() => handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'ready')}>
+                                                            <CheckCircle className="h-3.5 w-3.5" />
+                                                          </Button>
+                                                        )}
+                                                        {card.status === 'delivered' && (
+                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600 hover:bg-indigo-100" title="Marcar Entregado" onClick={() => handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'delivered')}>
+                                                            <Utensils className="h-3.5 w-3.5" />
+                                                          </Button>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
                                             </div>
-                                          )}
-                                        </div>
-                                      ))}
-                                      {card.items.length > 3 && (
-                                        <p className="text-[10px] text-muted-foreground">+{card.items.length - 3} más</p>
-                                      )}
+                                          )
+                                        })
+                                      })()}
                                     </div>
 
-                                    {/* Order-level action for delivery/takeaway */}
-                                    {!isMesa && nextAction && (
-                                      <Button
-                                        size="sm"
-                                        className={`w-full mt-2 h-7 text-xs text-white ${nextAction.color}`}
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, nextAction.estado)
-                                        }}
-                                      >
-                                        <CheckCircle className="h-3 w-3 mr-1" />
-                                        {nextAction.label}
-                                      </Button>
-                                    )}
-
-                                    {card.status === 'pending' && (
-                                      <Button
-                                        size="sm"
-                                        className="w-full mt-2 h-7 text-xs bg-blue-600 hover:bg-blue-700"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          if (isMesa) {
-                                            handleConfirmarPedido(card.pedido)
-                                          } else {
-                                            handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'preparing')
-                                          }
-                                        }}
-                                        disabled={isUpdating}
-                                      >
-                                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-                                        Confirmar
-                                      </Button>
-                                    )}
-
-                                    {card.status !== 'archived' && (
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="w-full mt-1 h-6 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          if (card.tipo === 'delivery') handleArchiveDelivery(card.pedido.id)
-                                          else if (card.tipo === 'takeaway') handleArchiveTakeaway(card.pedido.id)
-                                          else handleArchiveMesaPedido(card.pedido.id)
-                                        }}
-                                      >
-                                        <Archive className="h-3 w-3 mr-1" />
-                                        Archivar
-                                      </Button>
-                                    )}
+                                    {/* Footer actions */}
+                                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-border/40">
+                                      <span className="text-[10px] text-muted-foreground font-mono">#{card.pedido.id}</span>
+                                      <div className="flex gap-1.5">
+                                        {card.status === 'pending' && (
+                                          <Button
+                                            size="sm"
+                                            className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              if (isMesa) {
+                                                handleConfirmarPedido(card.pedido)
+                                              } else {
+                                                handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'preparing')
+                                              }
+                                            }}
+                                            disabled={isUpdating}
+                                          >
+                                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                                            Confirmar
+                                          </Button>
+                                        )}
+                                        {card.status !== 'archived' && (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              if (card.tipo === 'delivery') handleArchiveDelivery(card.pedido.id)
+                                              else if (card.tipo === 'takeaway') handleArchiveTakeaway(card.pedido.id)
+                                              else handleArchiveMesaPedido(card.pedido.id)
+                                            }}
+                                          >
+                                            <Archive className="h-3 w-3 mr-1" />
+                                            Archivar
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
                                   </CardContent>
                                 </Card>
                               )
