@@ -494,6 +494,19 @@ export const pedidosApi = {
       },
     })
   },
+
+  // Cierre de turno - obtener resumen de ventas del día
+  cierreTurno: async (token: string, fecha?: string) => {
+    const params = new URLSearchParams()
+    if (fecha) params.append('fecha', fecha)
+    const query = params.toString() ? `?${params}` : ''
+    return fetchApi(`/pedido/cierre-turno${query}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // MercadoPago API
