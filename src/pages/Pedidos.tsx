@@ -10,7 +10,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidosApi, mercadopagoApi, ApiError } from '@/lib/api'
 import { useAdminContext } from '@/context/AdminContext'
-import { toast } from 'sonner'
+// import { toast } from 'sonner'
 import { NotificationSheet } from '@/components/NotificationSheet'
 import {
   Loader2, Search, Clock, CheckCircle, ChefHat, Utensils,
@@ -243,7 +243,7 @@ const Pedidos = () => {
     } catch (error) {
       console.error('Error fetching pedidos:', error)
       if (error instanceof ApiError) {
-        toast.error('Error al cargar pedidos', { description: error.message })
+        // toast.error('Error al cargar pedidos', { description: error.message })
       }
     } finally {
       setIsLoading(false)
@@ -301,7 +301,7 @@ const Pedidos = () => {
               console.log("🖨️ Auto-printing confirmed order:", pedidoId);
               const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
               printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err));
-              toast.success(`Imprimiendo comanda #${pedidoId}`);
+              // toast.success(`Imprimiendo comanda #${pedidoId}`);
             }
           }
 
@@ -332,7 +332,7 @@ const Pedidos = () => {
                 console.log("🖨️ Auto-printing new items for order:", pedidoId);
                 const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
                 printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err));
-                toast.info(`Imprimiendo ${itemsToPrint.length} items nuevos`);
+                // toast.info(`Imprimiendo ${itemsToPrint.length} items nuevos`);
               }
             }
           }
@@ -499,20 +499,20 @@ const Pedidos = () => {
         if (itemsToPrint.length > 0) {
           const comandaData = formatComanda(pedido, itemsToPrint, restaurante?.nombre || 'Restaurante');
           printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error auto-printing:", err));
-          toast.success('Comanda enviada a cocina');
+          // toast.success('Comanda enviada a cocina');
         }
       }
 
-      const estadoLabels: Record<string, string> = {
-        preparing: 'En cocina',
-        delivered: 'Listo para entregar',
-        served: 'Entregado',
-        closed: 'Cerrado'
-      }
-      toast.success(`Pedido #${pedido.id} → ${estadoLabels[nuevoEstado]}`)
+      // const estadoLabels: Record<string, string> = {
+      //   preparing: 'En cocina',
+      //   delivered: 'Listo para entregar',
+      //   served: 'Entregado',
+      //   closed: 'Cerrado'
+      // }
+      // toast.success(`Pedido #${pedido.id} → ${estadoLabels[nuevoEstado]}`)
     } catch (error) {
       if (error instanceof ApiError) {
-        toast.error('Error al actualizar', { description: error.message })
+        // toast.error('Error al actualizar', { description: error.message })
       }
     } finally {
       setUpdatingPedido(null)
@@ -534,10 +534,10 @@ const Pedidos = () => {
 
     try {
       await pedidosApi.updateItemEstado(token, pedido.id, itemId, nuevoEstado)
-      toast.success(`Item actualizado`)
+      // toast.success(`Item actualizado`)
     } catch (error) {
       console.error(error)
-      toast.error('Error al actualizar item')
+      // toast.error('Error al actualizar item')
       // Revertir si hay error (podríamos implementar revert aquí)
       fetchPedidos(page, false) // Recargar para asegurar consistencia
     }
@@ -564,14 +564,14 @@ const Pedidos = () => {
       await Promise.all(
         items.map(item => pedidosApi.updateItemEstado(token, pedido.id, item.id, nuevoEstado))
       )
-      const estadoLabels: Record<string, string> = {
-        delivered: 'Listo',
-        served: 'Entregado'
-      }
-      toast.success(`Pedido #${pedido.id} → ${estadoLabels[nuevoEstado] || nuevoEstado}`)
+      // const estadoLabels: Record<string, string> = {
+      //   delivered: 'Listo',
+      //   served: 'Entregado'
+      // }
+      // toast.success(`Pedido #${pedido.id} → ${estadoLabels[nuevoEstado] || nuevoEstado}`)
     } catch (error) {
       console.error(error)
-      toast.error('Error al actualizar pedido')
+      // toast.error('Error al actualizar pedido')
       fetchPedidos(page, false)
     } finally {
       setUpdatingPedido(null)
@@ -586,7 +586,7 @@ const Pedidos = () => {
     try {
       const response = await mercadopagoApi.confirmarEfectivo(token, pedidoId, clienteNombre) as { success: boolean; error?: string }
       if (response.success) {
-        toast.success(`Pago de ${clienteNombre} confirmado`)
+        // toast.success(`Pago de ${clienteNombre} confirmado`)
         // Actualizar localmente el subtotal para reflejar pagado
         setPedidosSubtotales(prev => {
           const subs = prev[pedidoId] || []
@@ -600,10 +600,10 @@ const Pedidos = () => {
           }
         })
       } else {
-        toast.error(response.error || 'Error al confirmar pago')
+        // toast.error(response.error || 'Error al confirmar pago')
       }
     } catch (error) {
-      toast.error('Error de conexión al confirmar pago')
+      // toast.error('Error de conexión al confirmar pago')
     } finally {
       setUpdatingPago(null)
     }
@@ -637,11 +637,11 @@ const Pedidos = () => {
       }
 
       if (!subtotales) {
-        toast.error("No se pudo obtener información de pagos. Intente nuevamente.")
+        // toast.error("No se pudo obtener información de pagos. Intente nuevamente.")
         return
       }
 
-      toast.message("Procesando cierre...", { description: "Actualizando items y pagos..." })
+      // toast.message("Procesando cierre...", { description: "Actualizando items y pagos..." })
 
       // 2. Marcar items como served/entregados (si no lo están)
       // Lo hacemos masivamente si podemos, o item por item. Como no hay endpoint masivo público expuesto aquí (salvo updateEstado que cambia TODO el pedido),
@@ -691,7 +691,7 @@ const Pedidos = () => {
         )
       }
 
-      toast.success("Pedido cerrado y pagado correctamente")
+      // toast.success("Pedido cerrado y pagado correctamente")
 
       // Actualizar estado local
       setPedidos(prev => prev.map(p =>
@@ -705,7 +705,7 @@ const Pedidos = () => {
 
     } catch (error) {
       console.error(error)
-      toast.error("Ocurrió un error al procesar el cierre completo")
+      // toast.error("Ocurrió un error al procesar el cierre completo")
     } finally {
       setIsClosingAndPaying(false)
     }
@@ -721,7 +721,7 @@ const Pedidos = () => {
       const pendientes = subtotales.filter(s => !s.pagado && s.estado !== 'paid')
 
       if (pendientes.length === 0) {
-        toast.info("Ya está todo pagado")
+        // toast.info("Ya está todo pagado")
         return
       }
 
@@ -744,7 +744,7 @@ const Pedidos = () => {
       const responsePagar = await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, "", mozoItemIds) as { success: boolean; error?: string }
 
       if (!responsePagar.success) {
-        toast.error(responsePagar.error || "Error al iniciar pago en efectivo")
+        // toast.error(responsePagar.error || "Error al iniciar pago en efectivo")
         return
       }
 
@@ -756,7 +756,7 @@ const Pedidos = () => {
       const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length
 
       if (successCount > 0) {
-        toast.success(`Pago total confirmado (${successCount}/${pendientes.length} cuentas procesadas)`)
+        // toast.success(`Pago total confirmado (${successCount}/${pendientes.length} cuentas procesadas)`)
 
         // Actualizar UI localmente marcando TODO como pagado
         setPedidosSubtotales(prev => {
@@ -767,12 +767,12 @@ const Pedidos = () => {
           }
         })
       } else {
-        toast.error("No se pudo confirmar el pago")
+        // toast.error("No se pudo confirmar el pago")
       }
 
     } catch (error) {
       console.error("Error en pago total:", error)
-      toast.error('Error al procesar el pago total')
+      // toast.error('Error al procesar el pago total')
     } finally {
       setUpdatingPago(null)
     }
@@ -785,14 +785,14 @@ const Pedidos = () => {
     setIsDeleting(true)
     try {
       await pedidosApi.delete(token, pedidoAEliminar.id)
-      toast.success('Pedido eliminado', {
-        description: `El pedido #${pedidoAEliminar.id} ha sido eliminado`
-      })
+      // toast.success('Pedido eliminado', {
+      //   description: `El pedido #${pedidoAEliminar.id} ha sido eliminado`
+      // })
       setPedidos(prev => prev.filter(p => p.id !== pedidoAEliminar.id))
       setPedidoAEliminar(null)
     } catch (error) {
       if (error instanceof ApiError) {
-        toast.error('Error al eliminar', { description: error.message })
+        // toast.error('Error al eliminar', { description: error.message })
       }
     } finally {
       setIsDeleting(false)

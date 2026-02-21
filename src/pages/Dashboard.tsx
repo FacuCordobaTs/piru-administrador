@@ -43,6 +43,7 @@ interface PedidoData {
   items: ItemPedidoConEstado[]
   totalItems: number
   nombrePedido?: string | null
+  pagado?: boolean
 }
 
 interface SubtotalInfo {
@@ -113,6 +114,7 @@ interface DeliveryPedido {
   deliveredAt: string | null
   items: DeliveryItem[]
   totalItems: number
+  pagado?: boolean
 }
 
 interface TakeawayPedido {
@@ -126,6 +128,7 @@ interface TakeawayPedido {
   deliveredAt: string | null
   items: DeliveryItem[]
   totalItems: number
+  pagado?: boolean
 }
 
 // Unified order type for the all-orders list
@@ -142,6 +145,7 @@ interface UnifiedPedido {
   notas?: string | null
   items: DeliveryItem[] | ItemPedidoConEstado[]
   totalItems: number
+  pagado?: boolean
 }
 
 interface NewDeliveryItem {
@@ -461,7 +465,8 @@ const Dashboard = () => {
           closedAt: m.pedido!.closedAt,
           items: m.items.map(i => ({ ...i, estado: (i as any).estado || 'preparing' })),
           totalItems: m.totalItems,
-          nombrePedido: m.pedido!.nombrePedido
+          nombrePedido: m.pedido!.nombrePedido,
+          pagado: m.pedido!.pagado
         }))
       setPedidos(pedidosFromMesas)
     }
@@ -860,6 +865,19 @@ const Dashboard = () => {
     }
   }
 
+  const handleCerrarPedido = async (pedidoId: number) => {
+    if (!token) return
+    setUpdatingPedido(pedidoId)
+    try {
+      await pedidosApi.cerrar(token, pedidoId)
+      refresh()
+    } catch (error) {
+      console.error('Error cerrando pedido:', error)
+    } finally {
+      setUpdatingPedido(null)
+    }
+  }
+
   const handleConfirmarPagoEfectivo = async (clienteNombre: string) => {
     if (!token || !selectedMesa?.pedido) return
     setMarcandoPagoEfectivo(clienteNombre)
@@ -867,6 +885,10 @@ const Dashboard = () => {
       const response = await mercadopagoApi.confirmarEfectivo(token, selectedMesa.pedido.id, clienteNombre) as { success: boolean; error?: string }
       if (response.success) {
         await fetchSubtotales()
+        const subtotalesAux = subtotales.map(s => s.clienteNombre === clienteNombre ? { ...s, pagado: true, estado: 'paid', metodo: 'efectivo' } : s)
+        if (subtotalesAux.every(s => s.pagado)) {
+          handleTogglePagado({ id: selectedMesa.pedido.id, tipo: 'mesa', mesaNombre: displayedPedido?.mesaNombre || '', pagado: true } as UnifiedPedido)
+        }
       } else {
       }
     } catch (error) {
@@ -921,6 +943,7 @@ const Dashboard = () => {
             [pedidoId]: subs.map(s => ({ ...s, pagado: true, estado: 'paid', metodo: 'efectivo' }))
           }
         })
+        handleTogglePagado({ id: pedidoId, tipo: 'mesa', mesaNombre: displayedPedido?.mesaNombre || '', pagado: true } as UnifiedPedido)
       } else {
       }
 
@@ -954,6 +977,43 @@ const Dashboard = () => {
       console.error('Error confirming payment:', error)
     } finally {
       setUpdatingPago(null)
+    }
+  }
+
+  // Toggle pagado for any order type (mesa, delivery, takeaway)
+  const [togglingPagado, setTogglingPagado] = useState<string | null>(null)
+  const handleTogglePagado = async (pedido: UnifiedPedido) => {
+    if (!token) return
+    const key = `${pedido.tipo}-${pedido.id}`
+    setTogglingPagado(key)
+    try {
+      let response: any
+      if (pedido.tipo === 'delivery') {
+        response = await deliveryApi.marcarPagado(token, pedido.id)
+      } else if (pedido.tipo === 'takeaway') {
+        response = await takeawayApi.marcarPagado(token, pedido.id)
+      } else {
+        response = await pedidosApi.marcarPagado(token, pedido.id)
+      }
+
+      if (response.success) {
+        const newPagado = response.data?.pagado ?? !pedido.pagado
+        // Update delivery/takeaway local state
+        if (pedido.tipo === 'delivery') {
+          setDeliveryPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
+        } else if (pedido.tipo === 'takeaway') {
+          setTakeawayPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
+        } else {
+          // For mesa pedidos from API
+          setClosedPedidosFromAPI(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
+          // Also update active pedidos (from WS) optimistically
+          setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling pagado:', error)
+    } finally {
+      setTogglingPagado(null)
     }
   }
 
@@ -1365,6 +1425,23 @@ const Dashboard = () => {
     }
   }
 
+  // Helper function to get the date of the last item added for mesa pedidos
+  const getLastItemDate = (items: any[], pedidoCreatedAt: string): string => {
+    if (!items || items.length === 0) return pedidoCreatedAt
+    
+    // Find the most recent item by createdAt
+    const itemsWithDates = items.filter(item => item.createdAt)
+    if (itemsWithDates.length === 0) return pedidoCreatedAt
+    
+    const lastItem = itemsWithDates.reduce((latest, item) => {
+      const itemDate = new Date(item.createdAt).getTime()
+      const latestDate = new Date(latest.createdAt).getTime()
+      return itemDate > latestDate ? item : latest
+    })
+    
+    return lastItem.createdAt
+  }
+
   // Unified all-orders list
   const { allUnifiedPedidos, archivedUnifiedPedidos } = useMemo(() => {
     const unified: UnifiedPedido[] = []
@@ -1374,35 +1451,43 @@ const Dashboard = () => {
     pedidos.forEach(p => {
       if (p.totalItems === 0) return
       addedMesaPedidoIds.add(p.id)
+      // For mesa pedidos, use the date of the last item added
+      const lastItemDate = getLastItemDate(p.items, p.createdAt)
       unified.push({
         id: p.id,
         tipo: 'mesa',
         estado: p.estado,
         total: p.total,
-        createdAt: p.createdAt,
+        createdAt: lastItemDate,
         nombreCliente: p.nombrePedido || null,
         telefono: null,
         mesaNombre: p.mesaNombre,
         items: p.items,
         totalItems: p.totalItems,
+        pagado: p.pagado,
       })
     })
 
     // Add historical mesa pedidos from API (closed, archived, etc. not already in WS)
+    // The backend already returns createdAt as the last item date, but we'll recalculate
+    // in case items have createdAt and we want to be sure
     closedPedidosFromAPI.forEach(p => {
       if (addedMesaPedidoIds.has(p.id)) return
       if (p.totalItems === 0) return
+      // For mesa pedidos, use the date of the last item added
+      const lastItemDate = getLastItemDate(p.items, p.createdAt)
       unified.push({
         id: p.id,
         tipo: 'mesa',
         estado: p.estado,
         total: p.total,
-        createdAt: p.createdAt,
+        createdAt: lastItemDate,
         nombreCliente: p.nombrePedido || null,
         telefono: null,
         mesaNombre: p.mesaNombre,
         items: p.items,
         totalItems: p.totalItems,
+        pagado: p.pagado,
       })
     })
 
@@ -1420,6 +1505,7 @@ const Dashboard = () => {
         notas: p.notas,
         items: p.items,
         totalItems: p.totalItems,
+        pagado: p.pagado,
       })
     })
 
@@ -1436,6 +1522,7 @@ const Dashboard = () => {
         notas: p.notas,
         items: p.items,
         totalItems: p.totalItems,
+        pagado: p.pagado,
       })
     })
 
@@ -2572,7 +2659,8 @@ const Dashboard = () => {
                               variant="outline"
                               size="sm"
                               className="text-muted-foreground hover:text-foreground hidden lg:flex"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.preventDefault()
                                 if (displayedUnifiedPedido.tipo === 'delivery') handleArchiveDelivery(displayedUnifiedPedido.id)
                                 else handleArchiveTakeaway(displayedUnifiedPedido.id)
                                 setSelectedUnifiedPedido(null)
@@ -2585,7 +2673,8 @@ const Dashboard = () => {
                               variant="outline"
                               size="icon"
                               className="text-muted-foreground hover:text-foreground lg:hidden h-9 w-9"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.preventDefault()
                                 if (displayedUnifiedPedido.tipo === 'delivery') handleArchiveDelivery(displayedUnifiedPedido.id)
                                 else handleArchiveTakeaway(displayedUnifiedPedido.id)
                                 setSelectedUnifiedPedido(null)
@@ -2639,24 +2728,24 @@ const Dashboard = () => {
                     )}
 
                     {/* Client Info */}
-                    <Card className="lg:shadow-sm">
+                    <Card className="lg:shadow-sm border-0 bg-transparent">
                       <CardContent className="py-4 px-3 lg:px-6 space-y-2">
+                        {displayedUnifiedPedido.tipo === 'delivery' && displayedUnifiedPedido.direccion && (
+                          <div className="flex items-center gap-2 text-xl font-bold">
+                            <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span>{displayedUnifiedPedido.direccion}</span>
+                          </div>
+                        )}
                         {displayedUnifiedPedido.nombreCliente && (
                           <div className="flex items-center gap-2">
                             <User className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="font-medium">{displayedUnifiedPedido.nombreCliente}</span>
+                            <span>{displayedUnifiedPedido.nombreCliente}</span>
                           </div>
                         )}
                         {displayedUnifiedPedido.telefono && (
                           <div className="flex items-center gap-2">
                             <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
                             <span>{displayedUnifiedPedido.telefono}</span>
-                          </div>
-                        )}
-                        {displayedUnifiedPedido.tipo === 'delivery' && displayedUnifiedPedido.direccion && (
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span>{displayedUnifiedPedido.direccion}</span>
                           </div>
                         )}
                         {displayedUnifiedPedido.notas && (
@@ -2671,31 +2760,51 @@ const Dashboard = () => {
                     </Card>
 
                     {/* Products */}
-                    <Card className={`lg:shadow-sm ${displayedUnifiedPedido.estado === 'archived' ? 'opacity-60' : ''}`}>
-                      <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <ShoppingCart className="h-4 w-4" />
+                    <Card className={`bg-transparent border-0`}>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-xl flex items-center gap-2">
+                          <ShoppingCart className="h-8 w-8" />
                           Productos ({displayedUnifiedPedido.totalItems})
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-2 px-3 lg:px-6 pb-3 lg:pb-6">
                         {displayedUnifiedPedido.items.map((item: any) => (
-                          <div key={item.id} className="flex items-start justify-between p-2 rounded-lg bg-muted/50 gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
-                              </div>
-                              {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                              )}
-                            </div>
-                            <span className="font-bold text-sm shrink-0">
-                              ${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}
-                            </span>
-                          </div>
+                           <div key={item.id} className={`flex items-start lg:items-center justify-between p-2 rounded-lg gap-2 ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
+                           <div className="flex-1 min-w-0">
+                             <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
+                             </div>
+                             {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                               <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                             )}
+                           </div>
+                           <div className="flex items-center gap-2 shrink-0">
+                             <span className="font-bold text-sm">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
+                             <div className="flex gap-1">
+                               {(displayedPedido?.estado !== 'closed' && displayedPedido?.estado !== 'archived') && (
+                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
+                                   <Trash2 className="h-4 w-4" />
+                                 </Button>
+                               )}
+                             </div>
+                           </div>
+                         </div>
+                          // <div key={item.id} className="flex items-start justify-between p-2 rounded-lg bg-muted/50 gap-2">
+                          //   <div className="flex-1 min-w-0">
+                          //     <div className="flex items-center gap-2 flex-wrap">
+                          //       <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
+                          //     </div>
+                          //     {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                          //       <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                          //     )}
+                          //   </div>
+                          //   <span className="font-bold text-sm shrink-0">
+                          //     ${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}
+                          //   </span>
+                          // </div>
                         ))}
                         {displayedUnifiedPedido.tipo === 'delivery' && (
-                          <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                             <div className="flex items-center gap-2">
                               <Truck className="h-4 w-4 text-muted-foreground" />
                               <span className="font-medium text-sm">Delivery</span>
@@ -2707,24 +2816,47 @@ const Dashboard = () => {
                     </Card>
 
                     {/* Total */}
-                    <Card className={`lg:shadow-sm ${displayedUnifiedPedido.estado === 'archived' ? 'bg-neutral-100 dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600' : 'bg-primary/5 border-primary/20'}`}>
+                    <Card className={`border-0`}>
                       <CardContent className="py-4 px-3 lg:px-6">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-sm font-medium">Total del Pedido</p>
+                            <p className="text-xl font-medium">Total del Pedido</p>
                             <p className="text-xs text-muted-foreground">{displayedUnifiedPedido.totalItems} productos</p>
                           </div>
-                          <p className={`text-2xl lg:text-3xl font-bold ${displayedUnifiedPedido.estado === 'archived' ? 'text-neutral-500' : 'text-primary'}`}>
-                            ${displayedUnifiedPedido.tipo === 'delivery'
-                              ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toFixed(2)
-                              : parseFloat(displayedUnifiedPedido.total).toFixed(2)}
+                          <p className={`text-2xl lg:text-3xl font-bold`}>
+                          ${displayedUnifiedPedido.tipo === 'delivery'
+                          ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toFixed(2)
+                          : parseFloat(displayedUnifiedPedido.total).toFixed(2)}
                           </p>
                         </div>
+                        
+                          <div className="p-3">
+                            {displayedUnifiedPedido.pagado ? (
+                              <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
+                                <CheckCircle className="h-4 w-4" />
+                                Mesa Pagada
+                              </div>
+                            ) : (
+                              <Button
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => handleTogglePagado(displayedUnifiedPedido)}
+                                disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
+                              >
+                                {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                ) : (
+                                  <span className="mr-2">💵</span>
+                                )}
+                                Confirmar Pago Total
+                              </Button>
+                            )}
+                          </div>
                       </CardContent>
                     </Card>
+
                   </div>
                 ) : selectedMesa ? (
-                  <div className={`space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0 ${(displayedPedido?.estado === 'closed' || displayedPedido?.estado === 'archived') ? 'relative' : ''}`}>
+                  <div className={`space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-10  ${(displayedPedido?.estado === 'closed' || displayedPedido?.estado === 'archived') ? 'relative' : ''}`}>
                     {/* Banner de pedido archivado */}
                     {displayedPedido?.estado === 'archived' && (
                       <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4 flex items-center gap-3">
@@ -2734,18 +2866,6 @@ const Dashboard = () => {
                         <div>
                           <p className="font-semibold text-slate-700 dark:text-slate-300">Pedido Archivado</p>
                           <p className="text-sm text-slate-500">Este pedido ha sido archivado.</p>
-                        </div>
-                      </div>
-                    )}
-                    {/* Banner de pedido cerrado */}
-                    {displayedPedido?.estado === 'closed' && (
-                      <div className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-lg p-4 flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center">
-                          <CheckCircle className="h-5 w-5 text-neutral-500" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-neutral-700 dark:text-neutral-300">Pedido Cerrado</p>
-                          <p className="text-sm text-neutral-500">Este pedido ha sido finalizado y está pendiente de pago o ya fue pagado</p>
                         </div>
                       </div>
                     )}
@@ -2797,10 +2917,21 @@ const Dashboard = () => {
                       </div>
                     </div>
 
+                    {/* Banner de pedido cerrado */}
+                    {displayedPedido?.estado === 'closed' && (
+                      <div className=" p-4 flex items-center gap-3">
+                        <div>
+                          <p className="font-semibold ">Cuenta Pedida 📋</p>
+                          <p className="text-sm text-neutral-500">Para este pedido los clientes ya pidieron la cuenta</p>
+                        </div>
+                      </div>
+                    )}
+
+
                     {/* Connected Clients - Compact on mobile */}
                     {selectedMesa.clientesConectados.length > 0 && (
-                      <Card className="lg:shadow-sm">
-                        <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
+                      <Card className="bg-transparent border-0">
+                        <CardHeader className="lg:px-6">
                           <CardTitle className="text-sm flex items-center gap-2">
                             <Users className="h-4 w-4" />
                             <span className="hidden sm:inline">Clientes Conectados</span>
@@ -2808,25 +2939,50 @@ const Dashboard = () => {
                             <span className="text-muted-foreground">({selectedMesa.clientesConectados.length})</span>
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="px-3 lg:px-6 pb-3 lg:pb-6">
+                        <CardContent className="px-3 lg:px-6 mt-[-10px]">
                           <div className="flex flex-wrap gap-1.5 lg:gap-2">
                             {selectedMesa.clientesConectados.map((cliente) => (
-                              <Badge key={cliente.id} variant="secondary" className="text-xs">
+                              <div key={cliente.id} className="text-xs bg-muted p-2 rounded-sm">
                                 {cliente.nombre}
-                              </Badge>
+                              </div>
                             ))}
                           </div>
                         </CardContent>
                       </Card>
                     )}
 
+                    {/* Mesa Actions Button (Confirm / Close) */}
+                    {displayedPedido && displayedPedido.estado !== 'closed' && displayedPedido.estado !== 'archived' && (
+                      <div className="w-full px-6 mb-4">
+                        {displayedPedido.estado === 'pending' ? (
+                          <Button
+                            className="w-full bg-blue-600 hover:bg-blue-700 font-bold shadow-sm h-12 text-md"
+                            onClick={() => handleConfirmarPedido({ id: displayedPedido.id } as any)}
+                            disabled={updatingPedido === displayedPedido.id}
+                          >
+                            {updatingPedido === displayedPedido.id ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
+                            Confirmar Pedido
+                          </Button>
+                        ) : (
+                          <Button
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold shadow-sm h-12 text-md"
+                            onClick={() => handleCerrarPedido(displayedPedido.id)}
+                            disabled={updatingPedido === displayedPedido.id}
+                          >
+                            {updatingPedido === displayedPedido.id ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle className="mr-2 h-5 w-5" />}
+                            Cerrar Pedido
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
                     {/* Order Items */}
                     {displayedPedido ? (
                       <>
-                        <Card className={`lg:shadow-sm ${(displayedPedido.estado === 'closed' || displayedPedido.estado === 'archived') ? 'opacity-60 grayscale-30' : ''}`}>
-                          <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                              <ShoppingCart className="h-4 w-4" />
+                        <Card className={`bg-transparent border-0`}>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-xl flex items-center gap-2">
+                              <ShoppingCart className="h-8 w-8" />
                               Productos ({displayedPedido.totalItems})
                             </CardTitle>
                           </CardHeader>
@@ -2840,10 +2996,10 @@ const Dashboard = () => {
                               Object.entries(itemsPorCliente).map(([cliente, items]) => (
                                 <div key={cliente}>
                                   <div className="flex items-center justify-between mb-2">
-                                    <Badge variant="secondary" className="gap-1 text-xs">
-                                      <User className="h-3 w-3" />
+                                    <div key={cliente} className="text-sm bg-muted p-2 rounded-sm flex items-center">
+                                      <User className="h-4 w-4 mr-1" />
                                       {cliente}
-                                    </Badge>
+                                    </div>
                                     <span className="text-sm font-medium">
                                       ${items.reduce((sum, i) => sum + (parseFloat(i.precioUnitario) * i.cantidad), 0).toFixed(2)}
                                     </span>
@@ -2894,34 +3050,20 @@ const Dashboard = () => {
                           </CardContent>
                         </Card>
 
-                        {/* Total & Payments */}
-                        <Card className={`lg:shadow-sm ${(displayedPedido.estado === 'closed' || displayedPedido.estado === 'archived') ? 'bg-neutral-100 dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600' : 'bg-primary/5 border-primary/20'}`}>
-                          <CardContent className="py-4 px-3 lg:px-6">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-sm font-medium">Total del Pedido</p>
-                                <p className="text-xs text-muted-foreground">{displayedPedido.totalItems} productos</p>
-                              </div>
-                              <p className={`text-2xl lg:text-3xl font-bold ${(displayedPedido.estado === 'closed' || displayedPedido?.estado === 'archived') ? 'text-neutral-500' : 'text-primary'}`}>
-                                ${parseFloat(displayedPedido.total).toFixed(2)}
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
 
                         {/* Payments (when closed) */}
                         {displayedPedido.estado === 'closed' && (
-                          <Card className="lg:shadow-sm">
-                            <CardHeader className="pb-2 pt-3 lg:pt-6 px-3 lg:px-6">
-                              <CardTitle className="text-sm flex items-center gap-2">
-                                <Users className="h-4 w-4" />
+                          <Card className="lg:shadow-sm border-0 bg-transparent">
+                            <CardHeader className="pb-2 px-3 lg:px-6">
+                              <CardTitle className="text-xl flex items-center gap-2">
+                                <Users className="h-6 w-6" />
                                 Pagos
                                 {subtotales.length > 0 && subtotales.every(s => s.pagado) ? (
-                                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-300 text-[10px]">
+                                  <Badge className="text-lg rounded-sm bg-green-500">
                                     💳 Pagado
                                   </Badge>
                                 ) : (
-                                  <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-300 text-[10px]">
+                                  <Badge className=" text-lg rounded-sm">
                                     📋 Cuenta Pedida
                                   </Badge>
                                 )}
@@ -2932,36 +3074,6 @@ const Dashboard = () => {
                                 <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                               ) : (
                                 <div className="space-y-3">
-                                  {!splitPayment && subtotales.length > 0 && (
-                                    <div className="p-3 bg-muted/30 rounded-lg border">
-                                      <div className="flex justify-between items-center mb-2">
-                                        <span className="font-medium">Total Mesa</span>
-                                        <span className="text-xl font-bold">
-                                          ${subtotales.reduce((acc, s) => acc + parseFloat(s.subtotal), 0).toLocaleString()}
-                                        </span>
-                                      </div>
-                                      {subtotales.every(s => s.pagado) ? (
-                                        <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
-                                          <CheckCircle className="h-4 w-4" />
-                                          Mesa Pagada
-                                        </div>
-                                      ) : (
-                                        <Button
-                                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                                          onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales)}
-                                          disabled={updatingPago === `all-${displayedPedido.id}`}
-                                        >
-                                          {updatingPago === `all-${displayedPedido.id}` ? (
-                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                          ) : (
-                                            <span className="mr-2">💵</span>
-                                          )}
-                                          Confirmar Pago Total
-                                        </Button>
-                                      )}
-                                    </div>
-                                  )}
-
                                   {splitPayment && Object.keys(itemsPorCliente).map((cliente) => {
                                     if (cliente === 'Mozo') return null
                                     const clienteItems = itemsPorCliente[cliente]
@@ -2976,18 +3088,19 @@ const Dashboard = () => {
                                         className={`flex items-center justify-between p-3 rounded-lg border ${estaPagado
                                           ? 'bg-green-50 border-green-200 dark:bg-green-900/20'
                                           : esperandoConfirmacion
-                                            ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/40'
+                                            ? ' border-amber-200 '
                                             : 'bg-card'
                                           }`}
                                       >
                                         <div className="min-w-0">
-                                          <span className={`font-medium text-sm block ${estaPagado ? 'text-green-700' : esperandoConfirmacion ? 'text-amber-700' : ''}`}>
+                                          <span className={`font-medium text-sm block `}>
                                             {cliente}
                                           </span>
-                                          {estaPagado && <span className="text-[10px] text-green-600">✓ Pagado</span>}
+                                          {esperandoConfirmacion && <span className="">Paga en efectivo</span>}
+                                          {estaPagado && <span className="text-md text-green-500">✓ Pagado</span>}
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
-                                          <span className={`font-semibold ${estaPagado ? 'text-green-600' : esperandoConfirmacion ? 'text-amber-600' : ''}`}>
+                                          <span className={`font-semibold`}>
                                             ${clienteTotal.toFixed(2)}
                                           </span>
                                           {esperandoConfirmacion && (
@@ -3004,11 +3117,54 @@ const Dashboard = () => {
                                       </div>
                                     )
                                   })}
+
+                                  <div className="p-3">
+                                    <div className="flex justify-between items-center mb-2">
+                                      <span className="font-medium">Total Mesa</span>
+                                      <span className="text-xl font-bold">
+                                        ${subtotales.reduce((acc, s) => acc + parseFloat(s.subtotal), 0).toLocaleString()}
+                                      </span>
+                                    </div>
+                                    {subtotales.every(s => s.pagado) ? (
+                                      <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
+                                        <CheckCircle className="h-4 w-4" />
+                                        Mesa Pagada
+                                      </div>
+                                    ) : (
+                                      <Button
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                                        onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales)}
+                                        disabled={updatingPago === `all-${displayedPedido.id}`}
+                                      >
+                                        {updatingPago === `all-${displayedPedido.id}` ? (
+                                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                        ) : (
+                                          <span className="mr-2">💵</span>
+                                        )}
+                                        Confirmar Pago Total
+                                      </Button>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </CardContent>
                           </Card>
                         )}
+
+                        {/* Total & Payments */}
+                        <Card className={`border-0`}>
+                          <CardContent className="py-4 px-3 lg:px-6">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-xl font-medium">Total del Pedido</p>
+                                <p className="text-xs text-muted-foreground">{displayedPedido.totalItems} productos</p>
+                              </div>
+                              <p className={`text-2xl lg:text-3xl font-bold`}>
+                                ${parseFloat(displayedPedido.total).toFixed(2)}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
                       </>
                     ) : (
                       <Card className="lg:shadow-sm">
@@ -3067,7 +3223,7 @@ const Dashboard = () => {
                               const subtotalesData = isMesa ? (pedidosSubtotales[card.pedido.id] || []) : []
                               const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
                               const totalPedido = subtotalesData.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
-                              const showUnifiedPayment = !splitPayment && isClosed && isMesa
+                              const showUnifiedPayment = (!splitPayment || !itemTracking) && isClosed && isMesa
 
                               // Card title based on tipo
                               const cardTitle = card.tipo === 'delivery'
@@ -3329,7 +3485,7 @@ const Dashboard = () => {
                                             variant="ghost"
                                             className="h-7 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
                                             onClick={(e) => {
-                                              e.stopPropagation()
+                                              e.preventDefault()
                                               if (card.tipo === 'delivery') handleArchiveDelivery(card.pedido.id)
                                               else if (card.tipo === 'takeaway') handleArchiveTakeaway(card.pedido.id)
                                               else handleArchiveMesaPedido(card.pedido.id)
@@ -3446,22 +3602,27 @@ const Dashboard = () => {
                                           <span className="text-sm"> {pedido.mesaNombre}</span>
                                         )}
                                       </CardTitle>
-                                      {pedido.estado === 'pending' && (
+                                      {(pedido.estado === 'pending' && pedido.tipo == 'mesa') && (
                                         <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-300">
                                           <Clock className="h-3 w-3 mr-1" />
                                           Pendiente
                                         </Badge>
                                       )}
-                                      {(['preparing', 'delivered', 'served'] as string[]).includes(pedido.estado) && (
+                                      {((['preparing', 'delivered', 'served'] as string[]).includes(pedido.estado) && pedido.tipo == 'mesa') && (
                                         <Badge className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-300">
                                           <ChefHat className="h-3 w-3 mr-1" />
                                           Confirmado
                                         </Badge>
                                       )}
-                                      {pedido.estado === 'closed' && (
+                                      {(pedido.estado === 'closed' && pedido.tipo == 'mesa') && (
                                         <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-300">
                                           <CheckCircle className="h-3 w-3 mr-1" />
                                           Cuenta
+                                        </Badge>
+                                      )}
+                                      {pedido.pagado && (
+                                        <Badge variant="outline" className="text-[10px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 px-1.5 py-0">
+                                          💳 Pagado
                                         </Badge>
                                       )}
                                     </div>
@@ -3483,6 +3644,39 @@ const Dashboard = () => {
                                     </p>
                                   </div>
                                   <div className="flex flex-col gap-2 shrink-0">
+                                    {/* Action Button for Mesa Orders */}
+                                    {pedido.tipo === 'mesa' && (
+                                      <>
+                                        {pedido.estado === 'pending' && (
+                                          <Button
+                                            size="sm"
+                                            className="h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                                            title="Confirmar Pedido"
+                                            disabled={updatingPedido === pedido.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleConfirmarPedido({ id: pedido.id } as any);
+                                            }}
+                                          >
+                                            {updatingPedido === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                                          </Button>
+                                        )}
+                                        {['preparing', 'delivered', 'served'].includes(pedido.estado) && (
+                                          <Button
+                                            size="sm"
+                                            className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                            title="Cerrar Pedido"
+                                            disabled={updatingPedido === pedido.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleCerrarPedido(pedido.id);
+                                            }}
+                                          >
+                                            {updatingPedido === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                                          </Button>
+                                        )}
+                                      </>
+                                    )}
                                     <div className="flex gap-1">
                                       {selectedPrinter && (
                                         <Button
@@ -3529,7 +3723,8 @@ const Dashboard = () => {
                                         variant="ghost"
                                         className="text-muted-foreground hover:text-foreground"
                                         title="Archivar pedido"
-                                        onClick={() => {
+                                        onClick={(e) => {
+                                          e.preventDefault()
                                           if (pedido.tipo === 'delivery') handleArchiveDelivery(pedido.id)
                                           else if (pedido.tipo === 'takeaway') handleArchiveTakeaway(pedido.id)
                                           else handleArchiveMesaPedido(pedido.id)
@@ -3549,6 +3744,51 @@ const Dashboard = () => {
                                     </div>
                                   </div>
                                 </div>
+                                {/* Payment control - show for all order types when not using split payment subtotales system */}
+                                {(() => {
+                                  // For mesa with splitPayment, the existing per-client subtotals system handles payment
+                                  const usesSubtotalesSystem = pedido.tipo === 'mesa' && splitPayment && itemTracking
+                                  if (usesSubtotalesSystem) return null
+
+                                  const isTogglingThis = togglingPagado === `${pedido.tipo}-${pedido.id}`
+                                  const totalConFee = pedido.tipo === 'delivery'
+                                    ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2)
+                                    : parseFloat(pedido.total).toFixed(2)
+
+                                  return (
+                                    <div className="mt-3 p-2.5 bg-muted/30 rounded-lg border border-border/50">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-medium text-muted-foreground">Pago</span>
+                                          <span className="text-sm font-bold">${totalConFee}</span>
+                                        </div>
+                                        {pedido.pagado && (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:hover:bg-red-950/30 dark:hover:text-red-400 dark:hover:border-red-800 transition-colors group/pay"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleTogglePagado(pedido)
+                                            }}
+                                            disabled={isTogglingThis}
+                                          >
+                                            {isTogglingThis ? (
+                                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                            ) : (
+                                              <>
+                                                <CheckCircle className="h-3 w-3 mr-1 group-hover/pay:hidden" />
+                                                <X className="h-3 w-3 mr-1 hidden group-hover/pay:inline" />
+                                              </>
+                                            )}
+                                            <span className="group-hover/pay:hidden">Pagado</span>
+                                            <span className="hidden group-hover/pay:inline">Desmarcar</span>
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
                                 {/* Items Preview - Grouped by client */}
                                 <div className="mt-3 pt-3 border-t">
                                   <div className="space-y-3">

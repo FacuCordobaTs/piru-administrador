@@ -507,6 +507,16 @@ export const pedidosApi = {
       },
     })
   },
+
+  // Marcar/desmarcar pedido como pagado
+  marcarPagado: async (token: string, pedidoId: number) => {
+    return fetchApi(`/pedido/marcar-pagado/${pedidoId}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // MercadoPago API
@@ -752,6 +762,16 @@ export const deliveryApi = {
       },
     })
   },
+
+  // Marcar/desmarcar pedido de delivery como pagado
+  marcarPagado: async (token: string, id: number) => {
+    return fetchApi(`/delivery/${id}/pagado`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Takeaway API
@@ -820,6 +840,16 @@ export const takeawayApi = {
   delete: async (token: string, id: number) => {
     return fetchApi(`/takeaway/${id}`, {
       method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  // Marcar/desmarcar pedido take away como pagado
+  marcarPagado: async (token: string, id: number) => {
+    return fetchApi(`/takeaway/${id}/pagado`, {
+      method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
       },

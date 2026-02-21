@@ -34,6 +34,7 @@ export interface ItemPedido {
   ingredientesExcluidos?: number[]
   ingredientesExcluidosNombres?: string[]
   postConfirmacion?: boolean
+  createdAt?: string
 }
 
 export interface Pedido {
@@ -43,6 +44,7 @@ export interface Pedido {
   createdAt: string
   closedAt?: string | null
   nombrePedido?: string | null  // Carrito mode: nombre del pedido
+  pagado?: boolean
 }
 
 export interface ClienteConectado {
