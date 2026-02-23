@@ -245,8 +245,6 @@ const Dashboard = () => {
   const [productos, setProductos] = useState<Producto[]>([])
   const [loadingProductos, setLoadingProductos] = useState(false)
   const [searchProducto, setSearchProducto] = useState('')
-  const [addingProducto, setAddingProducto] = useState<number | null>(null)
-  const [cantidadProducto, setCantidadProducto] = useState<Record<number, number>>({})
   const [configuringProduct, setConfiguringProduct] = useState<Producto | null>(null)
   const [excludedIngredients, setExcludedIngredients] = useState<number[]>([])
 
@@ -1051,34 +1049,7 @@ const Dashboard = () => {
     }
   }, [addProductSheet])
 
-  const handleAddProducto = async (producto: Producto) => {
-    if (producto.ingredientes && producto.ingredientes.length > 0) {
-      setExcludedIngredients([])
-      setConfiguringProduct(producto)
-      return
-    }
-    await confirmAddProducto(producto, [])
-  }
 
-  const confirmAddProducto = async (producto: Producto, exclusiones: number[]) => {
-    if (!token || !selectedMesa?.pedido) return
-    setAddingProducto(producto.id)
-    try {
-      const cantidad = cantidadProducto[producto.id] || 1
-      await pedidosApi.addItem(token, selectedMesa.pedido.id, {
-        productoId: producto.id,
-        cantidad,
-        clienteNombre: 'Mozo',
-        ingredientesExcluidos: exclusiones.length > 0 ? exclusiones : undefined
-      })
-      setCantidadProducto(prev => ({ ...prev, [producto.id]: 1 }))
-      setConfiguringProduct(null)
-      refresh()
-    } catch (error: any) {
-    } finally {
-      setAddingProducto(null)
-    }
-  }
 
   // Funciones para agregar múltiples productos a un pedido existente
   const handleAddProductoToCart = (producto: Producto, exclusiones?: number[]) => {

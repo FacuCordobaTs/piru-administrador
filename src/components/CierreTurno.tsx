@@ -48,13 +48,6 @@ const formatDateLabel = (dateString: string) => {
   return date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-const getMetodoString = (m?: string | null) => {
-  if (!m) return '';
-  if (m === 'efectivo') return 'Efectivo 💵';
-  if (m === 'mercadopago') return 'Mercado Pago 📱';
-  if (m === 'transferencia') return 'Transferencia 🏦';
-  return m;
-}
 
 /* ==========================================================================
    NUEVO COMPONENTE: DASHBOARD MÉTRICAS (VISUAL & MINIMALISTA)
@@ -516,7 +509,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-auto">
       {/* Header Fijo */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-b bg-background/95 gap-3 sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-b bg-background/95 gap-3 sticky top-0 z-20 backdrop-blur supports-backdrop-filter:bg-background/60">
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <button onClick={onClose} className="p-2 rounded hover:bg-muted/50 transition-colors"><X className="h-5 w-5" /></button>
           <div>
