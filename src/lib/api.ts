@@ -183,6 +183,15 @@ export const restauranteApi = {
       },
     })
   },
+
+  toggleSoloCartaDigital: async (token: string) => {
+    return fetchApi('/restaurante/toggle-solo-carta-digital', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Categorías API
@@ -509,12 +518,13 @@ export const pedidosApi = {
   },
 
   // Marcar/desmarcar pedido como pagado
-  marcarPagado: async (token: string, pedidoId: number) => {
+  marcarPagado: async (token: string, pedidoId: number, metodoPago?: string) => {
     return fetchApi(`/pedido/marcar-pagado/${pedidoId}`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify({ metodoPago }),
     })
   },
 }
@@ -538,21 +548,22 @@ export const mercadopagoApi = {
     })
   },
 
-  // Pagar en efectivo (para admin - marca como pending_cash)
-  pagarEfectivo: async (pedidoId: number, clientesAPagar: string[], qrToken: string, mozoItemIds?: number[]) => {
+  // Pagar en efectivo (o transferencia) (para admin - marca como pending_cash)
+  pagarEfectivo: async (pedidoId: number, clientesAPagar: string[], qrToken: string, mozoItemIds?: number[], metodoPago: string = 'efectivo') => {
     return fetchApi('/mp/pagar-efectivo', {
       method: 'POST',
       body: JSON.stringify({
         pedidoId,
         clientesAPagar,
         qrToken,
-        mozoItemIds
+        mozoItemIds,
+        metodoPago
       }),
     })
   },
 
-  // Confirmar pago en efectivo (admin confirma que recibió el dinero)
-  confirmarEfectivo: async (token: string, pedidoId: number, clienteNombre: string) => {
+  // Confirmar pago en efectivo/transferencia (admin confirma que recibió el dinero)
+  confirmarEfectivo: async (token: string, pedidoId: number, clienteNombre: string, metodoPago: string = 'efectivo') => {
     return fetchApi('/mp/confirmar-efectivo', {
       method: 'POST',
       headers: {
@@ -560,7 +571,8 @@ export const mercadopagoApi = {
       },
       body: JSON.stringify({
         pedidoId,
-        clienteNombre
+        clienteNombre,
+        metodoPago
       }),
     })
   },
@@ -764,12 +776,13 @@ export const deliveryApi = {
   },
 
   // Marcar/desmarcar pedido de delivery como pagado
-  marcarPagado: async (token: string, id: number) => {
+  marcarPagado: async (token: string, id: number, metodoPago?: string) => {
     return fetchApi(`/delivery/${id}/pagado`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify({ metodoPago }),
     })
   },
 }
@@ -847,12 +860,13 @@ export const takeawayApi = {
   },
 
   // Marcar/desmarcar pedido take away como pagado
-  marcarPagado: async (token: string, id: number) => {
+  marcarPagado: async (token: string, id: number, metodoPago?: string) => {
     return fetchApi(`/takeaway/${id}/pagado`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify({ metodoPago }),
     })
   },
 }

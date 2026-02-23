@@ -30,7 +30,8 @@ import {
   ShoppingCart,
   Printer,
   List,
-  ClipboardList
+  ClipboardList,
+  Smartphone
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -59,6 +60,7 @@ const Perfil = () => {
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
   const [isTogglingItemTracking, setIsTogglingItemTracking] = useState(false)
+  const [isTogglingSoloCartaDigital, setIsTogglingSoloCartaDigital] = useState(false)
 
   // Tauri Printer State
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
@@ -244,6 +246,29 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingItemTracking(false)
+    }
+  }
+
+  // Toggle solo carta digital
+  const handleToggleSoloCartaDigital = async () => {
+    if (!token) return
+
+    setIsTogglingSoloCartaDigital(true)
+    try {
+      const response = await restauranteApi.toggleSoloCartaDigital(token) as { success: boolean; soloCartaDigital: boolean }
+      if (response.success) {
+        toast.success(response.soloCartaDigital ? 'Sólo Carta Digital activado' : 'Sólo Carta Digital desactivado', {
+          description: response.soloCartaDigital
+            ? 'Los clientes no podrán confirmar su pedido, solo ver la carta'
+            : 'Los clientes podrán enviar su pedido al mozo o a la cocina'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar modo Sólo Carta Digital:', error)
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingSoloCartaDigital(false)
     }
   }
 
@@ -709,6 +734,65 @@ const Perfil = () => {
                   <>
                     <ClipboardList className="mr-2 h-4 w-4" />
                     {restaurante?.itemTracking ? 'Desactivar Seguimiento' : 'Activar Seguimiento'}
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Sólo Carta Digital */}
+          <Card className={restaurante?.soloCartaDigital ? "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Smartphone className="h-5 w-5" />
+                Sólo Carta Digital
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.soloCartaDigital
+                  ? 'La app funciona solo como menú digital. Los clientes llaman al mozo para pedir.'
+                  : 'Los clientes pueden confirmar y enviar su pedido a cocina.'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.soloCartaDigital ? (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Los clientes pueden armar un pedido pero NO confirmar</p>
+                    <p>• Las sesiones de mesa se limpian automáticamente cada 20 minutos.</p>
+                    <p>• Ideal para restaurantes tradicionales sin self-service.</p>
+                  </div>
+                  <Badge variant="secondary" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    Sólo Carta: Activo
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Los clientes arman y envían su pedido a la cocina.</p>
+                    <p>• Los mozos los reciben en tiempo real.</p>
+                    <p>• Autogestión habilitada.</p>
+                  </div>
+                  <Badge variant="secondary">
+                    Sólo Carta: Inactivo
+                  </Badge>
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleToggleSoloCartaDigital}
+                disabled={isTogglingSoloCartaDigital}
+              >
+                {isTogglingSoloCartaDigital ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cambiando...
+                  </>
+                ) : (
+                  <>
+                    <Smartphone className="mr-2 h-4 w-4" />
+                    {restaurante?.soloCartaDigital ? 'Desactivar Sólo Carta Digital' : 'Activar Sólo Carta Digital'}
                   </>
                 )}
               </Button>

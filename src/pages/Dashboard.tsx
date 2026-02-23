@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
@@ -250,6 +249,12 @@ const Dashboard = () => {
   const [cantidadProducto, setCantidadProducto] = useState<Record<number, number>>({})
   const [configuringProduct, setConfiguringProduct] = useState<Producto | null>(null)
   const [excludedIngredients, setExcludedIngredients] = useState<number[]>([])
+
+  // Estados para agregar múltiples productos a un pedido existente
+  const [productosSeleccionados, setProductosSeleccionados] = useState<NewDeliveryItem[]>([])
+  const [expandedProductosSeleccionados, setExpandedProductosSeleccionados] = useState<number[]>([])
+  const [addingMultipleProducts, setAddingMultipleProducts] = useState(false)
+  const [addProductMobileTab, setAddProductMobileTab] = useState<'carrito' | 'productos'>('productos')
 
   const [showDeletePedidoDialog, setShowDeletePedidoDialog] = useState(false)
   const [itemAEliminar, setItemAEliminar] = useState<ItemPedidoConEstado | null>(null)
@@ -897,9 +902,9 @@ const Dashboard = () => {
     }
   }
 
-  const handleConfirmarPagoTotal = async (pedidoId: number, subtotalesData: SubtotalInfo[]) => {
+  const handleConfirmarPagoTotal = async (pedidoId: number, subtotalesData: SubtotalInfo[], metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
     if (!token) return
-    setUpdatingPago(`all-${pedidoId}`)
+    setUpdatingPago(`all-${pedidoId}-${metodoPago}`)
 
     try {
       const pendientes = subtotalesData.filter(s => !s.pagado && s.estado !== 'paid')
@@ -922,14 +927,14 @@ const Dashboard = () => {
         }
       })
 
-      const responsePagar = await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, '', mozoItemIds) as { success: boolean; error?: string }
+      const responsePagar = await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, '', mozoItemIds, metodoPago) as { success: boolean; error?: string }
 
       if (!responsePagar.success) {
         return
       }
 
       const results = await Promise.allSettled(
-        pendientes.map(sub => mercadopagoApi.confirmarEfectivo(token, pedidoId, sub.clienteNombre))
+        pendientes.map(sub => mercadopagoApi.confirmarEfectivo(token, pedidoId, sub.clienteNombre, metodoPago))
       )
 
       const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length
@@ -940,10 +945,10 @@ const Dashboard = () => {
           const subs = prev[pedidoId] || []
           return {
             ...prev,
-            [pedidoId]: subs.map(s => ({ ...s, pagado: true, estado: 'paid', metodo: 'efectivo' }))
+            [pedidoId]: subs.map(s => ({ ...s, pagado: true, estado: 'paid', metodo: metodoPago }))
           }
         })
-        handleTogglePagado({ id: pedidoId, tipo: 'mesa', mesaNombre: displayedPedido?.mesaNombre || '', pagado: true } as UnifiedPedido)
+        handleTogglePagado({ id: pedidoId, tipo: 'mesa', mesaNombre: displayedPedido?.mesaNombre || '', pagado: true } as UnifiedPedido, metodoPago)
       } else {
       }
 
@@ -955,11 +960,11 @@ const Dashboard = () => {
   }
 
   // Kanban-specific payment handler (doesn't depend on selectedMesa)
-  const handleKanbanPagoEfectivo = async (pedidoId: number, clienteNombre: string) => {
+  const handleKanbanPagoEfectivo = async (pedidoId: number, clienteNombre: string, metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
     if (!token) return
-    setUpdatingPago(`${pedidoId}-${clienteNombre}`)
+    setUpdatingPago(`${pedidoId}-${clienteNombre}-${metodoPago}`)
     try {
-      const response = await mercadopagoApi.confirmarEfectivo(token, pedidoId, clienteNombre) as { success: boolean; error?: string }
+      const response = await mercadopagoApi.confirmarEfectivo(token, pedidoId, clienteNombre, metodoPago) as { success: boolean; error?: string }
       if (response.success) {
         setPedidosSubtotales(prev => {
           const subs = prev[pedidoId] || []
@@ -967,7 +972,7 @@ const Dashboard = () => {
             ...prev,
             [pedidoId]: subs.map(s =>
               s.clienteNombre === clienteNombre
-                ? { ...s, pagado: true, estado: 'paid', metodo: 'efectivo' }
+                ? { ...s, pagado: true, estado: 'paid', metodo: metodoPago }
                 : s
             )
           }
@@ -982,18 +987,18 @@ const Dashboard = () => {
 
   // Toggle pagado for any order type (mesa, delivery, takeaway)
   const [togglingPagado, setTogglingPagado] = useState<string | null>(null)
-  const handleTogglePagado = async (pedido: UnifiedPedido) => {
+  const handleTogglePagado = async (pedido: UnifiedPedido, metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
     if (!token) return
     const key = `${pedido.tipo}-${pedido.id}`
     setTogglingPagado(key)
     try {
       let response: any
       if (pedido.tipo === 'delivery') {
-        response = await deliveryApi.marcarPagado(token, pedido.id)
+        response = await deliveryApi.marcarPagado(token, pedido.id, metodoPago)
       } else if (pedido.tipo === 'takeaway') {
-        response = await takeawayApi.marcarPagado(token, pedido.id)
+        response = await takeawayApi.marcarPagado(token, pedido.id, metodoPago)
       } else {
-        response = await pedidosApi.marcarPagado(token, pedido.id)
+        response = await pedidosApi.marcarPagado(token, pedido.id, metodoPago)
       }
 
       if (response.success) {
@@ -1036,6 +1041,16 @@ const Dashboard = () => {
     if (addProductSheet && productos.length === 0) fetchProductos()
   }, [addProductSheet, fetchProductos, productos.length])
 
+  // Limpiar productos seleccionados al cerrar el sheet
+  useEffect(() => {
+    if (!addProductSheet) {
+      setProductosSeleccionados([])
+      setExpandedProductosSeleccionados([])
+      setSearchProducto('')
+      setAddProductMobileTab('productos')
+    }
+  }, [addProductSheet])
+
   const handleAddProducto = async (producto: Producto) => {
     if (producto.ingredientes && producto.ingredientes.length > 0) {
       setExcludedIngredients([])
@@ -1062,6 +1077,81 @@ const Dashboard = () => {
     } catch (error: any) {
     } finally {
       setAddingProducto(null)
+    }
+  }
+
+  // Funciones para agregar múltiples productos a un pedido existente
+  const handleAddProductoToCart = (producto: Producto, exclusiones?: number[]) => {
+    const exclusionesToUse = exclusiones || []
+    const existingIndex = productosSeleccionados.findIndex(i =>
+      i.productoId === producto.id &&
+      JSON.stringify(i.ingredientesExcluidos || []) === JSON.stringify(exclusionesToUse)
+    )
+    if (existingIndex >= 0) {
+      setProductosSeleccionados(prev => prev.map((item, idx) =>
+        idx === existingIndex ? { ...item, cantidad: item.cantidad + 1 } : item
+      ))
+    } else {
+      setProductosSeleccionados(prev => [...prev, { productoId: producto.id, cantidad: 1, ingredientesExcluidos: exclusionesToUse }])
+    }
+  }
+
+  const handleAddProductoToCartWithConfig = (producto: Producto) => {
+    // Agregar directamente al carrito, sin abrir diálogo
+    // El usuario puede configurar ingredientes desde el carrito
+    handleAddProductoToCart(producto)
+  }
+
+  const handleRemoveProductoFromCart = (productoId: number, exclusiones?: number[]) => {
+    setProductosSeleccionados(prev => prev.filter(i =>
+      !(i.productoId === productoId && JSON.stringify(i.ingredientesExcluidos || []) === JSON.stringify(exclusiones || []))
+    ))
+  }
+
+  const handleUpdateProductoCantidad = (productoId: number, cantidad: number, exclusiones?: number[]) => {
+    if (cantidad <= 0) {
+      handleRemoveProductoFromCart(productoId, exclusiones)
+      return
+    }
+    setProductosSeleccionados(prev => prev.map(item =>
+      (item.productoId === productoId && JSON.stringify(item.ingredientesExcluidos || []) === JSON.stringify(exclusiones || []))
+        ? { ...item, cantidad }
+        : item
+    ))
+  }
+
+  const handleToggleProductoIngredient = (idx: number, ingredientId: number) => {
+    setProductosSeleccionados(prev => prev.map((item, index) => {
+      if (index === idx) {
+        const currentExclusions = item.ingredientesExcluidos || []
+        const newExclusions = currentExclusions.includes(ingredientId)
+          ? currentExclusions.filter(id => id !== ingredientId)
+          : [...currentExclusions, ingredientId]
+        return { ...item, ingredientesExcluidos: newExclusions }
+      }
+      return item
+    }))
+  }
+
+  const handleConfirmMultipleProducts = async () => {
+    if (!token || !selectedMesa?.pedido || productosSeleccionados.length === 0) return
+    setAddingMultipleProducts(true)
+    try {
+      for (const item of productosSeleccionados) {
+        await pedidosApi.addItem(token, selectedMesa.pedido.id, {
+          productoId: item.productoId,
+          cantidad: item.cantidad,
+          clienteNombre: 'Mozo',
+          ingredientesExcluidos: item.ingredientesExcluidos && item.ingredientesExcluidos.length > 0 ? item.ingredientesExcluidos : undefined
+        })
+      }
+      setProductosSeleccionados([])
+      setAddProductSheet(false)
+      refresh()
+    } catch (error: any) {
+      console.error('Error agregando productos:', error)
+    } finally {
+      setAddingMultipleProducts(false)
     }
   }
 
@@ -1362,6 +1452,13 @@ const Dashboard = () => {
     return itemsTotal + deliveryFee
   }, [newDeliveryItems, productos, newDeliveryDireccion])
 
+  const productosSeleccionadosTotal = useMemo(() => {
+    return productosSeleccionados.reduce((total, item) => {
+      const producto = productos.find(p => p.id === item.productoId)
+      return total + (producto ? parseFloat(producto.precio) * item.cantidad : 0)
+    }, 0)
+  }, [productosSeleccionados, productos])
+
 
   const handleDeleteTakeaway = async (pedidoId: number) => {
     if (!token) return
@@ -1428,17 +1525,17 @@ const Dashboard = () => {
   // Helper function to get the date of the last item added for mesa pedidos
   const getLastItemDate = (items: any[], pedidoCreatedAt: string): string => {
     if (!items || items.length === 0) return pedidoCreatedAt
-    
+
     // Find the most recent item by createdAt
     const itemsWithDates = items.filter(item => item.createdAt)
     if (itemsWithDates.length === 0) return pedidoCreatedAt
-    
+
     const lastItem = itemsWithDates.reduce((latest, item) => {
       const itemDate = new Date(item.createdAt).getTime()
       const latestDate = new Date(latest.createdAt).getTime()
       return itemDate > latestDate ? item : latest
     })
-    
+
     return lastItem.createdAt
   }
 
@@ -1859,21 +1956,38 @@ const Dashboard = () => {
                                       <span className="text-sm font-bold">${totalPedido.toLocaleString()}</span>
                                     </div>
                                     {!isFullyPaid ? (
-                                      <Button
-                                        className="w-full h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleConfirmarPagoTotal(card.pedido.id, subtotalesData)
-                                        }}
-                                        disabled={updatingPago === `all-${card.pedido.id}`}
-                                      >
-                                        {updatingPago === `all-${card.pedido.id}` ? (
-                                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                        ) : (
-                                          <span className="mr-1">💵</span>
-                                        )}
-                                        Confirmar Pago Total
-                                      </Button>
+                                      <div className="flex gap-1 w-full">
+                                        <Button
+                                          className="flex-1 h-7 px-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'efectivo')
+                                          }}
+                                          disabled={updatingPago === `all-${card.pedido.id}-efectivo` || updatingPago === `all-${card.pedido.id}-transferencia`}
+                                          title="Efectivo"
+                                        >
+                                          {updatingPago === `all-${card.pedido.id}-efectivo` ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                          ) : (
+                                            <span>💵 Efectivo</span>
+                                          )}
+                                        </Button>
+                                        <Button
+                                          className="flex-1 h-7 px-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-white"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'transferencia')
+                                          }}
+                                          disabled={updatingPago === `all-${card.pedido.id}-transferencia` || updatingPago === `all-${card.pedido.id}-efectivo`}
+                                          title="Transferencia"
+                                        >
+                                          {updatingPago === `all-${card.pedido.id}-transferencia` ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                          ) : (
+                                            <span>🏦 Transf.</span>
+                                          )}
+                                        </Button>
+                                      </div>
                                     ) : (
                                       <div className="w-full py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded text-center text-xs font-medium flex items-center justify-center gap-1">
                                         <CheckCircle className="h-3 w-3" />
@@ -2769,26 +2883,26 @@ const Dashboard = () => {
                       </CardHeader>
                       <CardContent className="space-y-2 px-3 lg:px-6 pb-3 lg:pb-6">
                         {displayedUnifiedPedido.items.map((item: any) => (
-                           <div key={item.id} className={`flex items-start lg:items-center justify-between p-2 rounded-lg gap-2 ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
-                           <div className="flex-1 min-w-0">
-                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
-                             </div>
-                             {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                               <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                             )}
-                           </div>
-                           <div className="flex items-center gap-2 shrink-0">
-                             <span className="font-bold text-sm">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
-                             <div className="flex gap-1">
-                               {(displayedPedido?.estado !== 'closed' && displayedPedido?.estado !== 'archived') && (
-                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
-                                   <Trash2 className="h-4 w-4" />
-                                 </Button>
-                               )}
-                             </div>
-                           </div>
-                         </div>
+                          <div key={item.id} className={`flex items-start lg:items-center justify-between p-2 rounded-lg gap-2 ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
+                              </div>
+                              {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-bold text-sm">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
+                              <div className="flex gap-1">
+                                {(displayedPedido?.estado !== 'closed' && displayedPedido?.estado !== 'archived') && (
+                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                           // <div key={item.id} className="flex items-start justify-between p-2 rounded-lg bg-muted/50 gap-2">
                           //   <div className="flex-1 min-w-0">
                           //     <div className="flex items-center gap-2 flex-wrap">
@@ -2824,22 +2938,23 @@ const Dashboard = () => {
                             <p className="text-xs text-muted-foreground">{displayedUnifiedPedido.totalItems} productos</p>
                           </div>
                           <p className={`text-2xl lg:text-3xl font-bold`}>
-                          ${displayedUnifiedPedido.tipo === 'delivery'
-                          ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toFixed(2)
-                          : parseFloat(displayedUnifiedPedido.total).toFixed(2)}
+                            ${displayedUnifiedPedido.tipo === 'delivery'
+                              ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toFixed(2)
+                              : parseFloat(displayedUnifiedPedido.total).toFixed(2)}
                           </p>
                         </div>
-                        
-                          <div className="p-3">
-                            {displayedUnifiedPedido.pagado ? (
-                              <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
-                                <CheckCircle className="h-4 w-4" />
-                                Mesa Pagada
-                              </div>
-                            ) : (
+
+                        <div className="p-3">
+                          {displayedUnifiedPedido.pagado ? (
+                            <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
+                              <CheckCircle className="h-4 w-4" />
+                              Mesa Pagada
+                            </div>
+                          ) : (
+                            <div className="flex gap-2 w-full">
                               <Button
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                                onClick={() => handleTogglePagado(displayedUnifiedPedido)}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => handleTogglePagado(displayedUnifiedPedido, 'efectivo')}
                                 disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
                               >
                                 {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
@@ -2847,10 +2962,23 @@ const Dashboard = () => {
                                 ) : (
                                   <span className="mr-2">💵</span>
                                 )}
-                                Confirmar Pago Total
+                                Efectivo
                               </Button>
-                            )}
-                          </div>
+                              <Button
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                                onClick={() => handleTogglePagado(displayedUnifiedPedido, 'transferencia')}
+                                disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
+                              >
+                                {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                ) : (
+                                  <span className="mr-2">🏦</span>
+                                )}
+                                Transf.
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
 
@@ -3131,18 +3259,32 @@ const Dashboard = () => {
                                         Mesa Pagada
                                       </div>
                                     ) : (
-                                      <Button
-                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                                        onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales)}
-                                        disabled={updatingPago === `all-${displayedPedido.id}`}
-                                      >
-                                        {updatingPago === `all-${displayedPedido.id}` ? (
-                                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                        ) : (
-                                          <span className="mr-2">💵</span>
-                                        )}
-                                        Confirmar Pago Total
-                                      </Button>
+                                      <div className="flex gap-2 w-full">
+                                        <Button
+                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                          onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales, 'efectivo')}
+                                          disabled={updatingPago === `all-${displayedPedido.id}-efectivo` || updatingPago === `all-${displayedPedido.id}-transferencia`}
+                                        >
+                                          {updatingPago === `all-${displayedPedido.id}-efectivo` ? (
+                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                          ) : (
+                                            <span className="mr-2">💵</span>
+                                          )}
+                                          Efectivo
+                                        </Button>
+                                        <Button
+                                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                                          onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales, 'transferencia')}
+                                          disabled={updatingPago === `all-${displayedPedido.id}-transferencia` || updatingPago === `all-${displayedPedido.id}-efectivo`}
+                                        >
+                                          {updatingPago === `all-${displayedPedido.id}-transferencia` ? (
+                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                          ) : (
+                                            <span className="mr-2">🏦</span>
+                                          )}
+                                          Transf.
+                                        </Button>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -3291,21 +3433,36 @@ const Dashboard = () => {
                                           <span className="text-sm font-bold">${totalPedido.toLocaleString()}</span>
                                         </div>
                                         {!isFullyPaid ? (
-                                          <Button
-                                            className="w-full h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleConfirmarPagoTotal(card.pedido.id, subtotalesData)
-                                            }}
-                                            disabled={updatingPago === `all-${card.pedido.id}`}
-                                          >
-                                            {updatingPago === `all-${card.pedido.id}` ? (
-                                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                            ) : (
-                                              <span className="mr-1">💵</span>
-                                            )}
-                                            Confirmar Pago Total
-                                          </Button>
+                                          <div className="flex gap-1 w-full">
+                                            <Button
+                                              className="flex-1 h-7 px-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'efectivo')
+                                              }}
+                                              disabled={updatingPago === `all-${card.pedido.id}-efectivo` || updatingPago === `all-${card.pedido.id}-transferencia`}
+                                            >
+                                              {updatingPago === `all-${card.pedido.id}-efectivo` ? (
+                                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                              ) : (
+                                                <span>💵 Efectivo</span>
+                                              )}
+                                            </Button>
+                                            <Button
+                                              className="flex-1 h-7 px-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-white"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'transferencia')
+                                              }}
+                                              disabled={updatingPago === `all-${card.pedido.id}-transferencia` || updatingPago === `all-${card.pedido.id}-efectivo`}
+                                            >
+                                              {updatingPago === `all-${card.pedido.id}-transferencia` ? (
+                                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                              ) : (
+                                                <span>🏦 Transf.</span>
+                                              )}
+                                            </Button>
+                                          </div>
                                         ) : (
                                           <div className="w-full py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded text-center text-xs font-medium flex items-center justify-center gap-1">
                                             <CheckCircle className="h-3 w-3" />
@@ -3373,31 +3530,50 @@ const Dashboard = () => {
                                                   )}
                                                 </div>
                                                 {showIndividualPayment && !isPaid && isPendingCash && (
-                                                  <Button
-                                                    size="sm"
-                                                    className="h-5 text-[10px] px-2 bg-green-600 hover:bg-green-700 text-white shadow-sm"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation()
-                                                      handleKanbanPagoEfectivo(card.pedido.id, cliente)
-                                                    }}
-                                                    disabled={isConfirming}
-                                                  >
-                                                    {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Cobrar"}
-                                                  </Button>
+                                                  <div className="flex gap-1 items-center">
+                                                    <Button
+                                                      size="sm"
+                                                      className="h-5 text-[10px] px-2 bg-green-600 hover:bg-green-700 text-white shadow-sm"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleKanbanPagoEfectivo(card.pedido.id, cliente, 'efectivo')
+                                                      }}
+                                                      disabled={isConfirming}
+                                                      title="Cobrar Efectivo/Transf ya pagado"
+                                                    >
+                                                      {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirmar"}
+                                                    </Button>
+                                                  </div>
                                                 )}
                                                 {showIndividualPayment && !isPaid && !isPendingCash && subtotalData && (
-                                                  <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="h-5 text-[10px] px-2 hover:bg-emerald-100 hover:text-emerald-700 text-muted-foreground"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation()
-                                                      handleKanbanPagoEfectivo(card.pedido.id, cliente)
-                                                    }}
-                                                    disabled={isConfirming}
-                                                  >
-                                                    {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Marcar Pagado"}
-                                                  </Button>
+                                                  <div className="flex gap-1 items-center">
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      className="h-5 text-[10px] px-2 hover:bg-emerald-100 hover:text-emerald-700 text-muted-foreground"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleKanbanPagoEfectivo(card.pedido.id, cliente, 'efectivo')
+                                                      }}
+                                                      disabled={isConfirming}
+                                                      title="Pago en Efectivo"
+                                                    >
+                                                      {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "💵"}
+                                                    </Button>
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      className="h-5 text-[10px] px-2 hover:bg-blue-100 hover:text-blue-700 text-muted-foreground"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleKanbanPagoEfectivo(card.pedido.id, cliente, 'transferencia')
+                                                      }}
+                                                      disabled={isConfirming}
+                                                      title="Pago por Transferencia"
+                                                    >
+                                                      {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "🏦"}
+                                                    </Button>
+                                                  </div>
                                                 )}
                                               </div>
 
@@ -4042,9 +4218,15 @@ const Dashboard = () => {
           </div>
           <DialogFooter className="gap-2 mt-4">
             <Button variant="outline" onClick={() => setConfiguringProduct(null)}>Cancelar</Button>
-            <Button onClick={() => configuringProduct && confirmAddProducto(configuringProduct, excludedIngredients)} disabled={addingProducto === configuringProduct?.id}>
-              {addingProducto === configuringProduct?.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Agregar al Pedido
+            <Button onClick={() => {
+              if (configuringProduct) {
+                handleAddProductoToCart(configuringProduct, excludedIngredients)
+                setConfiguringProduct(null)
+                setExcludedIngredients([])
+              }
+            }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Agregar al Carrito
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4052,89 +4234,263 @@ const Dashboard = () => {
 
       {/* Add Product Sheet - Full screen on mobile */}
       <Sheet open={addProductSheet} onOpenChange={setAddProductSheet}>
-        <SheetContent side="right" className="w-full sm:max-w-lg p-0">
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-0">
           <div className="flex flex-col h-full">
             <SheetHeader className="text-left p-4 pb-2 border-b shrink-0">
-              <SheetTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Agregar Producto</SheetTitle>
+              <SheetTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Agregar Productos</SheetTitle>
               <SheetDescription>Selecciona los productos para agregar al pedido.</SheetDescription>
             </SheetHeader>
 
-            <div className="relative px-4 py-3 shrink-0 border-b">
-              <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar producto o etiqueta..."
-                value={searchProducto}
-                onChange={(e) => setSearchProducto(e.target.value)}
-                className="pl-10 h-11"
-              />
+            {/* Mobile Tabs */}
+            <div className="lg:hidden px-4 pt-2 border-b shrink-0">
+              <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+                <Button
+                  variant={addProductMobileTab === 'carrito' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={() => setAddProductMobileTab('carrito')}
+                >
+                  <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+                  Carrito
+                  {productosSeleccionados.length > 0 && (
+                    <Badge variant="secondary" className="ml-1.5 text-[10px] h-4 min-w-4 px-1">{productosSeleccionados.length}</Badge>
+                  )}
+                </Button>
+                <Button
+                  variant={addProductMobileTab === 'productos' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={() => setAddProductMobileTab('productos')}
+                >
+                  <Package className="h-3.5 w-3.5 mr-1.5" />
+                  Productos
+                </Button>
+              </div>
             </div>
 
-            <ScrollArea className="flex-1 px-4 py-2">
-              {loadingProductos ? (
-                <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-              ) : productosFiltrados.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">No se encontraron productos</div>
-              ) : (
-                <div className="space-y-5 pb-8">
-                  {(() => {
-                    const porCategoria = productosFiltrados.reduce((acc, producto) => {
-                      const cat = producto.categoria || 'Sin categoría'
-                      if (!acc[cat]) acc[cat] = []
-                      acc[cat].push(producto)
-                      return acc
-                    }, {} as Record<string, Producto[]>)
-
-                    const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
-                      if (a === 'Sin categoría') return 1
-                      if (b === 'Sin categoría') return -1
-                      return a.localeCompare(b)
-                    })
-
-                    return categoriasOrdenadas.map((categoriaNombre) => (
-                      <div key={categoriaNombre} className="space-y-2">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 sticky top-0 bg-background/95 backdrop-blur-sm py-1 z-1">
-                          {categoriaNombre}
-                          <Badge variant="secondary" className="ml-2 text-[10px] font-normal">{porCategoria[categoriaNombre].length}</Badge>
-                        </h4>
-                        <div className="space-y-2">
-                          {porCategoria[categoriaNombre].map((producto) => (
-                            <div key={producto.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
-                              <div className="shrink-0">
-                                {producto.imagenUrl ? (
-                                  <img src={producto.imagenUrl} alt={producto.nombre} className="w-14 h-14 rounded-lg object-cover bg-muted" />
-                                ) : (
-                                  <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center">
-                                    <Package className="h-6 w-6 text-muted-foreground/40" />
+            <div className="flex-1 flex overflow-hidden">
+              {/* COLUMN 1: Productos Seleccionados */}
+              <div className={`${addProductMobileTab === 'carrito' ? 'flex' : 'hidden'} lg:flex w-full sm:w-[350px] flex-col border-r overflow-hidden bg-background shrink-0`}>
+                <div className="flex-1 overflow-auto p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Productos Seleccionados</h3>
+                    {productosSeleccionados.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">{productosSeleccionados.length}</Badge>
+                    )}
+                  </div>
+                  {productosSeleccionados.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-lg">
+                      <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Seleccioná productos de la lista</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        {productosSeleccionados.map((item, idx) => {
+                          const producto = productos.find(p => p.id === item.productoId)
+                          if (!producto) return null
+                          const isExpanded = !expandedProductosSeleccionados.includes(idx)
+                          return (
+                            <div key={`${item.productoId}-${idx}`} className="flex flex-col gap-2 p-3 rounded-lg border bg-card">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium truncate text-sm">{producto.nombre}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs text-muted-foreground">${parseFloat(producto.precio).toFixed(2)} c/u</p>
+                                    {producto.ingredientes && producto.ingredientes.length > 0 && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-5 text-[10px] px-1.5 text-muted-foreground hover:text-foreground"
+                                        onClick={() => setExpandedProductosSeleccionados(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
+                                      >
+                                        {isExpanded ? 'Ocultar' : 'Ingredientes'}
+                                      </Button>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium truncate">{producto.nombre}</p>
-                                <p className="font-bold text-primary">${parseFloat(producto.precio).toFixed(2)}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex items-center border rounded-lg bg-background h-9">
-                                  <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: Math.max(1, (prev[producto.id] || 1) - 1) }))}>
-                                    <Minus className="h-3 w-3" />
-                                  </Button>
-                                  <span className="w-6 text-center text-sm font-medium">{cantidadProducto[producto.id] || 1}</span>
-                                  <Button variant="ghost" size="icon" className="h-full w-8 rounded-none" onClick={() => setCantidadProducto(prev => ({ ...prev, [producto.id]: (prev[producto.id] || 1) + 1 }))}>
-                                    <Plus className="h-3 w-3" />
+                                  {item.ingredientesExcluidos && item.ingredientesExcluidos.length > 0 && !isExpanded && (
+                                    <p className="text-[10px] text-orange-600 mt-0.5">Sin: {producto.ingredientes?.filter(i => item.ingredientesExcluidos?.includes(i.id)).map(i => i.nombre).join(', ')}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center border rounded-lg bg-background h-7">
+                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateProductoCantidad(item.productoId, item.cantidad - 1, item.ingredientesExcluidos)}>
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
+                                    <span className="w-5 text-center text-xs font-medium">{item.cantidad}</span>
+                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateProductoCantidad(item.productoId, item.cantidad + 1, item.ingredientesExcluidos)}>
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleRemoveProductoFromCart(item.productoId, item.ingredientesExcluidos)}>
+                                    <X className="h-3.5 w-3.5" />
                                   </Button>
                                 </div>
-                                <Button size="icon" className="h-9 w-9 shrink-0" onClick={() => handleAddProducto(producto)} disabled={addingProducto === producto.id}>
-                                  {addingProducto === producto.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                                </Button>
                               </div>
+                              {isExpanded && producto.ingredientes && (
+                                <div className="space-y-1 pl-1 border-l-2 border-muted ml-1">
+                                  {producto.ingredientes.map(ing => {
+                                    const isExcluded = item.ingredientesExcluidos?.includes(ing.id)
+                                    return (
+                                      <div
+                                        key={ing.id}
+                                        className={`flex items-center gap-2 p-1 rounded cursor-pointer text-xs ${isExcluded ? 'text-muted-foreground line-through opacity-70' : ''}`}
+                                        onClick={() => handleToggleProductoIngredient(idx, ing.id)}
+                                      >
+                                        <Checkbox checked={!isExcluded} className="h-3 w-3" />
+                                        <span>{ing.nombre}</span>
+                                        {isExcluded && <span className="text-[10px] text-destructive ml-auto font-medium">Excluido</span>}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          ))}
-                        </div>
+                          )
+                        })}
                       </div>
-                    ))
-                  })()}
+                      <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
+                        <span className="font-semibold">Total:</span>
+                        <span className="text-xl font-bold text-primary">${productosSeleccionadosTotal.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
-              )}
-            </ScrollArea>
+
+                {/* Submit button fixed at bottom */}
+                <div className="p-4 border-t bg-background shrink-0">
+                  <Button
+                    className="w-full h-11"
+                    onClick={handleConfirmMultipleProducts}
+                    disabled={addingMultipleProducts || productosSeleccionados.length === 0}
+                  >
+                    {addingMultipleProducts ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Plus className="h-4 w-4 mr-2" />
+                    )}
+                    Agregar {productosSeleccionados.length > 0 && `${productosSeleccionados.length} producto${productosSeleccionados.length !== 1 ? 's' : ''}`}
+                    {productosSeleccionados.length > 0 && ` \u2022 $${productosSeleccionadosTotal.toFixed(2)}`}
+                  </Button>
+                </div>
+              </div>
+
+              {/* COLUMN 2: Catálogo de Productos */}
+              <div className={`${addProductMobileTab === 'productos' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col overflow-hidden bg-muted/10`}>
+                <div className="p-4 border-b bg-background/95 backdrop-blur shrink-0">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-3">Agregar Productos</h3>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar producto o etiqueta... (Enter para agregar)"
+                      value={searchProducto}
+                      onChange={(e) => setSearchProducto(e.target.value)}
+                      className="pl-10 h-10"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && searchProducto.trim()) {
+                          e.preventDefault()
+                          const term = searchProducto.trim().toLowerCase()
+                          const matchByTag = productos.find(p =>
+                            p.etiquetas?.some(et => et.nombre.toLowerCase() === term)
+                          )
+                          const matchProduct = matchByTag || productosFiltrados[0]
+                          if (matchProduct) {
+                            handleAddProductoToCartWithConfig(matchProduct)
+                            setSearchProducto('')
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  {loadingProductos ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {(() => {
+                        const porCategoria = productosFiltrados.reduce((acc, producto) => {
+                          const cat = producto.categoria || 'Sin categoría'
+                          if (!acc[cat]) acc[cat] = []
+                          acc[cat].push(producto)
+                          return acc
+                        }, {} as Record<string, Producto[]>)
+
+                        const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
+                          if (a === 'Sin categoría') return 1
+                          if (b === 'Sin categoría') return -1
+                          return a.localeCompare(b)
+                        })
+
+                        return categoriasOrdenadas.map((categoriaNombre) => (
+                          <div key={categoriaNombre} className="space-y-2">
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 sticky top-0 bg-muted/10 py-1 backdrop-blur-sm z-1">
+                              {categoriaNombre}
+                              <Badge variant="secondary" className="ml-2 text-[10px] font-normal">{porCategoria[categoriaNombre].length}</Badge>
+                            </h4>
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                              {porCategoria[categoriaNombre].map((producto) => {
+                                // Solo mostrar badge si hay un item sin ingredientes excluidos
+                                const existingItem = productosSeleccionados.find(i =>
+                                  i.productoId === producto.id &&
+                                  (!i.ingredientesExcluidos || i.ingredientesExcluidos.length === 0)
+                                )
+                                return (
+                                  <div
+                                    key={producto.id}
+                                    className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${existingItem ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
+                                    onClick={() => handleAddProductoToCartWithConfig(producto)}
+                                  >
+                                    <div className="shrink-0">
+                                      {producto.imagenUrl ? (
+                                        <img src={producto.imagenUrl} alt={producto.nombre} className="w-12 h-12 rounded-lg object-cover bg-muted" />
+                                      ) : (
+                                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                                          <Package className="h-5 w-5 text-muted-foreground/40" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <p className="font-medium truncate">{producto.nombre}</p>
+                                        {producto.etiquetas && producto.etiquetas.map(et => (
+                                          <Badge key={et.id} variant="outline" className="text-[10px] px-1 py-0 h-4 bg-violet-50 dark:bg-violet-950/30 border-violet-300 text-violet-700 dark:text-violet-400 font-mono">
+                                            {et.nombre}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                      <p className="font-bold text-primary text-sm">${parseFloat(producto.precio).toFixed(2)}</p>
+                                    </div>
+                                    {existingItem && (
+                                      <Badge variant="secondary" className="font-mono">{existingItem.cantidad}</Badge>
+                                    )}
+                                    <Plus className="h-5 w-5 text-muted-foreground shrink-0" />
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))
+                      })()}
+                    </div>
+                  )}
+                </div>
+                {/* Mobile floating cart summary */}
+                {productosSeleccionados.length > 0 && (
+                  <div className="lg:hidden p-3 border-t bg-background shrink-0">
+                    <Button
+                      className="w-full h-11"
+                      onClick={() => setAddProductMobileTab('carrito')}
+                    >
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      Ver Carrito • {productosSeleccionados.reduce((sum, i) => sum + i.cantidad, 0)} {productosSeleccionados.reduce((sum, i) => sum + i.cantidad, 0) === 1 ? 'item' : 'items'} • ${productosSeleccionadosTotal.toFixed(2)}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </SheetContent>
       </Sheet>
