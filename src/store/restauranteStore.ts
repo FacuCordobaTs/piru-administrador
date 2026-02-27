@@ -40,6 +40,7 @@ interface RestauranteData {
   imagenUrl: string | null
   mercadoPagoPublicKey: string | null
   mercadoPagoPrivateKey: string | null
+  username: string | null
   createdAt: string
   // Campos OAuth de MercadoPago
   mpConnected: boolean | null
@@ -49,6 +50,7 @@ interface RestauranteData {
   splitPayment: boolean | null
   itemTracking: boolean | null
   soloCartaDigital: boolean | null
+  deliveryFee: string | null
 }
 
 interface RestauranteState {

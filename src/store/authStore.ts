@@ -9,6 +9,7 @@ interface Restaurante {
   telefono?: string | null
   imagenUrl?: string | null
   itemTracking?: boolean | null
+  deliveryFee?: string | null
 }
 
 interface AuthState {

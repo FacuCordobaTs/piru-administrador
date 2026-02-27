@@ -30,7 +30,6 @@ import {
   ShoppingCart,
   Printer,
   List,
-  ClipboardList,
   Smartphone
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
@@ -54,12 +53,13 @@ const Perfil = () => {
     nombre: '',
     direccion: '',
     telefono: '',
+    username: '',
+    deliveryFee: '',
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
-  const [isTogglingItemTracking, setIsTogglingItemTracking] = useState(false)
   const [isTogglingSoloCartaDigital, setIsTogglingSoloCartaDigital] = useState(false)
 
   // Tauri Printer State
@@ -226,28 +226,6 @@ const Perfil = () => {
     }
   }
 
-  // Toggle seguimiento de items
-  const handleToggleItemTracking = async () => {
-    if (!token) return
-
-    setIsTogglingItemTracking(true)
-    try {
-      const response = await restauranteApi.toggleItemTracking(token) as { success: boolean; itemTracking: boolean }
-      if (response.success) {
-        toast.success(response.itemTracking ? 'Seguimiento de items activado' : 'Seguimiento de items desactivado', {
-          description: response.itemTracking
-            ? 'Podrás gestionar el estado de cada producto del pedido'
-            : 'Los pedidos se mostrarán como un listado simple'
-        })
-        restauranteStore.fetchData()
-      }
-    } catch (error) {
-      console.error('Error al cambiar seguimiento de items:', error)
-      toast.error('Error al cambiar la configuración')
-    } finally {
-      setIsTogglingItemTracking(false)
-    }
-  }
 
   // Toggle solo carta digital
   const handleToggleSoloCartaDigital = async () => {
@@ -278,6 +256,8 @@ const Perfil = () => {
         nombre: restaurante.nombre || '',
         direccion: restaurante.direccion || '',
         telefono: restaurante.telefono || '',
+        username: restaurante.username || '',
+        deliveryFee: restaurante.deliveryFee || '',
       })
       setImageBase64(restaurante.imagenUrl || null)
       setDialogAbierto(true)
@@ -306,6 +286,8 @@ const Perfil = () => {
         direccion?: string
         telefono?: string
         image?: string
+        username?: string
+        deliveryFee?: string
       } = {}
 
       // Solo enviar campos que cambiaron
@@ -317,6 +299,12 @@ const Perfil = () => {
       }
       if (formData.telefono !== (restaurante?.telefono || '')) {
         updateData.telefono = formData.telefono
+      }
+      if (formData.username !== (restaurante?.username || '')) {
+        updateData.username = formData.username
+      }
+      if (formData.deliveryFee !== (restaurante?.deliveryFee || '')) {
+        updateData.deliveryFee = formData.deliveryFee
       }
       // Si la imagen es nueva (base64), enviarla
       if (imageBase64 && imageBase64.startsWith('data:image')) {
@@ -427,6 +415,25 @@ const Perfil = () => {
                 <div className="flex-1">
                   <p className="text-sm font-medium text-muted-foreground">Correo Electrónico</p>
                   <p className="text-base">{restaurante?.email || 'No especificado'}</p>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="flex items-start space-x-3">
+                <Link2 className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-muted-foreground">Enlace de Delivery / Take Away</p>
+                  <p className="text-base font-semibold">
+                    {restaurante?.username ? (
+                      <a href={`https://piru.app/${restaurante.username}`} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                        piru.app/{restaurante.username}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground font-normal">No configurado</span>
+                    )}
+                  </p>
                 </div>
               </div>
 
@@ -681,65 +688,6 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
-          {/* Tarjeta de Seguimiento de Items */}
-          <Card className={restaurante?.itemTracking ? "border-violet-500/50 bg-violet-50/50 dark:bg-violet-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <ClipboardList className="h-5 w-5" />
-                Seguimiento de Items
-              </CardTitle>
-              <CardDescription>
-                {restaurante?.itemTracking
-                  ? 'Gestión detallada del estado de cada producto'
-                  : 'Los pedidos se muestran como un listado simple'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {restaurante?.itemTracking ? (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Cada producto pasa por estados: pendiente → en cocina → listo → entregado</p>
-                    <p>• Vista Kanban para organizar el flujo de trabajo</p>
-                    <p>• Ideal para restaurantes con cocina y mozos</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
-                    Seguimiento Activo
-                  </Badge>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Los pedidos se listan sin gestión de estados</p>
-                    <p>• Vista simplificada para operaciones rápidas</p>
-                    <p>• Ideal para carritos o locales de comida rápida</p>
-                  </div>
-                  <Badge variant="secondary">
-                    Seguimiento Inactivo
-                  </Badge>
-                </>
-              )}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleToggleItemTracking}
-                disabled={isTogglingItemTracking}
-              >
-                {isTogglingItemTracking ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cambiando...
-                  </>
-                ) : (
-                  <>
-                    <ClipboardList className="mr-2 h-4 w-4" />
-                    {restaurante?.itemTracking ? 'Desactivar Seguimiento' : 'Activar Seguimiento'}
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-
           {/* Tarjeta de Sólo Carta Digital */}
           <Card className={restaurante?.soloCartaDigital ? "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20" : ""}>
             <CardHeader>
@@ -958,6 +906,19 @@ const Perfil = () => {
               />
             </div>
 
+            {/* Alias / Username */}
+            <div className="space-y-2">
+              <Label htmlFor="username">Alias (Link de Perfil)</Label>
+              <Input
+                id="username"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                placeholder="Ej: mi-restaurante"
+                disabled={isSubmitting}
+              />
+              <p className="text-xs text-muted-foreground">Tu enlace en Piru será: piru.app/{formData.username || 'tu-alias'}</p>
+            </div>
+
             {/* Dirección */}
             <div className="space-y-2">
               <Label htmlFor="direccion">Dirección</Label>
@@ -978,6 +939,21 @@ const Perfil = () => {
                 value={formData.telefono}
                 onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
                 placeholder="Ej: +54 11 1234-5678"
+                disabled={isSubmitting}
+              />
+            </div>
+
+            {/* Delivery Fee */}
+            <div className="space-y-2">
+              <Label htmlFor="deliveryFee">Modificar costo del envio</Label>
+              <Input
+                id="deliveryFee"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.deliveryFee}
+                onChange={(e) => setFormData({ ...formData, deliveryFee: e.target.value })}
+                placeholder="Ej: 800"
                 disabled={isSubmitting}
               />
             </div>

@@ -110,6 +110,17 @@ export const authApi = {
   },
 }
 
+export const clientesApi = {
+  getAll: async (token: string) => {
+    return fetchApi('/clientes/list', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
 // Restaurante API
 export const restauranteApi = {
   getProfile: async (token: string) => {
@@ -146,6 +157,7 @@ export const restauranteApi = {
       direccion?: string
       telefono?: string
       image?: string // Base64 de la imagen
+      username?: string
     }
   ) => {
     return fetchApi('/restaurante/update', {

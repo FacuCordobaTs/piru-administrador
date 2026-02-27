@@ -206,6 +206,9 @@ interface PedidoCardProps {
 }
 
 function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
+  const restaurante = useAuthStore(s => s.restaurante)
+  const deliveryFee = restaurante?.deliveryFee ? parseFloat(restaurante.deliveryFee) : 0
+
   const key = `${pedido.tipo}-${pedido.id}`
 
   // Agrupar items por clienteNombre; usar "Pedido" si no hay clienteNombre en ningún item
@@ -217,14 +220,14 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
       map.get(cliente)!.push(it)
     })
 
-    // Si es pedido DELIVERY, agregar item "Envio" de 800 pesos
+    // Si es pedido DELIVERY, agregar item "Envio" dinamico
     if (pedido.tipo === 'delivery') {
       const envioItem: CierreTurnoItem = {
         id: -1, // ID especial para el item de envío
         productoId: -1,
-        nombreProducto: 'Envio',
+        nombreProducto: deliveryFee === 0 ? 'Envio GRATIS' : 'Envio',
         cantidad: 1,
-        precioUnitario: '800',
+        precioUnitario: String(deliveryFee),
         clienteNombre: undefined,
         estado: undefined
       }
@@ -248,7 +251,7 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
   }
 
   const totalConEnvio = pedido.tipo === 'delivery'
-    ? parseFloat(pedido.total) + 800
+    ? parseFloat(pedido.total) + deliveryFee
     : parseFloat(pedido.total)
 
   return (
@@ -451,7 +454,8 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
     if (!data) return res;
 
     allPedidos.forEach(p => {
-      const baseMonto = p.tipo === 'delivery' ? parseFloat(p.total) + 800 : parseFloat(p.total);
+      const deliveryFee = restaurante?.deliveryFee ? parseFloat(restaurante.deliveryFee) : 0;
+      const baseMonto = p.tipo === 'delivery' ? parseFloat(p.total) + deliveryFee : parseFloat(p.total);
 
       if (p.tipo === 'mesa') {
         const mesaP = p as CierreTurnoPedidoMesa;

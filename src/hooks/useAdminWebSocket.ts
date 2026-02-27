@@ -78,9 +78,15 @@ export interface SubtotalesUpdate {
   todosSubtotales: SubtotalActualizado[]
 }
 
+export interface AdminUpdateEvent {
+  type: string
+  timestamp: number
+}
+
 export interface UseAdminWebSocketReturn {
   mesas: MesaConPedido[]
   notifications: Notification[]
+  lastUpdate: AdminUpdateEvent | null
   isConnected: boolean
   error: string | null
   unreadCount: number
@@ -130,6 +136,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [subtotalesUpdates, setSubtotalesUpdates] = useState<Map<number, SubtotalesUpdate>>(new Map())
+  const [lastUpdate, setLastUpdate] = useState<AdminUpdateEvent | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -305,6 +312,13 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
                 setMesas(data.payload.mesas || [])
                 break
 
+              case 'ADMIN_UPDATE':
+                setLastUpdate({
+                  type: data.payload.updateType,
+                  timestamp: Date.now()
+                })
+                break
+
               case 'ADMIN_NOTIFICACIONES_INICIAL':
                 // Initial notifications from database
                 const initialNotifs = (data.payload.notificaciones || [])
@@ -443,6 +457,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
     deleteNotification,
     clearNotifications,
     refresh,
-    marcarPedidoListo
+    marcarPedidoListo,
+    lastUpdate
   }
 }

@@ -9,12 +9,12 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { toast } from 'sonner'
 import {
   LayoutDashboard,
-  ClipboardList,
   Package,
   Menu,
   LogOut,
   Sun,
-  Moon
+  Moon,
+  Users
 } from 'lucide-react'
 import { check } from '@tauri-apps/plugin-updater';
 
@@ -70,9 +70,9 @@ const DashboardLayout = () => {
   }
 
   const menuItems = [
-    { icon: LayoutDashboard, label: 'Mesas', path: '/dashboard/' },
-    { icon: ClipboardList, label: 'Pedidos', path: '/dashboard/pedidos' },
+    { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
     { icon: Package, label: 'Productos', path: '/dashboard/productos' },
+    { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
   ]
 
   const handleNavigation = (path: string) => {

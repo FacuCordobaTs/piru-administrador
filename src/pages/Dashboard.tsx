@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
+﻿import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -184,17 +184,6 @@ const getDateLabel = (dateString: string) => {
   return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`
 }
 
-const getEstadoBadge = (estado: string | null | undefined) => {
-  const estados: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: any }> = {
-    pending: { label: 'Pendiente', variant: 'outline', icon: Clock },
-    preparing: { label: 'Preparando', variant: 'default', icon: ChefHat },
-    delivered: { label: 'Listo', variant: 'secondary', icon: Utensils },
-    served: { label: 'Entregado', variant: 'secondary', icon: CheckCircle },
-    closed: { label: 'Cerrado', variant: 'secondary', icon: CheckCircle },
-    archived: { label: 'Archivado', variant: 'outline', icon: Archive },
-  }
-  return estados[estado || 'pending'] || { label: 'Disponible', variant: 'outline', icon: Coffee }
-}
 
 const COLUMNS = [
   { id: 'pending', title: 'Pendientes', icon: Clock, color: 'text-amber-600', bgHeader: 'bg-amber-100 dark:bg-amber-900/30' },
@@ -211,7 +200,7 @@ const Dashboard = () => {
   const restaurante = useAuthStore((state) => state.restaurante)
   const { restaurante: restauranteStore, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
   const splitPayment = restauranteStore?.splitPayment ?? true
-  const itemTracking = restauranteStore?.itemTracking ?? true
+
   const { printRaw, selectedPrinter } = usePrinter()
 
   // Ref para rastrear pedidos procesados para impresión automática
@@ -222,7 +211,8 @@ const Dashboard = () => {
     notifications,
     isConnected,
     refresh,
-    markAsRead
+    markAsRead,
+    lastUpdate
   } = useAdminContext()
 
   const [mesas, setMesas] = useState<MesaConPedido[]>([])
@@ -235,6 +225,9 @@ const Dashboard = () => {
   const [crearMesaDialog, setCrearMesaDialog] = useState(false)
   const [nombreMesa, setNombreMesa] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+
+  const [showDeleteMesaDialog, setShowDeleteMesaDialog] = useState(false)
+  const [isDeletingMesa, setIsDeletingMesa] = useState(false)
 
   const [subtotales, setSubtotales] = useState<SubtotalInfo[]>([])
   const [loadingSubtotales, setLoadingSubtotales] = useState(false)
@@ -299,6 +292,9 @@ const Dashboard = () => {
 
   // Pedido filter state
   const [pedidoFilter, setPedidoFilter] = useState<'all' | 'mesa' | 'delivery' | 'takeaway'>('all')
+
+  // Desktop left panel tab state
+  const [desktopLeftTab, setDesktopLeftTab] = useState<'pedidos' | 'mesas'>('pedidos')
 
   // Selected unified pedido (for showing delivery/takeaway detail in center)
   const [selectedUnifiedPedido, setSelectedUnifiedPedido] = useState<UnifiedPedido | null>(null)
@@ -807,6 +803,28 @@ const Dashboard = () => {
     return grouped
   }, [pedidos, closedPedidosFromAPI, pedidosCerradosPagados, deliveryPedidos, takeawayPedidos])
 
+  const handleDeleteMesa = async (mesaId: number) => {
+    if (!token) return
+    setIsDeletingMesa(true)
+    try {
+      const response = await mesasApi.delete(token, mesaId) as { success: boolean }
+      if (response.success) {
+        setMesas(prev => prev.filter(m => m.id !== mesaId))
+        if (selectedMesaId === mesaId) {
+          setSelectedMesaId(null)
+          if (window.innerWidth < 1024) {
+            setMobileView('mesas')
+          }
+        }
+        setShowDeleteMesaDialog(false)
+      }
+    } catch (error) {
+      console.error('Error deleting mesa:', error)
+    } finally {
+      setIsDeletingMesa(false)
+    }
+  }
+
   const handleCrearMesa = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!token || !nombreMesa.trim()) {
@@ -957,38 +975,10 @@ const Dashboard = () => {
     }
   }
 
-  // Kanban-specific payment handler (doesn't depend on selectedMesa)
-  const handleKanbanPagoEfectivo = async (pedidoId: number, clienteNombre: string, metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
-    if (!token) return
-    setUpdatingPago(`${pedidoId}-${clienteNombre}-${metodoPago}`)
-    try {
-      const response = await mercadopagoApi.confirmarEfectivo(token, pedidoId, clienteNombre, metodoPago) as { success: boolean; error?: string }
-      if (response.success) {
-        setPedidosSubtotales(prev => {
-          const subs = prev[pedidoId] || []
-          return {
-            ...prev,
-            [pedidoId]: subs.map(s =>
-              s.clienteNombre === clienteNombre
-                ? { ...s, pagado: true, estado: 'paid', metodo: metodoPago }
-                : s
-            )
-          }
-        })
-      }
-    } catch (error) {
-      console.error('Error confirming payment:', error)
-    } finally {
-      setUpdatingPago(null)
-    }
-  }
 
   // Toggle pagado for any order type (mesa, delivery, takeaway)
-  const [togglingPagado, setTogglingPagado] = useState<string | null>(null)
   const handleTogglePagado = async (pedido: UnifiedPedido, metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
     if (!token) return
-    const key = `${pedido.tipo}-${pedido.id}`
-    setTogglingPagado(key)
     try {
       let response: any
       if (pedido.tipo === 'delivery') {
@@ -1015,8 +1005,6 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error('Error toggling pagado:', error)
-    } finally {
-      setTogglingPagado(null)
     }
   }
 
@@ -1256,7 +1244,14 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDeliveryPedidos()
     fetchTakeawayPedidos()
-  }, [])
+  }, [fetchDeliveryPedidos, fetchTakeawayPedidos])
+
+  useEffect(() => {
+    if (lastUpdate) {
+      if (lastUpdate.type === 'delivery') fetchDeliveryPedidos()
+      if (lastUpdate.type === 'takeaway') fetchTakeawayPedidos()
+    }
+  }, [lastUpdate, fetchDeliveryPedidos, fetchTakeawayPedidos])
 
   useEffect(() => {
     if (dashboardMode === 'nuevoPedido' && productos.length === 0) fetchProductos()
@@ -1352,7 +1347,7 @@ const Dashboard = () => {
           if (isDelivery) {
             itemsForPrint.push({
               id: 0,
-              nombreProducto: 'Delivery',
+              nombreProducto: DELIVERY_FEE === 0 ? 'Delivery GRATIS' : 'Delivery',
               cantidad: 1,
               precioUnitario: String(DELIVERY_FEE),
               ingredientesExcluidosNombres: []
@@ -1411,9 +1406,7 @@ const Dashboard = () => {
     } catch (error) {
     }
   }
-
-  const DELIVERY_FEE = 800
-
+  const DELIVERY_FEE = restaurante?.deliveryFee ? parseFloat(restaurante.deliveryFee) : 0
   const deliveryItemsTotal = useMemo(() => {
     const itemsTotal = newDeliveryItems.reduce((total, item) => {
       const producto = productos.find(p => p.id === item.productoId)
@@ -1437,17 +1430,6 @@ const Dashboard = () => {
       const response = await takeawayApi.delete(token, pedidoId) as { success: boolean }
       if (response.success) {
         setTakeawayPedidos(prev => prev.filter(p => p.id !== pedidoId))
-      }
-    } catch (error) {
-    }
-  }
-
-  const handleDeleteMesaPedido = async (pedidoId: number) => {
-    if (!token) return
-    try {
-      const response = await pedidosApi.delete(token, pedidoId) as { success: boolean }
-      if (response.success) {
-        setPedidos(prev => prev.filter(p => p.id !== pedidoId))
       }
     } catch (error) {
     }
@@ -1678,31 +1660,12 @@ const Dashboard = () => {
           {/* Desktop Create Button and Mode Toggle */}
           <div className="hidden lg:flex gap-2">
             <>
-              {/* Mode Toggle */}
-              {/* <div className="flex gap-1 bg-muted/50 p-1 rounded-lg mr-2"> */}
-              <Button
-                size="sm"
-                className=""
-                onClick={() => setDashboardMode('mesas')}
-              >
-                <Utensils className="h-4 w-4 mr-1.5" />
-                Mesas
-              </Button>
-              {/* <Button
-                  variant={dashboardMode === 'pedidos' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setDashboardMode('pedidos')}
-                >
-                  <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
-                  Pedidos
-                </Button> */}
-              {/* </div> */}
-
-              <Button size="sm" onClick={enterNuevoPedidoMode}>
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Pedido
-              </Button>
+              {dashboardMode !== 'nuevoPedido' && (
+                <Button size="sm" onClick={enterNuevoPedidoMode}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo Pedido
+                </Button>
+              )}
               <Button size="sm" variant="outline" onClick={() => setShowCierreTurno(true)}>
                 <CalendarDays className="mr-2 h-4 w-4" />
                 Cerrar Turno
@@ -1809,7 +1772,7 @@ const Dashboard = () => {
         )}
       </div>
 
-      {/* Main Content - Desktop: 3 columns, Mobile: Single view based on state */}
+      {/* Main Content - Desktop: 2 columns (left tabs + right detail), Mobile: Single view based on state */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* PEDIDOS (UNIFIED) MODE VIEW */}
@@ -2076,6 +2039,12 @@ const Dashboard = () => {
 
             {/* COLUMN 1 (Desktop only): Client Info */}
             <div className="hidden lg:flex lg:w-[280px] xl:w-[300px] flex-col border-r overflow-hidden bg-background shrink-0">
+              <div className="p-3 border-b flex items-center gap-2 sticky top-0 bg-background/95 backdrop-blur z-10 shrink-0">
+                <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1" onClick={exitNuevoPedidoMode}>
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <h2 className="font-semibold text-sm">Nuevo Pedido</h2>
+              </div>
               <div className="flex-1 overflow-auto p-4 space-y-5">
                 {/* Mesa selector */}
                 <div className="space-y-3">
@@ -2451,7 +2420,12 @@ const Dashboard = () => {
             {/* COLUMN 3: Product catalog */}
             <div className={`${nuevoPedidoMobileTab === 'productos' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col overflow-hidden bg-muted/10`}>
               <div className="p-4 border-b bg-background/95 backdrop-blur shrink-0">
-                <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-3">Agregar Productos</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Agregar Productos</h3>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2" onClick={exitNuevoPedidoMode}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -2567,74 +2541,283 @@ const Dashboard = () => {
         {/* MESAS MODE VIEW */}
         {dashboardMode === 'mesas' && (
           <>
-            {/* LEFT: Mesa Selector - Desktop always visible, Mobile conditional */}
+            {/* LEFT: Tabbed Panel (Pedidos/Mesas) - Desktop, Mesa grid on Mobile */}
             <div className={`
           ${mobileView === 'mesas' ? 'flex' : 'hidden'} 
-          lg:flex lg:w-48 flex-col border-r bg-muted/20 overflow-hidden
+          lg:flex lg:w-[380px] xl:w-[420px] flex-col border-r bg-muted/20 overflow-hidden
           w-full
         `}>
-              <div className="p-3 lg:p-3 overflow-auto flex-1">
-                <div className="items-center justify-between mb-3 hidden lg:flex">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mesas</p>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6"
-                    onClick={() => setCrearMesaDialog(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-2">
-                  {mesas.map((mesa) => {
-                    const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed' && mesa.pedido.estado !== 'archived' && mesa.totalItems > 0
-                    const notifCount = mesaNotifications.get(mesa.id) || 0
-                    const isSelected = selectedMesaId === mesa.id
+              {/* Desktop Tab Switcher */}
+              <div className="hidden lg:flex items-center gap-1 p-2 border-b bg-background/95 backdrop-blur shrink-0">
+                <button
+                  onClick={() => setDesktopLeftTab('pedidos')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${desktopLeftTab === 'pedidos'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                    }`}
+                >
+                  <ShoppingCart className="h-4 w-4" />
+                  Pedidos
+                  {allUnifiedPedidos.length > 0 && (
+                    <Badge className={`ml-1 text-[10px] px-1.5 py-0 h-4 min-w-5 justify-center ${desktopLeftTab === 'pedidos' ? 'bg-primary-foreground/20 text-primary-foreground' : ''}`}>
+                      {allUnifiedPedidos.length}
+                    </Badge>
+                  )}
+                </button>
+                <button
+                  onClick={() => setDesktopLeftTab('mesas')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${desktopLeftTab === 'mesas'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                    }`}
+                >
+                  <Utensils className="h-4 w-4" />
+                  Mesas
+                </button>
+              </div>
 
-                    return (
+              {/* DESKTOP: Pedidos Tab Content */}
+              <div className={`${desktopLeftTab === 'pedidos' ? 'hidden lg:flex' : 'hidden'} flex-col flex-1 overflow-hidden`}>
+                {/* Filter tabs */}
+                <div className="border-b bg-background/95 backdrop-blur shrink-0 px-3 pt-2 pb-0">
+                  <div className="grid grid-cols-4 gap-1">
+                    {([
+                      { key: 'all', label: 'Todos', icon: '📋' },
+                      { key: 'mesa', label: 'Mesas', icon: '🍽️' },
+                      { key: 'delivery', label: 'Delivery', icon: '🚚' },
+                      { key: 'takeaway', label: 'T.Away', icon: '🛍️' },
+                    ] as const).map(tab => (
                       <button
-                        key={mesa.id}
-                        onClick={() => handleSelectMesa(mesa.id)}
-                        className={`relative aspect-square rounded-lg border-2 flex flex-col items-center justify-center text-center p-1 transition-all active:scale-95 lg:hover:scale-105 ${isSelected
-                          ? 'border-primary bg-primary/10 shadow-md'
-                          : hasActiveOrder
-                            ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
-                            : 'border-border bg-card hover:bg-accent'
+                        key={tab.key}
+                        onClick={() => setPedidoFilter(tab.key)}
+                        className={`flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${pedidoFilter === tab.key
+                          ? 'text-foreground bg-accent'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                           }`}
                       >
-                        {notifCount > 0 && (
-                          <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
-                            {notifCount}
-                          </div>
+                        <span className="hidden xl:inline">{tab.icon}</span>
+                        {tab.label}
+                        {pedidoCounts[tab.key] > 0 && (
+                          <Badge className="ml-0.5 text-[9px] px-1 py-0 h-3.5 min-w-4 justify-center">
+                            {pedidoCounts[tab.key]}
+                          </Badge>
                         )}
-                        <span className="font-semibold text-xs truncate w-full px-1">{mesa.nombre}</span>
-                        {mesa.clientesConectados.length > 0 && (
-                          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
-                            <Users className="h-2.5 w-2.5" />
-                            {mesa.clientesConectados.length}
-                          </span>
-                        )}
-                        {/* Mobile-only: show mini status indicator */}
-                        <div className="lg:hidden mt-1">
-                          {hasActiveOrder ? (
-                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          ) : (
-                            <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-                          )}
-                        </div>
                       </button>
-                    )
-                  })}
+                    ))}
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto p-3">
+                  {loadingDelivery ? (
+                    <div className="flex items-center justify-center h-full">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                  ) : allUnifiedPedidos.length === 0 && archivedUnifiedPedidos.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                      <ShoppingCart className="h-12 w-12 text-muted-foreground/30" />
+                      <p className="text-sm font-medium">No hay pedidos</p>
+                      <Button size="sm" onClick={enterNuevoPedidoMode}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Crear primer pedido
+                      </Button>
+                    </div>
+                  ) : filteredUnifiedPedidos.length === 0 && filteredArchivedPedidos.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
+                      <ShoppingCart className="h-12 w-12 text-muted-foreground/30" />
+                      <p className="text-sm font-medium">No hay pedidos de este tipo</p>
+                      <Button variant="outline" size="sm" onClick={() => setPedidoFilter('all')}>
+                        Ver todos
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredUnifiedPedidos.map((pedido, index) => {
+                        const tipoBadge = getTipoBadge(pedido.tipo)
+                        const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                          || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
+                        const dateLabel = getDateLabel(pedido.createdAt)
+                        const prevDateLabel = index > 0 ? getDateLabel(filteredUnifiedPedidos[index - 1].createdAt) : null
+                        const showDateSeparator = dateLabel !== prevDateLabel
+                        return (
+                          <Fragment key={`${pedido.tipo}-${pedido.id}`}>
+                            {showDateSeparator && (
+                              <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-2'}`}>
+                                <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
+                                <Separator className="flex-1" />
+                              </div>
+                            )}
+                            <div
+                              className={`p-3 rounded-lg border cursor-pointer transition-all hover:shadow-sm active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
+                              onClick={() => handleUnifiedPedidoClick(pedido)}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                    <span className={`${tipoBadge.className} text-sm font-semibold`}>
+                                      {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
+                                        <span className="text-xs font-normal">{pedido.mesaNombre}</span>
+                                      )}
+                                    </span>
+                                    {pedido.pagado && (
+                                      <Badge variant="outline" className="text-[9px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 px-1 py-0 h-4">
+                                        💳 Pagado
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {pedido.tipo === 'delivery' && pedido.direccion && (
+                                    <div className="flex items-start gap-1 mb-0.5">
+                                      <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
+                                      <p className="text-xs text-muted-foreground truncate">{pedido.direccion}</p>
+                                    </div>
+                                  )}
+                                  {pedido.nombreCliente && (
+                                    <p className="text-xs text-muted-foreground truncate">{pedido.nombreCliente}</p>
+                                  )}
+                                  {pedido.telefono && (
+                                    <div className="flex items-center gap-1">
+                                      <Phone className="h-3 w-3 text-muted-foreground" />
+                                      <p className="text-xs text-muted-foreground">{pedido.telefono}</p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="font-bold text-sm">
+                                    ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </Fragment>
+                        )
+                      })}
+
+                      {/* Archived orders section */}
+                      {filteredArchivedPedidos.length > 0 && (
+                        <>
+                          <Separator className="my-3" />
+                          <div className="flex items-center gap-2 mb-2">
+                            <Archive className="h-3.5 w-3.5 text-muted-foreground/60" />
+                            <h3 className="text-xs font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
+                          </div>
+                          {filteredArchivedPedidos.map((pedido, index) => {
+                            const tipoBadge = getTipoBadge(pedido.tipo)
+                            const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                              || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
+                            const dateLabel = getDateLabel(pedido.createdAt)
+                            const prevDateLabel = index > 0 ? getDateLabel(filteredArchivedPedidos[index - 1].createdAt) : null
+                            const showDateSeparator = dateLabel !== prevDateLabel
+                            return (
+                              <Fragment key={`archived-${pedido.tipo}-${pedido.id}`}>
+                                {showDateSeparator && (
+                                  <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-2'}`}>
+                                    <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
+                                    <Separator className="flex-1" />
+                                  </div>
+                                )}
+                                <div
+                                  className={`p-2.5 rounded-lg border cursor-pointer transition-all opacity-50 hover:opacity-70 active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary opacity-70' : 'bg-card'}`}
+                                  onClick={() => handleUnifiedPedidoClick(pedido)}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                        <span className={`${tipoBadge.className} text-xs font-medium`}>
+                                          {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
+                                            <span className="text-[10px]">{pedido.mesaNombre}</span>
+                                          )}
+                                        </span>
+                                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 text-muted-foreground border-muted-foreground/30">
+                                          Archivado
+                                        </Badge>
+                                      </div>
+                                      {pedido.tipo === 'delivery' && pedido.direccion && (
+                                        <p className="text-[10px] text-muted-foreground truncate">{pedido.direccion}</p>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground shrink-0">
+                                      ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                    </p>
+                                  </div>
+                                </div>
+                              </Fragment>
+                            )
+                          })}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* DESKTOP: Mesas Tab Content / MOBILE: Mesas grid (shown via mobileView) */}
+              <div className={`
+                ${mobileView === 'mesas' ? 'flex' : 'hidden'}
+                ${desktopLeftTab === 'mesas' ? 'lg:flex' : 'lg:hidden'}
+                flex-col flex-1 overflow-hidden
+              `}>
+                <div className="p-3 lg:p-3 overflow-auto flex-1">
+                  <div className="items-center justify-between mb-3 hidden lg:flex">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mesas</p>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={() => setCrearMesaDialog(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-2">
+                    {mesas.map((mesa) => {
+                      const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed' && mesa.pedido.estado !== 'archived' && mesa.totalItems > 0
+                      const notifCount = mesaNotifications.get(mesa.id) || 0
+                      const isSelected = selectedMesaId === mesa.id
+
+                      return (
+                        <button
+                          key={mesa.id}
+                          onClick={() => handleSelectMesa(mesa.id)}
+                          className={`relative aspect-square rounded-lg border-2 flex flex-col items-center justify-center text-center p-1 transition-all active:scale-95 lg:hover:scale-105 ${isSelected
+                            ? 'border-primary bg-primary/10 shadow-md'
+                            : hasActiveOrder
+                              ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
+                              : 'border-border bg-card hover:bg-accent'
+                            }`}
+                        >
+                          {notifCount > 0 && (
+                            <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+                              {notifCount}
+                            </div>
+                          )}
+                          <span className="font-semibold text-xs truncate w-full px-1">{mesa.nombre}</span>
+                          {mesa.clientesConectados.length > 0 && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
+                              <Users className="h-2.5 w-2.5" />
+                              {mesa.clientesConectados.length}
+                            </span>
+                          )}
+                          {/* Mobile-only: show mini status indicator */}
+                          <div className="lg:hidden mt-1">
+                            {hasActiveOrder ? (
+                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            ) : (
+                              <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* CENTER: Detail View - Desktop always visible when mesa selected, Mobile conditional */}
+            {/* RIGHT: Detail View - Desktop always visible, Mobile conditional */}
             <div className={`
-          ${mobileView === 'detail' ? 'flex' : 'hidden'} 
-          lg:flex lg:flex-1 flex-col overflow-hidden
-          w-full
-        `}>
+              ${mobileView === 'detail' ? 'flex' : 'hidden'} 
+              lg:flex lg:flex-1 flex-col overflow-hidden
+              w-full
+            `}>
               <div className="flex-1 overflow-auto p-3 lg:p-4">
                 {/* Delivery/Takeaway Detail View */}
                 {displayedUnifiedPedido && displayedUnifiedPedido.tipo !== 'mesa' ? (
@@ -2844,114 +3027,110 @@ const Dashboard = () => {
                       </CardContent>
                     </Card>
 
-                    {/* Products */}
-                    <Card className={`bg-transparent border-0`}>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xl flex items-center gap-2">
-                          <ShoppingCart className="h-8 w-8" />
-                          Productos ({displayedUnifiedPedido.totalItems})
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2 px-3 lg:px-6 pb-3 lg:pb-6">
-                        {displayedUnifiedPedido.items.map((item: any) => (
-                          <div key={item.id} className={`flex items-start lg:items-center justify-between p-2 rounded-lg gap-2 ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
-                              </div>
-                              {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="font-bold text-sm">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
-                              <div className="flex gap-1">
-                                {(displayedPedido?.estado !== 'closed' && displayedPedido?.estado !== 'archived') && (
-                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                    {/* PEDIDO */}
+                    <div className="space-y-1">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">Pedido</h3>
+                      <div className="space-y-0">
+                        {displayedUnifiedPedido.items.map((item: any, idx: number) => (
+                          <div key={item.id} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                            <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                              <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">{item.cantidad}x</span>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm">{item.nombreProducto}</span>
+                                {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                  <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
                                 )}
                               </div>
                             </div>
+                            <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                              ${(parseFloat(item.precioUnitario) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                            </span>
                           </div>
-                          // <div key={item.id} className="flex items-start justify-between p-2 rounded-lg bg-muted/50 gap-2">
-                          //   <div className="flex-1 min-w-0">
-                          //     <div className="flex items-center gap-2 flex-wrap">
-                          //       <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
-                          //     </div>
-                          //     {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                          //       <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                          //     )}
-                          //   </div>
-                          //   <span className="font-bold text-sm shrink-0">
-                          //     ${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}
-                          //   </span>
-                          // </div>
                         ))}
                         {displayedUnifiedPedido.tipo === 'delivery' && (
-                          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                            <div className="flex items-center gap-2">
-                              <Truck className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium text-sm">Delivery</span>
+                          <div className="flex items-baseline justify-between py-3 border-t border-border/40">
+                            <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                              <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">1x</span>
+                              <span className="text-sm flex items-center gap-1.5">
+                                <Truck className="h-3.5 w-3.5 inline" />
+                                Delivery
+                              </span>
                             </div>
-                            <span className="font-bold text-sm">${DELIVERY_FEE.toFixed(2)}</span>
+                            <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                              ${DELIVERY_FEE.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                            </span>
                           </div>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>
 
-                    {/* Total */}
-                    <Card className={`border-0`}>
-                      <CardContent className="py-4 px-3 lg:px-6">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xl font-medium">Total del Pedido</p>
-                            <p className="text-xs text-muted-foreground">{displayedUnifiedPedido.totalItems} productos</p>
+                      {/* Total row */}
+                      <div className="flex items-center justify-between pt-4 mt-2 border-t border-border">
+                        <span className="text-base font-medium">Total</span>
+                        <span className="text-xl font-bold tabular-nums">
+                          ${displayedUnifiedPedido.tipo === 'delivery'
+                            ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toLocaleString('es-AR', { minimumFractionDigits: 0 })
+                            : parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* PAGO */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Pago</h3>
+                        {displayedUnifiedPedido.pagado && (
+                          <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                            <CheckCircle className="h-4 w-4" />
+                            <span className="text-sm font-medium">Pagado</span>
                           </div>
-                          <p className={`text-2xl lg:text-3xl font-bold`}>
-                            ${displayedUnifiedPedido.tipo === 'delivery'
-                              ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toFixed(2)
-                              : parseFloat(displayedUnifiedPedido.total).toFixed(2)}
-                          </p>
-                        </div>
+                        )}
+                      </div>
 
-                        <div className="p-3">
-                          {displayedUnifiedPedido.pagado ? (
-                            <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
-                              <CheckCircle className="h-4 w-4" />
-                              Mesa Pagada
+                      {displayedUnifiedPedido.pagado ? (
+                        <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-muted/30 border border-border/40">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                              <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                             </div>
-                          ) : (
-                            <div className="flex gap-2 w-full">
-                              <Button
-                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                onClick={() => handleTogglePagado(displayedUnifiedPedido, 'efectivo')}
-                                disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
-                              >
-                                {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
-                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                ) : (
-                                  <span className="mr-2">💵</span>
-                                )}
-                                Efectivo
-                              </Button>
-                              <Button
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                                onClick={() => handleTogglePagado(displayedUnifiedPedido, 'transferencia')}
-                                disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
-                              >
-                                {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
-                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                ) : (
-                                  <span className="mr-2">🏦</span>
-                                )}
-                                Transf.
-                              </Button>
+                            <div>
+                              <p className="text-sm font-medium">{displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away')}</p>
                             </div>
-                          )}
+                          </div>
+                          <span className="text-sm font-bold tabular-nums">
+                            ${displayedUnifiedPedido.tipo === 'delivery'
+                              ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toLocaleString('es-AR', { minimumFractionDigits: 0 })
+                              : parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                          </span>
                         </div>
-                      </CardContent>
-                    </Card>
+                      ) : (
+                        <div className="flex gap-2 w-full">
+                          <Button
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => handleTogglePagado(displayedUnifiedPedido, 'efectivo')}
+                            disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
+                          >
+                            {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <span className="mr-2">💵</span>
+                            )}
+                            Efectivo
+                          </Button>
+                          <Button
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => handleTogglePagado(displayedUnifiedPedido, 'transferencia')}
+                            disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
+                          >
+                            {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <span className="mr-2">🏦</span>
+                            )}
+                            Transf.
+                          </Button>
+                        </div>
+                      )}
+                    </div>
 
                   </div>
                 ) : selectedMesa ? (
@@ -2971,15 +3150,12 @@ const Dashboard = () => {
                     {/* Mobile: Compact Header */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <h2 className="text-xl lg:text-2xl font-bold truncate">{selectedMesa.nombre}</h2>
+                        <h2 className="text-xl lg:text-2xl font-bold truncate">{selectedMesa?.nombre}</h2>
                         <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
                           {displayedPedido ? (
                             <>
                               <span className="truncate">Pedido #{displayedPedido.id}</span>
-                              {itemTracking && <Badge variant={getEstadoBadge(displayedPedido.estado).variant} className="text-[10px] lg:text-xs">
-                                {getEstadoBadge(displayedPedido.estado).label}
-                              </Badge>}
-                              {selectedPedidoFromKanban && selectedMesa.pedido && selectedPedidoFromKanban.id !== selectedMesa.pedido.id && (
+                              {selectedPedidoFromKanban && selectedMesa?.pedido && selectedPedidoFromKanban.id !== selectedMesa.pedido.id && (
                                 <Badge variant="outline" className="text-[10px]">Historial</Badge>
                               )}
                             </>
@@ -2994,6 +3170,13 @@ const Dashboard = () => {
                         )}
                       </div>
                       <div className="flex gap-1 lg:gap-2 shrink-0">
+                        <Button variant="outline" size="icon" className="lg:hidden h-9 w-9 text-red-600 hover:text-red-700 hover:bg-red-50 border-transparent shadow-none" onClick={() => setShowDeleteMesaDialog(true)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" className="hidden lg:flex text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 shadow-sm" onClick={() => setShowDeleteMesaDialog(true)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Eliminar Mesa
+                        </Button>
                         <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setVerQR(true)}>
                           <QrCode className="h-4 w-4" />
                         </Button>
@@ -3028,19 +3211,19 @@ const Dashboard = () => {
 
 
                     {/* Connected Clients - Compact on mobile */}
-                    {selectedMesa.clientesConectados.length > 0 && (
+                    {(selectedMesa?.clientesConectados?.length ?? 0) > 0 && (
                       <Card className="bg-transparent border-0">
                         <CardHeader className="lg:px-6">
                           <CardTitle className="text-sm flex items-center gap-2">
                             <Users className="h-4 w-4" />
                             <span className="hidden sm:inline">Clientes Conectados</span>
                             <span className="sm:hidden">Conectados</span>
-                            <span className="text-muted-foreground">({selectedMesa.clientesConectados.length})</span>
+                            <span className="text-muted-foreground">({selectedMesa?.clientesConectados?.length ?? 0})</span>
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="px-3 lg:px-6 mt-[-10px]">
                           <div className="flex flex-wrap gap-1.5 lg:gap-2">
-                            {selectedMesa.clientesConectados.map((cliente) => (
+                            {selectedMesa?.clientesConectados?.map((cliente) => (
                               <div key={cliente.id} className="text-xs bg-muted p-2 rounded-sm">
                                 {cliente.nombre}
                               </div>
@@ -3105,13 +3288,12 @@ const Dashboard = () => {
                                   </div>
                                   <div className="space-y-2 ml-0 lg:ml-2">
                                     {items.map((item) => {
-                                      const estadoBadge = getEstadoBadge(item.estado)
                                       return (
                                         <div key={item.id} className={`flex items-start lg:items-center justify-between p-2 rounded-lg gap-2 ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
                                           <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 flex-wrap">
                                               <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
-                                              {itemTracking && <Badge variant={estadoBadge.variant} className="h-5 text-[10px] lg:text-xs">{estadoBadge.label}</Badge>}
+
                                               {item.postConfirmacion && <Badge variant="outline" className="h-5 text-[10px] border-amber-500 text-amber-600">Nuevo</Badge>}
                                             </div>
                                             {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
@@ -3121,16 +3303,6 @@ const Dashboard = () => {
                                           <div className="flex items-center gap-2 shrink-0">
                                             <span className="font-bold text-sm">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
                                             <div className="flex gap-1">
-                                              {(itemTracking && (item.estado === 'preparing' || item.estado === 'pending' || !item.estado)) && (
-                                                <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-emerald-600" onClick={() => handleChangeItemEstado(displayedPedido!.id, item.id, 'delivered')}>
-                                                  <CheckCircle className="h-4 w-4" />
-                                                </Button>
-                                              )}
-                                              {(itemTracking && item.estado === 'delivered') && (
-                                                <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-indigo-600" onClick={() => handleChangeItemEstado(displayedPedido!.id, item.id, 'served')}>
-                                                  <Utensils className="h-4 w-4" />
-                                                </Button>
-                                              )}
                                               {(displayedPedido?.estado !== 'closed' && displayedPedido?.estado !== 'archived') && (
                                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
                                                   <Trash2 className="h-4 w-4" />
@@ -3301,803 +3473,89 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* RIGHT: Orders Panel - Desktop always visible, Mobile conditional */}
-            {itemTracking ? (
-              <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full lg:w-[450px]' : 'hidden lg:flex'}`}>
-                <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center justify-between">
-                  <p className="text-sm font-semibold">Pedidos</p>
-                  <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
-                </div>
-                <div className="flex-1 overflow-auto p-3 space-y-4">
-                  {COLUMNS.map((column) => {
-                    const columnCards = kanbanData[column.id] || []
-                    const ColumnIcon = column.icon
-
-                    return (
-                      <div key={column.id}>
-                        <div className={`flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg ${column.bgHeader}`}>
-                          <ColumnIcon className={`h-4 w-4 ${column.color}`} />
-                          <span className="font-semibold text-sm flex-1">{column.title}</span>
-                          <Badge variant="secondary" className="font-mono text-xs">{columnCards.length}</Badge>
-                        </div>
-
-                        {columnCards.length === 0 ? (
-                          <div className="text-center py-3 text-muted-foreground text-xs opacity-50">
-                            Sin pedidos
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {columnCards.map((card) => {
-                              const hasExclusions = card.items.some(i => i.ingredientesExcluidosNombres?.length)
-                              const isUpdating = updatingPedido === card.pedido.id
-                              const isMesa = card.tipo === 'mesa'
-
-                              const isClosed = card.pedido.estado === 'closed'
-                              const subtotalesData = isMesa ? (pedidosSubtotales[card.pedido.id] || []) : []
-                              const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
-                              const totalPedido = subtotalesData.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
-                              const showUnifiedPayment = (!splitPayment || !itemTracking) && isClosed && isMesa
-
-                              // Card title based on tipo
-                              const cardTitle = card.tipo === 'delivery'
-                                ? `🚚 ${card.nombreCliente || 'Delivery'}`
-                                : card.tipo === 'takeaway'
-                                  ? `🛍️ ${card.nombreCliente || 'Take Away'}`
-                                  : `🍽️ ${card.pedido.mesaNombre || 'Sin mesa'}`
-
-                              return (
-                                <Card
-                                  key={card.id}
-                                  className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${isMesa && selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
-                                    }`}
-                                  onClick={() => {
-                                    if (isMesa) {
-                                      handleKanbanCardClick(card.pedido)
-                                    } else {
-                                      const unified: UnifiedPedido = {
-                                        id: card.pedido.id,
-                                        tipo: card.tipo,
-                                        estado: card.pedido.estado,
-                                        total: card.pedido.total,
-                                        createdAt: card.pedido.createdAt,
-                                        nombreCliente: card.nombreCliente || null,
-                                        telefono: null,
-                                        direccion: card.direccion,
-                                        mesaNombre: null,
-                                        items: card.items,
-                                        totalItems: card.items.length,
-                                      }
-                                      handleUnifiedPedidoClick(unified)
-                                    }
-                                  }}
-                                >
-                                  <CardContent className="p-3">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-bold text-sm">{cardTitle}</span>
-                                        {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
-                                        {isClosed && isMesa && (
-                                          <Badge
-                                            variant="outline"
-                                            className={isFullyPaid
-                                              ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 text-[10px] px-1.5 py-0"
-                                              : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 text-[10px] px-1.5 py-0"}
-                                          >
-                                            {isFullyPaid ? "💳 Pagado" : "📋 Cuenta"}
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(card.pedido.createdAt)}</span>
-                                    </div>
-
-                                    {card.tipo === 'delivery' && card.direccion && (
-                                      <div className="flex items-start gap-1.5 mb-2">
-                                        <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
-                                        <span className="text-xs text-muted-foreground truncate">{card.direccion}</span>
-                                      </div>
-                                    )}
-
-                                    {showUnifiedPayment && subtotalesData.length > 0 && (
-                                      <div className="mb-2 p-2 bg-muted/30 rounded-md">
-                                        <div className="flex justify-between items-center mb-1">
-                                          <span className="text-xs font-medium">Total Mesa</span>
-                                          <span className="text-sm font-bold">${totalPedido.toLocaleString()}</span>
-                                        </div>
-                                        {!isFullyPaid ? (
-                                          <div className="flex gap-1 w-full">
-                                            <Button
-                                              className="flex-1 h-7 px-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'efectivo')
-                                              }}
-                                              disabled={updatingPago === `all-${card.pedido.id}-efectivo` || updatingPago === `all-${card.pedido.id}-transferencia`}
-                                            >
-                                              {updatingPago === `all-${card.pedido.id}-efectivo` ? (
-                                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                              ) : (
-                                                <span>💵 Efectivo</span>
-                                              )}
-                                            </Button>
-                                            <Button
-                                              className="flex-1 h-7 px-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-white"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'transferencia')
-                                              }}
-                                              disabled={updatingPago === `all-${card.pedido.id}-transferencia` || updatingPago === `all-${card.pedido.id}-efectivo`}
-                                            >
-                                              {updatingPago === `all-${card.pedido.id}-transferencia` ? (
-                                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                              ) : (
-                                                <span>🏦 Transf.</span>
-                                              )}
-                                            </Button>
-                                          </div>
-                                        ) : (
-                                          <div className="w-full py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded text-center text-xs font-medium flex items-center justify-center gap-1">
-                                            <CheckCircle className="h-3 w-3" />
-                                            Pagado
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {/* Items grouped by client */}
-                                    <div className="space-y-3">
-                                      {(() => {
-                                        const itemsByClient: Record<string, typeof card.items> = {}
-                                        card.items.forEach(item => {
-                                          const name = item.clienteNombre || 'Cliente'
-                                          if (!itemsByClient[name]) itemsByClient[name] = []
-                                          itemsByClient[name].push(item)
-                                        })
-
-                                        // Add mozo items from subtotales if closed
-                                        if (isClosed && subtotalesData.length > 0) {
-                                          subtotalesData.forEach(sub => {
-                                            if (sub.isMozoItem && !itemsByClient[sub.clienteNombre]) {
-                                              itemsByClient[sub.clienteNombre] = []
-                                            }
-                                          })
-                                        }
-
-                                        return Object.entries(itemsByClient).map(([cliente, clientItems]) => {
-                                          const subtotalData = subtotalesData.find(s => s.clienteNombre === cliente)
-                                          const isPaid = subtotalData?.pagado
-                                          const isPendingCash = subtotalData?.estado === 'pending_cash'
-                                          const paymentMethod = subtotalData?.metodo
-                                          const showPaymentControls = isClosed && isMesa
-                                          const showIndividualPayment = showPaymentControls && !showUnifiedPayment
-                                          const isConfirming = updatingPago === `${card.pedido.id}-${cliente}`
-
-                                          return (
-                                            <div key={cliente} className="space-y-1">
-                                              {/* Client header */}
-                                              <div className="flex items-center justify-between pb-0.5">
-                                                <div className="flex items-center gap-1.5">
-                                                  <Badge variant="outline" className="h-5 px-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
-                                                    <span className="font-semibold">{cliente}</span>
-                                                  </Badge>
-                                                  {showIndividualPayment && (
-                                                    <>
-                                                      {isPaid && (
-                                                        <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 gap-1">
-                                                          <CheckCircle className="h-2.5 w-2.5" />
-                                                          {paymentMethod === 'mercadopago' ? 'MP' : 'Efectivo'}
-                                                        </Badge>
-                                                      )}
-                                                      {!isPaid && isPendingCash && (
-                                                        <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 gap-1">
-                                                          <Clock className="h-2.5 w-2.5" /> Efectivo
-                                                        </Badge>
-                                                      )}
-                                                      {!isPaid && !isPendingCash && subtotalData && (
-                                                        <Badge variant="outline" className="h-5 px-1.5 text-[9px] text-muted-foreground border-dashed">
-                                                          Pendiente
-                                                        </Badge>
-                                                      )}
-                                                    </>
-                                                  )}
-                                                </div>
-                                                {showIndividualPayment && !isPaid && isPendingCash && (
-                                                  <div className="flex gap-1 items-center">
-                                                    <Button
-                                                      size="sm"
-                                                      className="h-5 text-[10px] px-2 bg-green-600 hover:bg-green-700 text-white shadow-sm"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleKanbanPagoEfectivo(card.pedido.id, cliente, 'efectivo')
-                                                      }}
-                                                      disabled={isConfirming}
-                                                      title="Cobrar Efectivo/Transf ya pagado"
-                                                    >
-                                                      {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirmar"}
-                                                    </Button>
-                                                  </div>
-                                                )}
-                                                {showIndividualPayment && !isPaid && !isPendingCash && subtotalData && (
-                                                  <div className="flex gap-1 items-center">
-                                                    <Button
-                                                      size="sm"
-                                                      variant="ghost"
-                                                      className="h-5 text-[10px] px-2 hover:bg-emerald-100 hover:text-emerald-700 text-muted-foreground"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleKanbanPagoEfectivo(card.pedido.id, cliente, 'efectivo')
-                                                      }}
-                                                      disabled={isConfirming}
-                                                      title="Pago en Efectivo"
-                                                    >
-                                                      {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "💵"}
-                                                    </Button>
-                                                    <Button
-                                                      size="sm"
-                                                      variant="ghost"
-                                                      className="h-5 text-[10px] px-2 hover:bg-blue-100 hover:text-blue-700 text-muted-foreground"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handleKanbanPagoEfectivo(card.pedido.id, cliente, 'transferencia')
-                                                      }}
-                                                      disabled={isConfirming}
-                                                      title="Pago por Transferencia"
-                                                    >
-                                                      {isConfirming ? <Loader2 className="h-3 w-3 animate-spin" /> : "🏦"}
-                                                    </Button>
-                                                  </div>
-                                                )}
-                                              </div>
-
-                                              {/* Client items */}
-                                              <div className="space-y-1.5 pl-1">
-                                                {clientItems.map((item) => (
-                                                  <div key={item.id} className="flex items-start gap-2 text-xs group/item">
-                                                    <span className="font-bold bg-muted rounded px-1 shrink-0 text-center w-5 py-0.5 text-[10px]">{item.cantidad}</span>
-                                                    <div className="flex-1 min-w-0">
-                                                      <span className="text-foreground/90 font-medium truncate block leading-tight">{item.nombreProducto}</span>
-                                                      {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                                        <div className="mt-0.5 flex flex-wrap gap-0.5">
-                                                          {item.ingredientesExcluidosNombres.map((ing, i) => (
-                                                            <span key={i} className="text-[9px] px-1 py-0 rounded bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 font-medium border border-orange-200 dark:border-orange-800/50">
-                                                              Sin {ing}
-                                                            </span>
-                                                          ))}
-                                                        </div>
-                                                      )}
-                                                    </div>
-                                                    {/* Per-item actions */}
-                                                    {isMesa && (
-                                                      <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                                                        {card.status === 'preparing' && (
-                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600 hover:bg-emerald-100" title="Marcar Listo" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
-                                                            <CheckCircle className="h-3.5 w-3.5" />
-                                                          </Button>
-                                                        )}
-                                                        {card.status === 'delivered' && (
-                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600 hover:bg-indigo-100" title="Marcar Entregado" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
-                                                            <Utensils className="h-3.5 w-3.5" />
-                                                          </Button>
-                                                        )}
-                                                      </div>
-                                                    )}
-                                                    {/* Per-item actions for delivery/takeaway */}
-                                                    {!isMesa && (
-                                                      <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                                                        {card.status === 'preparing' && (
-                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600 hover:bg-emerald-100" title="Marcar Listo" onClick={() => handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'ready')}>
-                                                            <CheckCircle className="h-3.5 w-3.5" />
-                                                          </Button>
-                                                        )}
-                                                        {card.status === 'delivered' && (
-                                                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600 hover:bg-indigo-100" title="Marcar Entregado" onClick={() => handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'delivered')}>
-                                                            <Utensils className="h-3.5 w-3.5" />
-                                                          </Button>
-                                                        )}
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          )
-                                        })
-                                      })()}
-                                    </div>
-
-                                    {/* Footer actions */}
-                                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-border/40">
-                                      <span className="text-[10px] text-muted-foreground font-mono">#{card.pedido.id}</span>
-                                      <div className="flex gap-1.5">
-                                        {card.status === 'pending' && (
-                                          <Button
-                                            size="sm"
-                                            className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              if (isMesa) {
-                                                handleConfirmarPedido(card.pedido)
-                                              } else {
-                                                handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'preparing')
-                                              }
-                                            }}
-                                            disabled={isUpdating}
-                                          >
-                                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-                                            Confirmar
-                                          </Button>
-                                        )}
-                                        {card.status !== 'archived' && (
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-7 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
-                                            onClick={(e) => {
-                                              e.preventDefault()
-                                              if (card.tipo === 'delivery') handleArchiveDelivery(card.pedido.id)
-                                              else if (card.tipo === 'takeaway') handleArchiveTakeaway(card.pedido.id)
-                                              else handleArchiveMesaPedido(card.pedido.id)
-                                            }}
-                                          >
-                                            <Archive className="h-3 w-3 mr-1" />
-                                            Archivar
-                                          </Button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-
-                  {Object.values(kanbanData).every(arr => arr.length === 0) && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Coffee className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">Sin pedidos activos</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full lg:w-[450px]' : 'hidden lg:flex'}`}>
-                {/* Filter tabs */}
-                <div className="border-b bg-background/95 backdrop-blur shrink-0 px-4 pt-3 pb-0">
-                  <div className="grid grid-cols-2 gap-1 overflow-x-auto">
-                    {([
-                      { key: 'all', label: 'Todos', icon: '📋' },
-                      { key: 'mesa', label: 'Mesas', icon: '🍽️' },
-                      { key: 'delivery', label: 'Delivery', icon: '🚚' },
-                      { key: 'takeaway', label: 'Take Away', icon: '🛍️' },
-                    ] as const).map(tab => (
-                      <button
-                        key={tab.key}
-                        onClick={() => setPedidoFilter(tab.key)}
-                        className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border-b-2 transition-colors whitespace-nowrap ${pedidoFilter === tab.key
-                          ? 'border-transparent text-foreground bg-accent'
-                          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                          }`}
-                      >
-                        <span>{tab.icon}</span>
-                        {tab.label}
-                        {pedidoCounts[tab.key] > 0 && (
-                          <Badge className="ml-1 text-[10px] px-1.5 py-0 h-4 min-w-5 justify-center">
-                            {pedidoCounts[tab.key]}
-                          </Badge>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex-1 overflow-auto p-4">
-                  {loadingDelivery ? (
-                    <div className="flex items-center justify-center h-full">
-                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    </div>
-                  ) : allUnifiedPedidos.length === 0 && archivedUnifiedPedidos.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                      <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
-                      <p className="text-lg font-medium">No hay pedidos</p>
-                      <Button onClick={enterNuevoPedidoMode}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Crear primer pedido
-                      </Button>
-                    </div>
-                  ) : filteredUnifiedPedidos.length === 0 && filteredArchivedPedidos.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                      <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
-                      <p className="text-lg font-medium">No hay pedidos de este tipo</p>
-                      <Button variant="outline" onClick={() => setPedidoFilter('all')}>
-                        Ver todos los pedidos
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="max-w-4xl space-y-3">
-                      <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-semibold">
-                          {pedidoFilter === 'all' ? 'Todos los Pedidos' : pedidoFilter === 'mesa' ? 'Pedidos de Mesa' : pedidoFilter === 'delivery' ? 'Pedidos Delivery' : 'Pedidos Take Away'} ({filteredUnifiedPedidos.length})
-                        </h2>
-                      </div>
-                      {filteredUnifiedPedidos.map((pedido, index) => {
-                        const tipoBadge = getTipoBadge(pedido.tipo)
-                        const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
-                          || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
-                        const dateLabel = getDateLabel(pedido.createdAt)
-                        const prevDateLabel = index > 0 ? getDateLabel(filteredUnifiedPedidos[index - 1].createdAt) : null
-                        const showDateSeparator = dateLabel !== prevDateLabel
-                        return (
-                          <Fragment key={`${pedido.tipo}-${pedido.id}`}>
-                            {showDateSeparator && (
-                              <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-3'}`}>
-                                <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
-                                <Separator className="flex-1" />
-                              </div>
-                            )}
-                            <Card
-                              className={`overflow-hidden hover:shadow-md transition-all pl-4 pr-8 min-w-[330px] cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary shadow-md' : ''}`}
-                              onClick={() => handleUnifiedPedidoClick(pedido)}
-                            >
-                              <div className="p-4">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                      <CardTitle className={`${tipoBadge.className} text-lg`}>
-                                        {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
-                                          <span className="text-sm"> {pedido.mesaNombre}</span>
-                                        )}
-                                      </CardTitle>
-                                      {(pedido.estado === 'pending' && pedido.tipo == 'mesa') && (
-                                        <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-300">
-                                          <Clock className="h-3 w-3 mr-1" />
-                                          Pendiente
-                                        </Badge>
-                                      )}
-                                      {((['preparing', 'delivered', 'served'] as string[]).includes(pedido.estado) && pedido.tipo == 'mesa') && (
-                                        <Badge className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-300">
-                                          <ChefHat className="h-3 w-3 mr-1" />
-                                          Confirmado
-                                        </Badge>
-                                      )}
-                                      {(pedido.estado === 'closed' && pedido.tipo == 'mesa') && (
-                                        <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-300">
-                                          <CheckCircle className="h-3 w-3 mr-1" />
-                                          Cuenta
-                                        </Badge>
-                                      )}
-                                      {pedido.pagado && (
-                                        <Badge variant="outline" className="text-[10px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 px-1.5 py-0">
-                                          💳 Pagado
-                                        </Badge>
-                                      )}
-                                    </div>
-
-                                    {pedido.tipo === 'delivery' && pedido.direccion && (
-                                      <div className="flex items-start gap-2 mb-1">
-                                        <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                        <p className="font-medium">{pedido.direccion}</p>
-                                      </div>
-                                    )}
-                                    <div className="flex items-start gap-2 mb-1 text-muted-foreground">
-                                      <Clock className="h-4 w-4 shrink-0 mt-0.5" />
-                                      <p className="text-sm">{formatTimeAgo(pedido.createdAt)}</p>
-                                    </div>
-                                    <p className="mt-2">
-                                      <span className="font-semibold text-foreground text-lg">
-                                        ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
-                                      </span>
-                                    </p>
-                                  </div>
-                                  <div className="flex flex-col gap-2 shrink-0">
-                                    {/* Action Button for Mesa Orders */}
-                                    {pedido.tipo === 'mesa' && (
-                                      <>
-                                        {pedido.estado === 'pending' && (
-                                          <Button
-                                            size="sm"
-                                            className="h-8 bg-blue-600 hover:bg-blue-700 text-white"
-                                            title="Confirmar Pedido"
-                                            disabled={updatingPedido === pedido.id}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleConfirmarPedido({ id: pedido.id } as any);
-                                            }}
-                                          >
-                                            {updatingPedido === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                                          </Button>
-                                        )}
-                                        {['preparing', 'delivered', 'served'].includes(pedido.estado) && (
-                                          <Button
-                                            size="sm"
-                                            className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                            title="Cerrar Pedido"
-                                            disabled={updatingPedido === pedido.id}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleCerrarPedido(pedido.id);
-                                            }}
-                                          >
-                                            {updatingPedido === pedido.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                                          </Button>
-                                        )}
-                                      </>
-                                    )}
-                                    <div className="flex gap-1">
-                                      {selectedPrinter && (
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="text-muted-foreground hover:text-foreground"
-                                          title="Imprimir factura"
-                                          onClick={() => {
-                                            const facturaItems: any[] = pedido.items.map((item: any) => ({
-                                              ...item,
-                                              precioUnitario: item.precioUnitario || '0'
-                                            }))
-                                            // Add delivery fee for delivery orders
-                                            if (pedido.tipo === 'delivery') {
-                                              facturaItems.push({
-                                                id: 0,
-                                                nombreProducto: 'Delivery',
-                                                cantidad: 1,
-                                                precioUnitario: String(DELIVERY_FEE),
-                                                ingredientesExcluidosNombres: []
-                                              })
-                                            }
-                                            const deliveryTotal = pedido.tipo === 'delivery'
-                                              ? String(parseFloat(pedido.total) + DELIVERY_FEE)
-                                              : pedido.total
-                                            const facturaData = formatFactura(
-                                              {
-                                                id: pedido.id,
-                                                mesaNombre: pedido.tipo === 'delivery' ? `Delivery: ${pedido.direccion}` : pedido.tipo === 'takeaway' ? 'Take Away' : pedido.mesaNombre,
-                                                nombrePedido: pedido.nombreCliente || (pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'takeaway' ? 'Take Away' : undefined),
-                                                total: deliveryTotal
-                                              },
-                                              facturaItems,
-                                              restaurante?.nombre || 'Restaurante'
-                                            )
-                                            printRaw(commandsToBytes(facturaData))
-                                          }}
-                                        >
-                                          <Printer className="h-4 w-4" />
-                                        </Button>
-                                      )}
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="text-muted-foreground hover:text-foreground"
-                                        title="Archivar pedido"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          if (pedido.tipo === 'delivery') handleArchiveDelivery(pedido.id)
-                                          else if (pedido.tipo === 'takeaway') handleArchiveTakeaway(pedido.id)
-                                          else handleArchiveMesaPedido(pedido.id)
-                                        }}
-                                      >
-                                        <Archive className="h-4 w-4" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="text-destructive hover:text-destructive"
-                                        title="Eliminar pedido"
-                                        onClick={() => pedido.tipo === 'delivery' ? handleDeleteDelivery(pedido.id) : pedido.tipo === 'takeaway' ? handleDeleteTakeaway(pedido.id) : handleDeleteMesaPedido(pedido.id)}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                                {/* Payment control - show for all order types when not using split payment subtotales system */}
-                                {(() => {
-                                  // For mesa with splitPayment, the existing per-client subtotals system handles payment
-                                  const usesSubtotalesSystem = pedido.tipo === 'mesa' && splitPayment && itemTracking
-                                  if (usesSubtotalesSystem) return null
-
-                                  const isTogglingThis = togglingPagado === `${pedido.tipo}-${pedido.id}`
-                                  const totalConFee = pedido.tipo === 'delivery'
-                                    ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2)
-                                    : parseFloat(pedido.total).toFixed(2)
-
-                                  return (
-                                    <div className="mt-3 p-2.5 bg-muted/30 rounded-lg border border-border/50">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-medium text-muted-foreground">Pago</span>
-                                          <span className="text-sm font-bold">${totalConFee}</span>
-                                        </div>
-                                        {pedido.pagado && (
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-7 text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:hover:bg-red-950/30 dark:hover:text-red-400 dark:hover:border-red-800 transition-colors group/pay"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleTogglePagado(pedido)
-                                            }}
-                                            disabled={isTogglingThis}
-                                          >
-                                            {isTogglingThis ? (
-                                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                            ) : (
-                                              <>
-                                                <CheckCircle className="h-3 w-3 mr-1 group-hover/pay:hidden" />
-                                                <X className="h-3 w-3 mr-1 hidden group-hover/pay:inline" />
-                                              </>
-                                            )}
-                                            <span className="group-hover/pay:hidden">Pagado</span>
-                                            <span className="hidden group-hover/pay:inline">Desmarcar</span>
-                                          </Button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )
-                                })()}
-                                {/* Items Preview - Grouped by client */}
-                                <div className="mt-3 pt-3 border-t">
-                                  <div className="space-y-3">
-                                    {(() => {
-                                      const itemsByClient: Record<string, any[]> = {}
-                                      pedido.items.forEach((item: any) => {
-                                        const name = item.clienteNombre || 'Cliente'
-                                        if (!itemsByClient[name]) itemsByClient[name] = []
-                                        itemsByClient[name].push(item)
-                                      })
-                                      return Object.entries(itemsByClient).map(([cliente, clientItems]) => (
-                                        <div key={cliente}>
-                                          {Object.keys(itemsByClient).length > 1 && (
-                                            <div className="flex items-center gap-1.5 mb-1.5">
-                                              <Badge variant="outline" className="h-5 px-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
-                                                <User className="h-2.5 w-2.5" />
-                                                <span className="font-semibold">{cliente}</span>
-                                              </Badge>
-                                            </div>
-                                          )}
-                                          <div className="space-y-1.5">
-                                            {clientItems.map((item: any) => (
-                                              <div key={item.id} className="flex flex-col bg-muted p-3 rounded-sm">
-                                                <div className="flex items-center gap-2">
-                                                  <div className="font-normal text-sm">
-                                                    {item.cantidad}x {item.nombreProducto}
-                                                  </div>
-                                                  {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                                    <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
-                                                  )}
-                                                </div>
-                                                {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                                  <p className="text-[10px] text-orange-600 ml-1 mt-0.5">
-                                                    ⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}
-                                                  </p>
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ))
-                                    })()}
-                                    {pedido.tipo === 'delivery' && (
-                                      <div className="flex items-center gap-2 bg-muted p-3 rounded-sm">
-                                        <div className="font-normal flex items-center text-sm">
-                                          <Truck className="h-3 w-3 mr-1" />
-                                          Delivery — ${DELIVERY_FEE.toFixed(2)}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </Card>
-                          </Fragment>
-                        )
-                      })}
-
-                      {/* Archived orders section */}
-                      {filteredArchivedPedidos.length > 0 && (
-                        <>
-                          <Separator className="my-6" />
-                          <div className="flex items-center gap-2 mb-3">
-                            <Archive className="h-4 w-4 text-muted-foreground/60" />
-                            <h3 className="text-sm font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
-                          </div>
-                          {filteredArchivedPedidos.map((pedido, index) => {
-                            const tipoBadge = getTipoBadge(pedido.tipo)
-                            const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
-                              || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
-                            const dateLabel = getDateLabel(pedido.createdAt)
-                            const prevDateLabel = index > 0 ? getDateLabel(filteredArchivedPedidos[index - 1].createdAt) : null
-                            const showDateSeparator = dateLabel !== prevDateLabel
-                            return (
-                              <Fragment key={`archived-${pedido.tipo}-${pedido.id}`}>
-                                {showDateSeparator && (
-                                  <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-3'}`}>
-                                    <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
-                                    <Separator className="flex-1" />
-                                  </div>
-                                )}
-                                <Card
-                                  className={`overflow-hidden opacity-50 hover:opacity-70 transition-all min-w-[330px] cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary opacity-70' : ''}`}
-                                  onClick={() => handleUnifiedPedidoClick(pedido)}
-                                >
-                                  <div className="p-3">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                          <span className={`${tipoBadge.className} text-sm font-medium`}>
-                                            {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
-                                              <span className="text-xs"> {pedido.mesaNombre}</span>
-                                            )}
-                                          </span>
-                                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground border-muted-foreground/30">
-                                            Archivado
-                                          </Badge>
-                                        </div>
-                                        {pedido.tipo === 'delivery' && pedido.direccion && (
-                                          <div className="flex items-start gap-1.5 mb-0.5">
-                                            <MapPin className="h-3 w-3 text-muted-foreground/60 shrink-0 mt-0.5" />
-                                            <p className="text-xs text-muted-foreground">{pedido.direccion}</p>
-                                          </div>
-                                        )}
-                                        <p className="text-sm text-muted-foreground">
-                                          ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
-                                        </p>
-                                      </div>
-                                      <div className="shrink-0">
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="text-destructive/60 hover:text-destructive h-8 w-8 p-0"
-                                          title="Eliminar pedido"
-                                          onClick={(e) => {
-                                            e.preventDefault()
-                                            if (pedido.tipo === 'delivery') handleDeleteDelivery(pedido.id)
-                                            else if (pedido.tipo === 'takeaway') handleDeleteTakeaway(pedido.id)
-                                            else handleDeleteMesaPedido(pedido.id)
-                                          }}
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                    {/* Compact items list */}
-                                    <div className="mt-2 pt-2 border-t border-muted/50">
-                                      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                                        {pedido.items.map((item: any) => (
-                                          <span key={item.id} className="text-xs text-muted-foreground">
-                                            {item.cantidad}x {item.nombreProducto}
-                                          </span>
-                                        ))}
-                                        {pedido.tipo === 'delivery' && (
-                                          <span className="text-xs text-muted-foreground">
-                                            + Delivery ${DELIVERY_FEE.toFixed(2)}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </Card>
-                              </Fragment>
-                            )
-                          })}
-                        </>
+            {/* Mobile: Orders Panel - visible only on mobile */}
+            <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full' : 'hidden'} lg:hidden`}>
+              {/* Filter tabs */}
+              <div className="border-b bg-background/95 backdrop-blur shrink-0 px-4 pt-3 pb-0">
+                <div className="grid grid-cols-2 gap-1 overflow-x-auto">
+                  {([
+                    { key: 'all' as const, label: 'Todos' },
+                    { key: 'mesa' as const, label: 'Mesas' },
+                    { key: 'delivery' as const, label: 'Delivery' },
+                    { key: 'takeaway' as const, label: 'Take Away' },
+                  ]).map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setPedidoFilter(tab.key)}
+                      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${pedidoFilter === tab.key
+                        ? 'text-foreground bg-accent'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                        }`}
+                    >
+                      {tab.label}
+                      {pedidoCounts[tab.key] > 0 && (
+                        <Badge className="ml-1 text-[10px] px-1.5 py-0 h-4 min-w-5 justify-center">
+                          {pedidoCounts[tab.key]}
+                        </Badge>
                       )}
-                    </div>
-                  )}
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
+              <div className="flex-1 overflow-auto p-4">
+                {loadingDelivery ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : filteredUnifiedPedidos.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                    <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
+                    <p className="text-lg font-medium">No hay pedidos</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredUnifiedPedidos.map((pedido) => {
+                      const tipoBadge = getTipoBadge(pedido.tipo)
+                      const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                      return (
+                        <Card
+                          key={`mob-${pedido.tipo}-${pedido.id}`}
+                          className={`overflow-hidden hover:shadow-md transition-all cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary shadow-md' : ''}`}
+                          onClick={() => handleUnifiedPedidoClick(pedido)}
+                        >
+                          <div className="p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <span className={`${tipoBadge.className} text-sm font-semibold`}>
+                                  {tipoBadge.label}
+                                </span>
+                                {pedido.tipo === 'delivery' && pedido.direccion && (
+                                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{pedido.direccion}</p>
+                                )}
+                                <p className="text-xs text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
+                              </div>
+                              <p className="font-bold shrink-0">
+                                ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </>
         )}
       </div>
 
-      {/* Dialogs remain unchanged */}
+      {/* Dialogs */}
       {
         verQR && selectedMesa && (
           <Dialog open={verQR} onOpenChange={(open) => setVerQR(open)}>
             <DialogContent className="max-w-md mx-4">
-              <MesaQRCode qrToken={selectedMesa.qrToken} mesaNombre={selectedMesa.nombre} />
+              <MesaQRCode qrToken={selectedMesa?.qrToken ?? ''} mesaNombre={selectedMesa?.nombre ?? ''} />
             </DialogContent>
           </Dialog>
         )
@@ -4130,6 +3588,25 @@ const Dashboard = () => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteMesaDialog} onOpenChange={setShowDeleteMesaDialog}>
+        <DialogContent className="max-w-md mx-4">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">¿Eliminar la mesa "{selectedMesa?.nombre}"?</DialogTitle>
+            <DialogDescription>
+              Esta acción eliminará de forma completa la <b>mesa seleccionada</b>.
+              <br /><br />
+              <b>Nota:</b> Si deseas eliminar o cerrar un <em>pedido</em>, por favor hazlo desde "Cerrar Pedido" o el botón de eliminar pedido individual.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteMesaDialog(false)} disabled={isDeletingMesa}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => selectedMesa && handleDeleteMesa(selectedMesa.id)} disabled={isDeletingMesa}>
+              {isDeletingMesa ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</> : 'Sí, Eliminar Mesa'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -4168,7 +3645,7 @@ const Dashboard = () => {
           <div className="flex-1 overflow-y-auto py-2">
             {configuringProduct?.ingredientes?.length ? (
               <div className="space-y-2">
-                {configuringProduct.ingredientes.map(ing => {
+                {configuringProduct?.ingredientes?.map(ing => {
                   const isExcluded = excludedIngredients.includes(ing.id)
                   return (
                     <div
@@ -4469,7 +3946,7 @@ const Dashboard = () => {
       {/* Cierre de Turno */}
       <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} />
 
-    </div>
+    </div >
   )
 }
 
