@@ -51,6 +51,12 @@ interface RestauranteData {
   itemTracking: boolean | null
   soloCartaDigital: boolean | null
   deliveryFee: string | null
+  cucuruCustomerId: string | null
+  cucuruAccountNumber: string | null
+  cucuruAlias: string | null
+  cucuruEnabled: boolean | null
+  whatsappEnabled: boolean | null
+  whatsappNumber: string | null
 }
 
 interface RestauranteState {

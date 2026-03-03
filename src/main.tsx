@@ -41,6 +41,22 @@ const router = createBrowserRouter([
     ],
   },
   {
+    path: "/pedido/:id",
+    element: <ProtectedLayout />,
+    children: [
+      {
+        path: "",
+        element: <DashboardLayout />,
+        children: [
+          {
+            index: true,
+            element: <Pedido />,
+          },
+        ],
+      },
+    ],
+  },
+  {
     path: "/dashboard",
     element: <ProtectedLayout />,
     children: [
@@ -58,6 +74,10 @@ const router = createBrowserRouter([
           },
           {
             path: "pedidos/:id",
+            element: <Pedido />,
+          },
+          {
+            path: "pedido/:id",
             element: <Pedido />,
           },
           {

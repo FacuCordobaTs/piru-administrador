@@ -7,9 +7,10 @@ import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { restauranteApi, mercadopagoApi, ApiError } from '@/lib/api'
+import { restauranteApi, mercadopagoApi, cucuruApi, ApiError } from '@/lib/api'
 import ImageUpload from '@/components/ImageUpload'
 import { toast } from 'sonner'
 import {
@@ -30,7 +31,8 @@ import {
   ShoppingCart,
   Printer,
   List,
-  Smartphone
+  Smartphone,
+  Wallet
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -55,12 +57,17 @@ const Perfil = () => {
     telefono: '',
     username: '',
     deliveryFee: '',
+    whatsappEnabled: false,
+    whatsappNumber: '',
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
   const [isTogglingSoloCartaDigital, setIsTogglingSoloCartaDigital] = useState(false)
+
+  const [isCreatingCucuru, setIsCreatingCucuru] = useState(false)
+  const [cucuruSlug, setCucuruSlug] = useState('')
 
   // Tauri Printer State
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
@@ -180,6 +187,32 @@ const Perfil = () => {
     navigate('/login')
   }
 
+  // Handle crear cucuru
+  const handleCrearCucuru = async () => {
+    if (!token) return
+    if (!cucuruSlug.trim()) {
+      toast.error('Debes ingresar un alias')
+      return
+    }
+
+    setIsCreatingCucuru(true)
+    try {
+      const response = await cucuruApi.create(token, cucuruSlug) as { success: boolean, data: any }
+      if (response.success) {
+        toast.success('Billetera Virtual creada con éxito', {
+          description: response.data?.warning ? `Cuenta creada, pero ojo: ${response.data.warning}` : 'Tu cuenta Cucuru está lista para recibir transferencias.'
+        })
+        restauranteStore.fetchData()
+        setCucuruSlug('')
+      }
+    } catch (error) {
+      console.error('Error al crear cuenta Cucuru:', error)
+      toast.error('Error al crear la Billetera Virtual')
+    } finally {
+      setIsCreatingCucuru(false)
+    }
+  }
+
   // Toggle modo carrito
   const handleToggleCarrito = async () => {
     if (!token) return
@@ -258,6 +291,8 @@ const Perfil = () => {
         telefono: restaurante.telefono || '',
         username: restaurante.username || '',
         deliveryFee: restaurante.deliveryFee || '',
+        whatsappEnabled: restaurante.whatsappEnabled || false,
+        whatsappNumber: restaurante.whatsappNumber || '',
       })
       setImageBase64(restaurante.imagenUrl || null)
       setDialogAbierto(true)
@@ -288,6 +323,8 @@ const Perfil = () => {
         image?: string
         username?: string
         deliveryFee?: string
+        whatsappEnabled?: boolean
+        whatsappNumber?: string
       } = {}
 
       // Solo enviar campos que cambiaron
@@ -305,6 +342,12 @@ const Perfil = () => {
       }
       if (formData.deliveryFee !== (restaurante?.deliveryFee || '')) {
         updateData.deliveryFee = formData.deliveryFee
+      }
+      if (formData.whatsappEnabled !== (restaurante?.whatsappEnabled || false)) {
+        updateData.whatsappEnabled = formData.whatsappEnabled
+      }
+      if (formData.whatsappNumber !== (restaurante?.whatsappNumber || '')) {
+        updateData.whatsappNumber = formData.whatsappNumber
       }
       // Si la imagen es nueva (base64), enviarla
       if (imageBase64 && imageBase64.startsWith('data:image')) {
@@ -547,6 +590,69 @@ const Perfil = () => {
                       Configuración de MercadoPago no disponible. Contacta al soporte.
                     </p>
                   )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Cucuru */}
+          <Card className={restaurante?.cucuruEnabled ? "border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20" : "border-slate-200"}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Wallet className="h-5 w-5" />
+                Cucuru (Transferencias)
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.cucuruEnabled
+                  ? 'Tu billetera virtual Cucuru está activa'
+                  : 'Crea tu billetera virtual para automatizar cobros por transferencia'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.cucuruEnabled ? (
+                <>
+                  <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <span className="font-medium">Billetera Activa</span>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <p className="text-muted-foreground">
+                      <span className="font-medium text-foreground">CVU:</span> {restaurante.cucuruAccountNumber}
+                    </p>
+                    {restaurante.cucuruAlias && (
+                      <p className="text-muted-foreground">
+                        <span className="font-medium text-foreground">Alias:</span> {restaurante.cucuruAlias}
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Elige un alias (ej: milocal). Se le agregará el prefijo "piru." automáticamente.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Ej: milocal"
+                      value={cucuruSlug}
+                      onChange={(e) => setCucuruSlug(e.target.value)}
+                      disabled={isCreatingCucuru}
+                    />
+                    <Button
+                      onClick={handleCrearCucuru}
+                      disabled={isCreatingCucuru || !cucuruSlug.trim()}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      {isCreatingCucuru ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        </>
+                      ) : (
+                        'Crear'
+                      )}
+                    </Button>
+                  </div>
                 </>
               )}
             </CardContent>
@@ -956,6 +1062,40 @@ const Perfil = () => {
                 placeholder="Ej: 800"
                 disabled={isSubmitting}
               />
+            </div>
+
+            {/* WhatsApp Notifications */}
+            <div className="space-y-4 pt-4 border-t">
+              <h3 className="text-sm font-medium">Notificaciones por WhatsApp</h3>
+              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Recibir pedidos por WhatsApp</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Enviaremos una notificación a tu número cada vez que entre un nuevo pedido.
+                  </p>
+                </div>
+                <Switch
+                  checked={formData.whatsappEnabled}
+                  onCheckedChange={(checked) => setFormData({ ...formData, whatsappEnabled: checked })}
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              {formData.whatsappEnabled && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                  <Label htmlFor="whatsappNumber">Número de WhatsApp</Label>
+                  <Input
+                    id="whatsappNumber"
+                    value={formData.whatsappNumber}
+                    onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                    placeholder="Ej: 54934123..."
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Incluye el código de país sin el + (Ejemplo: 54934... para Argentina).
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Botones */}

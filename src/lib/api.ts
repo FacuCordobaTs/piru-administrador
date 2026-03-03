@@ -206,6 +206,19 @@ export const restauranteApi = {
   },
 }
 
+// Cucuru API
+export const cucuruApi = {
+  create: async (token: string, slug: string) => {
+    return fetchApi('/cucuru/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ slug })
+    })
+  }
+}
+
 // Categorías API
 export const categoriasApi = {
   getAll: async (token: string) => {
