@@ -59,6 +59,7 @@ const Perfil = () => {
     deliveryFee: '',
     whatsappEnabled: false,
     whatsappNumber: '',
+    transferenciaAlias: '',
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
@@ -293,6 +294,7 @@ const Perfil = () => {
         deliveryFee: restaurante.deliveryFee || '',
         whatsappEnabled: restaurante.whatsappEnabled || false,
         whatsappNumber: restaurante.whatsappNumber || '',
+        transferenciaAlias: restaurante.transferenciaAlias || '',
       })
       setImageBase64(restaurante.imagenUrl || null)
       setDialogAbierto(true)
@@ -325,6 +327,7 @@ const Perfil = () => {
         deliveryFee?: string
         whatsappEnabled?: boolean
         whatsappNumber?: string
+        transferenciaAlias?: string
       } = {}
 
       // Solo enviar campos que cambiaron
@@ -348,6 +351,9 @@ const Perfil = () => {
       }
       if (formData.whatsappNumber !== (restaurante?.whatsappNumber || '')) {
         updateData.whatsappNumber = formData.whatsappNumber
+      }
+      if (formData.transferenciaAlias !== (restaurante?.transferenciaAlias || '')) {
+        updateData.transferenciaAlias = formData.transferenciaAlias
       }
       // Si la imagen es nueva (base64), enviarla
       if (imageBase64 && imageBase64.startsWith('data:image')) {
@@ -1063,6 +1069,23 @@ const Perfil = () => {
                 disabled={isSubmitting}
               />
             </div>
+
+            {/* Alias Transferencia */}
+            {(!restaurante?.mpConnected && !restaurante?.cucuruEnabled) && (
+              <div className="space-y-2">
+                <Label htmlFor="transferenciaAlias">Alias para Transferencias Manuales</Label>
+                <Input
+                  id="transferenciaAlias"
+                  value={formData.transferenciaAlias}
+                  onChange={(e) => setFormData({ ...formData, transferenciaAlias: e.target.value })}
+                  placeholder="Ej: mi.restaurante.mp"
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Al no usar pasarelas automáticas, este alias se mostrará al cliente al finalizar el pedido.
+                </p>
+              </div>
+            )}
 
             {/* WhatsApp Notifications */}
             <div className="space-y-4 pt-4 border-t">

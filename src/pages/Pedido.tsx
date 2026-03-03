@@ -32,6 +32,7 @@ interface UnifiedPedido {
   items: UnifiedPedidoItem[]
   totalItems: number
   pagado?: boolean
+  metodoPago?: string | null
 }
 
 const getMinutesAgo = (dateString: string) => {
@@ -101,7 +102,8 @@ export default function Pedido() {
           notas: resD.data.notas,
           items: resD.data.items,
           totalItems: resD.data.totalItems,
-          pagado: resD.data.pagado
+          pagado: resD.data.pagado,
+          metodoPago: resD.data.metodoPago
         }
         fallbackToMesa = false;
       }
@@ -123,7 +125,8 @@ export default function Pedido() {
             notas: resT.data.notas,
             items: resT.data.items,
             totalItems: resT.data.totalItems,
-            pagado: resT.data.pagado
+            pagado: resT.data.pagado,
+            metodoPago: resT.data.metodoPago
           }
           fallbackToMesa = false;
         }
@@ -399,23 +402,33 @@ export default function Pedido() {
               </span>
             </div>
           ) : (
-            <div className="flex gap-2 w-full">
-              <Button
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                onClick={() => handleTogglePagado('efectivo')}
-                disabled={updatingPago}
-              >
-                {updatingPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <span className="mr-2">💵</span>}
-                Efectivo
-              </Button>
-              <Button
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={() => handleTogglePagado('transferencia')}
-                disabled={updatingPago}
-              >
-                {updatingPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <span className="mr-2">🏦</span>}
-                Transf.
-              </Button>
+            <div className="flex flex-col gap-3 w-full">
+              {pedido.metodoPago && (
+                <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-500 p-3 rounded-lg border border-amber-200 dark:border-amber-800/50 flex items-start gap-2 text-sm font-medium">
+                  <span className="mt-0.5">⚠️</span>
+                  <p>
+                    El cliente seleccionó pagar con <strong>{pedido.metodoPago === 'efectivo' ? 'Efectivo' : pedido.metodoPago === 'transferencia' ? 'Transferencia' : pedido.metodoPago}</strong>. Por favor, confirmá la recepción del pago presionando el botón correspondiente.
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-2 w-full">
+                <Button
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={() => handleTogglePagado('efectivo')}
+                  disabled={updatingPago}
+                >
+                  {updatingPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <span className="mr-2">💵</span>}
+                  Efectivo
+                </Button>
+                <Button
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => handleTogglePagado('transferencia')}
+                  disabled={updatingPago}
+                >
+                  {updatingPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <span className="mr-2">🏦</span>}
+                  Transf.
+                </Button>
+              </div>
             </div>
           )}
         </div>

@@ -57,6 +57,7 @@ interface RestauranteData {
   cucuruEnabled: boolean | null
   whatsappEnabled: boolean | null
   whatsappNumber: string | null
+  transferenciaAlias: string | null
 }
 
 interface RestauranteState {
