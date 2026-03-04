@@ -39,6 +39,7 @@ interface Cliente {
     totalGastado: number
     ultimoPedidoAt: string | null
     pedidos: PedidoHistorial[]
+    puntos?: number
 }
 
 // --- Utility functions ---
@@ -437,7 +438,7 @@ export default function Clientes() {
                             <div className="p-6 space-y-6 max-w-3xl">
 
                                 {/* ---- Metrics Row ---- */}
-                                <div className="grid grid-cols-3 gap-3">
+                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                                     <MetricCard
                                         label="Total Pedidos"
                                         value={selectedClient.cantidadPedidos.toString()}
@@ -458,6 +459,12 @@ export default function Clientes() {
                                         }
                                         icon={<TrendingUp className="w-4 h-4" />}
                                         color="text-violet-600 dark:text-violet-400"
+                                    />
+                                    <MetricCard
+                                        label="Puntos"
+                                        value={(selectedClient.puntos || 0).toString()}
+                                        icon={<Star className="w-4 h-4" />}
+                                        color="text-orange-600 dark:text-orange-400"
                                     />
                                 </div>
 

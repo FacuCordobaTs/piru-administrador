@@ -26,11 +26,15 @@ const Productos = () => {
     descripcion: string
     precio: string
     categoriaId: string
+    puntosGanados: string
+    puntosNecesarios: string
   }>({
     nombre: '',
     descripcion: '',
     precio: '',
-    categoriaId: '0', // Usar '0' en lugar de '' para evitar error de Radix UI
+    categoriaId: '0',
+    puntosGanados: '',
+    puntosNecesarios: ''
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
@@ -47,7 +51,7 @@ const Productos = () => {
   const [dialogDesactivarAbierto, setDialogDesactivarAbierto] = useState(false)
   const [productoADesactivar, setProductoADesactivar] = useState<typeof productos[0] | null>(null)
   const [isDesactivando, setIsDesactivando] = useState(false)
-  
+
   // Estados para gestión de categorías
   const [dialogGestionCategoriasAbierto, setDialogGestionCategoriasAbierto] = useState(false)
   const [dialogEliminarCategoriaAbierto, setDialogEliminarCategoriaAbierto] = useState(false)
@@ -166,12 +170,12 @@ const Productos = () => {
 
     setIsEliminandoCategoria(true)
     try {
-      const response = await categoriasApi.delete(token, categoriaAEliminar.id) as { 
+      const response = await categoriasApi.delete(token, categoriaAEliminar.id) as {
         success: boolean
         message?: string
         productosActualizados?: number
       }
-      
+
       if (response.success) {
         const mensaje = response.productosActualizados && response.productosActualizados > 0
           ? `Categoría eliminada. ${response.productosActualizados} producto(s) movido(s) a "Sin categoría"`
@@ -235,7 +239,7 @@ const Productos = () => {
 
   const abrirDialogNuevo = () => {
     setProductoEditando(null)
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setEtiquetasProducto([])
@@ -250,13 +254,15 @@ const Productos = () => {
       descripcion: producto.descripcion || '',
       precio: producto.precio.toString(),
       categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
+      puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
+      puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : ''
     })
     setImageBase64(producto.imagenUrl || null)
-    
+
     // Cargar etiquetas del producto
     setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
     setNuevaEtiqueta('')
-    
+
     // Cargar ingredientes del producto
     if (token) {
       try {
@@ -274,13 +280,13 @@ const Productos = () => {
         setIngredientesSeleccionados([])
       }
     }
-    
+
     setDialogAbierto(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!token) {
       toast.error('No hay sesión activa')
       return
@@ -308,10 +314,10 @@ const Productos = () => {
     try {
       // Convertir categoriaId: si es '0' o vacío, usar undefined/null
       const parsedCategoriaId = parseInt(formData.categoriaId)
-      const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0) 
-        ? parsedCategoriaId 
+      const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0)
+        ? parsedCategoriaId
         : undefined
-      
+
       if (productoEditando) {
         // Editar producto existente
         await productosApi.update(token, {
@@ -323,6 +329,8 @@ const Productos = () => {
           categoriaId: categoriaId !== undefined ? categoriaId : null,
           ingredienteIds: ingredientesSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
+          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados) : 0,
+          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios) : 0
         })
         toast.success('Producto actualizado')
         await fetchData()
@@ -336,13 +344,15 @@ const Productos = () => {
           categoriaId: categoriaId,
           ingredienteIds: ingredientesSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
+          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados) : 0,
+          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios) : 0
         })
         toast.success('Producto creado')
         await fetchData()
       }
 
       setDialogAbierto(false)
-      setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0' })
+      setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '' })
       setImageBase64(null)
       setIngredientesSeleccionados([])
       setEtiquetasProducto([])
@@ -383,8 +393,8 @@ const Productos = () => {
         // Verificar si el error es por pedidos asociados
         const errorMessage = error.message || error.response?.message || ''
         if (errorMessage.includes('pedidos asociados') || errorMessage.includes('pedido')) {
-          toast.error('No se puede eliminar el producto', { 
-            description: 'Este producto tiene pedidos asociados. Desactívalo en su lugar para ocultarlo del menú sin perder el historial.' 
+          toast.error('No se puede eliminar el producto', {
+            description: 'Este producto tiene pedidos asociados. Desactívalo en su lugar para ocultarlo del menú sin perder el historial.'
           })
         } else {
           toast.error('Error al eliminar producto', { description: errorMessage })
@@ -441,7 +451,7 @@ const Productos = () => {
 
   return (
     <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 space-y-4 md:space-y-6 animate-in fade-in duration-500 pb-20 md:pb-0">
-      
+
       {/* Header Sticky */}
       <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 py-4 md:py-6 md:static md:bg-transparent -mx-4 sm:-mx-6 lg:-mx-8 xl:-mx-12 px-4 sm:px-6 lg:px-8 xl:px-12 md:mx-0 md:px-0 border-b md:border-none">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -534,7 +544,7 @@ const Productos = () => {
                 </h2>
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {porCategoria[categoriaNombre].map((producto) => (
-                    <Card 
+                    <Card
                       key={producto.id}
                       className={`
                         group overflow-hidden transition-all duration-300 hover:shadow-md border-muted
@@ -544,8 +554,8 @@ const Productos = () => {
                     >
                       <div className="w-32 h-32 md:w-full md:h-48 md:aspect-video shrink-0 bg-muted relative overflow-hidden">
                         {producto.imagenUrl ? (
-                          <img 
-                            src={producto.imagenUrl} 
+                          <img
+                            src={producto.imagenUrl}
                             alt={producto.nombre}
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                           />
@@ -555,7 +565,7 @@ const Productos = () => {
                           </div>
                         )}
                         <div className="absolute top-2 left-2 md:left-auto md:right-2">
-                          <Badge 
+                          <Badge
                             variant={producto.activo ? 'default' : 'secondary'}
                             className={`shadow-sm backdrop-blur-sm h-5 text-[10px] px-1.5 ${producto.activo ? 'bg-primary/90' : 'bg-secondary/90'}`}
                           >
@@ -606,11 +616,10 @@ const Productos = () => {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className={`h-8 w-8 ${
-                                producto.activo 
+                              className={`h-8 w-8 ${producto.activo
                                   ? 'hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
                                   : 'hover:bg-green-100 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
-                              }`}
+                                }`}
                               onClick={() => abrirDialogToggleActivo(producto)}
                               title={producto.activo ? 'Desactivar producto' : 'Activar producto'}
                             >
@@ -664,8 +673,8 @@ const Productos = () => {
               {productoEditando ? 'Editar Producto' : 'Nuevo Producto'}
             </DialogTitle>
             <DialogDescription>
-              {productoEditando 
-                ? 'Modifica los detalles del plato' 
+              {productoEditando
+                ? 'Modifica los detalles del plato'
                 : 'Agrega un nuevo plato a tu menú'}
             </DialogDescription>
           </DialogHeader>
@@ -714,6 +723,39 @@ const Productos = () => {
                 />
               </div>
             </div>
+
+            {restaurante?.sistemaPuntos && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="puntosGanados">Puntos que otorga</Label>
+                  <Input
+                    id="puntosGanados"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={formData.puntosGanados}
+                    onChange={(e) => setFormData({ ...formData, puntosGanados: e.target.value })}
+                    placeholder="Ej: 10"
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-tight">Canjeables si se paga en efectivo.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="puntosNecesarios">Puntos para canjear</Label>
+                  <Input
+                    id="puntosNecesarios"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={formData.puntosNecesarios}
+                    onChange={(e) => setFormData({ ...formData, puntosNecesarios: e.target.value })}
+                    placeholder="Ej: 50"
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-tight">Costo en puntos para llevárselo gratis.</p>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -795,11 +837,10 @@ const Productos = () => {
                     return (
                       <div
                         key={ingrediente.id}
-                        className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
-                          estaSeleccionado
+                        className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${estaSeleccionado
                             ? 'bg-primary/10 border-primary'
                             : 'bg-background hover:bg-muted'
-                        }`}
+                          }`}
                         onClick={() => {
                           if (estaSeleccionado) {
                             setIngredientesSeleccionados(ingredientesSeleccionados.filter(id => id !== ingrediente.id))
@@ -955,8 +996,8 @@ const Productos = () => {
               >
                 Cancelar
               </Button>
-              <Button 
-                type="button" 
+              <Button
+                type="button"
                 onClick={crearIngrediente}
                 disabled={isCreandoIngrediente || !nuevoIngredienteNombre.trim()}
               >
@@ -1013,8 +1054,8 @@ const Productos = () => {
               >
                 Cancelar
               </Button>
-              <Button 
-                type="button" 
+              <Button
+                type="button"
                 onClick={crearCategoria}
                 disabled={isCreandoCategoria || !nuevaCategoriaNombre.trim()}
               >
@@ -1053,8 +1094,8 @@ const Productos = () => {
             >
               Cancelar
             </Button>
-            <Button 
-              type="button" 
+            <Button
+              type="button"
               onClick={eliminarProducto}
               disabled={isEliminando}
               variant="destructive"
@@ -1103,11 +1144,11 @@ const Productos = () => {
             >
               Cancelar
             </Button>
-            <Button 
-              type="button" 
+            <Button
+              type="button"
               onClick={toggleActivoProducto}
               disabled={isDesactivando}
-              className={productoADesactivar?.activo 
+              className={productoADesactivar?.activo
                 ? 'bg-orange-500 hover:bg-orange-600 text-white'
                 : 'bg-green-500 hover:bg-green-600 text-white'
               }
@@ -1216,7 +1257,7 @@ const Productos = () => {
               </span>
               {categoriaAEliminar && contarProductosPorCategoria(categoriaAEliminar.id) > 0 && (
                 <span className="block text-amber-600 dark:text-amber-400">
-                  ⚠️ Esta categoría tiene {contarProductosPorCategoria(categoriaAEliminar.id)} producto(s) asociado(s). 
+                  ⚠️ Esta categoría tiene {contarProductosPorCategoria(categoriaAEliminar.id)} producto(s) asociado(s).
                   Estos productos pasarán a "Sin categoría".
                 </span>
               )}
@@ -1234,8 +1275,8 @@ const Productos = () => {
             >
               Cancelar
             </Button>
-            <Button 
-              type="button" 
+            <Button
+              type="button"
               onClick={eliminarCategoria}
               disabled={isEliminandoCategoria}
               variant="destructive"

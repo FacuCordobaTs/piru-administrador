@@ -58,6 +58,7 @@ interface RestauranteData {
   whatsappEnabled: boolean | null
   whatsappNumber: string | null
   transferenciaAlias: string | null
+  sistemaPuntos: boolean | null
 }
 
 interface RestauranteState {

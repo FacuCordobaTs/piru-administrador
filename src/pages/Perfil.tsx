@@ -32,7 +32,8 @@ import {
   Printer,
   List,
   Smartphone,
-  Wallet
+  Wallet,
+  Star
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -66,6 +67,7 @@ const Perfil = () => {
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
   const [isTogglingSoloCartaDigital, setIsTogglingSoloCartaDigital] = useState(false)
+  const [isTogglingSistemaPuntos, setIsTogglingSistemaPuntos] = useState(false)
 
   const [isCreatingCucuru, setIsCreatingCucuru] = useState(false)
   const [cucuruSlug, setCucuruSlug] = useState('')
@@ -281,6 +283,29 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingSoloCartaDigital(false)
+    }
+  }
+
+  // Toggle sistema de puntos
+  const handleToggleSistemaPuntos = async () => {
+    if (!token) return
+
+    setIsTogglingSistemaPuntos(true)
+    try {
+      const response = await restauranteApi.toggleSistemaPuntos(token) as { success: boolean; sistemaPuntos: boolean }
+      if (response.success) {
+        toast.success(response.sistemaPuntos ? 'Sistema de Puntos activado' : 'Sistema de Puntos desactivado', {
+          description: response.sistemaPuntos
+            ? 'Los clientes ahora podrán ganar y canjear puntos en tu restaurante'
+            : 'Se ha deshabilitado el sistema de puntos'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar sistema de puntos:', error)
+      toast.error('Error al cambiar la configuración de puntos')
+    } finally {
+      setIsTogglingSistemaPuntos(false)
     }
   }
 
@@ -853,6 +878,65 @@ const Perfil = () => {
                   <>
                     <Smartphone className="mr-2 h-4 w-4" />
                     {restaurante?.soloCartaDigital ? 'Desactivar Sólo Carta Digital' : 'Activar Sólo Carta Digital'}
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Sistema de Puntos */}
+          <Card className={restaurante?.sistemaPuntos ? "border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Star className="h-5 w-5" />
+                Sistema de Puntos
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.sistemaPuntos
+                  ? 'Fideliza a tus clientes premiando cada compra'
+                  : 'Fideliza a tus clientes premiando cada compra'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.sistemaPuntos ? (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Los clientes acumulan puntos con cada compra</p>
+                    <p>• Agrega productos que puedan ser canjeados</p>
+                    <p>• Mejora la fidelización de clientes</p>
+                  </div>
+                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
+                    Sistema Activo
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Sistema de fidelidad para retener clientes</p>
+                    <p>• Asignarás puntos a los productos de tu menú</p>
+                    <p>• Canjeable en futuros pedidos</p>
+                  </div>
+                  <Badge variant="secondary">
+                    Sistema Inactivo
+                  </Badge>
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleToggleSistemaPuntos}
+                disabled={isTogglingSistemaPuntos}
+              >
+                {isTogglingSistemaPuntos ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cambiando...
+                  </>
+                ) : (
+                  <>
+                    <Star className="mr-2 h-4 w-4" />
+                    {restaurante?.sistemaPuntos ? 'Desactivar Sistema de Puntos' : 'Activar Sistema de Puntos'}
                   </>
                 )}
               </Button>

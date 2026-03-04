@@ -204,6 +204,15 @@ export const restauranteApi = {
       },
     })
   },
+
+  toggleSistemaPuntos: async (token: string) => {
+    return fetchApi('/restaurante/toggle-sistema-puntos', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Cucuru API
@@ -292,6 +301,8 @@ export const productosApi = {
       categoriaId?: number
       ingredienteIds?: number[]
       etiquetas?: string[]
+      puntosGanados?: number
+      puntosNecesarios?: number
     }
   ) => {
     return fetchApi('/producto/create', {
@@ -315,6 +326,8 @@ export const productosApi = {
       ingredienteIds?: number[]
       activo?: boolean
       etiquetas?: string[]
+      puntosGanados?: number
+      puntosNecesarios?: number
     }
   ) => {
     return fetchApi('/producto/update', {
