@@ -242,9 +242,7 @@ export default function Pedido() {
   const isTakeaway = pedido.tipo === 'takeaway'
   const isMesa = pedido.tipo === 'mesa'
 
-  const finalTotal = isDelivery
-    ? (parseFloat(pedido.total) + DELIVERY_FEE)
-    : parseFloat(pedido.total);
+  const finalTotal = parseFloat(pedido.total);
 
   return (
     <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 animate-in fade-in pb-32">
@@ -351,7 +349,7 @@ export default function Pedido() {
                 </span>
               </div>
             ))}
-            {isDelivery && (
+            {isDelivery && DELIVERY_FEE > 0 && (
               <div className="flex items-baseline justify-between py-3 border-t border-border/40">
                 <div className="flex items-baseline gap-3 flex-1 min-w-0">
                   <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">1x</span>
