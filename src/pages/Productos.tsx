@@ -329,8 +329,8 @@ const Productos = () => {
           categoriaId: categoriaId !== undefined ? categoriaId : null,
           ingredienteIds: ingredientesSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
-          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados) : 0,
-          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios) : 0
+          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
+          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0
         })
         toast.success('Producto actualizado')
         await fetchData()
@@ -344,8 +344,8 @@ const Productos = () => {
           categoriaId: categoriaId,
           ingredienteIds: ingredientesSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
-          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados) : 0,
-          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios) : 0
+          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
+          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0
         })
         toast.success('Producto creado')
         await fetchData()
@@ -617,8 +617,8 @@ const Productos = () => {
                               variant="ghost"
                               size="icon"
                               className={`h-8 w-8 ${producto.activo
-                                  ? 'hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
-                                  : 'hover:bg-green-100 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
+                                ? 'hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
+                                : 'hover:bg-green-100 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
                                 }`}
                               onClick={() => abrirDialogToggleActivo(producto)}
                               title={producto.activo ? 'Desactivar producto' : 'Activar producto'}
@@ -838,8 +838,8 @@ const Productos = () => {
                       <div
                         key={ingrediente.id}
                         className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${estaSeleccionado
-                            ? 'bg-primary/10 border-primary'
-                            : 'bg-background hover:bg-muted'
+                          ? 'bg-primary/10 border-primary'
+                          : 'bg-background hover:bg-muted'
                           }`}
                         onClick={() => {
                           if (estaSeleccionado) {
