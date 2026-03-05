@@ -61,6 +61,8 @@ const Perfil = () => {
     whatsappEnabled: false,
     whatsappNumber: '',
     transferenciaAlias: '',
+    colorPrimario: '',
+    colorSecundario: '',
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
@@ -320,6 +322,8 @@ const Perfil = () => {
         whatsappEnabled: restaurante.whatsappEnabled || false,
         whatsappNumber: restaurante.whatsappNumber || '',
         transferenciaAlias: restaurante.transferenciaAlias || '',
+        colorPrimario: restaurante.colorPrimario || '',
+        colorSecundario: restaurante.colorSecundario || '',
       })
       setImageBase64(restaurante.imagenUrl || null)
       setDialogAbierto(true)
@@ -353,6 +357,8 @@ const Perfil = () => {
         whatsappEnabled?: boolean
         whatsappNumber?: string
         transferenciaAlias?: string
+        colorPrimario?: string
+        colorSecundario?: string
       } = {}
 
       // Solo enviar campos que cambiaron
@@ -379,6 +385,12 @@ const Perfil = () => {
       }
       if (formData.transferenciaAlias !== (restaurante?.transferenciaAlias || '')) {
         updateData.transferenciaAlias = formData.transferenciaAlias
+      }
+      if (formData.colorPrimario !== (restaurante?.colorPrimario || '')) {
+        updateData.colorPrimario = formData.colorPrimario
+      }
+      if (formData.colorSecundario !== (restaurante?.colorSecundario || '')) {
+        updateData.colorSecundario = formData.colorSecundario
       }
       // Si la imagen es nueva (base64), enviarla
       if (imageBase64 && imageBase64.startsWith('data:image')) {
@@ -1203,6 +1215,37 @@ const Perfil = () => {
                   </p>
                 </div>
               )}
+            </div>
+
+            {/* Colores */}
+            <div className="space-y-4 pt-4 border-t">
+              <h3 className="text-sm font-medium">Personalización de Colores</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="colorPrimario">Color Primario (Dark Mode Fondo)</Label>
+                  <Input
+                    id="colorPrimario"
+                    type="color"
+                    className="h-10 cursor-pointer"
+                    value={formData.colorPrimario}
+                    onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })}
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-xs text-muted-foreground">Ej: #0a331d</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="colorSecundario">Color Secundario (Light Mode Fondo)</Label>
+                  <Input
+                    id="colorSecundario"
+                    type="color"
+                    className="h-10 cursor-pointer"
+                    value={formData.colorSecundario}
+                    onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })}
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-xs text-muted-foreground">Ej: #eae7e0</p>
+                </div>
+              </div>
             </div>
 
             {/* Botones */}
