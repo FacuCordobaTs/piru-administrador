@@ -72,8 +72,9 @@ const Perfil = () => {
   const [isTogglingSoloCartaDigital, setIsTogglingSoloCartaDigital] = useState(false)
   const [isTogglingSistemaPuntos, setIsTogglingSistemaPuntos] = useState(false)
 
-  const [isCreatingCucuru, setIsCreatingCucuru] = useState(false)
-  const [cucuruSlug, setCucuruSlug] = useState('')
+  const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
+  const [cucuruApiKey, setCucuruApiKey] = useState('')
+  const [cucuruCollectorId, setCucuruCollectorId] = useState('')
 
   // Tauri Printer State
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
@@ -193,29 +194,30 @@ const Perfil = () => {
     navigate('/login')
   }
 
-  // Handle crear cucuru
-  const handleCrearCucuru = async () => {
+  // Handle configurar cucuru
+  const handleConfigurarCucuru = async () => {
     if (!token) return
-    if (!cucuruSlug.trim()) {
-      toast.error('Debes ingresar un alias')
+    if (!cucuruApiKey.trim() || !cucuruCollectorId.trim()) {
+      toast.error('Debes ingresar API Key y Collector ID')
       return
     }
 
-    setIsCreatingCucuru(true)
+    setIsConfiguringCucuru(true)
     try {
-      const response = await cucuruApi.create(token, cucuruSlug) as { success: boolean, data: any }
+      const response = await cucuruApi.configurar(token, cucuruApiKey, cucuruCollectorId) as { success: boolean, data: any }
       if (response.success) {
-        toast.success('Billetera Virtual creada con éxito', {
-          description: response.data?.warning ? `Cuenta creada, pero ojo: ${response.data.warning}` : 'Tu cuenta Cucuru está lista para recibir transferencias.'
+        toast.success('Billetera Virtual configurada con éxito', {
+          description: 'Tu cuenta Cucuru está lista para automatizar cobros.'
         })
         restauranteStore.fetchData()
-        setCucuruSlug('')
+        setCucuruApiKey('')
+        setCucuruCollectorId('')
       }
     } catch (error) {
-      console.error('Error al crear cuenta Cucuru:', error)
-      toast.error('Error al crear la Billetera Virtual')
+      console.error('Error al configurar cuenta Cucuru:', error)
+      toast.error('Error al configurar la Billetera Virtual')
     } finally {
-      setIsCreatingCucuru(false)
+      setIsConfiguringCucuru(false)
     }
   }
 
@@ -647,60 +649,61 @@ const Perfil = () => {
           </Card>
 
           {/* Tarjeta de Cucuru */}
-          <Card className={restaurante?.cucuruEnabled ? "border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20" : "border-slate-200"}>
+          <Card className={(restaurante as any)?.cucuruConfigurado ? "border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20" : "border-slate-200"}>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Wallet className="h-5 w-5" />
                 Cucuru (Transferencias)
               </CardTitle>
               <CardDescription>
-                {restaurante?.cucuruEnabled
-                  ? 'Tu billetera virtual Cucuru está activa'
-                  : 'Crea tu billetera virtual para automatizar cobros por transferencia'
+                {(restaurante as any)?.cucuruConfigurado
+                  ? 'Tu billetera virtual Cucuru está configurada y activa'
+                  : 'Ingresa tus credenciales de Cucuru para automatizar cobros'
                 }
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {restaurante?.cucuruEnabled ? (
+              {(restaurante as any)?.cucuruConfigurado ? (
                 <>
                   <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
                     <CheckCircle2 className="h-5 w-5" />
-                    <span className="font-medium">Billetera Activa</span>
+                    <span className="font-medium">Webhooks configurados correctamente</span>
                   </div>
                   <div className="space-y-2 text-sm">
                     <p className="text-muted-foreground">
-                      <span className="font-medium text-foreground">CVU:</span> {restaurante.cucuruAccountNumber}
+                      Tu sistema ya recibe notificaciones de pagos transferidos a tu cuenta Cucuru.
                     </p>
-                    {restaurante.cucuruAlias && (
-                      <p className="text-muted-foreground">
-                        <span className="font-medium text-foreground">Alias:</span> {restaurante.cucuruAlias}
-                      </p>
-                    )}
                   </div>
                 </>
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Elige un alias (ej: milocal). Se le agregará el prefijo "piru." automáticamente.
+                    Copia tu API Key y Collector ID desde tu panel de Cucuru.
                   </p>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2">
                     <Input
-                      placeholder="Ej: milocal"
-                      value={cucuruSlug}
-                      onChange={(e) => setCucuruSlug(e.target.value)}
-                      disabled={isCreatingCucuru}
+                      placeholder="API Key"
+                      value={cucuruApiKey}
+                      onChange={(e) => setCucuruApiKey(e.target.value)}
+                      disabled={isConfiguringCucuru}
+                    />
+                    <Input
+                      placeholder="Collector ID"
+                      value={cucuruCollectorId}
+                      onChange={(e) => setCucuruCollectorId(e.target.value)}
+                      disabled={isConfiguringCucuru}
                     />
                     <Button
-                      onClick={handleCrearCucuru}
-                      disabled={isCreatingCucuru || !cucuruSlug.trim()}
-                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                      onClick={handleConfigurarCucuru}
+                      disabled={isConfiguringCucuru || !cucuruApiKey.trim() || !cucuruCollectorId.trim()}
+                      className="bg-purple-600 hover:bg-purple-700 text-white w-full"
                     >
-                      {isCreatingCucuru ? (
+                      {isConfiguringCucuru ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Configurando...
                         </>
                       ) : (
-                        'Crear'
+                        'Configurar Webhook'
                       )}
                     </Button>
                   </div>

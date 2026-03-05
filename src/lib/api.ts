@@ -217,13 +217,13 @@ export const restauranteApi = {
 
 // Cucuru API
 export const cucuruApi = {
-  create: async (token: string, slug: string) => {
-    return fetchApi('/cucuru/create', {
+  configurar: async (token: string, apiKey: string, collectorId: string) => {
+    return fetchApi('/restaurante/configurar-cucuru', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ slug })
+      body: JSON.stringify({ apiKey, collectorId })
     })
   }
 }
