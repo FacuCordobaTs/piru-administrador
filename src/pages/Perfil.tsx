@@ -65,6 +65,7 @@ const Perfil = () => {
     colorSecundario: '',
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [imageLightBase64, setImageLightBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
@@ -326,6 +327,7 @@ const Perfil = () => {
         colorSecundario: restaurante.colorSecundario || '',
       })
       setImageBase64(restaurante.imagenUrl || null)
+      setImageLightBase64(restaurante.imagenLightUrl || null)
       setDialogAbierto(true)
     }
   }
@@ -352,6 +354,7 @@ const Perfil = () => {
         direccion?: string
         telefono?: string
         image?: string
+        imageLight?: string
         username?: string
         deliveryFee?: string
         whatsappEnabled?: boolean
@@ -395,6 +398,11 @@ const Perfil = () => {
       // Si la imagen es nueva (base64), enviarla
       if (imageBase64 && imageBase64.startsWith('data:image')) {
         updateData.image = imageBase64
+      }
+
+      // Si la imagen light es nueva (base64), enviarla
+      if (imageLightBase64 && imageLightBase64.startsWith('data:image')) {
+        updateData.imageLight = imageLightBase64
       }
 
       // Verificar que hay algo que actualizar
@@ -1086,17 +1094,30 @@ const Perfil = () => {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Imagen del restaurante */}
-            <div className="space-y-2">
-              <Label>Logo del Restaurante</Label>
-              <ImageUpload
-                onImageChange={setImageBase64}
-                currentImage={imageBase64}
-                maxSize={5}
-              />
-              <p className="text-xs text-muted-foreground">
-                Sube el logo de tu restaurante. Tamaño máximo: 5MB.
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label>Logo del Restaurante (Dark Mode)</Label>
+                <ImageUpload
+                  onImageChange={setImageBase64}
+                  currentImage={imageBase64}
+                  maxSize={5}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se usa en el menú cuando está en Dark Mode (o por defecto). Tamaño máximo: 5MB.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Logo del Restaurante (Light Mode)</Label>
+                <ImageUpload
+                  onImageChange={setImageLightBase64}
+                  currentImage={imageLightBase64}
+                  maxSize={5}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se usa en el menú cuando está en Light Mode. Tamaño máximo: 5MB.
+                </p>
+              </div>
             </div>
 
             <Separator />

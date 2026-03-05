@@ -38,6 +38,7 @@ interface RestauranteData {
   direccion: string | null
   telefono: string | null
   imagenUrl: string | null
+  imagenLightUrl: string | null
   mercadoPagoPublicKey: string | null
   mercadoPagoPrivateKey: string | null
   username: string | null
