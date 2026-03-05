@@ -303,6 +303,7 @@ export const productosApi = {
       etiquetas?: string[]
       puntosGanados?: number
       puntosNecesarios?: number
+      descuento?: number
     }
   ) => {
     return fetchApi('/producto/create', {
@@ -328,6 +329,7 @@ export const productosApi = {
       etiquetas?: string[]
       puntosGanados?: number
       puntosNecesarios?: number
+      descuento?: number
     }
   ) => {
     return fetchApi('/producto/update', {

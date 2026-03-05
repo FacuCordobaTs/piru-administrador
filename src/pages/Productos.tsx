@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
-import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X, Power, Settings2, AlertTriangle, Tag } from 'lucide-react'
+import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X, Power, Settings2, AlertTriangle, Tag, Percent } from 'lucide-react'
 
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
@@ -28,13 +28,15 @@ const Productos = () => {
     categoriaId: string
     puntosGanados: string
     puntosNecesarios: string
+    descuento: string
   }>({
     nombre: '',
     descripcion: '',
     precio: '',
     categoriaId: '0',
     puntosGanados: '',
-    puntosNecesarios: ''
+    puntosNecesarios: '',
+    descuento: ''
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
@@ -239,7 +241,7 @@ const Productos = () => {
 
   const abrirDialogNuevo = () => {
     setProductoEditando(null)
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '' })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setEtiquetasProducto([])
@@ -255,7 +257,8 @@ const Productos = () => {
       precio: producto.precio.toString(),
       categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
       puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
-      puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : ''
+      puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : '',
+      descuento: producto.descuento ? producto.descuento.toString() : ''
     })
     setImageBase64(producto.imagenUrl || null)
 
@@ -330,7 +333,8 @@ const Productos = () => {
           ingredienteIds: ingredientesSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
           puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
-          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0
+          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
+          descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0
         })
         toast.success('Producto actualizado')
         await fetchData()
@@ -345,14 +349,15 @@ const Productos = () => {
           ingredienteIds: ingredientesSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
           puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
-          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0
+          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
+          descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0
         })
         toast.success('Producto creado')
         await fetchData()
       }
 
       setDialogAbierto(false)
-      setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '' })
+      setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '' })
       setImageBase64(null)
       setIngredientesSeleccionados([])
       setEtiquetasProducto([])
@@ -564,7 +569,15 @@ const Productos = () => {
                             <Package className="h-8 w-8 text-muted-foreground/50" />
                           </div>
                         )}
-                        <div className="absolute top-2 left-2 md:left-auto md:right-2">
+                        <div className="absolute top-2 left-2 md:left-auto md:right-2 flex gap-1">
+                          {producto.descuento && producto.descuento > 0 && (
+                            <Badge
+                              className="shadow-sm backdrop-blur-sm h-5 text-[10px] px-1.5 bg-emerald-500/90 text-white border-none"
+                            >
+                              <Percent className="h-3 w-3 mr-0.5" />
+                              {producto.descuento}% OFF
+                            </Badge>
+                          )}
                           <Badge
                             variant={producto.activo ? 'default' : 'secondary'}
                             className={`shadow-sm backdrop-blur-sm h-5 text-[10px] px-1.5 ${producto.activo ? 'bg-primary/90' : 'bg-secondary/90'}`}
@@ -599,9 +612,22 @@ const Productos = () => {
                         </div>
 
                         <div className="flex items-center justify-between mt-3">
-                          <span className="text-lg font-bold text-primary">
-                            ${parseFloat(producto.precio).toFixed(0)}
-                          </span>
+                          <div className="flex flex-col">
+                            {producto.descuento && producto.descuento > 0 ? (
+                              <>
+                                <span className="text-xs text-muted-foreground line-through">
+                                  ${parseFloat(producto.precio).toFixed(0)}
+                                </span>
+                                <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                                  ${(parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-lg font-bold text-primary">
+                                ${parseFloat(producto.precio).toFixed(0)}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex gap-1">
                             <Button
                               variant="ghost"
@@ -722,6 +748,33 @@ const Productos = () => {
                   className="pl-7"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="descuento">Descuento (%)</Label>
+                {formData.descuento && parseInt(formData.descuento) > 0 && formData.precio && (
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                    Precio final: ${(parseFloat(formData.precio) * (1 - parseInt(formData.descuento) / 100)).toFixed(0)}
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <Percent className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="descuento"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={formData.descuento}
+                  onChange={(e) => setFormData({ ...formData, descuento: e.target.value })}
+                  placeholder="0"
+                  disabled={isSubmitting}
+                  className="pl-9"
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-tight">Dejá vacío o en 0 para precio normal. Ej: 20 = 20% de descuento.</p>
             </div>
 
             {restaurante?.sistemaPuntos && (
