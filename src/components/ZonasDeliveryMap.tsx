@@ -8,11 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAuthStore } from '@/store/authStore'
 import { zonasDeliveryApi } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, MapPin, Trash2, Pencil, Plus, Map as MapIcon } from 'lucide-react'
+import { Loader2, MapPin, Map as MapIcon } from 'lucide-react'
 
 interface Coordenada {
     lat: number
