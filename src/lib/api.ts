@@ -910,3 +910,61 @@ export const takeawayApi = {
     })
   },
 }
+
+// Zonas de Delivery API
+export const zonasDeliveryApi = {
+  getAll: async (token: string) => {
+    return fetchApi('/zona-delivery', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  create: async (
+    token: string,
+    data: {
+      nombre: string
+      precio: string
+      poligono: Array<{ lat: number; lng: number }>
+      color?: string
+    }
+  ) => {
+    return fetchApi('/zona-delivery/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  update: async (
+    token: string,
+    id: number,
+    data: {
+      nombre?: string
+      precio?: string
+      poligono?: Array<{ lat: number; lng: number }>
+      color?: string
+    }
+  ) => {
+    return fetchApi(`/zona-delivery/${id}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/zona-delivery/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}

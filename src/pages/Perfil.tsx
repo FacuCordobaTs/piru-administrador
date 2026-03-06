@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,8 @@ import {
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
+
+const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
 
 // Configuración de MercadoPago
 const MP_APP_ID = 38638191854826
@@ -1034,6 +1036,17 @@ const Perfil = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Tarjeta de Zonas de Delivery */}
+          <Suspense fallback={
+            <Card>
+              <CardContent className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </CardContent>
+            </Card>
+          }>
+            <ZonasDeliveryMap />
+          </Suspense>
 
           <Card>
             <CardHeader>
