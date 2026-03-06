@@ -43,6 +43,7 @@ interface PedidoData {
   totalItems: number
   nombrePedido?: string | null
   pagado?: boolean
+  metodoPago?: string | null
 }
 
 interface SubtotalInfo {
@@ -114,6 +115,7 @@ interface DeliveryPedido {
   items: DeliveryItem[]
   totalItems: number
   pagado?: boolean
+  metodoPago?: string | null
 }
 
 interface TakeawayPedido {
@@ -128,6 +130,7 @@ interface TakeawayPedido {
   items: DeliveryItem[]
   totalItems: number
   pagado?: boolean
+  metodoPago?: string | null
 }
 
 // Unified order type for the all-orders list
@@ -145,6 +148,7 @@ interface UnifiedPedido {
   items: DeliveryItem[] | ItemPedidoConEstado[]
   totalItems: number
   pagado?: boolean
+  metodoPago?: string | null
 }
 
 interface NewDeliveryItem {
@@ -185,6 +189,17 @@ const getDateLabel = (dateString: string) => {
 }
 
 
+// Helper: compute the actual delivery fee for a stored order.
+// Since pedido.total already includes the delivery fee from the backend,
+// we derive it as: total - sum(item prices)
+const getOrderDeliveryFee = (pedido: { total: string; items: { precioUnitario: string; cantidad: number }[] }) => {
+  const total = parseFloat(pedido.total)
+  const itemsSubtotal = pedido.items.reduce((sum, item) =>
+    sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
+  )
+  return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
+}
+
 const COLUMNS = [
   { id: 'pending', title: 'Pendientes', icon: Clock, color: 'text-amber-600', bgHeader: 'bg-amber-100 dark:bg-amber-900/30' },
   { id: 'preparing', title: 'En Cocina', icon: ChefHat, color: 'text-blue-600', bgHeader: 'bg-blue-100 dark:bg-blue-900/30' },
@@ -204,7 +219,7 @@ const Dashboard = () => {
   const { printRaw, selectedPrinter } = usePrinter()
 
   // Ref para rastrear pedidos procesados para impresión automática
-  const processedOrdersRef = useRef<Map<number, { status: string, itemIds: Set<number> }>>(new Map())
+  const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
 
   const {
     mesas: mesasWS,
@@ -365,13 +380,29 @@ const Dashboard = () => {
           if (!mesa.pedido) return
 
           const pedidoId = mesa.pedido.id
+          const pedidoKey = `mesa-${pedidoId}`
           const currentStatus = mesa.pedido.estado
           const currentItemIds = new Set(mesa.items.map(i => i.id))
+          const currentPagado = mesa.pedido.pagado
 
-          const prevData = processedOrdersRef.current.get(pedidoId)
+          const prevData = processedOrdersRef.current.get(pedidoKey)
+          const isCucuruTransfer = (mesa.pedido as any).metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado
+
+          let shouldPrintComanda = false;
 
           // 1. Detectar transición PENDING -> PREPARING (Confirmación desde App Cliente)
           if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
+            if (!isCucuruTransfer) {
+              shouldPrintComanda = true;
+            }
+          }
+
+          // Impresión diferida por Cucuru (solo imprimir comanda cuando el pago entra)
+          if (isCucuruTransfer && prevData && !prevData.pagado && currentPagado) {
+            shouldPrintComanda = true;
+          }
+
+          if (shouldPrintComanda) {
             const itemsToPrint = mesa.items
               .map(item => {
                 const producto = allProductos.find(p => p.id === item.productoId)
@@ -390,15 +421,14 @@ const Dashboard = () => {
               }))
 
             if (itemsToPrint.length > 0) {
-              console.log("🖨️ [Dashboard] Auto-printing confirmed order:", pedidoId)
-              console.log("Items to print:", itemsToPrint)
-              const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante')
+              console.log("🖨️ [Dashboard] Auto-printing mesa order:", pedidoId)
+              const comandaData = formatComanda({ id: mesa.pedido!.id, mesaNombre: mesa.nombre, nombrePedido: mesa.pedido?.nombrePedido, tipo: 'mesa', total: mesa.pedido!.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
               printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err))
             }
           }
 
           // 2. Detectar NUEVOS ITEMS en pedido ya confirmado (PREPARING)
-          else if (currentStatus === 'preparing' && prevData) {
+          if (!shouldPrintComanda && currentStatus === 'preparing' && prevData) {
             const newItems = mesa.items.filter(item => !prevData.itemIds.has(item.id))
 
             if (newItems.length > 0) {
@@ -420,9 +450,8 @@ const Dashboard = () => {
                 }))
 
               if (itemsToPrint.length > 0) {
-                console.log("🖨️ [Dashboard] Auto-printing new items for order:", pedidoId)
-                console.log("Items to print:", itemsToPrint)
-                const comandaData = formatComanda(mesa.pedido, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                console.log("🖨️ [Dashboard] Auto-printing new items mesa:", pedidoId)
+                const comandaData = formatComanda({ id: mesa.pedido!.id, mesaNombre: mesa.nombre, nombrePedido: mesa.pedido?.nombrePedido, tipo: 'mesa', total: mesa.pedido!.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                 printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err))
               }
             }
@@ -436,6 +465,7 @@ const Dashboard = () => {
                 id: mesa.pedido.id,
                 mesaNombre: mesa.nombre,
                 nombrePedido: mesa.pedido.nombrePedido,
+                tipo: 'mesa',
                 total: mesa.pedido.total
               },
               mesa.items,
@@ -445,12 +475,15 @@ const Dashboard = () => {
           }
 
           // Actualizar Ref
-          processedOrdersRef.current.set(pedidoId, {
+          processedOrdersRef.current.set(pedidoKey, {
             status: currentStatus,
-            itemIds: currentItemIds
+            itemIds: currentItemIds,
+            pagado: currentPagado
           })
         })
       }
+
+
 
       const pedidosFromMesas: PedidoData[] = mesasWS
         .filter(m => m.pedido)
@@ -465,11 +498,100 @@ const Dashboard = () => {
           items: m.items.map(i => ({ ...i, estado: (i as any).estado || 'preparing' })),
           totalItems: m.totalItems,
           nombrePedido: m.pedido!.nombrePedido,
-          pagado: m.pedido!.pagado
+          pagado: m.pedido!.pagado,
+          metodoPago: (m.pedido as any).metodoPago
         }))
       setPedidos(pedidosFromMesas)
     }
   }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw])
+
+  // ==== AUTO-PRINT PARA DELIVERY Y TAKEAWAY ====
+  useEffect(() => {
+    if (!selectedPrinter) return
+
+    const unifiedDT = [
+      ...deliveryPedidos.map(p => ({ ...p, tipo: 'delivery' as const })),
+      ...takeawayPedidos.map(p => ({ ...p, tipo: 'takeaway' as const }))
+    ]
+
+    unifiedDT.forEach(pedido => {
+      const pedidoKey = `${pedido.tipo}-${pedido.id}`
+      const currentStatus = pedido.estado
+      const currentItemIds = new Set(pedido.items.map(i => i.id))
+      const currentPagado = pedido.pagado
+      const prevData = processedOrdersRef.current.get(pedidoKey)
+      const isCucuruTransfer = pedido.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado
+
+      let shouldPrintComanda = false
+
+      // 1. Detectar transición PENDING -> PREPARING (Confirmación desde admin o trigger auto)
+      if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
+        if (!isCucuruTransfer) {
+          shouldPrintComanda = true
+        }
+      }
+
+      // Impresión diferida por Cucuru (solo imprimir comanda cuando el pago entra)
+      if (isCucuruTransfer && prevData && !prevData.pagado && currentPagado) {
+        shouldPrintComanda = true
+      }
+
+      if (shouldPrintComanda) {
+        const itemsToPrint = pedido.items
+          .map(item => {
+            const producto = allProductos.find(p => p.id === item.productoId)
+            const categoria = producto && producto.categoriaId
+              ? allCategorias.find(c => c.id === producto.categoriaId)
+              : null
+            return { ...item, producto, categoria }
+          })
+          .filter(data => {
+            if (!data.producto || !data.categoria) return true
+            return !data.categoria.nombre.toLowerCase().includes('bebidas')
+          })
+          .map(data => ({
+            ...data,
+            categoriaNombre: data.categoria ? data.categoria.nombre : undefined
+          }))
+
+        if (itemsToPrint.length > 0) {
+          console.log(`🖨️ [Dashboard] Auto-printing new ${pedido.tipo} order:`, pedido.id)
+          const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
+          const comandaData = formatComanda({
+            id: pedido.id,
+            nombrePedido: pedido.nombreCliente,
+            telefono: pedido.telefono,
+            direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
+            tipo: pedido.tipo,
+            total: pedido.total,
+            deliveryFee
+          }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+          printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing DT order:", err))
+        }
+      }
+
+      // 2. Factura al entregarse o estar listo
+      if (prevData && prevData.status !== 'ready' && prevData.status !== 'delivered' && (currentStatus === 'ready' || currentStatus === 'delivered')) {
+        console.log(`🧾 [Dashboard] Auto-printing factura for ${pedido.tipo}:`, pedido.id)
+        const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
+        const facturaData = formatFactura({
+          id: pedido.id,
+          nombrePedido: pedido.nombreCliente,
+          telefono: pedido.telefono,
+          direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
+          tipo: pedido.tipo,
+          total: pedido.total,
+          deliveryFee
+        },
+          pedido.items,
+          restaurante?.nombre || 'Restaurante'
+        )
+        printRaw(commandsToBytes(facturaData)).catch((err: Error) => console.error("Error printing DT factura:", err))
+      }
+
+      processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: currentItemIds, pagado: currentPagado })
+    })
+  }, [deliveryPedidos, takeawayPedidos, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw])
 
   const fetchMesasREST = useCallback(async () => {
     if (!token) return
@@ -1345,11 +1467,12 @@ const Dashboard = () => {
 
           // Add delivery fee item for delivery orders
           if (isDelivery) {
+            const fee = DELIVERY_FEE
             itemsForPrint.push({
               id: 0,
-              nombreProducto: DELIVERY_FEE === 0 ? 'Delivery GRATIS' : 'Delivery',
+              nombreProducto: fee === 0 ? 'Delivery GRATIS' : 'Delivery',
               cantidad: 1,
-              precioUnitario: String(DELIVERY_FEE),
+              precioUnitario: String(fee),
               ingredientesExcluidosNombres: []
             })
           }
@@ -1407,6 +1530,7 @@ const Dashboard = () => {
     }
   }
   const DELIVERY_FEE = restaurante?.deliveryFee ? parseFloat(restaurante.deliveryFee) : 0
+
   const deliveryItemsTotal = useMemo(() => {
     const itemsTotal = newDeliveryItems.reduce((total, item) => {
       const producto = productos.find(p => p.id === item.productoId)
@@ -2681,7 +2805,7 @@ const Dashboard = () => {
                                 </div>
                                 <div className="text-right shrink-0">
                                   <p className="font-bold text-sm">
-                                    ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                    ${parseFloat(pedido.total).toFixed(2)}
                                   </p>
                                   <p className="text-[10px] text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
                                 </div>
@@ -2735,7 +2859,7 @@ const Dashboard = () => {
                                       )}
                                     </div>
                                     <p className="text-xs text-muted-foreground shrink-0">
-                                      ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                      ${parseFloat(pedido.total).toFixed(2)}
                                     </p>
                                   </div>
                                 </div>
@@ -2853,17 +2977,16 @@ const Dashboard = () => {
                                 precioUnitario: item.precioUnitario || '0'
                               }))
                               if (displayedUnifiedPedido.tipo === 'delivery') {
+                                const fee = getOrderDeliveryFee(displayedUnifiedPedido)
                                 facturaItems.push({
                                   id: 0,
-                                  nombreProducto: 'Delivery',
+                                  nombreProducto: fee === 0 ? 'Delivery GRATIS' : 'Delivery',
                                   cantidad: 1,
-                                  precioUnitario: String(DELIVERY_FEE),
+                                  precioUnitario: String(fee),
                                   ingredientesExcluidosNombres: []
                                 })
                               }
-                              const total = displayedUnifiedPedido.tipo === 'delivery'
-                                ? String(parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE)
-                                : displayedUnifiedPedido.total
+                              const total = displayedUnifiedPedido.total
                               const facturaData = formatFactura(
                                 {
                                   id: displayedUnifiedPedido.id,
@@ -2892,17 +3015,16 @@ const Dashboard = () => {
                                 precioUnitario: item.precioUnitario || '0'
                               }))
                               if (displayedUnifiedPedido.tipo === 'delivery') {
+                                const fee = getOrderDeliveryFee(displayedUnifiedPedido)
                                 facturaItems.push({
                                   id: 0,
-                                  nombreProducto: 'Delivery',
+                                  nombreProducto: fee === 0 ? 'Delivery GRATIS' : 'Delivery',
                                   cantidad: 1,
-                                  precioUnitario: String(DELIVERY_FEE),
+                                  precioUnitario: String(fee),
                                   ingredientesExcluidosNombres: []
                                 })
                               }
-                              const total = displayedUnifiedPedido.tipo === 'delivery'
-                                ? String(parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE)
-                                : displayedUnifiedPedido.total
+                              const total = displayedUnifiedPedido.total
                               const facturaData = formatFactura(
                                 {
                                   id: displayedUnifiedPedido.id,
@@ -3057,7 +3179,7 @@ const Dashboard = () => {
                               </span>
                             </div>
                             <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                              ${DELIVERY_FEE.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                              ${getOrderDeliveryFee(displayedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                             </span>
                           </div>
                         )}
@@ -3067,9 +3189,7 @@ const Dashboard = () => {
                       <div className="flex items-center justify-between pt-4 mt-2 border-t border-border">
                         <span className="text-base font-medium">Total</span>
                         <span className="text-xl font-bold tabular-nums">
-                          ${displayedUnifiedPedido.tipo === 'delivery'
-                            ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toLocaleString('es-AR', { minimumFractionDigits: 0 })
-                            : parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                          ${parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                         </span>
                       </div>
                     </div>
@@ -3097,9 +3217,7 @@ const Dashboard = () => {
                             </div>
                           </div>
                           <span className="text-sm font-bold tabular-nums">
-                            ${displayedUnifiedPedido.tipo === 'delivery'
-                              ? (parseFloat(displayedUnifiedPedido.total) + DELIVERY_FEE).toLocaleString('es-AR', { minimumFractionDigits: 0 })
-                              : parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                            ${parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                           </span>
                         </div>
                       ) : (
@@ -3535,7 +3653,7 @@ const Dashboard = () => {
                                 <p className="text-xs text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
                               </div>
                               <p className="font-bold shrink-0">
-                                ${pedido.tipo === 'delivery' ? (parseFloat(pedido.total) + DELIVERY_FEE).toFixed(2) : parseFloat(pedido.total).toFixed(2)}
+                                ${parseFloat(pedido.total).toFixed(2)}
                               </p>
                             </div>
                           </div>

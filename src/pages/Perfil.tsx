@@ -28,10 +28,8 @@ import {
   Unlink,
   ExternalLink,
   CheckCircle2,
-  ShoppingCart,
   Printer,
   List,
-  Smartphone,
   Wallet,
   Star
 } from 'lucide-react'
@@ -69,9 +67,7 @@ const Perfil = () => {
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [imageLightBase64, setImageLightBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
-  const [isTogglingCarrito, setIsTogglingCarrito] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
-  const [isTogglingSoloCartaDigital, setIsTogglingSoloCartaDigital] = useState(false)
   const [isTogglingSistemaPuntos, setIsTogglingSistemaPuntos] = useState(false)
 
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
@@ -224,27 +220,7 @@ const Perfil = () => {
   }
 
   // Toggle modo carrito
-  const handleToggleCarrito = async () => {
-    if (!token) return
 
-    setIsTogglingCarrito(true)
-    try {
-      const response = await restauranteApi.toggleCarrito(token) as { success: boolean; esCarrito: boolean }
-      if (response.success) {
-        toast.success(response.esCarrito ? 'Modo carrito activado' : 'Modo restaurante activado', {
-          description: response.esCarrito
-            ? 'Los pedidos ahora se identifican por nombre del cliente'
-            : 'Los pedidos ahora se identifican por número de mesa'
-        })
-        restauranteStore.fetchData()
-      }
-    } catch (error) {
-      console.error('Error al cambiar modo:', error)
-      toast.error('Error al cambiar el modo')
-    } finally {
-      setIsTogglingCarrito(false)
-    }
-  }
 
   // Toggle modo split payment
   const handleToggleSplitPayment = async () => {
@@ -271,27 +247,7 @@ const Perfil = () => {
 
 
   // Toggle solo carta digital
-  const handleToggleSoloCartaDigital = async () => {
-    if (!token) return
 
-    setIsTogglingSoloCartaDigital(true)
-    try {
-      const response = await restauranteApi.toggleSoloCartaDigital(token) as { success: boolean; soloCartaDigital: boolean }
-      if (response.success) {
-        toast.success(response.soloCartaDigital ? 'Sólo Carta Digital activado' : 'Sólo Carta Digital desactivado', {
-          description: response.soloCartaDigital
-            ? 'Los clientes no podrán confirmar su pedido, solo ver la carta'
-            : 'Los clientes podrán enviar su pedido al mozo o a la cocina'
-        })
-        restauranteStore.fetchData()
-      }
-    } catch (error) {
-      console.error('Error al cambiar modo Sólo Carta Digital:', error)
-      toast.error('Error al cambiar la configuración')
-    } finally {
-      setIsTogglingSoloCartaDigital(false)
-    }
-  }
 
   // Toggle sistema de puntos
   const handleToggleSistemaPuntos = async () => {
@@ -714,74 +670,6 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
-          {/* Tarjeta de Modo Carrito */}
-          <Card className={restaurante?.esCarrito ? "border-orange-500/50 bg-orange-50/50 dark:bg-orange-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5" />
-                Modo de Operación
-              </CardTitle>
-              <CardDescription>
-                {restaurante?.esCarrito
-                  ? 'Operando como carrito de comidas'
-                  : 'Operando como restaurante con mesas'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {restaurante?.esCarrito ? (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Pedidos identificados por nombre del cliente</p>
-                    <p>• Los clientes pagan antes de recibir el pedido</p>
-                    <p>• Notificación cuando el pedido está listo</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-                    Modo Carrito Activo
-                  </Badge>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Pedidos identificados por número de mesa</p>
-                    <p>• Los clientes pagan después de recibir el pedido</p>
-                    <p>• Flujo tradicional de restaurante</p>
-                  </div>
-                  <Badge variant="secondary">
-                    Modo Restaurante Activo
-                  </Badge>
-                </>
-              )}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleToggleCarrito}
-                disabled={isTogglingCarrito}
-              >
-                {isTogglingCarrito ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cambiando...
-                  </>
-                ) : (
-                  <>
-                    {restaurante?.esCarrito ? (
-                      <>
-                        <Store className="mr-2 h-4 w-4" />
-                        Cambiar a Restaurante
-                      </>
-                    ) : (
-                      <>
-                        <ShoppingCart className="mr-2 h-4 w-4" />
-                        Cambiar a Carrito
-                      </>
-                    )}
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-
           {/* Tarjeta de Split Payment */}
           <Card className={restaurante?.splitPayment ? "border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/20" : ""}>
             <CardHeader>
@@ -850,64 +738,6 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
-          {/* Tarjeta de Sólo Carta Digital */}
-          <Card className={restaurante?.soloCartaDigital ? "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Smartphone className="h-5 w-5" />
-                Sólo Carta Digital
-              </CardTitle>
-              <CardDescription>
-                {restaurante?.soloCartaDigital
-                  ? 'La app funciona solo como menú digital. Los clientes llaman al mozo para pedir.'
-                  : 'Los clientes pueden confirmar y enviar su pedido a cocina.'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {restaurante?.soloCartaDigital ? (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Los clientes pueden armar un pedido pero NO confirmar</p>
-                    <p>• Las sesiones de mesa se limpian automáticamente cada 20 minutos.</p>
-                    <p>• Ideal para restaurantes tradicionales sin self-service.</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                    Sólo Carta: Activo
-                  </Badge>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Los clientes arman y envían su pedido a la cocina.</p>
-                    <p>• Los mozos los reciben en tiempo real.</p>
-                    <p>• Autogestión habilitada.</p>
-                  </div>
-                  <Badge variant="secondary">
-                    Sólo Carta: Inactivo
-                  </Badge>
-                </>
-              )}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleToggleSoloCartaDigital}
-                disabled={isTogglingSoloCartaDigital}
-              >
-                {isTogglingSoloCartaDigital ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cambiando...
-                  </>
-                ) : (
-                  <>
-                    <Smartphone className="mr-2 h-4 w-4" />
-                    {restaurante?.soloCartaDigital ? 'Desactivar Sólo Carta Digital' : 'Activar Sólo Carta Digital'}
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
 
           {/* Tarjeta de Sistema de Puntos */}
           <Card className={restaurante?.sistemaPuntos ? "border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-950/20" : ""}>

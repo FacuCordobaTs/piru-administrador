@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/store/authStore'
-import { useRestauranteStore } from '@/store/restauranteStore'
+
 import { pedidosApi, deliveryApi, takeawayApi } from '@/lib/api'
 import { toast } from 'sonner'
 import { Loader2, ArrowLeft, Archive, Trash2, Truck, MapPin, Phone, User, XCircle, CheckCircle } from 'lucide-react'
@@ -71,8 +71,15 @@ export default function Pedido() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
-  const { restaurante } = useRestauranteStore()
-  const DELIVERY_FEE = parseFloat(restaurante?.deliveryFee || '0')
+
+  // Compute the per-order delivery fee from the stored total (which already includes it)
+  const getOrderDeliveryFee = (p: UnifiedPedido) => {
+    const total = parseFloat(p.total)
+    const itemsSubtotal = p.items.reduce((sum, item) =>
+      sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
+    )
+    return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
+  }
 
   const [pedido, setPedido] = useState<UnifiedPedido | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -349,7 +356,7 @@ export default function Pedido() {
                 </span>
               </div>
             ))}
-            {isDelivery && DELIVERY_FEE > 0 && (
+            {isDelivery && pedido && getOrderDeliveryFee(pedido) > 0 && (
               <div className="flex items-baseline justify-between py-3 border-t border-border/40">
                 <div className="flex items-baseline gap-3 flex-1 min-w-0">
                   <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">1x</span>
@@ -359,7 +366,7 @@ export default function Pedido() {
                   </span>
                 </div>
                 <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                  ${DELIVERY_FEE.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                  ${getOrderDeliveryFee(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                 </span>
               </div>
             )}

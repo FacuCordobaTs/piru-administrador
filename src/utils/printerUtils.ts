@@ -17,6 +17,10 @@ interface PedidoLike {
     mesaNombre?: string | null
     nombrePedido?: string | null
     total?: string  // Total del pedido para usar como fallback
+    tipo?: 'mesa' | 'delivery' | 'takeaway'
+    direccion?: string | null
+    telefono?: string | null
+    deliveryFee?: number
 }
 
 // Helper para obtener el precio unitario de un item
@@ -68,14 +72,31 @@ export const formatComanda = (
     const timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
 
+    if (pedido.tipo === 'delivery') {
+        commands.push(`Tipo: DELIVERY\n`);
+    } else if (pedido.tipo === 'takeaway') {
+        commands.push(`Tipo: TAKE AWAY\n`);
+    }
+
     if (pedido.mesaNombre) {
         commands.push(`Mesa: ${pedido.mesaNombre}\n`);
     }
     if (pedido.nombrePedido) {
         commands.push(`Sr/a: ${pedido.nombrePedido}\n`);
     }
+    if (pedido.telefono) {
+        commands.push(`Tel: ${pedido.telefono}\n`);
+    }
 
     commands.push('--------------------------------\n');
+
+    // Address (can be long, we might need to let the printer wrap it if possible, but we'll try to fit it)
+    if (pedido.tipo === 'delivery' && pedido.direccion) {
+        commands.push(ESC + '!' + '\x08'); // Bold
+        commands.push(`Dir: ${pedido.direccion}\n`);
+        commands.push(ESC + '!' + '\x00'); // Normal
+        commands.push('--------------------------------\n');
+    }
 
     // ITEMS
     items.forEach(item => {
@@ -103,6 +124,16 @@ export const formatComanda = (
             commands.push(`  SIN: ${item.ingredientesExcluidosNombres.join(', ')}\n`);
         }
     });
+
+    // Delivery Fee explicitly added if requested
+    if (pedido.deliveryFee !== undefined && pedido.deliveryFee > 0) {
+        commands.push('--------------------------------\n');
+        const feeNombre = 'Costo Envio';
+        const feeStr = pedido.deliveryFee.toLocaleString('es-AR', { minimumFractionDigits: 2 });
+        const espaciosFee = LINE_WIDTH - feeNombre.length - feeStr.length;
+        const filaFee = feeNombre + (espaciosFee > 0 ? ' '.repeat(espaciosFee) : ' ') + feeStr;
+        commands.push(`${filaFee}\n`);
+    }
 
     // TOTAL FINAL
     commands.push('--------------------------------\n');
@@ -172,11 +203,29 @@ export const formatFactura = (
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
     commands.push(`Pedido: #${pedido.id}\n`);
 
+    if (pedido.tipo === 'delivery') {
+        commands.push(`Tipo: DELIVERY\n`);
+    } else if (pedido.tipo === 'takeaway') {
+        commands.push(`Tipo: TAKE AWAY\n`);
+    }
+
     if (pedido.mesaNombre) {
         commands.push(`Mesa: ${pedido.mesaNombre}\n`);
     }
     if (pedido.nombrePedido) {
         commands.push(`Cliente: ${pedido.nombrePedido}\n`);
+    }
+    if (pedido.telefono) {
+        commands.push(`Tel: ${pedido.telefono}\n`);
+    }
+
+    commands.push('--------------------------------\n');
+
+    if (pedido.tipo === 'delivery' && pedido.direccion) {
+        commands.push(ESC + '!' + '\x08'); // Bold
+        commands.push(`Dir: ${pedido.direccion}\n`);
+        commands.push(ESC + '!' + '\x00'); // Normal
+        commands.push('--------------------------------\n');
     }
 
     commands.push('--------------------------------\n');
@@ -229,6 +278,14 @@ export const formatFactura = (
 
     // TOTAL FINAL
     commands.push('================================\n');
+
+    // Si hay delivery fee, lo mostramos aparte antes del total final
+    if (pedido.deliveryFee !== undefined && pedido.deliveryFee > 0) {
+        commands.push(ESC + 'a' + '\x02'); // Right align
+        commands.push(`Costo Envio: $${pedido.deliveryFee.toFixed(2)}\n`);
+        commands.push('--------------------------------\n');
+    }
+
     commands.push(ESC + 'a' + '\x02'); // Right align
     commands.push(ESC + '!' + '\x18'); // Double height + bold
     commands.push(`TOTAL: $${totalGeneral.toFixed(2)}\n`);
