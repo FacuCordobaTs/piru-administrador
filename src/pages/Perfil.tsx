@@ -69,6 +69,7 @@ const Perfil = () => {
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
   const [isTogglingSistemaPuntos, setIsTogglingSistemaPuntos] = useState(false)
+  const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
 
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
@@ -269,6 +270,29 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración de puntos')
     } finally {
       setIsTogglingSistemaPuntos(false)
+    }
+  }
+
+  // Toggle diseño alternativo
+  const handleToggleDisenoAlternativo = async () => {
+    if (!token) return
+
+    setIsTogglingDisenoAlternativo(true)
+    try {
+      const response = await restauranteApi.toggleDisenoAlternativo(token) as { success: boolean; disenoAlternativo: boolean }
+      if (response.success) {
+        toast.success(response.disenoAlternativo ? 'Diseño alternativo activado' : 'Diseño alternativo desactivado', {
+          description: response.disenoAlternativo
+            ? 'El menú online usará el diseño que muestra la imagen completa'
+            : 'El menú online usará el diseño original'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar diseño alternativo:', error)
+      toast.error('Error al cambiar la configuración de diseño')
+    } finally {
+      setIsTogglingDisenoAlternativo(false)
     }
   }
 
@@ -798,6 +822,64 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
+          {/* Tarjeta de Diseño Alternativo */}
+          <Card className={restaurante?.disenoAlternativo ? "border-pink-500/50 bg-pink-50/50 dark:bg-pink-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Store className="h-5 w-5" />
+                Diseño de Cartas de Producto
+              </CardTitle>
+              <CardDescription>
+                {restaurante?.disenoAlternativo
+                  ? 'Tus productos se mostrarán con la imagen completa'
+                  : 'Tus productos se mostrarán con el diseño original (glassmorphism)'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {restaurante?.disenoAlternativo ? (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Los clientes verán la imagen completa del producto sin el difuminado</p>
+                    <p>• La descripción del producto será visible en la carta</p>
+                    <p>• Ideal si quieres destacar tus fotos sobre tus productos</p>
+                  </div>
+                  <Badge variant="secondary" className="bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300">
+                    Diseño Original Activo
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>• Diseño premium con glassmorphism original</p>
+                    <p>• Ideal para un look minimalista y moderno</p>
+                  </div>
+                  <Badge variant="secondary">
+                    Diseño Original (Glassmorphism)
+                  </Badge>
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleToggleDisenoAlternativo}
+                disabled={isTogglingDisenoAlternativo}
+              >
+                {isTogglingDisenoAlternativo ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cambiando...
+                  </>
+                ) : (
+                  <>
+                    <Store className="mr-2 h-4 w-4" />
+                    {restaurante?.disenoAlternativo ? 'Volver al Diseño Principal' : 'Activar Diseño 2 (Imagen Completa + Descripción)'}
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Tarjeta de Impresoras (Tauri Native) */}
           <Card className={selectedPrinter ? "border-green-500/50 bg-green-50/50 dark:bg-green-950/20" : ""}>
             <CardHeader>
@@ -1034,7 +1116,7 @@ const Perfil = () => {
             </div>
 
             {/* Alias Transferencia */}
-            {(!restaurante?.mpConnected && !restaurante?.cucuruEnabled) && (
+            {(!restaurante?.mpConnected && !restaurante?.cucuruConfigurado) && (
               <div className="space-y-2">
                 <Label htmlFor="transferenciaAlias">Alias para Transferencias Manuales</Label>
                 <Input

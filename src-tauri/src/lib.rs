@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::Write;
+use std::time::Duration;
 #[cfg(windows)]
 use std::ptr::null_mut;
 #[cfg(windows)]
@@ -18,17 +19,23 @@ use windows_sys::Win32::{
 /// Devuelve una lista con los nombres de las impresoras instaladas en el sistema
 #[tauri::command]
 fn get_printers() -> Vec<String> {
+    let mut list = Vec::new();
+
+    // 1. Agregar los Puertos COM (Acá van a aparecer las térmicas Bluetooth expuestas como serial)
+    if let Ok(ports) = serialport::available_ports() {
+        for port in ports {
+            list.push(port.port_name);
+        }
+    }
+
     #[cfg(windows)]
     {
-        let mut list = get_printers_windows();
-        // AGREGAMOS ESTO: Una impresora virtual para tus pruebas
-        list.push("GUARDAR EN ARCHIVO (DEBUG)".to_string());
-        list
+        list.extend(get_printers_windows());
     }
-    #[cfg(not(windows))]
-    {
-        vec!["GUARDAR EN ARCHIVO (DEBUG)".to_string()]
-    }
+
+    // AGREGAMOS ESTO: Una impresora virtual para tus pruebas
+    list.push("GUARDAR EN ARCHIVO (DEBUG)".to_string());
+    list
 }
 
 #[cfg(windows)]
@@ -90,25 +97,35 @@ fn get_printers_windows() -> Vec<String> {
     printers
 }
 
-/// Envía bytes raw (ESC/POS) directamente a la impresora especificada
+/// Envía bytes raw (ESC/POS) a la impresora especificada o al puerto COM
 #[tauri::command]
 fn send_print_job(printer_name: String, content: Vec<u8>) -> Result<(), String> {
     // 1. LOGICA DE DEBUG: Si es nuestra impresora virtual, guardamos en disco
     if printer_name == "GUARDAR EN ARCHIVO (DEBUG)" {
         let path = "ticket_debug.bin";
-        match File::create(path) {
+        return match File::create(path) {
             Ok(mut file) => {
                 if let Err(e) = file.write_all(&content) {
                     return Err(format!("Error escribiendo archivo: {}", e));
                 }
                 println!("Ticket guardado exitosamente en: {}", path);
-                return Ok(());
+                Ok(())
             },
-            Err(e) => return Err(format!("No se pudo crear el archivo: {}", e)),
-        }
+            Err(e) => Err(format!("No se pudo crear el archivo: {}", e)),
+        };
     }
 
-    // 2. LOGICA NORMAL (WINDOWS):
+    // 2. LOGICA BLUETOOTH / SERIAL (Si el usuario seleccionó un puerto COM)
+    if printer_name.to_uppercase().starts_with("COM") {
+        let mut port = serialport::new(&printer_name, 9600)
+            .timeout(Duration::from_millis(2000))
+            .open()
+            .map_err(|e| format!("Error abriendo puerto serial {}: {}", printer_name, e))?;
+
+        return port.write_all(&content).map_err(|e| format!("Error escribiendo en puerto serial: {}", e));
+    }
+
+    // 3. LOGICA NORMAL (WINDOWS):
     #[cfg(windows)]
     {
         send_print_job_windows(&printer_name, &content)

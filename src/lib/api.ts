@@ -213,6 +213,15 @@ export const restauranteApi = {
       },
     })
   },
+
+  toggleDisenoAlternativo: async (token: string) => {
+    return fetchApi('/restaurante/toggle-diseno-alternativo', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // Cucuru API

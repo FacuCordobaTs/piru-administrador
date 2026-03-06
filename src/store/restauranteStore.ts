@@ -56,13 +56,14 @@ interface RestauranteData {
   cucuruCustomerId: string | null
   cucuruAccountNumber: string | null
   cucuruAlias: string | null
-  cucuruEnabled: boolean | null
+  cucuruConfigurado: boolean | null
   whatsappEnabled: boolean | null
   whatsappNumber: string | null
   transferenciaAlias: string | null
   sistemaPuntos: boolean | null
   colorPrimario: string | null
   colorSecundario: string | null
+  disenoAlternativo: boolean | null
 }
 
 interface RestauranteState {
