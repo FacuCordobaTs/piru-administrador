@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
-import { productosApi, categoriasApi, ingredientesApi, ApiError } from '@/lib/api'
+import { productosApi, categoriasApi, ingredientesApi, agregadosApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
 import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X, Power, Settings2, AlertTriangle, Tag, Percent } from 'lucide-react'
@@ -47,6 +47,14 @@ const Productos = () => {
   const [nuevoIngredienteNombre, setNuevoIngredienteNombre] = useState('')
   const [dialogIngredienteAbierto, setDialogIngredienteAbierto] = useState(false)
   const [isCreandoIngrediente, setIsCreandoIngrediente] = useState(false)
+
+  // Estados para agregados
+  const [agregados, setAgregados] = useState<Array<{ id: number; nombre: string; precio: string }>>([])
+  const [agregadosSeleccionados, setAgregadosSeleccionados] = useState<number[]>([])
+  const [nuevoAgregadoNombre, setNuevoAgregadoNombre] = useState('')
+  const [nuevoAgregadoPrecio, setNuevoAgregadoPrecio] = useState('')
+  const [dialogAgregadoAbierto, setDialogAgregadoAbierto] = useState(false)
+  const [isCreandoAgregado, setIsCreandoAgregado] = useState(false)
   const [dialogEliminarAbierto, setDialogEliminarAbierto] = useState(false)
   const [productoAEliminar, setProductoAEliminar] = useState<typeof productos[0] | null>(null)
   const [isEliminando, setIsEliminando] = useState(false)
@@ -88,6 +96,22 @@ const Productos = () => {
       }
     }
     cargarIngredientes()
+
+    const cargarAgregados = async () => {
+      if (!token) return
+      try {
+        const response = await agregadosApi.getAll(token) as {
+          success: boolean
+          agregados?: Array<{ id: number; nombre: string; precio: string }>
+        }
+        if (response.success && response.agregados) {
+          setAgregados(response.agregados)
+        }
+      } catch (error) {
+        console.error('Error cargando agregados:', error)
+      }
+    }
+    cargarAgregados()
   }, [token])
 
   const crearIngrediente = async () => {
@@ -124,6 +148,51 @@ const Productos = () => {
       }
     } finally {
       setIsCreandoIngrediente(false)
+    }
+  }
+
+  const crearAgregado = async () => {
+    if (!token || !nuevoAgregadoNombre.trim() || !nuevoAgregadoPrecio) {
+      toast.error('Nombre y precio del agregado son requeridos')
+      return
+    }
+
+    const precio = parseFloat(nuevoAgregadoPrecio)
+    if (isNaN(precio) || precio < 0) {
+      toast.error('El precio debe ser un número válido')
+      return
+    }
+
+    setIsCreandoAgregado(true)
+    try {
+      const response = await agregadosApi.create(token, {
+        nombre: nuevoAgregadoNombre.trim(),
+        precio
+      }) as { success: boolean; data?: any }
+
+      if (response.success) {
+        toast.success('Agregado creado')
+        setNuevoAgregadoNombre('')
+        setNuevoAgregadoPrecio('')
+        setDialogAgregadoAbierto(false)
+        // Recargar agregados
+        const agregadosResponse = await agregadosApi.getAll(token) as {
+          success: boolean
+          agregados?: Array<{ id: number; nombre: string; precio: string }>
+        }
+        if (agregadosResponse.success && agregadosResponse.agregados) {
+          setAgregados(agregadosResponse.agregados)
+        }
+      }
+    } catch (error) {
+      console.error('Error al crear agregado:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al crear agregado', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsCreandoAgregado(false)
     }
   }
 
@@ -244,6 +313,7 @@ const Productos = () => {
     setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
+    setAgregadosSeleccionados([])
     setEtiquetasProducto([])
     setNuevaEtiqueta('')
     setDialogAbierto(true)
@@ -281,6 +351,21 @@ const Productos = () => {
       } catch (error) {
         console.error('Error cargando ingredientes del producto:', error)
         setIngredientesSeleccionados([])
+      }
+
+      try {
+        const response2 = await agregadosApi.getByProducto(token, producto.id) as {
+          success: boolean
+          agregados?: Array<{ id: number; nombre: string; precio: string }>
+        }
+        if (response2.success && response2.agregados) {
+          setAgregadosSeleccionados(response2.agregados.map(ag => ag.id))
+        } else {
+          setAgregadosSeleccionados([])
+        }
+      } catch (error) {
+        console.error('Error cargando agregados del producto:', error)
+        setAgregadosSeleccionados([])
       }
     }
 
@@ -331,6 +416,7 @@ const Productos = () => {
           image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
           categoriaId: categoriaId !== undefined ? categoriaId : null,
           ingredienteIds: ingredientesSeleccionados,
+          agregadoIds: agregadosSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
           puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
           puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
@@ -347,6 +433,7 @@ const Productos = () => {
           image: imageBase64 || undefined,
           categoriaId: categoriaId,
           ingredienteIds: ingredientesSeleccionados,
+          agregadoIds: agregadosSeleccionados,
           etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
           puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
           puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
@@ -919,6 +1006,61 @@ const Productos = () => {
                 </p>
               )}
             </div>
+            {/* Agregados */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="agregados">Agregados Opcionales</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDialogAgregadoAbierto(true)}
+                  className="h-7 text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Nuevo
+                </Button>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
+                {agregados.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No hay agregados. Crea uno nuevo.
+                  </p>
+                ) : (
+                  agregados.map((agregado) => {
+                    const estaSeleccionado = agregadosSeleccionados.includes(agregado.id)
+                    return (
+                      <div
+                        key={agregado.id}
+                        className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${estaSeleccionado
+                          ? 'bg-primary/10 border-primary'
+                          : 'bg-background hover:bg-muted'
+                          }`}
+                        onClick={() => {
+                          if (estaSeleccionado) {
+                            setAgregadosSeleccionados(agregadosSeleccionados.filter(id => id !== agregado.id))
+                          } else {
+                            setAgregadosSeleccionados([...agregadosSeleccionados, agregado.id])
+                          }
+                        }}
+                      >
+                        <span className="text-sm font-medium">{agregado.nombre} <span className="text-muted-foreground text-xs ml-1">${agregado.precio}</span></span>
+                        {estaSeleccionado && (
+                          <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+                            <X className="h-3 w-3 text-primary-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+              {agregadosSeleccionados.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {agregadosSeleccionados.length} agregado{agregadosSeleccionados.length !== 1 ? 's' : ''} seleccionado{agregadosSeleccionados.length !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
 
             {/* Etiquetas */}
             <div className="space-y-2">
@@ -1055,6 +1197,79 @@ const Productos = () => {
                 disabled={isCreandoIngrediente || !nuevoIngredienteNombre.trim()}
               >
                 {isCreandoIngrediente ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creando...
+                  </>
+                ) : (
+                  'Crear'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para crear nuevo agregado */}
+      <Dialog open={dialogAgregadoAbierto} onOpenChange={setDialogAgregadoAbierto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuevo Agregado Opcional</DialogTitle>
+            <DialogDescription>
+              Crea un nuevo agregado que tus clientes puedan añadir a los productos
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="agregadoNombre">Nombre</Label>
+              <Input
+                id="agregadoNombre"
+                value={nuevoAgregadoNombre}
+                onChange={(e) => setNuevoAgregadoNombre(e.target.value)}
+                placeholder="Ej: Doble medallón de carne"
+                required
+                disabled={isCreandoAgregado}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="agregadoPrecio">Precio</Label>
+              <Input
+                id="agregadoPrecio"
+                type="number"
+                min="0"
+                step="0.01"
+                value={nuevoAgregadoPrecio}
+                onChange={(e) => setNuevoAgregadoPrecio(e.target.value)}
+                placeholder="Ej: 1500"
+                required
+                disabled={isCreandoAgregado}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isCreandoAgregado) {
+                    e.preventDefault()
+                    crearAgregado()
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setDialogAgregadoAbierto(false)
+                  setNuevoAgregadoNombre('')
+                  setNuevoAgregadoPrecio('')
+                }}
+                disabled={isCreandoAgregado}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={crearAgregado}
+                disabled={isCreandoAgregado || !nuevoAgregadoNombre.trim() || !nuevoAgregadoPrecio}
+              >
+                {isCreandoAgregado ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Creando...

@@ -309,6 +309,7 @@ export const productosApi = {
       image?: string // Base64 string
       categoriaId?: number
       ingredienteIds?: number[]
+      agregadoIds?: number[]
       etiquetas?: string[]
       puntosGanados?: number
       puntosNecesarios?: number
@@ -334,6 +335,7 @@ export const productosApi = {
       image?: string // Base64 string
       categoriaId?: number | null
       ingredienteIds?: number[]
+      agregadoIds?: number[]
       activo?: boolean
       etiquetas?: string[]
       puntosGanados?: number
@@ -406,6 +408,52 @@ export const ingredientesApi = {
 
   getByProducto: async (token: string, productoId: number) => {
     return fetchApi(`/ingrediente/producto/${productoId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
+// Agregados API
+export const agregadosApi = {
+  getAll: async (token: string) => {
+    return fetchApi('/agregado', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  create: async (
+    token: string,
+    data: {
+      nombre: string
+      precio: number
+    }
+  ) => {
+    return fetchApi('/agregado/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/agregado/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  getByProducto: async (token: string, productoId: number) => {
+    return fetchApi(`/agregado/producto/${productoId}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,

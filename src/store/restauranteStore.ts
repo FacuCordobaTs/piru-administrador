@@ -30,6 +30,7 @@ interface Producto {
   categoria: string | null
   descuento?: number | null
   etiquetas?: Array<{ id: number; nombre: string }>
+  agregados?: Array<{ id: number; nombre: string; precio: string }>
 }
 
 interface RestauranteData {
