@@ -386,7 +386,7 @@ const Dashboard = () => {
           const currentPagado = mesa.pedido.pagado
 
           const prevData = processedOrdersRef.current.get(pedidoKey)
-          const isCucuruTransfer = (mesa.pedido as any).metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado
+          const isCucuruTransfer = restauranteStore?.cucuruConfigurado && ((mesa.pedido as any).metodoPago === 'transferencia' || !(mesa.pedido as any).metodoPago)
 
           let shouldPrintComanda = false;
 
@@ -520,7 +520,7 @@ const Dashboard = () => {
       const currentItemIds = new Set(pedido.items.map(i => i.id))
       const currentPagado = pedido.pagado
       const prevData = processedOrdersRef.current.get(pedidoKey)
-      const isCucuruTransfer = pedido.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado
+      const isCucuruTransfer = restauranteStore?.cucuruConfigurado && (pedido.metodoPago === 'transferencia' || !pedido.metodoPago)
 
       let shouldPrintComanda = false
 
@@ -769,7 +769,7 @@ const Dashboard = () => {
 
     // Process mesa pedidos
     allPedidos.forEach(pedido => {
-      if (pedido.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !pedido.pagado) return;
+      if (restauranteStore?.cucuruConfigurado && (pedido.metodoPago === 'transferencia' || !pedido.metodoPago) && !pedido.pagado) return;
 
       if (pedido.estado === 'archived') {
         grouped.archived.push({
@@ -844,7 +844,7 @@ const Dashboard = () => {
 
     // Process delivery pedidos
     deliveryPedidos.forEach(dp => {
-      if (dp.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !dp.pagado) return;
+      if (restauranteStore?.cucuruConfigurado && (dp.metodoPago === 'transferencia' || !dp.metodoPago) && !dp.pagado) return;
 
       const column = mapEstadoToColumn(dp.estado)
       if (!column || !grouped[column]) return
@@ -882,7 +882,7 @@ const Dashboard = () => {
 
     // Process takeaway pedidos
     takeawayPedidos.forEach(tp => {
-      if (tp.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !tp.pagado) return;
+      if (restauranteStore?.cucuruConfigurado && (tp.metodoPago === 'transferencia' || !tp.metodoPago) && !tp.pagado) return;
 
       const column = mapEstadoToColumn(tp.estado)
       if (!column || !grouped[column]) return
@@ -1629,7 +1629,7 @@ const Dashboard = () => {
 
     // Add mesa pedidos from WS (real-time, only those with at least 1 item)
     pedidos.forEach(p => {
-      if ((p as any).metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
+      if (restauranteStore?.cucuruConfigurado && ((p as any).metodoPago === 'transferencia' || !(p as any).metodoPago) && !p.pagado) return;
       if (p.totalItems === 0) return
       addedMesaPedidoIds.add(p.id)
       // For mesa pedidos, use the date of the last item added
@@ -1653,7 +1653,7 @@ const Dashboard = () => {
     // The backend already returns createdAt as the last item date, but we'll recalculate
     // in case items have createdAt and we want to be sure
     closedPedidosFromAPI.forEach(p => {
-      if ((p as any).metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
+      if (restauranteStore?.cucuruConfigurado && ((p as any).metodoPago === 'transferencia' || !(p as any).metodoPago) && !p.pagado) return;
       if (addedMesaPedidoIds.has(p.id)) return
       if (p.totalItems === 0) return
       // For mesa pedidos, use the date of the last item added
@@ -1675,7 +1675,7 @@ const Dashboard = () => {
 
     // Add delivery pedidos
     deliveryPedidos.forEach(p => {
-      if (p.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
+      if (restauranteStore?.cucuruConfigurado && (p.metodoPago === 'transferencia' || !p.metodoPago) && !p.pagado) return;
       unified.push({
         id: p.id,
         tipo: 'delivery',
@@ -1694,7 +1694,7 @@ const Dashboard = () => {
 
     // Add takeaway pedidos
     takeawayPedidos.forEach(p => {
-      if (p.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
+      if (restauranteStore?.cucuruConfigurado && (p.metodoPago === 'transferencia' || !p.metodoPago) && !p.pagado) return;
       unified.push({
         id: p.id,
         tipo: 'takeaway',
