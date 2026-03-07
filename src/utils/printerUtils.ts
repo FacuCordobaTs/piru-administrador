@@ -4,6 +4,7 @@ interface ItemPedidoLike {
     precio?: number
     precioUnitario?: string | number  // Campo del WebSocket (puede venir como string)
     ingredientesExcluidosNombres?: string[]
+    agregados?: any[]
     categoriaNombre?: string
 }
 
@@ -122,6 +123,10 @@ export const formatComanda = (
 
         if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
             commands.push(`  SIN: ${item.ingredientesExcluidosNombres.join(', ')}\n`);
+        }
+        if (item.agregados && item.agregados.length > 0) {
+            const agregadosNombres = item.agregados.map(a => a.nombre).join(', ');
+            commands.push(`  CON: ${agregadosNombres}\n`);
         }
     });
 
@@ -258,6 +263,12 @@ export const formatFactura = (
             // Ingredientes excluidos
             if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
                 commands.push(`    SIN: ${item.ingredientesExcluidosNombres.join(', ')}\n`);
+            }
+
+            // Agregados
+            if (item.agregados && item.agregados.length > 0) {
+                const agregadosNombres = item.agregados.map((a: any) => a.nombre).join(', ');
+                commands.push(`    CON: ${agregadosNombres}\n`);
             }
         });
 

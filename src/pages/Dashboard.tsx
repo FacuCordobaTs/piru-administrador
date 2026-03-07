@@ -1940,7 +1940,7 @@ const Dashboard = () => {
                     ) : (
                       <div className="space-y-2">
                         {columnCards.map((card) => {
-                          const hasExclusions = card.items.some(i => i.ingredientesExcluidosNombres?.length)
+                          const hasExclusions = card.items.some((i: any) => i.ingredientesExcluidosNombres?.length || i.agregados?.length)
                           const isUpdating = updatingPedido === card.pedido.id
                           const isMesa = card.tipo === 'mesa'
 
@@ -2073,6 +2073,9 @@ const Dashboard = () => {
                                         <span className="truncate block">{item.nombreProducto}</span>
                                         {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
                                           <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
+                                        )}
+                                        {(item as any).agregados && (item as any).agregados.length > 0 && (
+                                          <span className="text-blue-600 text-[10px] ml-1">Con {(item as any).agregados[0].nombre}</span>
                                         )}
                                       </div>
                                       {/* Per-item actions only for mesa orders */}
@@ -3172,6 +3175,9 @@ const Dashboard = () => {
                                 {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
                                   <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
                                 )}
+                                {(item as any).agregados && (item as any).agregados.length > 0 && (
+                                  <p className="text-[11px] text-blue-500 mt-0.5">Con: {(item as any).agregados.map((a: any) => a.nombre).join(', ')}</p>
+                                )}
                               </div>
                             </div>
                             <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
@@ -3426,6 +3432,9 @@ const Dashboard = () => {
                                             </div>
                                             {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
                                               <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                                            )}
+                                            {(item as any).agregados && (item as any).agregados.length > 0 && (
+                                              <p className="text-xs text-blue-600 mt-1">➕ Con: {(item as any).agregados.map((a: any) => a.nombre).join(', ')}</p>
                                             )}
                                           </div>
                                           <div className="flex items-center gap-2 shrink-0">
