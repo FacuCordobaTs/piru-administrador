@@ -769,6 +769,8 @@ const Dashboard = () => {
 
     // Process mesa pedidos
     allPedidos.forEach(pedido => {
+      if (pedido.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !pedido.pagado) return;
+
       if (pedido.estado === 'archived') {
         grouped.archived.push({
           id: `mesa-${pedido.id}-archived`,
@@ -842,6 +844,8 @@ const Dashboard = () => {
 
     // Process delivery pedidos
     deliveryPedidos.forEach(dp => {
+      if (dp.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !dp.pagado) return;
+
       const column = mapEstadoToColumn(dp.estado)
       if (!column || !grouped[column]) return
 
@@ -878,6 +882,8 @@ const Dashboard = () => {
 
     // Process takeaway pedidos
     takeawayPedidos.forEach(tp => {
+      if (tp.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !tp.pagado) return;
+
       const column = mapEstadoToColumn(tp.estado)
       if (!column || !grouped[column]) return
 
@@ -1623,6 +1629,7 @@ const Dashboard = () => {
 
     // Add mesa pedidos from WS (real-time, only those with at least 1 item)
     pedidos.forEach(p => {
+      if ((p as any).metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
       if (p.totalItems === 0) return
       addedMesaPedidoIds.add(p.id)
       // For mesa pedidos, use the date of the last item added
@@ -1646,6 +1653,7 @@ const Dashboard = () => {
     // The backend already returns createdAt as the last item date, but we'll recalculate
     // in case items have createdAt and we want to be sure
     closedPedidosFromAPI.forEach(p => {
+      if ((p as any).metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
       if (addedMesaPedidoIds.has(p.id)) return
       if (p.totalItems === 0) return
       // For mesa pedidos, use the date of the last item added
@@ -1667,6 +1675,7 @@ const Dashboard = () => {
 
     // Add delivery pedidos
     deliveryPedidos.forEach(p => {
+      if (p.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
       unified.push({
         id: p.id,
         tipo: 'delivery',
@@ -1685,6 +1694,7 @@ const Dashboard = () => {
 
     // Add takeaway pedidos
     takeawayPedidos.forEach(p => {
+      if (p.metodoPago === 'transferencia' && restauranteStore?.cucuruConfigurado && !p.pagado) return;
       unified.push({
         id: p.id,
         tipo: 'takeaway',
