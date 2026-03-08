@@ -464,26 +464,30 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
         if (paidSub.length > 0) {
           paidSub.forEach(ps => {
-            if (ps.metodo === 'efectivo') res.efectivo += parseFloat(ps.monto);
-            if (ps.metodo === 'mercadopago') res.mercadopago += parseFloat(ps.monto);
-            if (ps.metodo === 'transferencia') res.transferencia += parseFloat(ps.monto);
+            const mp = ps.metodo?.toLowerCase();
+            if (mp === 'efectivo') res.efectivo += parseFloat(ps.monto);
+            if (mp === 'mercadopago') res.mercadopago += parseFloat(ps.monto);
+            if (mp === 'transferencia') res.transferencia += parseFloat(ps.monto);
           })
         } else if (paidBase.length > 0) {
           paidBase.forEach(pg => {
-            if (pg.metodo === 'efectivo') res.efectivo += parseFloat(pg.monto);
-            if (pg.metodo === 'mercadopago') res.mercadopago += parseFloat(pg.monto);
-            if (pg.metodo === 'transferencia') res.transferencia += parseFloat(pg.monto);
+            const mp = pg.metodo?.toLowerCase();
+            if (mp === 'efectivo') res.efectivo += parseFloat(pg.monto);
+            if (mp === 'mercadopago') res.mercadopago += parseFloat(pg.monto);
+            if (mp === 'transferencia') res.transferencia += parseFloat(pg.monto);
           })
         } else if (mesaP.pagado && mesaP.metodoPago) {
-          if (mesaP.metodoPago === 'efectivo') res.efectivo += baseMonto;
-          if (mesaP.metodoPago === 'mercadopago') res.mercadopago += baseMonto;
-          if (mesaP.metodoPago === 'transferencia') res.transferencia += baseMonto;
+          const mp = mesaP.metodoPago.toLowerCase();
+          if (mp === 'efectivo') res.efectivo += baseMonto;
+          if (mp === 'mercadopago') res.mercadopago += baseMonto;
+          if (mp === 'transferencia') res.transferencia += baseMonto;
         }
       } else {
         if (p.pagado && p.metodoPago) {
-          if (p.metodoPago === 'efectivo') res.efectivo += baseMonto;
-          if (p.metodoPago === 'mercadopago') res.mercadopago += baseMonto;
-          if (p.metodoPago === 'transferencia') res.transferencia += baseMonto;
+          const mp = p.metodoPago.toLowerCase();
+          if (mp === 'efectivo') res.efectivo += baseMonto;
+          if (mp === 'mercadopago') res.mercadopago += baseMonto;
+          if (mp === 'transferencia') res.transferencia += baseMonto;
         }
       }
     })

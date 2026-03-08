@@ -200,6 +200,21 @@ const getOrderDeliveryFee = (pedido: { total: string; items: { precioUnitario: s
   return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
 }
 
+// Helper: parse agregados securely supporting JSON strings and objects
+const formatAgregados = (agregadosData: any): any[] => {
+  if (!agregadosData) return []
+  if (Array.isArray(agregadosData)) return agregadosData
+  if (typeof agregadosData === 'string') {
+    try {
+      const parsed = JSON.parse(agregadosData)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 const COLUMNS = [
   { id: 'pending', title: 'Pendientes', icon: Clock, color: 'text-amber-600', bgHeader: 'bg-amber-100 dark:bg-amber-900/30' },
   { id: 'preparing', title: 'En Cocina', icon: ChefHat, color: 'text-blue-600', bgHeader: 'bg-blue-100 dark:bg-blue-900/30' },
@@ -398,8 +413,18 @@ const Dashboard = () => {
           }
 
           // Impresión diferida por Cucuru (solo imprimir comanda cuando el pago entra)
-          if (isCucuruTransfer && prevData && !prevData.pagado && currentPagado) {
-            shouldPrintComanda = true;
+          if (isCucuruTransfer && currentPagado) {
+            if (prevData && !prevData.pagado) {
+              // Transición en vivo detectada
+              shouldPrintComanda = true;
+            } else if (!prevData) {
+              // Si el pedido llega ya pagado al inicializar o por filtros de red
+              const printKey = `cucuru_comanda_${pedidoKey}`;
+              if (localStorage.getItem(printKey) !== 'true') {
+                shouldPrintComanda = true;
+                localStorage.setItem(printKey, 'true');
+              }
+            }
           }
 
           if (shouldPrintComanda) {
@@ -532,8 +557,18 @@ const Dashboard = () => {
       }
 
       // Impresión diferida por Cucuru (solo imprimir comanda cuando el pago entra)
-      if (isCucuruTransfer && prevData && !prevData.pagado && currentPagado) {
-        shouldPrintComanda = true
+      if (isCucuruTransfer && currentPagado) {
+        if (prevData && !prevData.pagado) {
+          // Transición en vivo detectada
+          shouldPrintComanda = true
+        } else if (!prevData) {
+          // El pedido llegó de la nada ya pagado (ya que el backend retiene los impagos)
+          const printKey = `cucuru_comanda_${pedidoKey}`
+          if (localStorage.getItem(printKey) !== 'true') {
+            shouldPrintComanda = true
+            localStorage.setItem(printKey, 'true')
+          }
+        }
       }
 
       if (shouldPrintComanda) {
@@ -1940,7 +1975,7 @@ const Dashboard = () => {
                     ) : (
                       <div className="space-y-2">
                         {columnCards.map((card) => {
-                          const hasExclusions = card.items.some((i: any) => i.ingredientesExcluidosNombres?.length || i.agregados?.length)
+                          const hasExclusions = card.items.some((i: any) => i.ingredientesExcluidosNombres?.length || formatAgregados(i.agregados).length > 0)
                           const isUpdating = updatingPedido === card.pedido.id
                           const isMesa = card.tipo === 'mesa'
 
@@ -2074,8 +2109,8 @@ const Dashboard = () => {
                                         {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
                                           <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
                                         )}
-                                        {(item as any).agregados && (item as any).agregados.length > 0 && (
-                                          <span className="text-blue-600 text-[10px] ml-1">Con {(item as any).agregados[0].nombre}</span>
+                                        {formatAgregados((item as any).agregados).length > 0 && (
+                                          <span className="text-blue-600 text-[10px] ml-1">Con {formatAgregados((item as any).agregados).map((a: any) => a.nombre).join(', ')}</span>
                                         )}
                                       </div>
                                       {/* Per-item actions only for mesa orders */}
@@ -3175,8 +3210,8 @@ const Dashboard = () => {
                                 {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
                                   <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
                                 )}
-                                {(item as any).agregados && (item as any).agregados.length > 0 && (
-                                  <p className="text-[11px] text-blue-500 mt-0.5">Con: {(item as any).agregados.map((a: any) => a.nombre).join(', ')}</p>
+                                {formatAgregados((item as any).agregados).length > 0 && (
+                                  <p className="text-[11px] text-blue-500 mt-0.5">Con: {formatAgregados((item as any).agregados).map((a: any) => a.nombre).join(', ')}</p>
                                 )}
                               </div>
                             </div>
@@ -3433,8 +3468,8 @@ const Dashboard = () => {
                                             {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
                                               <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
                                             )}
-                                            {(item as any).agregados && (item as any).agregados.length > 0 && (
-                                              <p className="text-xs text-blue-600 mt-1">➕ Con: {(item as any).agregados.map((a: any) => a.nombre).join(', ')}</p>
+                                            {formatAgregados((item as any).agregados).length > 0 && (
+                                              <p className="text-xs text-blue-600 mt-1">➕ Con: {formatAgregados((item as any).agregados).map((a: any) => a.nombre).join(', ')}</p>
                                             )}
                                           </div>
                                           <div className="flex items-center gap-2 shrink-0">
