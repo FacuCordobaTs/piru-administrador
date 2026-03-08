@@ -12,7 +12,7 @@ import {
 /* ==========================================================================
    INTERFACES & TYPES
    ========================================================================== */
-interface CierreTurnoItem { id: number; productoId: number; nombreProducto: string; cantidad: number; precioUnitario: string; clienteNombre?: string; estado?: string }
+interface CierreTurnoItem { id: number; productoId: number; nombreProducto: string; cantidad: number; precioUnitario: string; clienteNombre?: string; estado?: string; agregados?: any }
 interface CierreTurnoPedidoMesa { id: number; mesaId: number | null; nombrePedido: string | null; estado: string; total: string; createdAt: string; closedAt: string | null; mesaNombre: string | null; tipo: 'mesa'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; pagos?: any[]; pagosSubtotal?: any[] }
 interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'delivery'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null }
 interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null }
@@ -206,12 +206,29 @@ interface PedidoCardProps {
 }
 
 function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
-  const restaurante = useAuthStore(s => s.restaurante)
-  const deliveryFee = restaurante?.deliveryFee ? parseFloat(restaurante.deliveryFee) : 0
-
   const key = `${pedido.tipo}-${pedido.id}`
 
-  // Agrupar items por clienteNombre; usar "Pedido" si no hay clienteNombre en ningún item
+  // 1. Calcular subtotal de cada ítem (Precio Base + Agregados) * Cantidad
+  const itemSubtotal = (it: CierreTurnoItem) => {
+    const unit = parseFloat(it.precioUnitario || '0')
+    let extras = 0
+    if (it.agregados) {
+      let arr: any[] = []
+      if (typeof it.agregados === 'string') {
+        try { arr = JSON.parse(it.agregados) } catch(e){}
+      } else if (Array.isArray(it.agregados)) {
+        arr = it.agregados
+      }
+      arr.forEach((ag: any) => { extras += parseFloat(ag.precio || '0') })
+    }
+    return ((unit + extras) * (it.cantidad || 1))
+  }
+
+  // 2. Deducir costo dinámico de envío (Total - Suma de todos los ítems)
+  const sumItems = pedido.items.reduce((acc, it) => acc + itemSubtotal(it), 0)
+  const dynamicDeliveryFee = pedido.tipo === 'delivery' ? Math.max(0, parseFloat(pedido.total) - sumItems) : 0
+
+  // 3. Agrupar ítems
   const groups: { cliente: string; items: CierreTurnoItem[] }[] = (() => {
     const map = new Map<string, CierreTurnoItem[]>()
     pedido.items.forEach(it => {
@@ -220,14 +237,14 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
       map.get(cliente)!.push(it)
     })
 
-    // Si es pedido DELIVERY, agregar item "Envio" dinamico
+    // Si es pedido DELIVERY, agregar el costo de zona calculado dinámicamente
     if (pedido.tipo === 'delivery') {
       const envioItem: CierreTurnoItem = {
-        id: -1, // ID especial para el item de envío
+        id: -1,
         productoId: -1,
-        nombreProducto: deliveryFee === 0 ? 'Envio GRATIS' : 'Envio',
+        nombreProducto: dynamicDeliveryFee > 0.01 ? 'Envío' : 'Envío GRATIS',
         cantidad: 1,
-        precioUnitario: String(deliveryFee),
+        precioUnitario: String(dynamicDeliveryFee),
         clienteNombre: undefined,
         estado: undefined
       }
@@ -245,19 +262,34 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
     return arr
   })()
 
-  const itemSubtotal = (it: CierreTurnoItem) => {
-    const unit = parseFloat(it.precioUnitario || '0')
-    return (unit * (it.cantidad || 1))
-  }
+  // El total real ya viene del backend, no le sumamos más nada
+  const totalConEnvio = parseFloat(pedido.total)
 
-  const totalConEnvio = pedido.tipo === 'delivery'
-    ? parseFloat(pedido.total) + deliveryFee
-    : parseFloat(pedido.total)
+  // Helper para renderizar la lista de agregados visualmente
+  const renderAgregadosUI = (agregadosRaw: any) => {
+    if (!agregadosRaw) return null
+    let arr: any[] = []
+    if (typeof agregadosRaw === 'string') {
+      try { arr = JSON.parse(agregadosRaw) } catch (e) { }
+    } else if (Array.isArray(agregadosRaw)) {
+      arr = agregadosRaw
+    }
+    if (arr.length === 0) return null
+
+    return (
+      <div className="mt-1 flex flex-col gap-0.5">
+        {arr.map((ag: any, idx: number) => (
+          <span key={idx} className="text-[11px] text-muted-foreground/80">
+            + {ag.nombre} (${parseFloat(ag.precio).toLocaleString('es-AR')})
+          </span>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <Card className="shadow-sm">
       <CardContent className="p-3">
-        {/* Header row */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-3">
@@ -275,44 +307,32 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
                 </div>
               </div>
 
-              {/* estado + pagado + total + hora */}
               <div className="ml-auto flex items-center gap-3">
                 <div className="text-xs">{pedido.pagado ? 'Pagado ✅' : 'Pendiente de pago❌'}</div>
                 <div className="text-base font-bold text-primary">
                   ${totalConEnvio.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                 </div>
                 <div className="text-xs text-muted-foreground">{formatTime(pedido.createdAt)}</div>
-                <button
-                  onClick={() => onToggle(key)}
-                  className="p-1 rounded hover:bg-muted/10"
-                  aria-expanded={isOpen}
-                  aria-controls={`pedido-items-${key}`}
-                >
+                <button onClick={() => onToggle(key)} className="p-1 rounded hover:bg-muted/10">
                   {!isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            {/* compacto: cantidad total y nota */}
             <div className="mt-2 text-xs text-muted-foreground">
               {pedido.totalItems + (pedido.tipo === 'delivery' ? 1 : 0)} item{(pedido.totalItems + (pedido.tipo === 'delivery' ? 1 : 0)) !== 1 ? 's' : ''}
             </div>
 
-            {/* Expandable detail: agrupado por cliente con tablas legibles.
-                - Desktop: tabla (visible en sm+)
-                - Mobile: lista apilada (visible en <sm)
-            */}
             {!isOpen && (
               <div id={`pedido-items-${key}`} className="mt-3 space-y-4">
                 {groups.map((grp, gi) => (
                   <div key={`${key}-grp-${gi}`} className="rounded-md border overflow-hidden">
-                    {/* Cliente header */}
                     <div className="px-3 py-2 bg-muted/10 flex items-center justify-between">
                       <div className="text-sm font-medium">{grp.cliente}</div>
                       <div className="text-xs text-muted-foreground">{grp.items.length} artículo{grp.items.length !== 1 ? 's' : ''}</div>
                     </div>
 
-                    {/* TABLE: visible en pantallas sm+ */}
+                    {/* VISTA DESKTOP */}
                     <div className="w-full overflow-x-auto hidden sm:block">
                       <table className="w-full table-fixed text-sm">
                         <thead>
@@ -325,23 +345,21 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
                         </thead>
                         <tbody>
                           {grp.items.map((it) => (
-                            <tr
-                              key={it.id}
-                              className={`border-t bg-background`}
-                            >
+                            <tr key={it.id} className="border-t bg-background">
                               <td className="py-3 px-3 align-top min-w-0">
                                 <div className="truncate font-medium">{it.nombreProducto}</div>
                                 {it.estado && <div className="text-[12px] text-muted-foreground mt-0.5">{it.estado}</div>}
+                                {renderAgregadosUI(it.agregados)}
                               </td>
-                              <td className="py-3 px-3 text-center font-mono">{it.cantidad}</td>
-                              <td className="py-3 px-3 text-right font-mono">${parseFloat(it.precioUnitario).toFixed(2)}</td>
-                              <td className="py-3 px-3 text-right font-semibold">${itemSubtotal(it).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+                              <td className="py-3 px-3 text-center font-mono align-top">{it.cantidad}</td>
+                              <td className="py-3 px-3 text-right font-mono align-top">${parseFloat(it.precioUnitario).toFixed(2)}</td>
+                              <td className="py-3 px-3 text-right font-semibold align-top">${itemSubtotal(it).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot>
                           <tr className="border-t bg-muted/10">
-                            <td className="py-2 px-3 text-sm font-semibold">Total {grp.cliente !== 'Items' && `— ${grp.cliente}`}</td>
+                            <td className="py-2 px-3 text-sm font-semibold">Total</td>
                             <td />
                             <td />
                             <td className="py-2 px-3 text-right font-semibold">
@@ -352,7 +370,7 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
                       </table>
                     </div>
 
-                    {/* MOBILE LIST: visible en <sm */}
+                    {/* VISTA MOBILE */}
                     <div className="w-full block sm:hidden px-3 py-2 space-y-2">
                       {grp.items.map((it) => (
                         <div key={`mobile-${it.id}`} className="rounded-md border p-3 bg-background">
@@ -360,28 +378,25 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
                             <div className="min-w-0">
                               <div className="text-sm font-medium truncate">{it.nombreProducto}</div>
                               {it.estado && <div className="text-xs text-muted-foreground mt-1">{it.estado}</div>}
+                              {renderAgregadosUI(it.agregados)}
                             </div>
                             <div className="text-sm font-mono text-right min-w-[70px]">
                               x{it.cantidad}
                             </div>
                           </div>
-
                           <div className="mt-2 flex items-center justify-between text-xs font-mono text-muted-foreground">
                             <div>P.Unit. ${parseFloat(it.precioUnitario).toFixed(2)}</div>
                             <div>Subtotal ${itemSubtotal(it).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
                           </div>
                         </div>
                       ))}
-
-                      {/* Total mobile */}
                       <div className="pt-2 border-t">
                         <div className="flex items-center justify-between text-sm font-semibold">
-                          <div>Total {grp.cliente !== 'Items' && `— ${grp.cliente}`}</div>
+                          <div>Total</div>
                           <div>${grp.items.reduce((s, it) => s + itemSubtotal(it), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
                         </div>
                       </div>
                     </div>
-
                   </div>
                 ))}
               </div>
@@ -454,8 +469,8 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
     if (!data) return res;
 
     allPedidos.forEach(p => {
-      const deliveryFee = restaurante?.deliveryFee ? parseFloat(restaurante.deliveryFee) : 0;
-      const baseMonto = p.tipo === 'delivery' ? parseFloat(p.total) + deliveryFee : parseFloat(p.total);
+      // Usamos directamente p.total. Ya incluye ítems, agregados y envío de zona.
+      const baseMonto = parseFloat(p.total);
 
       if (p.tipo === 'mesa') {
         const mesaP = p as CierreTurnoPedidoMesa;
