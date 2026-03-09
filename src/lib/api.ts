@@ -222,6 +222,28 @@ export const restauranteApi = {
       },
     })
   },
+
+  getHorarios: async (token: string) => {
+    return fetchApi('/restaurante/horarios', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  updateHorarios: async (
+    token: string,
+    horarios: Array<{ diaSemana: number; horaApertura: string; horaCierre: string }>
+  ) => {
+    return fetchApi('/restaurante/horarios', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ horarios }),
+    })
+  },
 }
 
 // Cucuru API

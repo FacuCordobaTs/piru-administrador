@@ -22,17 +22,36 @@ interface PedidoLike {
     direccion?: string | null
     telefono?: string | null
     deliveryFee?: number
+    notas?: string | null // <-- AGREGA ESTA LÍNEA
 }
 
-// Helper para obtener el precio unitario de un item
+// Helper para obtener el precio unitario de un item (INCLUYENDO AGREGADOS)
 const getItemPrice = (item: ItemPedidoLike): number => {
-    if (item.precio !== undefined) return item.precio
-    if (item.precioUnitario !== undefined) {
-        return typeof item.precioUnitario === 'string'
+    let basePrice = 0;
+    if (item.precio !== undefined) {
+        basePrice = item.precio;
+    } else if (item.precioUnitario !== undefined) {
+        basePrice = typeof item.precioUnitario === 'string'
             ? parseFloat(item.precioUnitario) || 0
-            : item.precioUnitario
+            : item.precioUnitario;
     }
-    return 0
+
+    let agregadosTotal = 0;
+    if (item.agregados) {
+        let arr: any[] = [];
+        // Intentamos parsear por si viene como JSON string o directamente Array
+        if (typeof item.agregados === 'string') {
+            try { arr = JSON.parse(item.agregados) } catch (e) { }
+        } else if (Array.isArray(item.agregados)) {
+            arr = item.agregados;
+        }
+
+        arr.forEach((ag: any) => {
+            agregadosTotal += parseFloat(ag.precio || '0');
+        });
+    }
+
+    return basePrice + agregadosTotal;
 }
 
 export const formatComanda = (
@@ -62,40 +81,50 @@ export const formatComanda = (
 
         // INFO DEL PEDIDO
         ESC + 'a' + '\x00', // Left
-        ESC + '!' + '\x08', // Bold
-        `Pedido: #${pedido.id}\n`,
-        ESC + '!' + '\x00', // Normal
     ];
 
-    // Fecha y Hora (Nuevo, como en la imagen)
+    // Fecha y Hora
     const now = new Date();
     const dateStr = now.toLocaleDateString('es-AR');
     const timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
+    commands.push('--------------------------------\n');
+
+    // --- TAMAÑO GIGANTE (Doble Alto + Ancho + Negrita) ---
+    commands.push(ESC + '!' + '\x38');
+    commands.push(`PEDIDO #${pedido.id}\n`);
 
     if (pedido.tipo === 'delivery') {
-        commands.push(`Tipo: DELIVERY\n`);
+        commands.push(`DELIVERY\n`);
     } else if (pedido.tipo === 'takeaway') {
-        commands.push(`Tipo: TAKE AWAY\n`);
+        commands.push(`TAKE AWAY\n`);
+    } else if (pedido.mesaNombre) {
+        commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
     }
 
-    if (pedido.mesaNombre) {
-        commands.push(`Mesa: ${pedido.mesaNombre}\n`);
-    }
+    // --- VOLVER A NORMAL ---
+    commands.push(ESC + '!' + '\x00');
+    commands.push('--------------------------------\n');
+
     if (pedido.nombrePedido) {
-        commands.push(`Sr/a: ${pedido.nombrePedido}\n`);
+        commands.push(`Cliente: ${pedido.nombrePedido}\n`);
     }
     if (pedido.telefono) {
         commands.push(`Tel: ${pedido.telefono}\n`);
     }
-
-    commands.push('--------------------------------\n');
 
     // Address (can be long, we might need to let the printer wrap it if possible, but we'll try to fit it)
     if (pedido.tipo === 'delivery' && pedido.direccion) {
         commands.push(ESC + '!' + '\x08'); // Bold
         commands.push(`Dir: ${pedido.direccion}\n`);
         commands.push(ESC + '!' + '\x00'); // Normal
+        commands.push('--------------------------------\n');
+    }
+
+    if (pedido.notas) {
+        commands.push(ESC + '!' + '\x08'); // Activa Negrita
+        commands.push(`NOTAS: ${pedido.notas}\n`);
+        commands.push(ESC + '!' + '\x00'); // Desactiva Negrita (Normal)
         commands.push('--------------------------------\n');
     }
 
@@ -121,12 +150,20 @@ export const formatComanda = (
         commands.push(`${filaNombre}\n`);
         commands.push(ESC + '!' + '\x00'); // Volver a normal
 
-        if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
-            commands.push(`  SIN: ${item.ingredientesExcluidosNombres.join(', ')}\n`);
-        }
+        // Agregados primero (CON:)
         if (item.agregados && item.agregados.length > 0) {
-            const agregadosNombres = item.agregados.map(a => a.nombre).join(', ');
-            commands.push(`  CON: ${agregadosNombres}\n`);
+            commands.push(`  CON:\n`);
+            item.agregados.forEach(a => {
+                commands.push(`    - ${a.nombre}\n`);
+            });
+        }
+
+        // Excluidos después (SIN:)
+        if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
+            commands.push(`  SIN:\n`);
+            item.ingredientesExcluidosNombres.forEach(nombre => {
+                commands.push(`    - ${nombre}\n`);
+            });
         }
     });
 
@@ -206,17 +243,24 @@ export const formatFactura = (
     const dateStr = now.toLocaleDateString('es-AR');
     const timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
-    commands.push(`Pedido: #${pedido.id}\n`);
+    commands.push('--------------------------------\n');
+
+    // --- TAMAÑO GIGANTE (Doble Alto + Ancho + Negrita) ---
+    commands.push(ESC + '!' + '\x38');
+    commands.push(`PEDIDO #${pedido.id}\n`);
 
     if (pedido.tipo === 'delivery') {
-        commands.push(`Tipo: DELIVERY\n`);
+        commands.push(`DELIVERY\n`);
     } else if (pedido.tipo === 'takeaway') {
-        commands.push(`Tipo: TAKE AWAY\n`);
+        commands.push(`TAKE AWAY\n`);
+    } else if (pedido.mesaNombre) {
+        commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
     }
 
-    if (pedido.mesaNombre) {
-        commands.push(`Mesa: ${pedido.mesaNombre}\n`);
-    }
+    // --- VOLVER A NORMAL ---
+    commands.push(ESC + '!' + '\x00');
+    commands.push('--------------------------------\n');
+
     if (pedido.nombrePedido) {
         commands.push(`Cliente: ${pedido.nombrePedido}\n`);
     }
@@ -224,12 +268,17 @@ export const formatFactura = (
         commands.push(`Tel: ${pedido.telefono}\n`);
     }
 
-    commands.push('--------------------------------\n');
-
     if (pedido.tipo === 'delivery' && pedido.direccion) {
         commands.push(ESC + '!' + '\x08'); // Bold
         commands.push(`Dir: ${pedido.direccion}\n`);
         commands.push(ESC + '!' + '\x00'); // Normal
+        commands.push('--------------------------------\n');
+    }
+
+    if (pedido.notas) {
+        commands.push(ESC + '!' + '\x08'); // Activa Negrita
+        commands.push(`NOTAS: ${pedido.notas}\n`);
+        commands.push(ESC + '!' + '\x00'); // Desactiva Negrita (Normal)
         commands.push('--------------------------------\n');
     }
 
@@ -255,20 +304,30 @@ export const formatFactura = (
             const subtotalStr = `$${subtotal.toFixed(2)}`;
             const espacios = LINE_WIDTH - nombre.length - subtotalStr.length - 2; // -2 for indent
             const filaNombre = '  ' + nombre + (espacios > 0 ? ' '.repeat(espacios) : ' ') + subtotalStr;
+
+            // --- APLICAR NEGRITA AL ÍTEM ---
+            commands.push(ESC + '!' + '\x08'); // Activar Bold
             commands.push(`${filaNombre}\n`);
+            commands.push(ESC + '!' + '\x00'); // Volver a Normal
+            // -------------------------------
 
             // Detalle: cantidad x precio
             commands.push(`    ${item.cantidad} x $${pUnit.toFixed(2)}\n`);
 
-            // Ingredientes excluidos
-            if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
-                commands.push(`    SIN: ${item.ingredientesExcluidosNombres.join(', ')}\n`);
+            // Agregados primero (CON:)
+            if (item.agregados && item.agregados.length > 0) {
+                commands.push(`    CON:\n`);
+                item.agregados.forEach((a: any) => {
+                    commands.push(`      - ${a.nombre}\n`);
+                });
             }
 
-            // Agregados
-            if (item.agregados && item.agregados.length > 0) {
-                const agregadosNombres = item.agregados.map((a: any) => a.nombre).join(', ');
-                commands.push(`    CON: ${agregadosNombres}\n`);
+            // Ingredientes excluidos después (SIN:)
+            if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
+                commands.push(`    SIN:\n`);
+                item.ingredientesExcluidosNombres.forEach((nombre: string) => {
+                    commands.push(`      - ${nombre}\n`);
+                });
             }
         });
 

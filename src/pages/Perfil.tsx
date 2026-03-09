@@ -31,7 +31,10 @@ import {
   Printer,
   List,
   Wallet,
-  Star
+  Star,
+  Clock,
+  Plus,
+  Trash2
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -79,6 +82,95 @@ const Perfil = () => {
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
   const [isListingPrinters, setIsListingPrinters] = useState(false)
   const [isPrintingTest, setIsPrintingTest] = useState(false)
+
+  // Horarios state
+  const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+  type Turno = { horaApertura: string; horaCierre: string }
+  type HorariosDia = Record<number, Turno[]>
+
+  const [horarios, setHorarios] = useState<HorariosDia>({})
+  const [isSavingHorarios, setIsSavingHorarios] = useState(false)
+  const [horariosLoaded, setHorariosLoaded] = useState(false)
+
+  useEffect(() => {
+    const cargarHorarios = async () => {
+      if (!token) return
+      try {
+        const response = await restauranteApi.getHorarios(token) as {
+          success: boolean
+          horarios?: Array<{ id: number; diaSemana: number; horaApertura: string; horaCierre: string }>
+        }
+        if (response.success && response.horarios) {
+          const agrupado: HorariosDia = {}
+          for (const h of response.horarios) {
+            if (!agrupado[h.diaSemana]) agrupado[h.diaSemana] = []
+            agrupado[h.diaSemana].push({ horaApertura: h.horaApertura, horaCierre: h.horaCierre })
+          }
+          setHorarios(agrupado)
+        }
+      } catch (error) {
+        console.error('Error cargando horarios:', error)
+      } finally {
+        setHorariosLoaded(true)
+      }
+    }
+    cargarHorarios()
+  }, [token])
+
+  const agregarTurno = (dia: number) => {
+    setHorarios(prev => ({
+      ...prev,
+      [dia]: [...(prev[dia] || []), { horaApertura: '09:00', horaCierre: '18:00' }]
+    }))
+  }
+
+  const eliminarTurno = (dia: number, idx: number) => {
+    setHorarios(prev => {
+      const turnos = [...(prev[dia] || [])]
+      turnos.splice(idx, 1)
+      const next = { ...prev }
+      if (turnos.length === 0) {
+        delete next[dia]
+      } else {
+        next[dia] = turnos
+      }
+      return next
+    })
+  }
+
+  const actualizarTurno = (dia: number, idx: number, campo: 'horaApertura' | 'horaCierre', valor: string) => {
+    setHorarios(prev => {
+      const turnos = [...(prev[dia] || [])]
+      turnos[idx] = { ...turnos[idx], [campo]: valor }
+      return { ...prev, [dia]: turnos }
+    })
+  }
+
+  const guardarHorarios = async () => {
+    if (!token) return
+    setIsSavingHorarios(true)
+    try {
+      const flat: Array<{ diaSemana: number; horaApertura: string; horaCierre: string }> = []
+      for (const [dia, turnos] of Object.entries(horarios)) {
+        for (const t of turnos) {
+          flat.push({ diaSemana: parseInt(dia), horaApertura: t.horaApertura, horaCierre: t.horaCierre })
+        }
+      }
+      const response = await restauranteApi.updateHorarios(token, flat) as { success: boolean }
+      if (response.success) {
+        toast.success('Horarios actualizados correctamente')
+      }
+    } catch (error) {
+      console.error('Error guardando horarios:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al guardar horarios', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsSavingHorarios(false)
+    }
+  }
 
   useEffect(() => {
     if (!restaurante) {
@@ -959,6 +1051,97 @@ const Perfil = () => {
           }>
             <ZonasDeliveryMap />
           </Suspense>
+
+          {/* Tarjeta de Horarios de Atención */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Horarios de Atención
+              </CardTitle>
+              <CardDescription>
+                Define en qué horarios abrís cada día. Podés agregar varios turnos por día (ej: mediodía y noche).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!horariosLoaded ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  {DIAS_SEMANA.map((nombreDia, diaIdx) => {
+                    const turnos = horarios[diaIdx] || []
+                    return (
+                      <div key={diaIdx} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{nombreDia}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => agregarTurno(diaIdx)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Turno
+                          </Button>
+                        </div>
+                        {turnos.length === 0 ? (
+                          <p className="text-xs text-muted-foreground pl-1">Cerrado</p>
+                        ) : (
+                          turnos.map((turno, tIdx) => (
+                            <div key={tIdx} className="flex items-center gap-2 pl-1">
+                              <Input
+                                type="time"
+                                value={turno.horaApertura}
+                                onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaApertura', e.target.value)}
+                                className="w-28 h-8 text-xs"
+                              />
+                              <span className="text-xs text-muted-foreground">a</span>
+                              <Input
+                                type="time"
+                                value={turno.horaCierre}
+                                onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaCierre', e.target.value)}
+                                className="w-28 h-8 text-xs"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => eliminarTurno(diaIdx, tIdx)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )
+                  })}
+                  <Button
+                    className="w-full"
+                    onClick={guardarHorarios}
+                    disabled={isSavingHorarios}
+                  >
+                    {isSavingHorarios ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      'Guardar Horarios'
+                    )}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">
+                    Si un turno cruza la medianoche (ej: 20:00 a 02:00), el sistema lo maneja automáticamente.
+                    Los días sin turnos se consideran cerrados.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

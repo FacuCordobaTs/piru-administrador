@@ -328,7 +328,7 @@ const Productos = () => {
       categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
       puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
       puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : '',
-      descuento: producto.descuento ? producto.descuento.toString() : ''
+      descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : ''
     })
     setImageBase64(producto.imagenUrl || null)
 

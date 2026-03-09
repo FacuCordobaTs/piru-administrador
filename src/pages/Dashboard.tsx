@@ -190,13 +190,19 @@ const getDateLabel = (dateString: string) => {
 
 
 // Helper: compute the actual delivery fee for a stored order.
-// Since pedido.total already includes the delivery fee from the backend,
-// we derive it as: total - sum(item prices)
-const getOrderDeliveryFee = (pedido: { total: string; items: { precioUnitario: string; cantidad: number }[] }) => {
+// Since pedido.total already includes the delivery fee and agregados from the backend,
+// we derive it as: total - sum((item.precioUnitario + item.agregados) * item.cantidad)
+const getOrderDeliveryFee = (pedido: { total: string; items: any[] }) => {
   const total = parseFloat(pedido.total)
-  const itemsSubtotal = pedido.items.reduce((sum, item) =>
-    sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
-  )
+  const itemsSubtotal = pedido.items.reduce((sum, item) => {
+    const basePrice = parseFloat(item.precioUnitario || '0')
+    let agregadosTotal = 0
+    const agregadosArray = formatAgregados(item.agregados)
+    agregadosArray.forEach((ag: any) => {
+      agregadosTotal += parseFloat(ag.precio || '0')
+    })
+    return sum + ((basePrice + agregadosTotal) * item.cantidad)
+  }, 0)
   return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
 }
 
@@ -599,7 +605,8 @@ const Dashboard = () => {
             direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
             tipo: pedido.tipo,
             total: pedido.total,
-            deliveryFee
+            deliveryFee,
+            notas: pedido.notas
           }, itemsToPrint, restaurante?.nombre || 'Restaurante')
           printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing DT order:", err))
         }
@@ -616,7 +623,8 @@ const Dashboard = () => {
           direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
           tipo: pedido.tipo,
           total: pedido.total,
-          deliveryFee
+          deliveryFee,
+          notas: pedido.notas
         },
           pedido.items,
           restaurante?.nombre || 'Restaurante'
@@ -2106,11 +2114,25 @@ const Dashboard = () => {
                                       <span className="font-bold bg-muted rounded px-1 shrink-0">{item.cantidad}</span>
                                       <div className="flex-1 min-w-0">
                                         <span className="truncate block">{item.nombreProducto}</span>
-                                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                          <span className="text-orange-600 text-[10px]">Sin {item.ingredientesExcluidosNombres[0]}</span>
-                                        )}
                                         {formatAgregados((item as any).agregados).length > 0 && (
-                                          <span className="text-blue-600 text-[10px] ml-1">Con {formatAgregados((item as any).agregados).map((a: any) => a.nombre).join(', ')}</span>
+                                          <div className="text-blue-600 text-[10px] mt-0.5 w-full">
+                                            <span className="font-semibold">CON:</span>
+                                            <ul className="pl-1.5 space-y-0.5">
+                                              {formatAgregados((item as any).agregados).map((a: any, i: number) => (
+                                                <li key={i}>- {a.nombre}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                          <div className="text-orange-600 text-[10px] mt-0.5 w-full">
+                                            <span className="font-semibold">SIN:</span>
+                                            <ul className="pl-1.5 space-y-0.5">
+                                              {item.ingredientesExcluidosNombres.map((nombre: string, i: number) => (
+                                                <li key={i}>- {nombre}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
                                         )}
                                       </div>
                                       {/* Per-item actions only for mesa orders */}
@@ -3040,7 +3062,8 @@ const Dashboard = () => {
                                   id: displayedUnifiedPedido.id,
                                   mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
                                   nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
-                                  total
+                                  total,
+                                  notas: displayedUnifiedPedido.notas
                                 },
                                 facturaItems,
                                 restaurante?.nombre || 'Restaurante'
@@ -3078,7 +3101,8 @@ const Dashboard = () => {
                                   id: displayedUnifiedPedido.id,
                                   mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
                                   nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
-                                  total
+                                  total,
+                                  notas: displayedUnifiedPedido.notas
                                 },
                                 facturaItems,
                                 restaurante?.nombre || 'Restaurante'
@@ -3207,16 +3231,35 @@ const Dashboard = () => {
                               <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">{item.cantidad}x</span>
                               <div className="flex-1 min-w-0">
                                 <span className="text-sm">{item.nombreProducto}</span>
-                                {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                  <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                                )}
                                 {formatAgregados((item as any).agregados).length > 0 && (
-                                  <p className="text-[11px] text-blue-500 mt-0.5">Con: {formatAgregados((item as any).agregados).map((a: any) => a.nombre).join(', ')}</p>
+                                  <div className="text-[11px] text-blue-500 mt-1">
+                                    <span className="font-semibold">CON:</span>
+                                    <ul className="pl-2 mt-0.5 space-y-0.5">
+                                      {formatAgregados((item as any).agregados).map((a: any, i: number) => (
+                                        <li key={i}>- {a.nombre}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                  <div className="text-[11px] text-orange-500 mt-1">
+                                    <span className="font-semibold">SIN:</span>
+                                    <ul className="pl-2 mt-0.5 space-y-0.5">
+                                      {item.ingredientesExcluidosNombres.map((nombre: string, i: number) => (
+                                        <li key={i}>- {nombre}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
                                 )}
                               </div>
                             </div>
                             <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                              ${(parseFloat(item.precioUnitario) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                              ${(() => {
+                                const basePrice = parseFloat(item.precioUnitario || '0')
+                                const agregadosArray = formatAgregados((item as any).agregados)
+                                const agregadosTotal = agregadosArray.reduce((acc: number, ag: any) => acc + parseFloat(ag.precio || '0'), 0)
+                                return ((basePrice + agregadosTotal) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })
+                              })()}
                             </span>
                           </div>
                         ))}
@@ -3465,11 +3508,25 @@ const Dashboard = () => {
 
                                               {item.postConfirmacion && <Badge variant="outline" className="h-5 text-[10px] border-amber-500 text-amber-600">Nuevo</Badge>}
                                             </div>
-                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                              <p className="text-xs text-orange-600 mt-1">⚠️ Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                                            )}
                                             {formatAgregados((item as any).agregados).length > 0 && (
-                                              <p className="text-xs text-blue-600 mt-1">➕ Con: {formatAgregados((item as any).agregados).map((a: any) => a.nombre).join(', ')}</p>
+                                              <div className="text-xs text-blue-600 mt-1">
+                                                <span className="font-semibold">➕ CON:</span>
+                                                <ul className="pl-4 mt-0.5 space-y-0.5">
+                                                  {formatAgregados((item as any).agregados).map((a: any, i: number) => (
+                                                    <li key={i}>- {a.nombre}</li>
+                                                  ))}
+                                                </ul>
+                                              </div>
+                                            )}
+                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                              <div className="text-xs text-orange-600 mt-1">
+                                                <span className="font-semibold">⚠️ SIN:</span>
+                                                <ul className="pl-4 mt-0.5 space-y-0.5">
+                                                  {item.ingredientesExcluidosNombres.map((nombre: string, i: number) => (
+                                                    <li key={i}>- {nombre}</li>
+                                                  ))}
+                                                </ul>
+                                              </div>
                                             )}
                                           </div>
                                           <div className="flex items-center gap-2 shrink-0">
