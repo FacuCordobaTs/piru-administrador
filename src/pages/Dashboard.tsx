@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -116,6 +116,7 @@ interface DeliveryPedido {
   totalItems: number
   pagado?: boolean
   metodoPago?: string | null
+  impreso?: boolean
 }
 
 interface TakeawayPedido {
@@ -131,6 +132,7 @@ interface TakeawayPedido {
   totalItems: number
   pagado?: boolean
   metodoPago?: string | null
+  impreso?: boolean
 }
 
 // Unified order type for the all-orders list
@@ -553,6 +555,14 @@ const Dashboard = () => {
       const prevData = processedOrdersRef.current.get(pedidoKey)
       const isCucuruTransfer = restauranteStore?.cucuruConfigurado && (pedido.metodoPago === 'transferencia' || !pedido.metodoPago)
 
+      // GUARD: si la BD ya dice que fue impreso, no reimprimir
+      if (pedido.impreso) {
+        if (!prevData) {
+          processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: currentItemIds, pagado: currentPagado })
+        }
+        return
+      }
+
       let shouldPrintComanda = false
 
       // 1. Detectar transición PENDING -> PREPARING (Confirmación desde admin o trigger auto)
@@ -565,15 +575,9 @@ const Dashboard = () => {
       // Impresión diferida por Cucuru (solo imprimir comanda cuando el pago entra)
       if (isCucuruTransfer && currentPagado) {
         if (prevData && !prevData.pagado) {
-          // Transición en vivo detectada
           shouldPrintComanda = true
         } else if (!prevData) {
-          // El pedido llegó de la nada ya pagado (ya que el backend retiene los impagos)
-          const printKey = `cucuru_comanda_${pedidoKey}`
-          if (localStorage.getItem(printKey) !== 'true') {
-            shouldPrintComanda = true
-            localStorage.setItem(printKey, 'true')
-          }
+          shouldPrintComanda = true
         }
       }
 
@@ -596,7 +600,7 @@ const Dashboard = () => {
           }))
 
         if (itemsToPrint.length > 0) {
-          console.log(`🖨️ [Dashboard] Auto-printing new ${pedido.tipo} order:`, pedido.id)
+          console.log(`[Dashboard] Auto-printing new ${pedido.tipo} order:`, pedido.id)
           const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
           const comandaData = formatComanda({
             id: pedido.id,
@@ -608,13 +612,26 @@ const Dashboard = () => {
             deliveryFee,
             notas: pedido.notas
           }, itemsToPrint, restaurante?.nombre || 'Restaurante')
-          printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing DT order:", err))
+          printRaw(commandsToBytes(comandaData))
+            .then(() => {
+              // Optimistic update: marcar localmente como impreso para evitar doble impresión
+              if (pedido.tipo === 'delivery') {
+                setDeliveryPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
+              } else {
+                setTakeawayPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
+              }
+              // Persistir en BD
+              if (token) {
+                pedidosApi.marcarImpreso(token, pedido.tipo, pedido.id).catch(err => console.error("Error marcando impreso en BD:", err))
+              }
+            })
+            .catch((err: Error) => console.error("Error printing DT order:", err))
         }
       }
 
       // 2. Factura al entregarse o estar listo
       if (prevData && prevData.status !== 'ready' && prevData.status !== 'delivered' && (currentStatus === 'ready' || currentStatus === 'delivered')) {
-        console.log(`🧾 [Dashboard] Auto-printing factura for ${pedido.tipo}:`, pedido.id)
+        console.log(`[Dashboard] Auto-printing factura for ${pedido.tipo}:`, pedido.id)
         const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
         const facturaData = formatFactura({
           id: pedido.id,
@@ -634,7 +651,7 @@ const Dashboard = () => {
 
       processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: currentItemIds, pagado: currentPagado })
     })
-  }, [deliveryPedidos, takeawayPedidos, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw])
+  }, [deliveryPedidos, takeawayPedidos, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw, token])
 
   const fetchMesasREST = useCallback(async () => {
     if (!token) return

@@ -90,8 +90,8 @@ export const formatComanda = (
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
     commands.push('--------------------------------\n');
 
-    // --- TAMAÑO GIGANTE (Doble Alto + Ancho + Negrita) ---
-    commands.push(ESC + '!' + '\x38');
+    // --- Encabezado tipo pedido: Bold compacto (la cocina no necesita esto gigante) ---
+    commands.push(ESC + '!' + '\x08'); // Solo Negrita
     commands.push(`PEDIDO #${pedido.id}\n`);
 
     if (pedido.tipo === 'delivery') {
@@ -102,8 +102,7 @@ export const formatComanda = (
         commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
     }
 
-    // --- VOLVER A NORMAL ---
-    commands.push(ESC + '!' + '\x00');
+    commands.push(ESC + '!' + '\x00'); // Normal
     commands.push('--------------------------------\n');
 
     if (pedido.nombrePedido) {
@@ -113,7 +112,6 @@ export const formatComanda = (
         commands.push(`Tel: ${pedido.telefono}\n`);
     }
 
-    // Address (can be long, we might need to let the printer wrap it if possible, but we'll try to fit it)
     if (pedido.tipo === 'delivery' && pedido.direccion) {
         commands.push(ESC + '!' + '\x08'); // Bold
         commands.push(`Dir: ${pedido.direccion}\n`);
@@ -122,48 +120,39 @@ export const formatComanda = (
     }
 
     if (pedido.notas) {
-        commands.push(ESC + '!' + '\x08'); // Activa Negrita
+        commands.push(ESC + '!' + '\x08');
         commands.push(`NOTAS: ${pedido.notas}\n`);
-        commands.push(ESC + '!' + '\x00'); // Desactiva Negrita (Normal)
+        commands.push(ESC + '!' + '\x00');
         commands.push('--------------------------------\n');
     }
 
-    // ITEMS
+    // ITEMS — Nombre del producto en DOBLE ALTO + NEGRITA para que la cocina lo lea rápido
     items.forEach(item => {
-        const pUnit = getItemPrice(item);
-        const subtotal = item.cantidad * pUnit;
+        // Nombre del producto: GRANDE (Doble alto + Negrita)
+        const nombre = (item.nombreProducto || 'Producto');
+        commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
+        commands.push(`${item.cantidad}x ${nombre}\n`);
+        commands.push(ESC + '!' + '\x00'); // Normal
 
-        // Fila 1: Cantidad x Precio Unitario
-        // Formato: 1,000 x 7.800,00
-        const cantStr = item.cantidad.toLocaleString('es-AR', { minimumFractionDigits: 3 });
-        const pUnitStr = pUnit.toLocaleString('es-AR', { minimumFractionDigits: 2 });
-        commands.push(`${cantStr} x ${pUnitStr}\n`);
 
-        // Fila 2: Nombre y Subtotal (Alineado derecha)
-        const nombre = (item.nombreProducto || 'Producto').toLowerCase();
-        const subtotalStr = subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 });
-
-        const espacios = LINE_WIDTH - nombre.length - subtotalStr.length;
-        const filaNombre = nombre + (espacios > 0 ? ' '.repeat(espacios) : ' ') + subtotalStr;
-
-        commands.push(ESC + '!' + '\x08'); // Negrita para el nombre
-        commands.push(`${filaNombre}\n`);
-        commands.push(ESC + '!' + '\x00'); // Volver a normal
-
-        // Agregados primero (CON:)
+        // Agregados (CON:)
         if (item.agregados && item.agregados.length > 0) {
+            commands.push(ESC + '!' + '\x10'); // Doble alto
             commands.push(`  CON:\n`);
             item.agregados.forEach(a => {
-                commands.push(`    - ${a.nombre}\n`);
+                commands.push(`   + ${a.nombre}\n`);
             });
+            commands.push(ESC + '!' + '\x00');
         }
 
-        // Excluidos después (SIN:)
+        // Excluidos (SIN:)
         if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
+            commands.push(ESC + '!' + '\x10'); // Doble alto
             commands.push(`  SIN:\n`);
             item.ingredientesExcluidosNombres.forEach(nombre => {
-                commands.push(`    - ${nombre}\n`);
+                commands.push(`   - ${nombre}\n`);
             });
+            commands.push(ESC + '!' + '\x00');
         }
     });
 
@@ -245,8 +234,8 @@ export const formatFactura = (
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
     commands.push('--------------------------------\n');
 
-    // --- TAMAÑO GIGANTE (Doble Alto + Ancho + Negrita) ---
-    commands.push(ESC + '!' + '\x38');
+    // --- Encabezado tipo pedido: Bold compacto ---
+    commands.push(ESC + '!' + '\x08'); // Solo Negrita
     commands.push(`PEDIDO #${pedido.id}\n`);
 
     if (pedido.tipo === 'delivery') {
@@ -257,8 +246,7 @@ export const formatFactura = (
         commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
     }
 
-    // --- VOLVER A NORMAL ---
-    commands.push(ESC + '!' + '\x00');
+    commands.push(ESC + '!' + '\x00'); // Normal
     commands.push('--------------------------------\n');
 
     if (pedido.nombrePedido) {
@@ -276,9 +264,9 @@ export const formatFactura = (
     }
 
     if (pedido.notas) {
-        commands.push(ESC + '!' + '\x08'); // Activa Negrita
+        commands.push(ESC + '!' + '\x08');
         commands.push(`NOTAS: ${pedido.notas}\n`);
-        commands.push(ESC + '!' + '\x00'); // Desactiva Negrita (Normal)
+        commands.push(ESC + '!' + '\x00');
         commands.push('--------------------------------\n');
     }
 
@@ -287,47 +275,44 @@ export const formatFactura = (
     // ITEMS AGRUPADOS POR CLIENTE
     const clientes = Object.entries(itemsPorCliente);
     clientes.forEach(([cliente, clienteItems], clienteIdx) => {
-        // Nombre del cliente
         commands.push(ESC + '!' + '\x08'); // Bold
         commands.push(`>> ${cliente.toUpperCase()}\n`);
         commands.push(ESC + '!' + '\x00'); // Normal
 
-        // Items del cliente
         let subtotalCliente = 0;
         clienteItems.forEach(item => {
             const pUnit = getItemPrice(item);
             const subtotal = item.cantidad * pUnit;
             subtotalCliente += subtotal;
 
-            // Nombre del producto
+            // Nombre del producto: DOBLE ALTO + NEGRITA
             const nombre = (item.nombreProducto || 'Producto');
+            commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
+            commands.push(`  ${item.cantidad}x ${nombre}\n`);
+            commands.push(ESC + '!' + '\x00'); // Normal
+
+            // Precio en tamaño normal
             const subtotalStr = `$${subtotal.toFixed(2)}`;
-            const espacios = LINE_WIDTH - nombre.length - subtotalStr.length - 2; // -2 for indent
-            const filaNombre = '  ' + nombre + (espacios > 0 ? ' '.repeat(espacios) : ' ') + subtotalStr;
+            commands.push(`    ${item.cantidad} x $${pUnit.toFixed(2)} = ${subtotalStr}\n`);
 
-            // --- APLICAR NEGRITA AL ÍTEM ---
-            commands.push(ESC + '!' + '\x08'); // Activar Bold
-            commands.push(`${filaNombre}\n`);
-            commands.push(ESC + '!' + '\x00'); // Volver a Normal
-            // -------------------------------
-
-            // Detalle: cantidad x precio
-            commands.push(`    ${item.cantidad} x $${pUnit.toFixed(2)}\n`);
-
-            // Agregados primero (CON:)
+            // Agregados (CON:)
             if (item.agregados && item.agregados.length > 0) {
+                commands.push(ESC + '!' + '\x10'); // Doble alto
                 commands.push(`    CON:\n`);
                 item.agregados.forEach((a: any) => {
-                    commands.push(`      - ${a.nombre}\n`);
+                    commands.push(`     + ${a.nombre}\n`);
                 });
+                commands.push(ESC + '!' + '\x00');
             }
 
-            // Ingredientes excluidos después (SIN:)
+            // Excluidos (SIN:)
             if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
+                commands.push(ESC + '!' + '\x10'); // Doble alto
                 commands.push(`    SIN:\n`);
                 item.ingredientesExcluidosNombres.forEach((nombre: string) => {
-                    commands.push(`      - ${nombre}\n`);
+                    commands.push(`     - ${nombre}\n`);
                 });
+                commands.push(ESC + '!' + '\x00');
             }
         });
 

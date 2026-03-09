@@ -646,6 +646,15 @@ export const pedidosApi = {
       body: JSON.stringify({ metodoPago }),
     })
   },
+
+  marcarImpreso: async (token: string, tipo: 'mesa' | 'delivery' | 'takeaway', id: number) => {
+    return fetchApi(`/pedido/${tipo}/${id}/marcar-impreso`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
 }
 
 // MercadoPago API
