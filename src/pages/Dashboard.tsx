@@ -107,7 +107,7 @@ interface DeliveryPedido {
   direccion: string
   nombreCliente: string | null
   telefono: string | null
-  estado: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled' | 'archived'
+  estado: 'pending' | 'preparing' | 'ready' | 'dispatched' | 'delivered' | 'cancelled' | 'archived'
   total: string
   notas: string | null
   createdAt: string
@@ -123,7 +123,7 @@ interface TakeawayPedido {
   id: number
   nombreCliente: string | null
   telefono: string | null
-  estado: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled' | 'archived'
+  estado: 'pending' | 'preparing' | 'ready' | 'dispatched' | 'delivered' | 'cancelled' | 'archived'
   total: string
   notas: string | null
   createdAt: string
@@ -885,9 +885,10 @@ const Dashboard = () => {
         case 'pending': return 'pending'
         case 'preparing': return 'preparing'
         case 'ready': return 'delivered'
+        case 'dispatched': return 'delivered'
         case 'delivered': return 'served'
         case 'archived': return 'archived'
-        default: return null // cancelled or unknown
+        default: return null
       }
     }
 
@@ -897,6 +898,7 @@ const Dashboard = () => {
         case 'pending': return 'pending'
         case 'preparing': return 'preparing'
         case 'ready': return 'delivered'
+        case 'dispatched': return 'delivered'
         case 'delivered': return 'served'
         default: return 'preparing'
       }
@@ -920,7 +922,7 @@ const Dashboard = () => {
         id: dp.id,
         mesaId: null,
         mesaNombre: null,
-        estado: dp.estado === 'ready' ? 'delivered' : dp.estado as PedidoData['estado'],
+        estado: (dp.estado === 'ready' || dp.estado === 'dispatched') ? 'delivered' : dp.estado as PedidoData['estado'],
         total: dp.total,
         createdAt: dp.createdAt,
         closedAt: dp.deliveredAt,
@@ -933,7 +935,7 @@ const Dashboard = () => {
         id: `delivery-${dp.id}-${column}`,
         pedido: pseudoPedido,
         items,
-        status: column === 'archived' ? 'archived' : dp.estado === 'pending' ? 'pending' : dp.estado === 'preparing' ? 'preparing' : dp.estado === 'ready' ? 'delivered' : 'served',
+        status: column === 'archived' ? 'archived' : dp.estado === 'pending' ? 'pending' : dp.estado === 'preparing' ? 'preparing' : (dp.estado === 'ready' || dp.estado === 'dispatched') ? 'delivered' : 'served',
         tipo: 'delivery',
         direccion: dp.direccion,
         nombreCliente: dp.nombreCliente,
@@ -958,7 +960,7 @@ const Dashboard = () => {
         id: tp.id,
         mesaId: null,
         mesaNombre: null,
-        estado: tp.estado === 'ready' ? 'delivered' : tp.estado as PedidoData['estado'],
+        estado: (tp.estado === 'ready' || tp.estado === 'dispatched') ? 'delivered' : tp.estado as PedidoData['estado'],
         total: tp.total,
         createdAt: tp.createdAt,
         closedAt: tp.deliveredAt,
@@ -971,7 +973,7 @@ const Dashboard = () => {
         id: `takeaway-${tp.id}-${column}`,
         pedido: pseudoPedido,
         items,
-        status: column === 'archived' ? 'archived' : tp.estado === 'pending' ? 'pending' : tp.estado === 'preparing' ? 'preparing' : tp.estado === 'ready' ? 'delivered' : 'served',
+        status: column === 'archived' ? 'archived' : tp.estado === 'pending' ? 'pending' : tp.estado === 'preparing' ? 'preparing' : (tp.estado === 'ready' || tp.estado === 'dispatched') ? 'delivered' : 'served',
         tipo: 'takeaway',
         nombreCliente: tp.nombreCliente,
       })
@@ -1625,46 +1627,6 @@ const Dashboard = () => {
     }
   }
 
-  // Archive handlers
-  const handleArchiveDelivery = async (pedidoId: number) => {
-    if (!token) return
-    try {
-      const response = await deliveryApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
-      if (response.success) {
-        setDeliveryPedidos(prev => prev.map(p =>
-          p.id === pedidoId ? { ...p, estado: 'archived' as DeliveryPedido['estado'] } : p
-        ))
-      }
-    } catch (error) {
-    }
-  }
-
-  const handleArchiveTakeaway = async (pedidoId: number) => {
-    if (!token) return
-    try {
-      const response = await takeawayApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
-      if (response.success) {
-        setTakeawayPedidos(prev => prev.map(p =>
-          p.id === pedidoId ? { ...p, estado: 'archived' as TakeawayPedido['estado'] } : p
-        ))
-      }
-    } catch (error) {
-    }
-  }
-
-  const handleArchiveMesaPedido = async (pedidoId: number) => {
-    if (!token) return
-    try {
-      const response = await pedidosApi.updateEstado(token, pedidoId, 'archived') as { success: boolean }
-      if (response.success) {
-        setPedidos(prev => prev.map(p =>
-          p.id === pedidoId ? { ...p, estado: 'archived' as PedidoData['estado'] } : p
-        ))
-      }
-    } catch (error) {
-    }
-  }
-
   // Helper function to get the date of the last item added for mesa pedidos
   const getLastItemDate = (items: any[], pedidoCreatedAt: string): string => {
     if (!items || items.length === 0) return pedidoCreatedAt
@@ -2001,7 +1963,6 @@ const Dashboard = () => {
                       <div className="space-y-2">
                         {columnCards.map((card) => {
                           const hasExclusions = card.items.some((i: any) => i.ingredientesExcluidosNombres?.length || formatAgregados(i.agregados).length > 0)
-                          const isUpdating = updatingPedido === card.pedido.id
                           const isMesa = card.tipo === 'mesa'
 
                           const isClosed = card.pedido.estado === 'closed'
@@ -2017,13 +1978,7 @@ const Dashboard = () => {
                               ? `🛍️ ${card.nombreCliente || 'Take Away'}`
                               : `🍽️ ${card.pedido.mesaNombre || 'Sin mesa'}`
 
-                          // Next estado for delivery/takeaway order-level actions
-                          const getNextEstado = () => {
-                            if (card.status === 'preparing') return { label: 'Marcar Listo', estado: 'ready', color: 'bg-emerald-600 hover:bg-emerald-700' }
-                            if (card.status === 'delivered') return { label: 'Marcar Entregado', estado: 'delivered', color: 'bg-indigo-600 hover:bg-indigo-700' }
-                            return null
-                          }
-                          const nextAction = !isMesa ? getNextEstado() : null
+                          const canDispatch = !isMesa && card.status !== 'dispatched' && card.status !== 'delivered' && card.status !== 'cancelled' && card.status !== 'archived'
 
                           return (
                             <Card
@@ -2174,54 +2129,17 @@ const Dashboard = () => {
                                   )}
                                 </div>
 
-                                {/* Order-level action for delivery/takeaway */}
-                                {!isMesa && nextAction && (
+                                {canDispatch && (
                                   <Button
                                     size="sm"
-                                    className={`w-full mt-2 h-7 text-xs text-white ${nextAction.color}`}
+                                    className="w-full mt-2 h-7 text-xs text-white bg-blue-600 hover:bg-blue-700"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, nextAction.estado)
+                                      handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'dispatched')
                                     }}
                                   >
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    {nextAction.label}
-                                  </Button>
-                                )}
-
-                                {card.status === 'pending' && (
-                                  <Button
-                                    size="sm"
-                                    className="w-full mt-2 h-7 text-xs bg-blue-600 hover:bg-blue-700"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      if (isMesa) {
-                                        handleConfirmarPedido(card.pedido)
-                                      } else {
-                                        handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'preparing')
-                                      }
-                                    }}
-                                    disabled={isUpdating}
-                                  >
-                                    {isUpdating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-                                    Confirmar
-                                  </Button>
-                                )}
-
-                                {card.status !== 'archived' && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="w-full mt-1 h-6 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      if (card.tipo === 'delivery') handleArchiveDelivery(card.pedido.id)
-                                      else if (card.tipo === 'takeaway') handleArchiveTakeaway(card.pedido.id)
-                                      else handleArchiveMesaPedido(card.pedido.id)
-                                    }}
-                                  >
-                                    <Archive className="h-3 w-3 mr-1" />
-                                    Archivar
+                                    <Truck className="h-3 w-3 mr-1" />
+                                    Despachar
                                   </Button>
                                 )}
                               </CardContent>
@@ -3131,38 +3049,6 @@ const Dashboard = () => {
                           </Button>
                         )}
 
-                        {/* Archive */}
-                        {displayedUnifiedPedido.estado !== 'archived' && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-muted-foreground hover:text-foreground hidden lg:flex"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                if (displayedUnifiedPedido.tipo === 'delivery') handleArchiveDelivery(displayedUnifiedPedido.id)
-                                else handleArchiveTakeaway(displayedUnifiedPedido.id)
-                                setSelectedUnifiedPedido(null)
-                              }}
-                            >
-                              <Archive className="mr-2 h-4 w-4" />
-                              Archivar
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="text-muted-foreground hover:text-foreground lg:hidden h-9 w-9"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                if (displayedUnifiedPedido.tipo === 'delivery') handleArchiveDelivery(displayedUnifiedPedido.id)
-                                else handleArchiveTakeaway(displayedUnifiedPedido.id)
-                                setSelectedUnifiedPedido(null)
-                              }}
-                            >
-                              <Archive className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
 
                         {/* Delete */}
                         <Button
@@ -3237,6 +3123,19 @@ const Dashboard = () => {
                         )}
                       </CardContent>
                     </Card>
+
+                    {/* Estado Actions - Solo Despachar */}
+                    {displayedUnifiedPedido.estado !== 'dispatched' && displayedUnifiedPedido.estado !== 'delivered' && displayedUnifiedPedido.estado !== 'cancelled' && displayedUnifiedPedido.estado !== 'archived' && (
+                      <div className="w-full px-3 lg:px-0">
+                        <Button
+                          className="w-full bg-blue-600 hover:bg-blue-700 font-bold shadow-sm h-12 text-md"
+                          onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'dispatched')}
+                        >
+                          <Truck className="mr-2 h-5 w-5" />
+                          Despachar
+                        </Button>
+                      </div>
+                    )}
 
                     {/* PEDIDO */}
                     <div className="space-y-1">

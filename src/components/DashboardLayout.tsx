@@ -16,7 +16,6 @@ import {
   Moon,
   Users
 } from 'lucide-react'
-import { check } from '@tauri-apps/plugin-updater';
 
 const DashboardLayout = () => {
   const navigate = useNavigate()
@@ -28,7 +27,6 @@ const DashboardLayout = () => {
     return window.matchMedia('(prefers-color-scheme: dark)').matches
   })
   const [menuOpen, setMenuOpen] = useState(false)
-  const [version, setVersion] = useState('')
 
   // Apply theme on mount
   useEffect(() => {
@@ -49,17 +47,6 @@ const DashboardLayout = () => {
   const toggleTheme = () => {
     setIsDark(!isDark)
   }
-
-  useEffect(() => {
-    const checkVersion = async () => {
-      console.log('a');
-      const update = await check();
-      console.log(update);
-      if (update)
-        setVersion(update.version);
-    }
-    checkVersion();
-  }, []);
 
   const handleLogout = () => {
     logout()
@@ -98,7 +85,7 @@ const DashboardLayout = () => {
                 {/* Logo */}
                 <div className="flex items-center px-6 h-14 border-b">
                   <h1 className="text-2x l font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                    PIRU {version}
+                    PIRU
                   </h1>
                 </div>
 
@@ -170,7 +157,7 @@ const DashboardLayout = () => {
             </Sheet>
 
             <h1 className="text-xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              PIRU {version}
+              PIRU
             </h1>
           </div>
 
