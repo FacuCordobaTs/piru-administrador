@@ -34,7 +34,8 @@ import {
   Star,
   Clock,
   Plus,
-  Trash2
+  Trash2,
+  Truck
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -51,7 +52,6 @@ const Perfil = () => {
   const token = useAuthStore((state) => state.token)
   const restauranteStore = useRestauranteStore()
   const { restaurante, isLoading } = restauranteStore
-
   // Estados del modal de edición
   const [dialogAbierto, setDialogAbierto] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -77,6 +77,9 @@ const Perfil = () => {
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
   const [cucuruCollectorId, setCucuruCollectorId] = useState('')
+
+  const [isConfiguringRapiboy, setIsConfiguringRapiboy] = useState(false)
+  const [rapiboyToken, setRapiboyToken] = useState('')
 
   // Tauri Printer State
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
@@ -283,6 +286,32 @@ const Perfil = () => {
     restauranteStore.reset()
     toast.success('Sesión cerrada exitosamente')
     navigate('/login')
+  }
+
+  // Handle configurar rapiboy
+  const handleConfigurarRapiboy = async () => {
+    if (!token) return
+    if (!rapiboyToken.trim()) {
+      toast.error('Debes ingresar el Token de Rapiboy')
+      return
+    }
+
+    setIsConfiguringRapiboy(true)
+    try {
+      const response = await restauranteApi.configurarRapiboy(token, rapiboyToken) as { success: boolean }
+      if (response.success) {
+        toast.success('Rapiboy configurado con éxito', {
+          description: 'Tu sistema ahora puede gestionar la logística de envíos mediante Rapiboy.'
+        })
+        restauranteStore.fetchData()
+        setRapiboyToken('')
+      }
+    } catch (error) {
+      console.error('Error al configurar Rapiboy:', error)
+      toast.error('Error al configurar Rapiboy')
+    } finally {
+      setIsConfiguringRapiboy(false)
+    }
   }
 
   // Handle configurar cucuru
@@ -783,6 +812,60 @@ const Perfil = () => {
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Rapiboy */}
+          <Card className={(restaurante as any)?.rapiboyToken ? "border-orange-500/50 bg-orange-50/50 dark:bg-orange-950/20" : "border-slate-200"}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Truck className="h-5 w-5" />
+                Rapiboy (Logística)
+              </CardTitle>
+              <CardDescription>
+                {(restaurante as any)?.rapiboyToken
+                  ? 'Tu integración con Rapiboy está configurada y activa'
+                  : 'Ingresa tu Token de Rapiboy para automatizar la logística de tus envíos'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {(restaurante as any)?.rapiboyToken && (
+                <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="font-medium">Token configurado correctamente</span>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <Input
+                  type="password"
+                  placeholder={(restaurante as any)?.rapiboyToken ? "Ingresar nuevo Token de Rapiboy (opcional)" : "Token de Rapiboy"}
+                  value={rapiboyToken}
+                  onChange={(e) => setRapiboyToken(e.target.value)}
+                  disabled={isConfiguringRapiboy}
+                />
+
+                <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-4 my-2 border border-blue-200 dark:border-blue-800">
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    Para habilitar el seguimiento en tiempo real, ve a la sección 'Webhook' bajo la pestaña 'Mi Perfil' en Rapiboy y configura esta URL: <span className="font-mono font-bold">https://api.piru.app/api/webhooks/rapiboy</span>
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleConfigurarRapiboy}
+                  disabled={isConfiguringRapiboy || !rapiboyToken.trim()}
+                  className="bg-orange-600 hover:bg-orange-700 text-white w-full"
+                >
+                  {isConfiguringRapiboy ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
+                    </>
+                  ) : (
+                    (restaurante as any)?.rapiboyToken ? 'Actualizar Token' : 'Guardar Token'
+                  )}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

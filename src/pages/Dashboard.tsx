@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, formatFactura, commandsToBytes } from '@/utils/printerUtils'
+import { toast } from 'sonner'
 
 // Types
 interface ItemPedidoConEstado extends WSItemPedido {
@@ -88,6 +89,7 @@ interface KanbanCardData {
   tipo: 'mesa' | 'delivery' | 'takeaway'
   direccion?: string
   nombreCliente?: string | null
+  rapiboyTrackingUrl?: string | null
 }
 
 // Delivery Types
@@ -117,6 +119,7 @@ interface DeliveryPedido {
   pagado?: boolean
   metodoPago?: string | null
   impreso?: boolean
+  rapiboyTrackingUrl?: string | null
 }
 
 interface TakeawayPedido {
@@ -151,6 +154,7 @@ interface UnifiedPedido {
   totalItems: number
   pagado?: boolean
   metodoPago?: string | null
+  rapiboyTrackingUrl?: string | null
 }
 
 interface NewDeliveryItem {
@@ -336,6 +340,9 @@ const Dashboard = () => {
 
   // Selected unified pedido (for showing delivery/takeaway detail in center)
   const [selectedUnifiedPedido, setSelectedUnifiedPedido] = useState<UnifiedPedido | null>(null)
+
+  // Rapiboy assignment state
+  const [assigningRapiboyId, setAssigningRapiboyId] = useState<number | null>(null)
 
   const handleToggleDeliveryIngredient = (idx: number, ingredientId: number) => {
     setNewDeliveryItems(prev => prev.map((item, index) => {
@@ -1398,6 +1405,28 @@ const Dashboard = () => {
 
   // ==================== DELIVERY FUNCTIONS ====================
 
+  const handleAsignarRapiboy = async (pedidoId: number) => {
+    if (!token) return
+    setAssigningRapiboyId(pedidoId)
+    try {
+      const response = await deliveryApi.asignarRapiboy(token, pedidoId) as {
+        success: boolean;
+        message: string;
+      }
+      if (response.success) {
+        toast.success('Cadete Rapiboy asignado exitosamente')
+        await fetchDeliveryPedidos() // Refresh pedidos
+      } else {
+        toast.error(response.message || 'Error al asignar cadete')
+      }
+    } catch (error) {
+      console.error('Error al asignar Rapiboy:', error)
+      toast.error('Ocurrió un error al contactar con la API de Rapiboy')
+    } finally {
+      setAssigningRapiboyId(null)
+    }
+  }
+
   const fetchDeliveryPedidos = useCallback(async () => {
     if (!token) return
     setLoadingDelivery(true)
@@ -1711,6 +1740,7 @@ const Dashboard = () => {
         items: p.items,
         totalItems: p.totalItems,
         pagado: p.pagado,
+        rapiboyTrackingUrl: p.rapiboyTrackingUrl,
       })
     })
 
@@ -2707,34 +2737,6 @@ const Dashboard = () => {
 
               {/* DESKTOP: Pedidos Tab Content */}
               <div className={`${desktopLeftTab === 'pedidos' ? 'hidden lg:flex' : 'hidden'} flex-col flex-1 overflow-hidden`}>
-                {/* Filter tabs */}
-                <div className="border-b bg-background/95 backdrop-blur shrink-0 px-3 pt-2 pb-0">
-                  <div className="grid grid-cols-4 gap-1">
-                    {([
-                      { key: 'all', label: 'Todos', icon: '📋' },
-                      { key: 'mesa', label: 'Mesas', icon: '🍽️' },
-                      { key: 'delivery', label: 'Delivery', icon: '🚚' },
-                      { key: 'takeaway', label: 'T.Away', icon: '🛍️' },
-                    ] as const).map(tab => (
-                      <button
-                        key={tab.key}
-                        onClick={() => setPedidoFilter(tab.key)}
-                        className={`flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${pedidoFilter === tab.key
-                          ? 'text-foreground bg-accent'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                          }`}
-                      >
-                        <span className="hidden xl:inline">{tab.icon}</span>
-                        {tab.label}
-                        {pedidoCounts[tab.key] > 0 && (
-                          <Badge className="ml-0.5 text-[9px] px-1 py-0 h-3.5 min-w-4 justify-center">
-                            {pedidoCounts[tab.key]}
-                          </Badge>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 <div className="flex-1 overflow-auto p-3">
                   {loadingDelivery ? (
                     <div className="flex items-center justify-center h-full">
@@ -2815,6 +2817,18 @@ const Dashboard = () => {
                                   <p className="text-[10px] text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
                                 </div>
                               </div>
+                              {pedido.tipo !== 'mesa' && pedido.estado !== 'archived' && (
+                                <Button
+                                  className={`w-full mt-2 h-9 text-sm font-bold text-white shadow-sm ${pedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeliveryTakeawayEstadoChange(pedido.tipo as 'delivery' | 'takeaway', pedido.id, 'archived')
+                                  }}
+                                >
+                                  {pedido.estado === 'dispatched' ? <Archive className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
+                                  {pedido.estado === 'dispatched' ? 'Archivar' : 'Despachar'}
+                                </Button>
+                              )}
                             </div>
                           </Fragment>
                         )
@@ -2970,6 +2984,7 @@ const Dashboard = () => {
                         </p>
                       </div>
                       <div className="flex gap-1 lg:gap-2 shrink-0">
+                        
                         {/* Print */}
                         {selectedPrinter && (
                           <Button
@@ -3014,7 +3029,7 @@ const Dashboard = () => {
                           <Button
                             variant="outline"
                             size="icon"
-                            className="lg:hidden h-9 w-9"
+                            className="lg:hidden h-9 w-9 bg-white dark:bg-slate-950"
                             onClick={() => {
                               const facturaItems: any[] = displayedUnifiedPedido.items.map((item: any) => ({
                                 ...item,
@@ -3050,6 +3065,32 @@ const Dashboard = () => {
                         )}
 
 
+                        
+                        {/* Status Actions */}
+                        {displayedUnifiedPedido.tipo === 'delivery' && displayedUnifiedPedido.estado !== 'archived' && restauranteStore?.rapiboyToken && (
+                          <Button
+                            className="hidden lg:flex bg-orange-600 hover:bg-orange-700 text-white font-bold h-9"
+                            onClick={() => handleAsignarRapiboy(displayedUnifiedPedido.id)}
+                            disabled={assigningRapiboyId === displayedUnifiedPedido.id}
+                          >
+                            {assigningRapiboyId === displayedUnifiedPedido.id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Truck className="mr-2 h-4 w-4" />
+                            )}
+                            Rapiboy
+                          </Button>
+                        )}
+                        {displayedUnifiedPedido.estado !== 'archived' && (
+                          <Button
+                            className={`hidden lg:flex font-bold h-9 text-white ${displayedUnifiedPedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                            onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'archived')}
+                          >
+                            {displayedUnifiedPedido.estado === 'dispatched' ? <Archive className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
+                            {displayedUnifiedPedido.estado === 'dispatched' ? 'Archivar' : 'Despachar'}
+                          </Button>
+                        )}
+
                         {/* Delete */}
                         <Button
                           variant="outline"
@@ -3067,7 +3108,7 @@ const Dashboard = () => {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="text-destructive lg:hidden h-9 w-9"
+                          className="text-destructive bg-white dark:bg-slate-950 lg:hidden h-9 w-9"
                           onClick={() => {
                             if (displayedUnifiedPedido.tipo === 'delivery') handleDeleteDelivery(displayedUnifiedPedido.id)
                             else handleDeleteTakeaway(displayedUnifiedPedido.id)
@@ -3124,15 +3165,30 @@ const Dashboard = () => {
                       </CardContent>
                     </Card>
 
-                    {/* Estado Actions - Solo Despachar */}
-                    {displayedUnifiedPedido.estado !== 'dispatched' && displayedUnifiedPedido.estado !== 'delivered' && displayedUnifiedPedido.estado !== 'cancelled' && displayedUnifiedPedido.estado !== 'archived' && (
-                      <div className="w-full px-3 lg:px-0">
+                    {/* Removed duplicated buttons at the bottom for Desktop. Rendered dynamically via CSS header instead. */}
+                    {/* For Mobile, we keep them here because the header has no space */}
+                    {displayedUnifiedPedido.estado !== 'archived' && (
+                      <div className="w-full px-3 lg:hidden flex flex-col gap-2">
+                        {displayedUnifiedPedido.tipo === 'delivery' && restauranteStore?.rapiboyToken && (
+                          <Button
+                            className="w-full bg-orange-600 hover:bg-orange-700 font-bold shadow-sm h-12 text-md"
+                            onClick={() => handleAsignarRapiboy(displayedUnifiedPedido.id)}
+                            disabled={assigningRapiboyId === displayedUnifiedPedido.id}
+                          >
+                            {assigningRapiboyId === displayedUnifiedPedido.id ? (
+                              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            ) : (
+                              <Truck className="mr-2 h-5 w-5" />
+                            )}
+                            Asignar Cadete Rapiboy
+                          </Button>
+                        )}
                         <Button
-                          className="w-full bg-blue-600 hover:bg-blue-700 font-bold shadow-sm h-12 text-md"
-                          onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'dispatched')}
+                          className={`w-full font-bold shadow-sm h-12 text-md text-white ${displayedUnifiedPedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                          onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'archived')}
                         >
-                          <Truck className="mr-2 h-5 w-5" />
-                          Despachar
+                          {displayedUnifiedPedido.estado === 'dispatched' ? <Archive className="mr-2 h-5 w-5" /> : <Truck className="mr-2 h-5 w-5" />}
+                          {displayedUnifiedPedido.estado === 'dispatched' ? 'Archivar Manualmente' : 'Despachar Manualmente'}
                         </Button>
                       </div>
                     )}

@@ -244,6 +244,16 @@ export const restauranteApi = {
       body: JSON.stringify({ horarios }),
     })
   },
+
+  configurarRapiboy: async (token: string, rapiboyToken: string) => {
+    return fetchApi('/restaurante/configurar-rapiboy', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ token: rapiboyToken })
+    })
+  },
 }
 
 // Cucuru API
@@ -832,6 +842,16 @@ export const notificacionesApi = {
 
 // Delivery API
 export const deliveryApi = {
+  asignarRapiboy: async (token: string, pedidoId: number) => {
+    return fetchApi('/delivery/rapiboy/asignar', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ pedidoId })
+    })
+  },
+
   // Obtener todos los pedidos de delivery con paginación
   getAll: async (token: string, page = 1, limit = 20, estado?: string) => {
     const params = new URLSearchParams({

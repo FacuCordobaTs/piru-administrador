@@ -10,6 +10,7 @@ interface Restaurante {
   imagenUrl?: string | null
   itemTracking?: boolean | null
   deliveryFee?: string | null
+  rapiboyToken?: string | null
 }
 
 interface AuthState {

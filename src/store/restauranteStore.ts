@@ -65,6 +65,7 @@ interface RestauranteData {
   colorPrimario: string | null
   colorSecundario: string | null
   disenoAlternativo: boolean | null
+  rapiboyToken: string | null
 }
 
 interface RestauranteState {

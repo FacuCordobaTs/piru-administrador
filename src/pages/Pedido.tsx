@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/store/authStore'
+import { useRestauranteStore } from '@/store/restauranteStore'
 
 import { pedidosApi, deliveryApi, takeawayApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -33,6 +34,7 @@ interface UnifiedPedido {
   totalItems: number
   pagado?: boolean
   metodoPago?: string | null
+  rapiboyTrackingUrl?: string | null
 }
 
 const getMinutesAgo = (dateString: string) => {
@@ -71,6 +73,7 @@ export default function Pedido() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
+  const restauranteStore = useRestauranteStore()
 
   // Compute the per-order delivery fee from the stored total (which already includes it)
   const getOrderDeliveryFee = (p: UnifiedPedido) => {
@@ -85,6 +88,29 @@ export default function Pedido() {
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
   const [updatingPago, setUpdatingPago] = useState<boolean>(false)
+  const [assigningRapiboyId, setAssigningRapiboyId] = useState<number | null>(null)
+
+  const handleAsignarRapiboy = async () => {
+    if (!token || !pedido) return
+    setAssigningRapiboyId(pedido.id)
+    try {
+      const response = await deliveryApi.asignarRapiboy(token, pedido.id) as {
+        success: boolean;
+        message: string;
+      }
+      if (response.success) {
+        toast.success('Cadete Rapiboy asignado exitosamente')
+        await fetchPedidoData() // Refresh pedido
+      } else {
+        toast.error(response.message || 'Error al asignar cadete')
+      }
+    } catch (error) {
+      console.error('Error al asignar Rapiboy:', error)
+      toast.error('Ocurrió un error al contactar con la API de Rapiboy')
+    } finally {
+      setAssigningRapiboyId(null)
+    }
+  }
 
   const fetchPedidoData = useCallback(async () => {
     if (!token || !id) return
@@ -110,7 +136,8 @@ export default function Pedido() {
           items: resD.data.items,
           totalItems: resD.data.totalItems,
           pagado: resD.data.pagado,
-          metodoPago: resD.data.metodoPago
+          metodoPago: resD.data.metodoPago,
+          rapiboyTrackingUrl: resD.data.rapiboyTrackingUrl
         }
         fallbackToMesa = false;
       }
@@ -467,6 +494,13 @@ export default function Pedido() {
           {pedido.estado === 'preparing' && (
             <Button className="h-12 px-6 rounded-full text-base bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20" onClick={() => handleUpdateEstado('delivered')} disabled={isUpdating}>
               {isUpdating ? <Loader2 className="animate-spin mr-2" /> : null} Listo
+            </Button>
+          )}
+
+          {isDelivery && restauranteStore.restaurante?.rapiboyToken && pedido.estado !== 'archived' && pedido.estado !== 'delivered' && (
+            <Button className="h-12 px-6 rounded-full text-base bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-600/20" onClick={handleAsignarRapiboy} disabled={assigningRapiboyId === pedido.id}>
+              {assigningRapiboyId === pedido.id ? <Loader2 className="animate-spin mr-2" /> : <Truck className="h-4 w-4 mr-2" />}
+              Asignar Rapiboy
             </Button>
           )}
 

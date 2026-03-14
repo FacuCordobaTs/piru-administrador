@@ -511,7 +511,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
   const topProducts = useMemo(() => {
     if (!data) return []
-    return data.productosVendidos
+    return data.productosVendidos.filter(p => !p.nombre.startsWith('[Extra]'))
   }, [data])
 
   const exportCSV = () => {
