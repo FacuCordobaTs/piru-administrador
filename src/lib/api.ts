@@ -223,6 +223,15 @@ export const restauranteApi = {
     })
   },
 
+  toggleOrderGroupEnabled: async (token: string) => {
+    return fetchApi('/restaurante/toggle-order-group-enabled', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
   getHorarios: async (token: string) => {
     return fetchApi('/restaurante/horarios', {
       method: 'GET',

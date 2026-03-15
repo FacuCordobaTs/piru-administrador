@@ -35,7 +35,8 @@ import {
   Clock,
   Plus,
   Trash2,
-  Truck
+  Truck,
+  UtensilsCrossed
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -73,6 +74,7 @@ const Perfil = () => {
   const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
   const [isTogglingSistemaPuntos, setIsTogglingSistemaPuntos] = useState(false)
   const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
+  const [isTogglingOrderGroupEnabled, setIsTogglingOrderGroupEnabled] = useState(false)
 
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
@@ -391,6 +393,29 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración de puntos')
     } finally {
       setIsTogglingSistemaPuntos(false)
+    }
+  }
+
+  // Toggle pedido entre amigos
+  const handleToggleOrderGroupEnabled = async () => {
+    if (!token) return
+
+    setIsTogglingOrderGroupEnabled(true)
+    try {
+      const response = await restauranteApi.toggleOrderGroupEnabled(token) as { success: boolean; orderGroupEnabled: boolean }
+      if (response.success) {
+        toast.success(response.orderGroupEnabled ? 'Pedido entre amigos activado' : 'Pedido entre amigos desactivado', {
+          description: response.orderGroupEnabled
+            ? 'El botón para armar pedidos grupales por link se mostrará en el menú'
+            : 'El botón para armar pedidos grupales estará oculto en el menú'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar pedido entre amigos:', error)
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingOrderGroupEnabled(false)
     }
   }
 
@@ -1052,6 +1077,43 @@ const Perfil = () => {
                   </>
                 )}
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Pedido entre Amigos */}
+          <Card className={(restaurante as any)?.orderGroupEnabled ? "border-teal-500/50 bg-teal-50/50 dark:bg-teal-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <UtensilsCrossed className="h-5 w-5" />
+                Pedido entre Amigos
+              </CardTitle>
+              <CardDescription>
+                {(restaurante as any)?.orderGroupEnabled
+                  ? 'Los clientes pueden crear un link para armar pedidos grupales'
+                  : 'El botón para armar pedidos entre amigos está oculto en el menú'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Mostrar botón "Armar pedido entre amigos"</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Cuando está activo, los clientes ven el botón para compartir un link y armar pedidos grupales.
+                  </p>
+                </div>
+                <Switch
+                  checked={(restaurante as any)?.orderGroupEnabled !== false}
+                  onCheckedChange={() => handleToggleOrderGroupEnabled()}
+                  disabled={isTogglingOrderGroupEnabled}
+                />
+              </div>
+              {isTogglingOrderGroupEnabled && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Actualizando...
+                </div>
+              )}
             </CardContent>
           </Card>
 
