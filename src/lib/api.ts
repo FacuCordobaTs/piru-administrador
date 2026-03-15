@@ -1028,6 +1028,80 @@ export const takeawayApi = {
   },
 }
 
+// Códigos de Descuento API
+export const codigosDescuentoApi = {
+  getAll: async (token: string) => {
+    return fetchApi('/codigo-descuento', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  create: async (
+    token: string,
+    data: {
+      codigo: string
+      tipo: 'porcentaje' | 'monto_fijo'
+      valor: string
+      limiteUsos?: number | null
+      montoMinimo?: string
+      fechaInicio?: string | null
+      fechaFin?: string | null
+    }
+  ) => {
+    return fetchApi('/codigo-descuento/create', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  update: async (
+    token: string,
+    id: number,
+    data: {
+      codigo?: string
+      tipo?: 'porcentaje' | 'monto_fijo'
+      valor?: string
+      limiteUsos?: number | null
+      montoMinimo?: string
+      fechaInicio?: string | null
+      fechaFin?: string | null
+      activo?: boolean
+    }
+  ) => {
+    return fetchApi(`/codigo-descuento/${id}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
+  toggle: async (token: string, id: number) => {
+    return fetchApi(`/codigo-descuento/${id}/toggle`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/codigo-descuento/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
 // Zonas de Delivery API
 export const zonasDeliveryApi = {
   getAll: async (token: string) => {

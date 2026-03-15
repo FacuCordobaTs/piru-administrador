@@ -120,6 +120,7 @@ interface DeliveryPedido {
   metodoPago?: string | null
   impreso?: boolean
   rapiboyTrackingUrl?: string | null
+  montoDescuento?: string | number | null
 }
 
 interface TakeawayPedido {
@@ -136,6 +137,7 @@ interface TakeawayPedido {
   pagado?: boolean
   metodoPago?: string | null
   impreso?: boolean
+  montoDescuento?: string | number | null
 }
 
 // Unified order type for the all-orders list
@@ -155,6 +157,7 @@ interface UnifiedPedido {
   pagado?: boolean
   metodoPago?: string | null
   rapiboyTrackingUrl?: string | null
+  montoDescuento?: string | number | null
 }
 
 interface NewDeliveryItem {
@@ -1741,6 +1744,7 @@ const Dashboard = () => {
         totalItems: p.totalItems,
         pagado: p.pagado,
         rapiboyTrackingUrl: p.rapiboyTrackingUrl,
+        montoDescuento: p.montoDescuento,
       })
     })
 
@@ -1759,6 +1763,7 @@ const Dashboard = () => {
         items: p.items,
         totalItems: p.totalItems,
         pagado: p.pagado,
+        montoDescuento: p.montoDescuento,
       })
     })
 
@@ -3246,6 +3251,17 @@ const Dashboard = () => {
                             </div>
                             <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
                               ${getOrderDeliveryFee(displayedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        )}
+                        {displayedUnifiedPedido.montoDescuento != null && parseFloat(String(displayedUnifiedPedido.montoDescuento)) > 0 && (
+                          <div className="flex items-baseline justify-between py-3 border-t border-border/40">
+                            <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                              <span className="text-muted-foreground text-sm font-mono w-6 shrink-0"></span>
+                              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Código de descuento</span>
+                            </div>
+                            <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium shrink-0 ml-4">
+                              -${parseFloat(String(displayedUnifiedPedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                             </span>
                           </div>
                         )}

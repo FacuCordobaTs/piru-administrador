@@ -35,6 +35,7 @@ interface UnifiedPedido {
   pagado?: boolean
   metodoPago?: string | null
   rapiboyTrackingUrl?: string | null
+  montoDescuento?: string | number | null
 }
 
 const getMinutesAgo = (dateString: string) => {
@@ -137,7 +138,8 @@ export default function Pedido() {
           totalItems: resD.data.totalItems,
           pagado: resD.data.pagado,
           metodoPago: resD.data.metodoPago,
-          rapiboyTrackingUrl: resD.data.rapiboyTrackingUrl
+          rapiboyTrackingUrl: resD.data.rapiboyTrackingUrl,
+          montoDescuento: resD.data.montoDescuento
         }
         fallbackToMesa = false;
       }
@@ -160,7 +162,8 @@ export default function Pedido() {
             items: resT.data.items,
             totalItems: resT.data.totalItems,
             pagado: resT.data.pagado,
-            metodoPago: resT.data.metodoPago
+            metodoPago: resT.data.metodoPago,
+            montoDescuento: resT.data.montoDescuento
           }
           fallbackToMesa = false;
         }
@@ -394,6 +397,17 @@ export default function Pedido() {
                 </div>
                 <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
                   ${getOrderDeliveryFee(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                </span>
+              </div>
+            )}
+            {(isDelivery || isTakeaway) && pedido.montoDescuento != null && parseFloat(String(pedido.montoDescuento)) > 0 && (
+              <div className="flex items-baseline justify-between py-3 border-t border-border/40">
+                <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                  <span className="text-muted-foreground text-sm font-mono w-6 shrink-0"></span>
+                  <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Código de descuento</span>
+                </div>
+                <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium shrink-0 ml-4">
+                  -${parseFloat(String(pedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                 </span>
               </div>
             )}

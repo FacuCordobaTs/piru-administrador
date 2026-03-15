@@ -14,7 +14,8 @@ import {
   LogOut,
   Sun,
   Moon,
-  Users
+  Users,
+  Tag
 } from 'lucide-react'
 
 const DashboardLayout = () => {
@@ -60,6 +61,7 @@ const DashboardLayout = () => {
     { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
     { icon: Package, label: 'Productos', path: '/dashboard/productos' },
     { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
+    { icon: Tag, label: 'Códigos de Descuento', path: '/dashboard/codigos-descuento' },
   ]
 
   const handleNavigation = (path: string) => {
