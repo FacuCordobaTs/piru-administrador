@@ -19,7 +19,7 @@ import {
   Clock, CheckCircle, Coffee,
   Utensils, ChefHat, Trash2, Archive,
   User, Minus, Search, Package,
-  AlertTriangle, Play, LayoutGrid, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag, CalendarDays
+  AlertTriangle, Play, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag, CalendarDays
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -299,7 +299,7 @@ const Dashboard = () => {
   const [updatingPago, setUpdatingPago] = useState<string | null>(null)
 
   // Mobile-specific state
-  const [mobileView, setMobileView] = useState<'mesas' | 'detail' | 'orders'>('mesas')
+  const [mobileView, setMobileView] = useState<'mesas' | 'detail' | 'orders'>('orders')
 
   // Dashboard mode: mesas vs pedidos vs nuevoPedido
   const [dashboardMode, setDashboardMode] = useState<'mesas' | 'pedidos' | 'nuevoPedido'>('mesas')
@@ -1389,16 +1389,22 @@ const Dashboard = () => {
   }, [displayedPedido])
 
   // Mobile back button handler
-  const handleBackToMesas = () => {
-    setMobileView('mesas')
+  const handleBackToPedidos = () => {
+    setMobileView('orders')
     setSelectedMesaId(null)
     setSelectedPedidoFromKanban(null)
   }
 
-  // Calculate active orders count for badge
+  // Calculate active orders count for badge (pedidos PAGADOS y NO ARCHIVADOS)
   const activeOrdersCount = useMemo(() => {
-    return Object.values(kanbanData).reduce((acc, arr) => acc + arr.length, 0)
-  }, [kanbanData])
+    const mesaIdsFromWS = new Set(pedidos.map(p => p.id))
+    let count = 0
+    count += pedidos.filter(p => p.estado !== 'archived' && p.pagado === true).length
+    count += closedPedidosFromAPI.filter(p => !mesaIdsFromWS.has(p.id) && p.estado !== 'archived' && p.pagado === true).length
+    count += deliveryPedidos.filter(p => p.estado !== 'archived' && p.pagado === true).length
+    count += takeawayPedidos.filter(p => p.estado !== 'archived' && p.pagado === true).length
+    return count
+  }, [pedidos, closedPedidosFromAPI, deliveryPedidos, takeawayPedidos])
 
   // ==================== DELIVERY FUNCTIONS ====================
 
@@ -1428,16 +1434,25 @@ const Dashboard = () => {
     if (!token) return
     setLoadingDelivery(true)
     try {
-      const response = await pedidoUnificadoApi.getAll(token, 'all') as {
-        success: boolean
-        data: Array<DeliveryPedido | TakeawayPedido>
+      const allData: Array<DeliveryPedido | TakeawayPedido> = []
+      let page = 1
+      const limit = 100
+      let hasMore = true
+      while (hasMore) {
+        const response = await pedidoUnificadoApi.getAll(token, 'all', page, limit) as {
+          success: boolean
+          data: Array<DeliveryPedido | TakeawayPedido>
+          pagination?: { hasMore: boolean }
+        }
+        if (!response.success || !response.data) break
+        allData.push(...response.data)
+        hasMore = (response.pagination?.hasMore ?? false) && response.data.length === limit
+        if (hasMore) page++
       }
-      if (response.success && response.data) {
-        const delivery = response.data.filter((p: any) => p.tipo === 'delivery') as DeliveryPedido[]
-        const takeaway = response.data.filter((p: any) => p.tipo === 'takeaway') as TakeawayPedido[]
-        setDeliveryPedidos(delivery)
-        setTakeawayPedidos(takeaway)
-      }
+      const delivery = allData.filter((p: any) => p.tipo === 'delivery') as DeliveryPedido[]
+      const takeaway = allData.filter((p: any) => p.tipo === 'takeaway') as TakeawayPedido[]
+      setDeliveryPedidos(delivery)
+      setTakeawayPedidos(takeaway)
     } catch (error) {
       console.error('Error fetching pedidos:', error)
     } finally {
@@ -1768,13 +1783,6 @@ const Dashboard = () => {
     return allPedidos.find(p => p.id === selectedUnifiedPedido.id && p.tipo === selectedUnifiedPedido.tipo) || selectedUnifiedPedido
   }, [selectedUnifiedPedido, allUnifiedPedidos, archivedUnifiedPedidos])
 
-  const pedidoCounts = useMemo(() => ({
-    all: allUnifiedPedidos.length,
-    mesa: allUnifiedPedidos.filter(p => p.tipo === 'mesa').length,
-    delivery: allUnifiedPedidos.filter(p => p.tipo === 'delivery').length,
-    takeaway: allUnifiedPedidos.filter(p => p.tipo === 'takeaway').length,
-  }), [allUnifiedPedidos])
-
   const getTipoBadge = (tipo: 'mesa' | 'delivery' | 'takeaway') => {
     switch (tipo) {
       case 'mesa': return { label: '🍽️ Mesa', className: '' }
@@ -1798,12 +1806,12 @@ const Dashboard = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 lg:gap-3">
             {/* Mobile back button */}
-            {mobileView !== 'mesas' && (
+            {mobileView !== 'orders' && (
               <Button
                 variant="ghost"
                 size="icon"
                 className="lg:hidden h-8 w-8 -ml-2"
-                onClick={handleBackToMesas}
+                onClick={handleBackToPedidos}
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
@@ -1900,26 +1908,8 @@ const Dashboard = () => {
         ) : (
           <div className="lg:hidden mt-2 -mx-3 px-3 border-t pt-2">
             <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-              <Button
-                variant={mobileView === 'mesas' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="flex-1 h-8 text-xs"
-                onClick={() => setMobileView('mesas')}
-              >
-                <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
-                Mesas
-              </Button>
-              <Button
-                variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="flex-1 h-8 text-xs relative"
-                onClick={() => (selectedMesaId || selectedUnifiedPedido) ? setMobileView('detail') : null}
-                disabled={!selectedMesaId && !selectedUnifiedPedido}
-              >
-                <List className="h-3.5 w-3.5 mr-1.5" />
-                Detalle
-              </Button>
-              <Button
+            
+            <Button
                 variant={mobileView === 'orders' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="flex-1 h-8 text-xs relative"
@@ -1932,6 +1922,16 @@ const Dashboard = () => {
                     {activeOrdersCount}
                   </span>
                 )}
+              </Button>
+              <Button
+                variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="flex-1 h-8 text-xs relative"
+                onClick={() => (selectedMesaId || selectedUnifiedPedido) ? setMobileView('detail') : null}
+                disabled={!selectedMesaId && !selectedUnifiedPedido}
+              >
+                <List className="h-3.5 w-3.5 mr-1.5" />
+                Detalle
               </Button>
             </div>
           </div>
@@ -3667,42 +3667,20 @@ const Dashboard = () => {
 
             {/* Mobile: Orders Panel - visible only on mobile */}
             <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full' : 'hidden'} lg:hidden`}>
-              {/* Filter tabs */}
-              <div className="border-b bg-background/95 backdrop-blur shrink-0 px-4 pt-3 pb-0">
-                <div className="grid grid-cols-2 gap-1 overflow-x-auto">
-                  {([
-                    { key: 'all' as const, label: 'Todos' },
-                    { key: 'mesa' as const, label: 'Mesas' },
-                    { key: 'delivery' as const, label: 'Delivery' },
-                    { key: 'takeaway' as const, label: 'Take Away' },
-                  ]).map(tab => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setPedidoFilter(tab.key)}
-                      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${pedidoFilter === tab.key
-                        ? 'text-foreground bg-accent'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                        }`}
-                    >
-                      {tab.label}
-                      {pedidoCounts[tab.key] > 0 && (
-                        <Badge className="ml-1 text-[10px] px-1.5 py-0 h-4 min-w-5 justify-center">
-                          {pedidoCounts[tab.key]}
-                        </Badge>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <div className="flex-1 overflow-auto p-4">
                 {loadingDelivery ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
-                ) : filteredUnifiedPedidos.length === 0 ? (
+                ) : allUnifiedPedidos.length === 0 && archivedUnifiedPedidos.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
                     <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
                     <p className="text-lg font-medium">No hay pedidos</p>
+                  </div>
+                ) : filteredUnifiedPedidos.length === 0 && filteredArchivedPedidos.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                    <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
+                    <p className="text-lg font-medium">No hay pedidos de este tipo</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -3734,6 +3712,59 @@ const Dashboard = () => {
                         </Card>
                       )
                     })}
+                    {/* Archived orders section - same as desktop */}
+                    {filteredArchivedPedidos.length > 0 && (
+                      <>
+                        <Separator className="my-3" />
+                        <div className="flex items-center gap-2 mb-2">
+                          <Archive className="h-3.5 w-3.5 text-muted-foreground/60" />
+                          <h3 className="text-xs font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
+                        </div>
+                        {filteredArchivedPedidos.map((pedido, index) => {
+                          const tipoBadge = getTipoBadge(pedido.tipo)
+                          const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                          const dateLabel = getDateLabel(pedido.createdAt)
+                          const prevDateLabel = index > 0 ? getDateLabel(filteredArchivedPedidos[index - 1].createdAt) : null
+                          const showDateSeparator = dateLabel !== prevDateLabel
+                          return (
+                            <Fragment key={`mob-archived-${pedido.tipo}-${pedido.id}`}>
+                              {showDateSeparator && (
+                                <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-2'}`}>
+                                  <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
+                                  <Separator className="flex-1" />
+                                </div>
+                              )}
+                              <Card
+                                className={`overflow-hidden opacity-70 hover:opacity-90 transition-all cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary' : ''}`}
+                                onClick={() => handleUnifiedPedidoClick(pedido)}
+                              >
+                                <div className="p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className={`${tipoBadge.className} text-sm font-semibold`}>
+                                          {tipoBadge.label}
+                                        </span>
+                                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 text-muted-foreground border-muted-foreground/30">
+                                          Archivado
+                                        </Badge>
+                                      </div>
+                                      {pedido.tipo === 'delivery' && pedido.direccion && (
+                                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{pedido.direccion}</p>
+                                      )}
+                                      <p className="text-xs text-muted-foreground">{getDateLabel(pedido.createdAt)}</p>
+                                    </div>
+                                    <p className="font-bold shrink-0">
+                                      ${parseFloat(pedido.total).toFixed(2)}
+                                    </p>
+                                  </div>
+                                </div>
+                              </Card>
+                            </Fragment>
+                          )
+                        })}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
