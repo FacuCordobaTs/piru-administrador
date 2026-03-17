@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi } from '@/lib/api'
+import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi, pedidoUnificadoApi } from '@/lib/api'
 import { type MesaConPedido, type ItemPedido as WSItemPedido } from '@/hooks/useAdminWebSocket'
 import { useAdminContext } from '@/context/AdminContext'
 import MesaQRCode from '@/components/MesaQRCode'
@@ -839,8 +839,6 @@ const Dashboard = () => {
 
     // Process mesa pedidos
     allPedidos.forEach(pedido => {
-      if (restauranteStore?.cucuruConfigurado && (pedido.metodoPago === 'transferencia' || !pedido.metodoPago) && !pedido.pagado) return;
-
       if (pedido.estado === 'archived') {
         grouped.archived.push({
           id: `mesa-${pedido.id}-archived`,
@@ -916,8 +914,6 @@ const Dashboard = () => {
 
     // Process delivery pedidos
     deliveryPedidos.forEach(dp => {
-      if (restauranteStore?.cucuruConfigurado && (dp.metodoPago === 'transferencia' || !dp.metodoPago) && !dp.pagado) return;
-
       const column = mapEstadoToColumn(dp.estado)
       if (!column || !grouped[column]) return
 
@@ -954,8 +950,6 @@ const Dashboard = () => {
 
     // Process takeaway pedidos
     takeawayPedidos.forEach(tp => {
-      if (restauranteStore?.cucuruConfigurado && (tp.metodoPago === 'transferencia' || !tp.metodoPago) && !tp.pagado) return;
-
       const column = mapEstadoToColumn(tp.estado)
       if (!column || !grouped[column]) return
 
@@ -1418,7 +1412,7 @@ const Dashboard = () => {
       }
       if (response.success) {
         toast.success('Cadete Rapiboy asignado exitosamente')
-        await fetchDeliveryPedidos() // Refresh pedidos
+        await fetchDeliveryTakeawayPedidos() // Refresh pedidos
       } else {
         toast.error(response.message || 'Error al asignar cadete')
       }
@@ -1430,50 +1424,36 @@ const Dashboard = () => {
     }
   }
 
-  const fetchDeliveryPedidos = useCallback(async () => {
+  const fetchDeliveryTakeawayPedidos = useCallback(async () => {
     if (!token) return
     setLoadingDelivery(true)
     try {
-      const response = await deliveryApi.getAll(token) as {
+      const response = await pedidoUnificadoApi.getAll(token, 'all') as {
         success: boolean
-        data: DeliveryPedido[]
+        data: Array<DeliveryPedido | TakeawayPedido>
       }
       if (response.success && response.data) {
-        setDeliveryPedidos(response.data)
+        const delivery = response.data.filter((p: any) => p.tipo === 'delivery') as DeliveryPedido[]
+        const takeaway = response.data.filter((p: any) => p.tipo === 'takeaway') as TakeawayPedido[]
+        setDeliveryPedidos(delivery)
+        setTakeawayPedidos(takeaway)
       }
     } catch (error) {
-      console.error('Error fetching delivery pedidos:', error)
+      console.error('Error fetching pedidos:', error)
     } finally {
       setLoadingDelivery(false)
     }
   }, [token])
 
-  const fetchTakeawayPedidos = useCallback(async () => {
-    if (!token) return
-    try {
-      const response = await takeawayApi.getAll(token) as {
-        success: boolean
-        data: TakeawayPedido[]
-      }
-      if (response.success && response.data) {
-        setTakeawayPedidos(response.data)
-      }
-    } catch (error) {
-      console.error('Error fetching takeaway pedidos:', error)
-    }
-  }, [token])
+  useEffect(() => {
+    fetchDeliveryTakeawayPedidos()
+  }, [fetchDeliveryTakeawayPedidos])
 
   useEffect(() => {
-    fetchDeliveryPedidos()
-    fetchTakeawayPedidos()
-  }, [fetchDeliveryPedidos, fetchTakeawayPedidos])
-
-  useEffect(() => {
-    if (lastUpdate) {
-      if (lastUpdate.type === 'delivery') fetchDeliveryPedidos()
-      if (lastUpdate.type === 'takeaway') fetchTakeawayPedidos()
+    if (lastUpdate && (lastUpdate.type === 'delivery' || lastUpdate.type === 'takeaway')) {
+      fetchDeliveryTakeawayPedidos()
     }
-  }, [lastUpdate, fetchDeliveryPedidos, fetchTakeawayPedidos])
+  }, [lastUpdate, fetchDeliveryTakeawayPedidos])
 
   useEffect(() => {
     if (dashboardMode === 'nuevoPedido' && productos.length === 0) fetchProductos()
@@ -1609,8 +1589,7 @@ const Dashboard = () => {
         if (isMesa) {
           fetchMesasREST()
         }
-        fetchDeliveryPedidos()
-        fetchTakeawayPedidos()
+        fetchDeliveryTakeawayPedidos()
       }
     } catch (error) {
     } finally {
@@ -1683,7 +1662,6 @@ const Dashboard = () => {
 
     // Add mesa pedidos from WS (real-time, only those with at least 1 item)
     pedidos.forEach(p => {
-      if (restauranteStore?.cucuruConfigurado && ((p as any).metodoPago === 'transferencia' || !(p as any).metodoPago) && !p.pagado) return;
       if (p.totalItems === 0) return
       addedMesaPedidoIds.add(p.id)
       // For mesa pedidos, use the date of the last item added
@@ -1707,7 +1685,6 @@ const Dashboard = () => {
     // The backend already returns createdAt as the last item date, but we'll recalculate
     // in case items have createdAt and we want to be sure
     closedPedidosFromAPI.forEach(p => {
-      if (restauranteStore?.cucuruConfigurado && ((p as any).metodoPago === 'transferencia' || !(p as any).metodoPago) && !p.pagado) return;
       if (addedMesaPedidoIds.has(p.id)) return
       if (p.totalItems === 0) return
       // For mesa pedidos, use the date of the last item added
@@ -1729,7 +1706,6 @@ const Dashboard = () => {
 
     // Add delivery pedidos
     deliveryPedidos.forEach(p => {
-      if (restauranteStore?.cucuruConfigurado && (p.metodoPago === 'transferencia' || !p.metodoPago) && !p.pagado) return;
       unified.push({
         id: p.id,
         tipo: 'delivery',
@@ -1750,7 +1726,6 @@ const Dashboard = () => {
 
     // Add takeaway pedidos
     takeawayPedidos.forEach(p => {
-      if (restauranteStore?.cucuruConfigurado && (p.metodoPago === 'transferencia' || !p.metodoPago) && !p.pagado) return;
       unified.push({
         id: p.id,
         tipo: 'takeaway',

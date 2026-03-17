@@ -66,6 +66,9 @@ interface RestauranteData {
   colorSecundario: string | null
   disenoAlternativo: boolean | null
   rapiboyToken: string | null
+  proveedorPago: 'cucuru' | 'talo' | 'mercadopago' | 'manual' | null
+  taloApiKey: string | null
+  taloUserId: string | null
 }
 
 interface RestauranteState {

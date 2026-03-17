@@ -11,6 +11,7 @@ import {
 
 /* ==========================================================================
    INTERFACES & TYPES
+   Cierre de turno: mesas (pedido), delivery/takeaway (pedido_unificado)
    ========================================================================== */
 interface CierreTurnoItem { id: number; productoId: number; nombreProducto: string; cantidad: number; precioUnitario: string; clienteNombre?: string; estado?: string; agregados?: any }
 interface CierreTurnoPedidoMesa { id: number; mesaId: number | null; nombrePedido: string | null; estado: string; total: string; createdAt: string; closedAt: string | null; mesaNombre: string | null; tipo: 'mesa'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; pagos?: any[]; pagosSubtotal?: any[] }
@@ -228,11 +229,15 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
   const sumItems = pedido.items.reduce((acc, it) => acc + itemSubtotal(it), 0)
   const dynamicDeliveryFee = pedido.tipo === 'delivery' ? Math.max(0, parseFloat(pedido.total) - sumItems) : 0
 
-  // 3. Agrupar ítems
+  // 3. Agrupar ítems (pedido_unificado: delivery/takeaway no tienen clienteNombre por ítem)
   const groups: { cliente: string; items: CierreTurnoItem[] }[] = (() => {
     const map = new Map<string, CierreTurnoItem[]>()
+    const defaultCliente = (pedido.tipo === 'delivery' || pedido.tipo === 'takeaway')
+      ? (pedido.tipo === 'delivery' ? (pedido as CierreTurnoPedidoDelivery).nombreCliente || 'Delivery' : (pedido as CierreTurnoPedidoTakeaway).nombreCliente || 'Takeaway')
+      : ''
+
     pedido.items.forEach(it => {
-      const cliente = (it.clienteNombre && it.clienteNombre.trim()) ? it.clienteNombre.trim() : ''
+      const cliente = (it.clienteNombre && it.clienteNombre.trim()) ? it.clienteNombre.trim() : defaultCliente
       if (!map.has(cliente)) map.set(cliente, [])
       map.get(cliente)!.push(it)
     })
@@ -248,12 +253,12 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
         clienteNombre: undefined,
         estado: undefined
       }
-      if (!map.has('')) map.set('', [])
-      map.get('')!.push(envioItem)
+      if (!map.has(defaultCliente)) map.set(defaultCliente, [])
+      map.get(defaultCliente)!.push(envioItem)
     }
 
-    if (map.size === 1 && map.has('')) {
-      return [{ cliente: 'Items', items: map.get('')! }]
+    if (map.size === 1 && map.has(defaultCliente)) {
+      return [{ cliente: defaultCliente || 'Items', items: map.get(defaultCliente)! }]
     }
     const arr: { cliente: string; items: CierreTurnoItem[] }[] = []
     map.forEach((items, cliente) => {
@@ -347,7 +352,7 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
                           {grp.items.map((it) => (
                             <tr key={it.id} className="border-t bg-background">
                               <td className="py-3 px-3 align-top min-w-0">
-                                <div className="truncate font-medium">{it.nombreProducto}</div>
+                                <div className="truncate font-medium">{it.nombreProducto || `Producto #${it.productoId}`}</div>
                                 {it.estado && <div className="text-[12px] text-muted-foreground mt-0.5">{it.estado}</div>}
                                 {renderAgregadosUI(it.agregados)}
                               </td>
@@ -376,7 +381,7 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
                         <div key={`mobile-${it.id}`} className="rounded-md border p-3 bg-background">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-sm font-medium truncate">{it.nombreProducto}</div>
+                              <div className="text-sm font-medium truncate">{it.nombreProducto || `Producto #${it.productoId}`}</div>
                               {it.estado && <div className="text-xs text-muted-foreground mt-1">{it.estado}</div>}
                               {renderAgregadosUI(it.agregados)}
                             </div>
@@ -458,7 +463,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
         p.tipo === 'delivery' ? (p as CierreTurnoPedidoDelivery).nombreCliente || '' :
           (p as CierreTurnoPedidoTakeaway).nombreCliente || ''
       if (label.toLowerCase().includes(q)) return true
-      return p.items.some(i => i.nombreProducto.toLowerCase().includes(q))
+      return p.items.some(i => (i.nombreProducto || '').toLowerCase().includes(q))
     })
   }, [allPedidos, query])
 

@@ -263,6 +263,23 @@ export const restauranteApi = {
       body: JSON.stringify({ token: rapiboyToken })
     })
   },
+
+  updatePasarelaPago: async (
+    token: string,
+    data: {
+      proveedorPago?: 'cucuru' | 'talo' | 'mercadopago' | 'manual'
+      taloApiKey?: string | null
+      taloUserId?: string | null
+    }
+  ) => {
+    return fetchApi('/restaurante/pasarela-pago', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
 }
 
 // Cucuru API
@@ -274,6 +291,14 @@ export const cucuruApi = {
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({ apiKey, collectorId })
+    })
+  },
+  reconfigurarWebhook: async (token: string) => {
+    return fetchApi('/restaurante/reconfigurar-webhook-cucuru', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
     })
   }
 }
@@ -849,183 +874,90 @@ export const notificacionesApi = {
   },
 }
 
-// Delivery API
-export const deliveryApi = {
-  asignarRapiboy: async (token: string, pedidoId: number) => {
-    return fetchApi('/delivery/rapiboy/asignar', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ pedidoId })
-    })
-  },
-
-  // Obtener todos los pedidos de delivery con paginación
-  getAll: async (token: string, page = 1, limit = 20, estado?: string) => {
+// Pedido Unificado API (delivery + takeaway) - backend único
+export const pedidoUnificadoApi = {
+  getAll: async (token: string, tipo: 'delivery' | 'takeaway' | 'all' = 'all', page = 1, limit = 20, estado?: string) => {
     const params = new URLSearchParams({
       page: page.toString(),
-      limit: limit.toString()
+      limit: limit.toString(),
+      tipo,
     })
     if (estado) params.append('estado', estado)
-
-    return fetchApi(`/delivery/list?${params}`, {
+    return fetchApi(`/pedido-unificado/list?${params}`, {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     })
   },
-
-  // Obtener un pedido de delivery específico
   getById: async (token: string, id: number) => {
-    return fetchApi(`/delivery/${id}`, {
+    return fetchApi(`/pedido-unificado/${id}`, {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     })
   },
-
-  // Crear nuevo pedido de delivery
   create: async (
     token: string,
-    data: {
-      direccion: string
-      nombreCliente?: string
-      telefono?: string
-      notas?: string
-      items: Array<{
-        productoId: number
-        cantidad: number
-        ingredientesExcluidos?: number[]
-      }>
-    }
+    data:
+      | { tipo: 'delivery'; direccion: string; nombreCliente?: string; telefono?: string; notas?: string; items: Array<{ productoId: number; cantidad: number; ingredientesExcluidos?: number[] }> }
+      | { tipo: 'takeaway'; nombreCliente?: string; telefono?: string; notas?: string; items: Array<{ productoId: number; cantidad: number; ingredientesExcluidos?: number[] }> }
   ) => {
-    return fetchApi('/delivery/create', {
+    return fetchApi('/pedido-unificado/create', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify(data),
     })
   },
-
-  // Actualizar estado del pedido de delivery
   updateEstado: async (token: string, id: number, estado: string) => {
-    return fetchApi(`/delivery/${id}/estado`, {
+    return fetchApi(`/pedido-unificado/${id}/estado`, {
       method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({ estado }),
     })
   },
-
-  // Eliminar pedido de delivery
-  delete: async (token: string, id: number) => {
-    return fetchApi(`/delivery/${id}`, {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+  marcarPagado: async (token: string, id: number, metodoPago?: string) => {
+    return fetchApi(`/pedido-unificado/${id}/pagado`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ metodoPago }),
     })
   },
-
-  // Marcar/desmarcar pedido de delivery como pagado
-  marcarPagado: async (token: string, id: number, metodoPago?: string) => {
-    return fetchApi(`/delivery/${id}/pagado`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ metodoPago }),
+  delete: async (token: string, id: number) => {
+    return fetchApi(`/pedido-unificado/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  asignarRapiboy: async (token: string, pedidoId: number) => {
+    return fetchApi('/pedido-unificado/rapiboy/asignar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pedidoId }),
     })
   },
 }
 
-// Takeaway API
+// Delivery API - usa pedidoUnificado por detrás (compatibilidad)
+export const deliveryApi = {
+  asignarRapiboy: (token: string, pedidoId: number) => pedidoUnificadoApi.asignarRapiboy(token, pedidoId),
+  getAll: (token: string, page = 1, limit = 20, estado?: string) =>
+    pedidoUnificadoApi.getAll(token, 'delivery', page, limit, estado),
+  getById: (token: string, id: number) => pedidoUnificadoApi.getById(token, id),
+  create: (token: string, data: { direccion: string; nombreCliente?: string; telefono?: string; notas?: string; items: Array<{ productoId: number; cantidad: number; ingredientesExcluidos?: number[] }> }) =>
+    pedidoUnificadoApi.create(token, { tipo: 'delivery', ...data }),
+  updateEstado: (token: string, id: number, estado: string) => pedidoUnificadoApi.updateEstado(token, id, estado),
+  delete: (token: string, id: number) => pedidoUnificadoApi.delete(token, id),
+  marcarPagado: (token: string, id: number, metodoPago?: string) => pedidoUnificadoApi.marcarPagado(token, id, metodoPago),
+}
+
+// Takeaway API - usa pedidoUnificado por detrás (compatibilidad)
 export const takeawayApi = {
-  // Obtener todos los pedidos take away con paginación
-  getAll: async (token: string, page = 1, limit = 20, estado?: string) => {
-    const params = new URLSearchParams({
-      page: page.toString(),
-      limit: limit.toString()
-    })
-    if (estado) params.append('estado', estado)
-
-    return fetchApi(`/takeaway/list?${params}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-  },
-
-  // Obtener un pedido take away específico
-  getById: async (token: string, id: number) => {
-    return fetchApi(`/takeaway/${id}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-  },
-
-  // Crear nuevo pedido take away
-  create: async (
-    token: string,
-    data: {
-      nombreCliente?: string
-      telefono?: string
-      notas?: string
-      items: Array<{
-        productoId: number
-        cantidad: number
-        ingredientesExcluidos?: number[]
-      }>
-    }
-  ) => {
-    return fetchApi('/takeaway/create', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(data),
-    })
-  },
-
-  // Actualizar estado del pedido take away
-  updateEstado: async (token: string, id: number, estado: string) => {
-    return fetchApi(`/takeaway/${id}/estado`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ estado }),
-    })
-  },
-
-  // Eliminar pedido take away
-  delete: async (token: string, id: number) => {
-    return fetchApi(`/takeaway/${id}`, {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-  },
-
-  // Marcar/desmarcar pedido take away como pagado
-  marcarPagado: async (token: string, id: number, metodoPago?: string) => {
-    return fetchApi(`/takeaway/${id}/pagado`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ metodoPago }),
-    })
-  },
+  getAll: (token: string, page = 1, limit = 20, estado?: string) =>
+    pedidoUnificadoApi.getAll(token, 'takeaway', page, limit, estado),
+  getById: (token: string, id: number) => pedidoUnificadoApi.getById(token, id),
+  create: (token: string, data: { nombreCliente?: string; telefono?: string; notas?: string; items: Array<{ productoId: number; cantidad: number; ingredientesExcluidos?: number[] }> }) =>
+    pedidoUnificadoApi.create(token, { tipo: 'takeaway', ...data }),
+  updateEstado: (token: string, id: number, estado: string) => pedidoUnificadoApi.updateEstado(token, id, estado),
+  delete: (token: string, id: number) => pedidoUnificadoApi.delete(token, id),
+  marcarPagado: (token: string, id: number, metodoPago?: string) => pedidoUnificadoApi.marcarPagado(token, id, metodoPago),
 }
 
 // Códigos de Descuento API

@@ -8,6 +8,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { restauranteApi, mercadopagoApi, cucuruApi, ApiError } from '@/lib/api'
@@ -36,7 +43,8 @@ import {
   Plus,
   Trash2,
   Truck,
-  UtensilsCrossed
+  UtensilsCrossed,
+  RefreshCw
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -77,11 +85,17 @@ const Perfil = () => {
   const [isTogglingOrderGroupEnabled, setIsTogglingOrderGroupEnabled] = useState(false)
 
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
+  const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
   const [cucuruCollectorId, setCucuruCollectorId] = useState('')
 
   const [isConfiguringRapiboy, setIsConfiguringRapiboy] = useState(false)
   const [rapiboyToken, setRapiboyToken] = useState('')
+
+  const [isSavingPasarela, setIsSavingPasarela] = useState(false)
+  const [proveedorPago, setProveedorPago] = useState<string>((restaurante as any)?.proveedorPago || 'manual')
+  const [taloApiKey, setTaloApiKey] = useState('')
+  const [taloUserId, setTaloUserId] = useState('')
 
   // Tauri Printer State
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
@@ -96,6 +110,7 @@ const Perfil = () => {
   const [horarios, setHorarios] = useState<HorariosDia>({})
   const [isSavingHorarios, setIsSavingHorarios] = useState(false)
   const [horariosLoaded, setHorariosLoaded] = useState(false)
+  const [isMigratingPedidos, setIsMigratingPedidos] = useState(false)
 
   useEffect(() => {
     const cargarHorarios = async () => {
@@ -182,6 +197,13 @@ const Perfil = () => {
       restauranteStore.fetchData()
     }
   }, [])
+
+  useEffect(() => {
+    const prov = (restaurante as any)?.proveedorPago
+    if (prov && ['cucuru', 'talo', 'mercadopago', 'manual'].includes(prov)) {
+      setProveedorPago(prov)
+    }
+  }, [restaurante])
 
   // Manejar callback de MercadoPago (cuando vuelve de autorizar)
   useEffect(() => {
@@ -290,6 +312,29 @@ const Perfil = () => {
     navigate('/login')
   }
 
+  const handleMigrarPedidos = async () => {
+    if (!token) return
+    setIsMigratingPedidos(true)
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+      const res = await fetch(`${API_URL}/migrate-pedidos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      const data = await res.json()
+      console.log('Respuesta migración pedidos:', data)
+      toast.success('Migración ejecutada', { description: 'Revisa la consola para ver el resultado' })
+    } catch (err) {
+      console.error('Error en migración:', err)
+      toast.error('Error al ejecutar migración')
+    } finally {
+      setIsMigratingPedidos(false)
+    }
+  }
+
   // Handle configurar rapiboy
   const handleConfigurarRapiboy = async () => {
     if (!token) return
@@ -340,6 +385,74 @@ const Perfil = () => {
       toast.error('Error al configurar la Billetera Virtual')
     } finally {
       setIsConfiguringCucuru(false)
+    }
+  }
+
+  const taloYaConfigurado = !!(restaurante as any)?.taloApiKey && !!(restaurante as any)?.taloUserId
+
+  const handleGuardarPasarelaPago = async () => {
+    if (!token) return
+    if (proveedorPago === 'talo' && !taloYaConfigurado && (!taloApiKey.trim() || !taloUserId.trim())) {
+      toast.error('Para usar Talo debes ingresar API Key y User ID')
+      return
+    }
+
+    setIsSavingPasarela(true)
+    try {
+      const payload: Record<string, unknown> = {
+        proveedorPago: proveedorPago as 'cucuru' | 'talo' | 'mercadopago' | 'manual',
+      }
+      if (proveedorPago === 'talo') {
+        if (taloApiKey.trim() && taloUserId.trim()) {
+          payload.taloApiKey = taloApiKey.trim()
+          payload.taloUserId = taloUserId.trim()
+        }
+        // Si ya configurado y no ingresó nuevos, no enviamos taloApiKey/taloUserId (mantiene los existentes)
+      } else {
+        payload.taloApiKey = null
+        payload.taloUserId = null
+      }
+
+      const response = await restauranteApi.updatePasarelaPago(token, payload) as { success: boolean }
+      if (response.success) {
+        toast.success('Pasarela de pago actualizada', {
+          description: `Proveedor configurado: ${proveedorPago === 'manual' ? 'Manual' : proveedorPago === 'talo' ? 'Talo' : proveedorPago === 'cucuru' ? 'Cucuru' : 'MercadoPago'}`,
+        })
+        restauranteStore.fetchData()
+        if (proveedorPago === 'talo') {
+          setTaloApiKey('')
+          setTaloUserId('')
+        }
+      }
+    } catch (error) {
+      console.error('Error al guardar pasarela de pago:', error)
+      if (error instanceof ApiError) {
+        toast.error('Error al guardar', { description: error.message })
+      } else {
+        toast.error('Error de conexión')
+      }
+    } finally {
+      setIsSavingPasarela(false)
+    }
+  }
+
+  const handleReenviarWebhookCucuru = async () => {
+    if (!token) return
+    setIsReenviandoWebhookCucuru(true)
+    try {
+      const response = await cucuruApi.reconfigurarWebhook(token) as { success: boolean }
+      if (response.success) {
+        toast.success('Webhook reenviado', {
+          description: 'La URL HTTPS del webhook se volvió a enviar a Cucuru correctamente.'
+        })
+      }
+    } catch (error) {
+      console.error('Error al reenviar webhook Cucuru:', error)
+      toast.error('Error al reenviar webhook', {
+        description: 'No se pudo reconfigurar. Verifica tus credenciales en Cucuru.'
+      })
+    } finally {
+      setIsReenviandoWebhookCucuru(false)
     }
   }
 
@@ -705,6 +818,107 @@ const Perfil = () => {
         </Card>
 
         <div className="space-y-6">
+          {/* Tarjeta de Proveedor de Pasarela (Transferencias) */}
+          <Card className="border-amber-500/30 bg-gradient-to-br from-amber-50/80 to-orange-50/50 dark:from-amber-950/20 dark:to-orange-950/10">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Proveedor de Pasarela (Transferencias)
+              </CardTitle>
+              <CardDescription>
+                Elige qué plataforma usará tu local para cobrar transferencias. Los pedidos solo llegarán a cocina cuando el pago sea confirmado por la pasarela.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Proveedor activo</Label>
+                <Select
+                  value={proveedorPago}
+                  onValueChange={setProveedorPago}
+                  disabled={isSavingPasarela}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Seleccionar proveedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">
+                      <span className="flex items-center gap-2">
+                        Manual — Sin validación automática
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="cucuru">
+                      <span className="flex items-center gap-2">
+                        Cucuru — Billetera virtual
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="talo">
+                      <span className="flex items-center gap-2">
+                        Talo — Transferencias en tiempo real
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="mercadopago">
+                      <span className="flex items-center gap-2">
+                        MercadoPago — Pagos con tarjeta
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {proveedorPago === 'talo' && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-3">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Credenciales de Talo
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Obtén tu API Key y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <Input
+                      type="password"
+                      placeholder="API Key de Talo"
+                      value={taloApiKey}
+                      onChange={(e) => setTaloApiKey(e.target.value)}
+                      disabled={isSavingPasarela}
+                      className="bg-background"
+                    />
+                    <Input
+                      placeholder="User ID de Talo"
+                      value={taloUserId}
+                      onChange={(e) => setTaloUserId(e.target.value)}
+                      disabled={isSavingPasarela}
+                      className="bg-background"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <Button
+                onClick={handleGuardarPasarelaPago}
+                disabled={isSavingPasarela || (proveedorPago === 'talo' && !taloYaConfigurado && (!taloApiKey.trim() || !taloUserId.trim()))}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {isSavingPasarela ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Guardar configuración
+                  </>
+                )}
+              </Button>
+
+              {(restaurante as any)?.proveedorPago && (restaurante as any).proveedorPago !== 'manual' && (
+                <p className="text-xs text-muted-foreground">
+                  Actualmente configurado: <strong className="capitalize">{(restaurante as any).proveedorPago}</strong>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Tarjeta de MercadoPago */}
           <Card className={restaurante?.mpConnected ? "border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-sky-500/50 bg-sky-50/50 dark:bg-sky-950/20"}>
             <CardHeader>
@@ -802,6 +1016,23 @@ const Perfil = () => {
                       Tu sistema ya recibe notificaciones de pagos transferidos a tu cuenta Cucuru.
                     </p>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleReenviarWebhookCucuru}
+                    disabled={isReenviandoWebhookCucuru}
+                    className="border-purple-300 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                  >
+                    {isReenviandoWebhookCucuru ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Reenviando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4" /> Reenviar webhook HTTPS
+                      </>
+                    )}
+                  </Button>
                 </>
               ) : (
                 <>
@@ -1323,7 +1554,7 @@ const Perfil = () => {
                 Acciones irreversibles con tu cuenta
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-2">
               <Button
                 variant="destructive"
                 className="w-full"
