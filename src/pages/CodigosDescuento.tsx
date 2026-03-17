@@ -62,11 +62,6 @@ const formatCurrency = (value: number | string) => {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(num)
 }
 
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return '—'
-  return new Date(dateString).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
 const formatValorDescuento = (c: CodigoDescuento) => {
   if (c.tipo === 'porcentaje') return `${c.valor}%`
   return formatCurrency(c.valor)
@@ -82,14 +77,23 @@ const isVigente = (c: CodigoDescuento) => {
 }
 
 // --- Form default ---
-const defaultForm = {
+type FormTipo = 'porcentaje' | 'monto_fijo'
+const defaultForm: {
+  codigo: string
+  tipo: FormTipo
+  valor: string
+  limiteUsos: number | null
+  montoMinimo: string
+  fechaInicio: string
+  fechaFin: string
+} = {
   codigo: '',
-  tipo: 'porcentaje' as const,
+  tipo: 'porcentaje',
   valor: '',
-  limiteUsos: null as number | null,
+  limiteUsos: null,
   montoMinimo: '0',
-  fechaInicio: '' as string,
-  fechaFin: '' as string,
+  fechaInicio: '',
+  fechaFin: '',
 }
 
 // =============================================================================
@@ -377,7 +381,7 @@ export default function CodigosDescuento() {
                 <Label>Tipo</Label>
                 <Select
                   value={form.tipo}
-                  onValueChange={(v) => setForm((f) => ({ ...f, tipo: v as 'porcentaje' | 'monto_fijo' }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, tipo: v as FormTipo }))}
                 >
                   <SelectTrigger>
                     <SelectValue />

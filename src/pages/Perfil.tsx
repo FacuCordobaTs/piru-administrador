@@ -110,7 +110,6 @@ const Perfil = () => {
   const [horarios, setHorarios] = useState<HorariosDia>({})
   const [isSavingHorarios, setIsSavingHorarios] = useState(false)
   const [horariosLoaded, setHorariosLoaded] = useState(false)
-  const [isMigratingPedidos, setIsMigratingPedidos] = useState(false)
 
   useEffect(() => {
     const cargarHorarios = async () => {
@@ -310,29 +309,6 @@ const Perfil = () => {
     restauranteStore.reset()
     toast.success('Sesión cerrada exitosamente')
     navigate('/login')
-  }
-
-  const handleMigrarPedidos = async () => {
-    if (!token) return
-    setIsMigratingPedidos(true)
-    try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-      const res = await fetch(`${API_URL}/migrate-pedidos`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      })
-      const data = await res.json()
-      console.log('Respuesta migración pedidos:', data)
-      toast.success('Migración ejecutada', { description: 'Revisa la consola para ver el resultado' })
-    } catch (err) {
-      console.error('Error en migración:', err)
-      toast.error('Error al ejecutar migración')
-    } finally {
-      setIsMigratingPedidos(false)
-    }
   }
 
   // Handle configurar rapiboy
