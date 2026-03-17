@@ -73,11 +73,17 @@ async function fetchApi<T>(
         handleUnauthorized()
       }
 
-      throw new ApiError(
-        data.error || data.message || 'Error en la solicitud',
-        response.status,
-        data
-      )
+      const errorMessage = typeof data?.error === 'string'
+        ? data.error
+        : data?.message
+        ? data.message
+        : data?.error?.message
+        ? data.error.message
+        : data?.error?.issues
+        ? data.error.issues.map((i: { message?: string; path?: string[] }) => i.message || i.path?.join('.')).join('; ') || 'Error de validación'
+        : 'Error en la solicitud'
+
+      throw new ApiError(errorMessage, response.status, data)
     }
 
     return data

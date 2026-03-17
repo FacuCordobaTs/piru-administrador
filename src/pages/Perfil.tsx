@@ -38,7 +38,6 @@ import {
   Printer,
   List,
   Wallet,
-  Star,
   Clock,
   Plus,
   Trash2,
@@ -79,8 +78,6 @@ const Perfil = () => {
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [imageLightBase64, setImageLightBase64] = useState<string | null>(null)
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
-  const [isTogglingSplitPayment, setIsTogglingSplitPayment] = useState(false)
-  const [isTogglingSistemaPuntos, setIsTogglingSistemaPuntos] = useState(false)
   const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
   const [isTogglingOrderGroupEnabled, setIsTogglingOrderGroupEnabled] = useState(false)
 
@@ -432,59 +429,6 @@ const Perfil = () => {
     }
   }
 
-  // Toggle modo carrito
-
-
-  // Toggle modo split payment
-  const handleToggleSplitPayment = async () => {
-    if (!token) return
-
-    setIsTogglingSplitPayment(true)
-    try {
-      const response = await restauranteApi.toggleSplitPayment(token) as { success: boolean; splitPayment: boolean }
-      if (response.success) {
-        toast.success(response.splitPayment ? 'Split Payment activado' : 'Split Payment desactivado', {
-          description: response.splitPayment
-            ? 'Los clientes podrán pagar individualmente'
-            : 'Los clientes pagarán el total de la mesa'
-        })
-        restauranteStore.fetchData()
-      }
-    } catch (error) {
-      console.error('Error al cambiar modo split payment:', error)
-      toast.error('Error al cambiar la configuración de pagos')
-    } finally {
-      setIsTogglingSplitPayment(false)
-    }
-  }
-
-
-  // Toggle solo carta digital
-
-
-  // Toggle sistema de puntos
-  const handleToggleSistemaPuntos = async () => {
-    if (!token) return
-
-    setIsTogglingSistemaPuntos(true)
-    try {
-      const response = await restauranteApi.toggleSistemaPuntos(token) as { success: boolean; sistemaPuntos: boolean }
-      if (response.success) {
-        toast.success(response.sistemaPuntos ? 'Sistema de Puntos activado' : 'Sistema de Puntos desactivado', {
-          description: response.sistemaPuntos
-            ? 'Los clientes ahora podrán ganar y canjear puntos en tu restaurante'
-            : 'Se ha deshabilitado el sistema de puntos'
-        })
-        restauranteStore.fetchData()
-      }
-    } catch (error) {
-      console.error('Error al cambiar sistema de puntos:', error)
-      toast.error('Error al cambiar la configuración de puntos')
-    } finally {
-      setIsTogglingSistemaPuntos(false)
-    }
-  }
-
   // Toggle pedido entre amigos
   const handleToggleOrderGroupEnabled = async () => {
     if (!token) return
@@ -795,7 +739,7 @@ const Perfil = () => {
 
         <div className="space-y-6">
           {/* Tarjeta de Proveedor de Pasarela (Transferencias) */}
-          <Card className="border-amber-500/30 bg-gradient-to-br from-amber-50/80 to-orange-50/50 dark:from-amber-950/20 dark:to-orange-950/10">
+          <Card className="border-amber-500/30 bg-linear-to-br from-amber-50/80 to-orange-50/50 dark:from-amber-950/20 dark:to-orange-950/10">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Settings className="h-5 w-5" />
@@ -809,8 +753,12 @@ const Perfil = () => {
               <div className="space-y-2">
                 <Label>Proveedor activo</Label>
                 <Select
-                  value={proveedorPago}
-                  onValueChange={setProveedorPago}
+                  value={proveedorPago || 'manual'}
+                  onValueChange={(v) => {
+                    if (v && ['cucuru', 'talo', 'mercadopago', 'manual'].includes(v)) {
+                      setProveedorPago(v)
+                    }
+                  }}
                   disabled={isSavingPasarela}
                 >
                   <SelectTrigger className="w-full">
@@ -1098,134 +1046,6 @@ const Perfil = () => {
                   )}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de Split Payment */}
-          <Card className={restaurante?.splitPayment ? "border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
-                Pagos Divididos
-              </CardTitle>
-              <CardDescription>
-                {restaurante?.splitPayment
-                  ? 'Tus clientes pueden pagar lo que consumieron'
-                  : 'Tus clientes pagan el total de la mesa'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {restaurante?.splitPayment ? (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Los clientes seleccionan qué items pagar</p>
-                    <p>• Ideal para grupos grandes</p>
-                    <p>• Facilita el pago individual</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
-                    Split Payment Activo
-                  </Badge>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Se genera un único ticket por mesa</p>
-                    <p>• Un cliente paga el total (puede recolectar dinero)</p>
-                    <p>• Flujo más rápido para mesas familiares</p>
-                  </div>
-                  <Badge variant="secondary">
-                    Split Payment Inactivo
-                  </Badge>
-                </>
-              )}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleToggleSplitPayment}
-                disabled={isTogglingSplitPayment}
-              >
-                {isTogglingSplitPayment ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cambiando...
-                  </>
-                ) : (
-                  <>
-                    {restaurante?.splitPayment ? (
-                      <>
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        Desactivar Split Payment
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        Activar Split Payment
-                      </>
-                    )}
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-
-
-          {/* Tarjeta de Sistema de Puntos */}
-          <Card className={restaurante?.sistemaPuntos ? "border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Star className="h-5 w-5" />
-                Sistema de Puntos
-              </CardTitle>
-              <CardDescription>
-                {restaurante?.sistemaPuntos
-                  ? 'Fideliza a tus clientes premiando cada compra'
-                  : 'Fideliza a tus clientes premiando cada compra'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {restaurante?.sistemaPuntos ? (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Los clientes acumulan puntos con cada compra</p>
-                    <p>• Agrega productos que puedan ser canjeados</p>
-                    <p>• Mejora la fidelización de clientes</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
-                    Sistema Activo
-                  </Badge>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Sistema de fidelidad para retener clientes</p>
-                    <p>• Asignarás puntos a los productos de tu menú</p>
-                    <p>• Canjeable en futuros pedidos</p>
-                  </div>
-                  <Badge variant="secondary">
-                    Sistema Inactivo
-                  </Badge>
-                </>
-              )}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleToggleSistemaPuntos}
-                disabled={isTogglingSistemaPuntos}
-              >
-                {isTogglingSistemaPuntos ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cambiando...
-                  </>
-                ) : (
-                  <>
-                    <Star className="mr-2 h-4 w-4" />
-                    {restaurante?.sistemaPuntos ? 'Desactivar Sistema de Puntos' : 'Activar Sistema de Puntos'}
-                  </>
-                )}
-              </Button>
             </CardContent>
           </Card>
 
