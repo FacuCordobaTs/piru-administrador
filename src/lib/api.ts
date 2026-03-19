@@ -238,6 +238,15 @@ export const restauranteApi = {
     })
   },
 
+  toggleCodigoDescuentoEnabled: async (token: string) => {
+    return fetchApi('/restaurante/toggle-codigo-descuento-enabled', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
   getHorarios: async (token: string) => {
     return fetchApi('/restaurante/horarios', {
       method: 'GET',
@@ -267,6 +276,16 @@ export const restauranteApi = {
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({ token: rapiboyToken })
+    })
+  },
+
+  configurarTalo: async (token: string, taloApiKey: string, taloUserId: string) => {
+    return fetchApi('/restaurante/configurar-talo', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ taloApiKey, taloUserId })
     })
   },
 

@@ -23,6 +23,17 @@ interface PedidoLike {
     telefono?: string | null
     deliveryFee?: number
     notas?: string | null // <-- AGREGA ESTA LÍNEA
+    /** Monto descontado por cupón (ya reflejado en total del pedido) */
+    montoDescuento?: string | number | null
+    /** Texto del cupón aplicado (ej. ALFAJOR10) */
+    codigoDescuentoCodigo?: string | null
+}
+
+const getMontoDescuentoPedido = (pedido: PedidoLike): number => {
+    const raw = pedido.montoDescuento
+    if (raw == null || raw === '') return 0
+    const n = typeof raw === 'string' ? parseFloat(raw) : raw
+    return Number.isFinite(n) && n > 0 ? n : 0
 }
 
 // Helper para obtener el precio unitario de un item (INCLUYENDO AGREGADOS)
@@ -164,6 +175,20 @@ export const formatComanda = (
         const espaciosFee = LINE_WIDTH - feeNombre.length - feeStr.length;
         const filaFee = feeNombre + (espaciosFee > 0 ? ' '.repeat(espaciosFee) : ' ') + feeStr;
         commands.push(`${filaFee}\n`);
+    }
+
+    const montoDesc = getMontoDescuentoPedido(pedido)
+    if (montoDesc > 0) {
+        commands.push('--------------------------------\n');
+        commands.push(ESC + 'a' + '\x00');
+        commands.push(ESC + '!' + '\x08');
+        const cupon = pedido.codigoDescuentoCodigo?.trim()
+        commands.push(cupon ? `CUPON: ${cupon}\n` : `DESCUENTO (CUPON)\n`);
+        commands.push(ESC + '!' + '\x00');
+        const descLabel = 'Monto desc.';
+        const descStr = `-$${montoDesc.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`;
+        const esp = LINE_WIDTH - descLabel.length - descStr.length;
+        commands.push(descLabel + (esp > 0 ? ' '.repeat(esp) : ' ') + descStr + '\n');
     }
 
     // TOTAL FINAL
@@ -338,6 +363,18 @@ export const formatFactura = (
     if (pedido.deliveryFee !== undefined && pedido.deliveryFee > 0) {
         commands.push(ESC + 'a' + '\x02'); // Right align
         commands.push(`Costo Envio: $${pedido.deliveryFee.toFixed(2)}\n`);
+        commands.push('--------------------------------\n');
+    }
+
+    const montoDescFactura = getMontoDescuentoPedido(pedido)
+    if (montoDescFactura > 0) {
+        commands.push(ESC + 'a' + '\x00');
+        commands.push(ESC + '!' + '\x08');
+        const cuponF = pedido.codigoDescuentoCodigo?.trim()
+        commands.push(cuponF ? `CUPON: ${cuponF}\n` : `DESCUENTO (CUPON)\n`);
+        commands.push(ESC + '!' + '\x00');
+        commands.push(ESC + 'a' + '\x02');
+        commands.push(`Descuento: -$${montoDescFactura.toFixed(2)}\n`);
         commands.push('--------------------------------\n');
     }
 

@@ -37,7 +37,7 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     }, []);
 
-    // Enviar datos raw a la impresora seleccionada
+    /** Bytes ESC/POS (p. ej. `commandsToBytes(formatComanda(...))`). Cupón/descuento van en `printerUtils`. */
     const printRaw = useCallback(async (data: number[]) => {
         if (!selectedPrinter) {
             throw new Error('No hay impresora seleccionada');

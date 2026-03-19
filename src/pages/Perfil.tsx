@@ -43,7 +43,8 @@ import {
   Trash2,
   Truck,
   UtensilsCrossed,
-  RefreshCw
+  RefreshCw,
+  Ticket,
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -80,6 +81,7 @@ const Perfil = () => {
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
   const [isTogglingOrderGroupEnabled, setIsTogglingOrderGroupEnabled] = useState(false)
+  const [isTogglingCodigoDescuentoEnabled, setIsTogglingCodigoDescuentoEnabled] = useState(false)
 //
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
@@ -88,6 +90,10 @@ const Perfil = () => {
 
   const [isConfiguringRapiboy, setIsConfiguringRapiboy] = useState(false)
   const [rapiboyToken, setRapiboyToken] = useState('')
+
+  const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
+  const [taloApiKeyInput, setTaloApiKeyInput] = useState('')
+  const [taloUserIdInput, setTaloUserIdInput] = useState('')
 
   const [isSavingPasarela, setIsSavingPasarela] = useState(false)
   const [proveedorPago, setProveedorPago] = useState<string>((restaurante as any)?.proveedorPago || 'manual')
@@ -334,6 +340,33 @@ const Perfil = () => {
     }
   }
 
+  // Handle configurar Talo
+  const handleConfigurarTalo = async () => {
+    if (!token) return
+    if (!taloApiKeyInput.trim() || !taloUserIdInput.trim()) {
+      toast.error('Debes ingresar API Key y User ID de Talo')
+      return
+    }
+
+    setIsConfiguringTalo(true)
+    try {
+      const response = await restauranteApi.configurarTalo(token, taloApiKeyInput.trim(), taloUserIdInput.trim()) as { success: boolean }
+      if (response.success) {
+        toast.success('Talo configurado con éxito', {
+          description: 'Tus credenciales de Talo están listas para transferencias en tiempo real.',
+        })
+        restauranteStore.fetchData()
+        setTaloApiKeyInput('')
+        setTaloUserIdInput('')
+      }
+    } catch (error) {
+      console.error('Error al configurar Talo:', error)
+      toast.error('Error al configurar Talo')
+    } finally {
+      setIsConfiguringTalo(false)
+    }
+  }
+
   // Handle configurar cucuru
   const handleConfigurarCucuru = async () => {
     if (!token) return
@@ -449,6 +482,29 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingOrderGroupEnabled(false)
+    }
+  }
+
+  // Toggle habilitar/deshabilitar códigos de descuento en checkout
+  const handleToggleCodigoDescuentoEnabled = async () => {
+    if (!token) return
+
+    setIsTogglingCodigoDescuentoEnabled(true)
+    try {
+      const response = await restauranteApi.toggleCodigoDescuentoEnabled(token) as { success: boolean; codigoDescuentoEnabled: boolean }
+      if (response.success) {
+        toast.success(response.codigoDescuentoEnabled ? 'Códigos de descuento habilitados' : 'Códigos de descuento deshabilitados', {
+          description: response.codigoDescuentoEnabled
+            ? 'Los clientes podrán aplicar cupones en el checkout'
+            : 'El campo de cupones quedará oculto para clientes'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar códigos de descuento:', error)
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingCodigoDescuentoEnabled(false)
     }
   }
 
@@ -995,6 +1051,70 @@ const Perfil = () => {
             </CardContent>
           </Card>
 
+          {/* Tarjeta de Talo */}
+          <Card className={(restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId ? "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20" : "border-slate-200"}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Wallet className="h-5 w-5" />
+                Talo (Transferencias en tiempo real)
+              </CardTitle>
+              <CardDescription>
+                {(restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId
+                  ? 'Tus credenciales de Talo están configuradas y listas para usar'
+                  : 'Ingresa tu API Key y User ID desde el panel de Talo para habilitar transferencias con alias dinámicos'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {(restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId ? (
+                <>
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <span className="font-medium">Credenciales configuradas correctamente</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Para actualizar las credenciales, ingresa los nuevos valores a continuación.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Obtén tu API Key y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
+                </p>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <Input
+                  type="password"
+                  placeholder={(restaurante as any)?.taloApiKey ? "Ingresar nuevo API Key" : "API Key de Talo"}
+                  value={taloApiKeyInput}
+                  onChange={(e) => setTaloApiKeyInput(e.target.value)}
+                  disabled={isConfiguringTalo}
+                  className="bg-background"
+                />
+                <Input
+                  placeholder={(restaurante as any)?.taloUserId ? "Ingresar nuevo User ID" : "User ID de Talo"}
+                  value={taloUserIdInput}
+                  onChange={(e) => setTaloUserIdInput(e.target.value)}
+                  disabled={isConfiguringTalo}
+                  className="bg-background"
+                />
+                <Button
+                  onClick={handleConfigurarTalo}
+                  disabled={isConfiguringTalo || !taloApiKeyInput.trim() || !taloUserIdInput.trim()}
+                  className="bg-amber-600 hover:bg-amber-700 text-white w-full"
+                >
+                  {isConfiguringTalo ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Configurando...
+                    </>
+                  ) : (
+                    (restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId ? 'Actualizar credenciales' : 'Configurar Talo'
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Tarjeta de Rapiboy */}
           <Card className={(restaurante as any)?.rapiboyToken ? "border-orange-500/50 bg-orange-50/50 dark:bg-orange-950/20" : "border-slate-200"}>
             <CardHeader>
@@ -1136,6 +1256,43 @@ const Perfil = () => {
                 />
               </div>
               {isTogglingOrderGroupEnabled && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Actualizando...
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta de Códigos de Descuento */}
+          <Card className={(restaurante as any)?.codigoDescuentoEnabled !== false ? "border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/20" : ""}>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Ticket className="h-5 w-5" />
+                Códigos de Descuento
+              </CardTitle>
+              <CardDescription>
+                {(restaurante as any)?.codigoDescuentoEnabled !== false
+                  ? 'Los clientes pueden aplicar cupones en el checkout'
+                  : 'Los cupones están deshabilitados para clientes'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Permitir uso de códigos de descuento</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Activa o desactiva globalmente el uso de cupones para delivery y take away.
+                  </p>
+                </div>
+                <Switch
+                  checked={(restaurante as any)?.codigoDescuentoEnabled !== false}
+                  onCheckedChange={() => handleToggleCodigoDescuentoEnabled()}
+                  disabled={isTogglingCodigoDescuentoEnabled}
+                />
+              </div>
+              {isTogglingCodigoDescuentoEnabled && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Actualizando...

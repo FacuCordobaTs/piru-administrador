@@ -69,6 +69,7 @@ interface RestauranteData {
   proveedorPago: 'cucuru' | 'talo' | 'mercadopago' | 'manual' | null
   taloApiKey: string | null
   taloUserId: string | null
+  codigoDescuentoEnabled: boolean | null
 }
 
 interface RestauranteState {

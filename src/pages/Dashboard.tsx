@@ -19,7 +19,7 @@ import {
   Clock, CheckCircle, Coffee,
   Utensils, ChefHat, Trash2, Archive,
   User, Minus, Search, Package,
-  AlertTriangle, Play, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag, CalendarDays
+  AlertTriangle, Play, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag, CalendarDays, Tag
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -90,6 +90,15 @@ interface KanbanCardData {
   direccion?: string
   nombreCliente?: string | null
   rapiboyTrackingUrl?: string | null
+  /** Campos extra delivery/takeaway (pedido unificado) */
+  telefono?: string | null
+  notas?: string | null
+  montoDescuento?: string | number | null
+  codigoDescuentoCodigo?: string | null
+  /** Estado real del backend (pending, preparing, …) para abrir el detalle correcto */
+  estadoPedido?: string
+  pagado?: boolean
+  metodoPago?: string | null
 }
 
 // Delivery Types
@@ -121,6 +130,8 @@ interface DeliveryPedido {
   impreso?: boolean
   rapiboyTrackingUrl?: string | null
   montoDescuento?: string | number | null
+  codigoDescuentoId?: number | null
+  codigoDescuentoCodigo?: string | null
 }
 
 interface TakeawayPedido {
@@ -137,7 +148,10 @@ interface TakeawayPedido {
   pagado?: boolean
   metodoPago?: string | null
   impreso?: boolean
+  rapiboyTrackingUrl?: string | null
   montoDescuento?: string | number | null
+  codigoDescuentoId?: number | null
+  codigoDescuentoCodigo?: string | null
 }
 
 // Unified order type for the all-orders list
@@ -158,6 +172,8 @@ interface UnifiedPedido {
   metodoPago?: string | null
   rapiboyTrackingUrl?: string | null
   montoDescuento?: string | number | null
+  codigoDescuentoId?: number | null
+  codigoDescuentoCodigo?: string | null
 }
 
 interface NewDeliveryItem {
@@ -166,9 +182,14 @@ interface NewDeliveryItem {
   ingredientesExcluidos?: number[]
 }
 
+// Offset: backend devuelve UTC, Argentina es UTC-3. Sumamos 3h para mostrar hora local correcta.
+const ARG_OFFSET_MS = 3 * 60 * 60 * 1000
+
+const toDisplayDate = (dateString: string): Date =>
+  new Date(new Date(dateString).getTime() + ARG_OFFSET_MS)
+
 const getMinutesAgo = (dateString: string) => {
-  const date = new Date(dateString)
-  const adjustedDate = new Date(date.getTime() + 3 * 60 * 60 * 1000)
+  const adjustedDate = toDisplayDate(dateString)
   const now = new Date()
   const diffMs = now.getTime() - adjustedDate.getTime()
   return Math.floor(diffMs / 60000)
@@ -180,11 +201,11 @@ const formatTimeAgo = (dateString: string) => {
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ${minutes % 60}m`
-  return new Date(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+  return toDisplayDate(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
 }
 
 const getDateLabel = (dateString: string) => {
-  const date = new Date(dateString)
+  const date = toDisplayDate(dateString)
   const today = new Date()
   if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()) {
     return 'Hoy'
@@ -197,6 +218,11 @@ const getDateLabel = (dateString: string) => {
   return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`
 }
 
+const formatOrderTime = (dateString: string) =>
+  toDisplayDate(dateString).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+
+const pedidoTieneCuponDescuento = (p: { montoDescuento?: string | number | null }) =>
+  p.montoDescuento != null && parseFloat(String(p.montoDescuento)) > 0
 
 // Helper: compute the actual delivery fee for a stored order.
 // Since pedido.total already includes the delivery fee and agregados from the backend,
@@ -620,7 +646,9 @@ const Dashboard = () => {
             tipo: pedido.tipo,
             total: pedido.total,
             deliveryFee,
-            notas: pedido.notas
+            notas: pedido.notas,
+            montoDescuento: pedido.montoDescuento,
+            codigoDescuentoCodigo: pedido.codigoDescuentoCodigo ?? null,
           }, itemsToPrint, restaurante?.nombre || 'Restaurante')
           printRaw(commandsToBytes(comandaData))
             .then(() => {
@@ -651,7 +679,9 @@ const Dashboard = () => {
           tipo: pedido.tipo,
           total: pedido.total,
           deliveryFee,
-          notas: pedido.notas
+          notas: pedido.notas,
+          montoDescuento: pedido.montoDescuento,
+          codigoDescuentoCodigo: pedido.codigoDescuentoCodigo ?? null,
         },
           pedido.items,
           restaurante?.nombre || 'Restaurante'
@@ -945,6 +975,14 @@ const Dashboard = () => {
         tipo: 'delivery',
         direccion: dp.direccion,
         nombreCliente: dp.nombreCliente,
+        telefono: dp.telefono,
+        notas: dp.notas,
+        montoDescuento: dp.montoDescuento,
+        codigoDescuentoCodigo: dp.codigoDescuentoCodigo,
+        estadoPedido: dp.estado,
+        pagado: dp.pagado,
+        metodoPago: dp.metodoPago ?? undefined,
+        rapiboyTrackingUrl: dp.rapiboyTrackingUrl,
       })
     })
 
@@ -980,6 +1018,14 @@ const Dashboard = () => {
         status: column === 'archived' ? 'archived' : tp.estado === 'pending' ? 'pending' : tp.estado === 'preparing' ? 'preparing' : (tp.estado === 'ready' || tp.estado === 'dispatched') ? 'delivered' : 'served',
         tipo: 'takeaway',
         nombreCliente: tp.nombreCliente,
+        telefono: tp.telefono,
+        notas: tp.notas,
+        montoDescuento: tp.montoDescuento,
+        codigoDescuentoCodigo: tp.codigoDescuentoCodigo,
+        estadoPedido: tp.estado,
+        pagado: tp.pagado,
+        metodoPago: tp.metodoPago ?? undefined,
+        rapiboyTrackingUrl: tp.rapiboyTrackingUrl,
       })
     })
 
@@ -1736,6 +1782,8 @@ const Dashboard = () => {
         pagado: p.pagado,
         rapiboyTrackingUrl: p.rapiboyTrackingUrl,
         montoDescuento: p.montoDescuento,
+        codigoDescuentoId: p.codigoDescuentoId,
+        codigoDescuentoCodigo: p.codigoDescuentoCodigo,
       })
     })
 
@@ -1754,6 +1802,8 @@ const Dashboard = () => {
         totalItems: p.totalItems,
         pagado: p.pagado,
         montoDescuento: p.montoDescuento,
+        codigoDescuentoId: p.codigoDescuentoId,
+        codigoDescuentoCodigo: p.codigoDescuentoCodigo,
       })
     })
 
@@ -2002,15 +2052,21 @@ const Dashboard = () => {
                                   const unified: UnifiedPedido = {
                                     id: card.pedido.id,
                                     tipo: card.tipo,
-                                    estado: card.pedido.estado,
+                                    estado: card.estadoPedido ?? card.pedido.estado,
                                     total: card.pedido.total,
                                     createdAt: card.pedido.createdAt,
                                     nombreCliente: card.nombreCliente || null,
-                                    telefono: null,
+                                    telefono: card.telefono ?? null,
                                     direccion: card.direccion,
+                                    notas: card.notas ?? null,
                                     mesaNombre: null,
                                     items: card.items,
-                                    totalItems: card.items.length,
+                                    totalItems: card.pedido.totalItems,
+                                    pagado: card.pagado,
+                                    metodoPago: card.metodoPago,
+                                    rapiboyTrackingUrl: card.rapiboyTrackingUrl,
+                                    montoDescuento: card.montoDescuento,
+                                    codigoDescuentoCodigo: card.codigoDescuentoCodigo,
                                   }
                                   handleUnifiedPedidoClick(unified)
                                 }
@@ -2020,6 +2076,12 @@ const Dashboard = () => {
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="font-bold text-sm">{cardTitle}</span>
+                                    {!isMesa && pedidoTieneCuponDescuento(card as { montoDescuento?: string | number | null }) && (
+                                      <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[100px] truncate" title={card.codigoDescuentoCodigo || 'Cupón'}>
+                                        <Tag className="h-2.5 w-2.5 mr-0.5 inline" />
+                                        {card.codigoDescuentoCodigo || 'Cupón'}
+                                      </Badge>
+                                    )}
                                     {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
                                     {isClosed && isMesa && (
                                       <Badge
@@ -2773,6 +2835,12 @@ const Dashboard = () => {
                                         💳 Pagado
                                       </Badge>
                                     )}
+                                    {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
+                                      <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[140px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
+                                        <Tag className="h-2.5 w-2.5 mr-0.5 inline shrink-0" />
+                                        {pedido.codigoDescuentoCodigo || 'Cupón'}
+                                      </Badge>
+                                    )}
                                   </div>
                                   {pedido.tipo === 'delivery' && pedido.direccion && (
                                     <div className="flex items-start gap-1 mb-0.5">
@@ -2795,6 +2863,11 @@ const Dashboard = () => {
                                     ${parseFloat(pedido.total).toFixed(2)}
                                   </p>
                                   <p className="text-[10px] text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
+                                  {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
+                                    <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">
+                                      -${parseFloat(String(pedido.montoDescuento)).toFixed(0)} cupón
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               {pedido.tipo !== 'mesa' && pedido.estado !== 'archived' && (
@@ -2852,6 +2925,12 @@ const Dashboard = () => {
                                         <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 text-muted-foreground border-muted-foreground/30">
                                           Archivado
                                         </Badge>
+                                        {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
+                                          <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-3.5 max-w-[100px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
+                                            <Tag className="h-2 w-2 mr-0.5 inline" />
+                                            {pedido.codigoDescuentoCodigo || 'Cupón'}
+                                          </Badge>
+                                        )}
                                       </div>
                                       {pedido.tipo === 'delivery' && pedido.direccion && (
                                         <p className="text-[10px] text-muted-foreground truncate">{pedido.direccion}</p>
@@ -2959,9 +3038,19 @@ const Dashboard = () => {
                         <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
                           <span>Pedido #{displayedUnifiedPedido.id}</span>
                           <span>·</span>
-                          <span>{getDateLabel(displayedUnifiedPedido.createdAt)}, {new Date(displayedUnifiedPedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>{getDateLabel(displayedUnifiedPedido.createdAt)}, {formatOrderTime(displayedUnifiedPedido.createdAt)}</span>
                           <span className="text-muted-foreground/60">({formatTimeAgo(displayedUnifiedPedido.createdAt)})</span>
                         </p>
+                        {pedidoTieneCuponDescuento(displayedUnifiedPedido) && (
+                          <p className="text-xs font-medium text-violet-600 dark:text-violet-400 mt-1.5 flex items-center gap-1.5 flex-wrap">
+                            <Tag className="h-3.5 w-3.5 shrink-0" />
+                            <span>
+                              Cupón{displayedUnifiedPedido.codigoDescuentoCodigo ? ` ${displayedUnifiedPedido.codigoDescuentoCodigo}` : ''}
+                              {' · '}
+                              -${parseFloat(String(displayedUnifiedPedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                            </span>
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-1 lg:gap-2 shrink-0">
                         
@@ -2987,13 +3076,20 @@ const Dashboard = () => {
                                 })
                               }
                               const total = displayedUnifiedPedido.total
+                              const deliveryFee = displayedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(displayedUnifiedPedido) : undefined
                               const facturaData = formatFactura(
                                 {
                                   id: displayedUnifiedPedido.id,
                                   mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
                                   nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
+                                  tipo: displayedUnifiedPedido.tipo,
+                                  telefono: displayedUnifiedPedido.telefono ?? undefined,
+                                  direccion: displayedUnifiedPedido.tipo === 'delivery' ? displayedUnifiedPedido.direccion ?? undefined : undefined,
                                   total,
-                                  notas: displayedUnifiedPedido.notas
+                                  notas: displayedUnifiedPedido.notas,
+                                  deliveryFee,
+                                  montoDescuento: displayedUnifiedPedido.montoDescuento,
+                                  codigoDescuentoCodigo: displayedUnifiedPedido.codigoDescuentoCodigo ?? null,
                                 },
                                 facturaItems,
                                 restaurante?.nombre || 'Restaurante'
@@ -3026,13 +3122,20 @@ const Dashboard = () => {
                                 })
                               }
                               const total = displayedUnifiedPedido.total
+                              const deliveryFee = displayedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(displayedUnifiedPedido) : undefined
                               const facturaData = formatFactura(
                                 {
                                   id: displayedUnifiedPedido.id,
                                   mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
                                   nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
+                                  tipo: displayedUnifiedPedido.tipo,
+                                  telefono: displayedUnifiedPedido.telefono ?? undefined,
+                                  direccion: displayedUnifiedPedido.tipo === 'delivery' ? displayedUnifiedPedido.direccion ?? undefined : undefined,
                                   total,
-                                  notas: displayedUnifiedPedido.notas
+                                  notas: displayedUnifiedPedido.notas,
+                                  deliveryFee,
+                                  montoDescuento: displayedUnifiedPedido.montoDescuento,
+                                  codigoDescuentoCodigo: displayedUnifiedPedido.codigoDescuentoCodigo ?? null,
                                 },
                                 facturaItems,
                                 restaurante?.nombre || 'Restaurante'
@@ -3229,11 +3332,15 @@ const Dashboard = () => {
                             </span>
                           </div>
                         )}
-                        {displayedUnifiedPedido.montoDescuento != null && parseFloat(String(displayedUnifiedPedido.montoDescuento)) > 0 && (
+                        {pedidoTieneCuponDescuento(displayedUnifiedPedido) && (
                           <div className="flex items-baseline justify-between py-3 border-t border-border/40">
                             <div className="flex items-baseline gap-3 flex-1 min-w-0">
                               <span className="text-muted-foreground text-sm font-mono w-6 shrink-0"></span>
-                              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Código de descuento</span>
+                              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                                {displayedUnifiedPedido.codigoDescuentoCodigo
+                                  ? `Cupón ${displayedUnifiedPedido.codigoDescuentoCodigo}`
+                                  : 'Descuento por cupón'}
+                              </span>
                             </div>
                             <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium shrink-0 ml-4">
                               -${parseFloat(String(displayedUnifiedPedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
@@ -3339,7 +3446,7 @@ const Dashboard = () => {
                         {displayedPedido && (
                           <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
                             <Clock className="h-3 w-3" />
-                            <span>{getDateLabel(displayedPedido.createdAt)}, {new Date(displayedPedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>{getDateLabel(displayedPedido.createdAt)}, {formatOrderTime(displayedPedido.createdAt)}</span>
                             <span className="text-muted-foreground/60">({formatTimeAgo(displayedPedido.createdAt)})</span>
                           </p>
                         )}
@@ -3696,18 +3803,45 @@ const Dashboard = () => {
                           <div className="p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex-1 min-w-0">
-                                <span className={`${tipoBadge.className} text-sm font-semibold`}>
-                                  {tipoBadge.label}
-                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`${tipoBadge.className} text-sm font-semibold`}>
+                                    {tipoBadge.label}
+                                  </span>
+                                  {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
+                                    <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[120px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
+                                      <Tag className="h-2.5 w-2.5 mr-0.5 inline" />
+                                      {pedido.codigoDescuentoCodigo || 'Cupón'}
+                                    </Badge>
+                                  )}
+                                </div>
                                 {pedido.tipo === 'delivery' && pedido.direccion && (
                                   <p className="text-xs text-muted-foreground mt-0.5 truncate">{pedido.direccion}</p>
                                 )}
                                 <p className="text-xs text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
                               </div>
-                              <p className="font-bold shrink-0">
-                                ${parseFloat(pedido.total).toFixed(2)}
-                              </p>
+                              <div className="text-right shrink-0">
+                                <p className="font-bold">
+                                  ${parseFloat(pedido.total).toFixed(2)}
+                                </p>
+                                {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
+                                  <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">
+                                    -${parseFloat(String(pedido.montoDescuento)).toFixed(0)}
+                                  </p>
+                                )}
+                              </div>
                             </div>
+                            {pedido.tipo !== 'mesa' && pedido.estado !== 'archived' && (
+                              <Button
+                                className={`w-full mt-2 h-9 text-sm font-bold text-white shadow-sm ${pedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeliveryTakeawayEstadoChange(pedido.tipo as 'delivery' | 'takeaway', pedido.id, 'archived')
+                                }}
+                              >
+                                {pedido.estado === 'dispatched' ? <Archive className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
+                                {pedido.estado === 'dispatched' ? 'Archivar' : 'Despachar'}
+                              </Button>
+                            )}
                           </div>
                         </Card>
                       )
@@ -3748,15 +3882,28 @@ const Dashboard = () => {
                                         <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 text-muted-foreground border-muted-foreground/30">
                                           Archivado
                                         </Badge>
+                                        {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
+                                          <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-3.5 max-w-[90px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
+                                            <Tag className="h-2 w-2 mr-0.5 inline" />
+                                            {pedido.codigoDescuentoCodigo || 'Cupón'}
+                                          </Badge>
+                                        )}
                                       </div>
                                       {pedido.tipo === 'delivery' && pedido.direccion && (
                                         <p className="text-xs text-muted-foreground mt-0.5 truncate">{pedido.direccion}</p>
                                       )}
                                       <p className="text-xs text-muted-foreground">{getDateLabel(pedido.createdAt)}</p>
                                     </div>
-                                    <p className="font-bold shrink-0">
-                                      ${parseFloat(pedido.total).toFixed(2)}
-                                    </p>
+                                    <div className="text-right shrink-0">
+                                      <p className="font-bold">
+                                        ${parseFloat(pedido.total).toFixed(2)}
+                                      </p>
+                                      {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
+                                        <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">
+                                          -${parseFloat(String(pedido.montoDescuento)).toFixed(0)}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </Card>
