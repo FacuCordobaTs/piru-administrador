@@ -182,16 +182,22 @@ interface NewDeliveryItem {
   ingredientesExcluidos?: number[]
 }
 
-// Offset: backend devuelve UTC, Argentina es UTC-3. Sumamos 3h para mostrar hora local correcta.
-const ARG_OFFSET_MS = 3 * 60 * 60 * 1000
+// API devuelve instantes en ISO (UTC). Mostramos calendario y reloj en Argentina sin sumar offsets a mano
+// (evita doble corrección si el backend ya serializa bien con mysql timezone -03:00).
+const AR_TIMEZONE = 'America/Argentina/Buenos_Aires'
 
-const toDisplayDate = (dateString: string): Date =>
-  new Date(new Date(dateString).getTime() + ARG_OFFSET_MS)
+function ymdInArgentina(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: AR_TIMEZONE })
+}
+
+function addCalendarDaysYmd(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const u = new Date(Date.UTC(y, m - 1, d + delta))
+  return u.toISOString().slice(0, 10)
+}
 
 const getMinutesAgo = (dateString: string) => {
-  const adjustedDate = toDisplayDate(dateString)
-  const now = new Date()
-  const diffMs = now.getTime() - adjustedDate.getTime()
+  const diffMs = Date.now() - new Date(dateString).getTime()
   return Math.floor(diffMs / 60000)
 }
 
@@ -201,25 +207,31 @@ const formatTimeAgo = (dateString: string) => {
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ${minutes % 60}m`
-  return toDisplayDate(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+  return new Date(dateString).toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: AR_TIMEZONE,
+  })
 }
 
 const getDateLabel = (dateString: string) => {
-  const date = toDisplayDate(dateString)
-  const today = new Date()
-  if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()) {
-    return 'Hoy'
-  }
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  if (date.getFullYear() === yesterday.getFullYear() && date.getMonth() === yesterday.getMonth() && date.getDate() === yesterday.getDate()) {
-    return 'Ayer'
-  }
-  return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`
+  const eventYmd = ymdInArgentina(dateString)
+  const todayYmd = ymdInArgentina(new Date().toISOString())
+  if (eventYmd === todayYmd) return 'Hoy'
+  if (eventYmd === addCalendarDaysYmd(todayYmd, -1)) return 'Ayer'
+  return new Date(dateString).toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: AR_TIMEZONE,
+  })
 }
 
 const formatOrderTime = (dateString: string) =>
-  toDisplayDate(dateString).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  new Date(dateString).toLocaleTimeString('es-AR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: AR_TIMEZONE,
+  })
 
 const pedidoTieneCuponDescuento = (p: { montoDescuento?: string | number | null }) =>
   p.montoDescuento != null && parseFloat(String(p.montoDescuento)) > 0

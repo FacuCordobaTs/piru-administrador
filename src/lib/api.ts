@@ -247,6 +247,24 @@ export const restauranteApi = {
     })
   },
 
+  toggleCardsPaymentsEnabled: async (token: string) => {
+    return fetchApi('/restaurante/toggle-cards-payments-enabled', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  toggleCucuruEnabled: async (token: string) => {
+    return fetchApi('/restaurante/toggle-cucuru-enabled', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
   getHorarios: async (token: string) => {
     return fetchApi('/restaurante/horarios', {
       method: 'GET',

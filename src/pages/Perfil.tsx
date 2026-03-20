@@ -82,6 +82,8 @@ const Perfil = () => {
   const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
   const [isTogglingOrderGroupEnabled, setIsTogglingOrderGroupEnabled] = useState(false)
   const [isTogglingCodigoDescuentoEnabled, setIsTogglingCodigoDescuentoEnabled] = useState(false)
+  const [isTogglingCardsPaymentsEnabled, setIsTogglingCardsPaymentsEnabled] = useState(false)
+  const [isTogglingCucuruCheckoutEnabled, setIsTogglingCucuruCheckoutEnabled] = useState(false)
 //
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
@@ -505,6 +507,48 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingCodigoDescuentoEnabled(false)
+    }
+  }
+
+  const handleToggleCardsPaymentsEnabled = async () => {
+    if (!token) return
+    setIsTogglingCardsPaymentsEnabled(true)
+    try {
+      const response = await restauranteApi.toggleCardsPaymentsEnabled(token) as { success: boolean; cardsPaymentsEnabled: boolean }
+      if (response.success) {
+        toast.success(response.cardsPaymentsEnabled ? 'Tarjeta visible en checkout' : 'Tarjeta oculta en checkout', {
+          description: response.cardsPaymentsEnabled
+            ? 'Tus clientes pueden pagar con Mercado Pago en delivery/take away'
+            : 'El botón de tarjeta no se mostrará (útil si MP falla)'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar visibilidad de tarjeta:', error)
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingCardsPaymentsEnabled(false)
+    }
+  }
+
+  const handleToggleCucuruCheckoutEnabled = async () => {
+    if (!token) return
+    setIsTogglingCucuruCheckoutEnabled(true)
+    try {
+      const response = await restauranteApi.toggleCucuruEnabled(token) as { success: boolean; cucuruEnabled: boolean }
+      if (response.success) {
+        toast.success(response.cucuruEnabled ? 'Transferencia visible en checkout' : 'Transferencia oculta en checkout', {
+          description: response.cucuruEnabled
+            ? 'Se muestra transferencia automática (Cucuru/Talo) y/o alias manual'
+            : 'Se ocultan todas las opciones de transferencia en el checkout'
+        })
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar visibilidad de transferencia:', error)
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingCucuruCheckoutEnabled(false)
     }
   }
 
@@ -943,6 +987,25 @@ const Perfil = () => {
                       </>
                     )}
                   </Button>
+                  <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <Label className="text-base">Mostrar pago con tarjeta en checkout</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Si Mercado Pago falla, podés ocultar el botón sin desconectar la cuenta.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={(restaurante as any)?.cardsPaymentsEnabled !== false}
+                      onCheckedChange={() => handleToggleCardsPaymentsEnabled()}
+                      disabled={isTogglingCardsPaymentsEnabled}
+                    />
+                  </div>
+                  {isTogglingCardsPaymentsEnabled && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Actualizando...
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -985,6 +1048,25 @@ const Perfil = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label className="text-base">Mostrar transferencia en checkout</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Aplica a Cucuru/Talo automático y al alias de transferencia manual en delivery/take away.
+                  </p>
+                </div>
+                <Switch
+                  checked={(restaurante as any)?.cucuruEnabled !== false}
+                  onCheckedChange={() => handleToggleCucuruCheckoutEnabled()}
+                  disabled={isTogglingCucuruCheckoutEnabled}
+                />
+              </div>
+              {isTogglingCucuruCheckoutEnabled && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Actualizando...
+                </div>
+              )}
               {(restaurante as any)?.cucuruConfigurado ? (
                 <>
                   <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">

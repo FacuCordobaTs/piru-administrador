@@ -58,6 +58,8 @@ interface RestauranteData {
   cucuruAccountNumber: string | null
   cucuruAlias: string | null
   cucuruConfigurado: boolean | null
+  cucuruEnabled: boolean | null
+  cardsPaymentsEnabled: boolean | null
   whatsappEnabled: boolean | null
   whatsappNumber: string | null
   transferenciaAlias: string | null
