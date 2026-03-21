@@ -224,7 +224,10 @@ const metodoPagoListBadge = (metodoPago: string | null | undefined) => {
     metodoPago === 'mercadopago_bricks'
   ) {
     return {
-      label: metodoPago === 'mercadopago_bricks' ? 'Tarjeta (Bricks)' : 'Tarjeta',
+      label:
+        metodoPago === 'mercadopago_checkout'
+          ? 'MP Checkout'
+          : 'Tarjeta (Bricks)',
       className:
         'text-[9px] bg-sky-50 dark:bg-sky-950/30 text-sky-800 dark:text-sky-300 border-sky-300 px-1 py-0 h-4',
     }
@@ -3491,20 +3494,28 @@ const Dashboard = () => {
           <DialogHeader>
             <DialogTitle>Métodos de pago (Delivery / Take away)</DialogTitle>
             <DialogDescription>
-              Los pagos automáticos (tarjeta MercadoPago o transferencia vía Cucuru o Talo) no se combinan con efectivo ni transferencia manual en el checkout público.
+              Los pagos automáticos (Mercado Pago Checkout, tarjeta vía Bricks o transferencia Cucuru/Talo) no se combinan con efectivo ni transferencia manual en el checkout público.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Automáticos</p>
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="cfg-mp-co" className="text-sm flex-1">Tarjeta — Checkout MercadoPago</Label>
-                  <Switch id="cfg-mp-co" checked={cfgMpCheckout} onCheckedChange={setCfgMpCheckout} />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <Label htmlFor="cfg-mp-co" className="text-sm">Mercado Pago Checkout</Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      Redirige al sitio de Mercado Pago; el cliente paga con dinero en cuenta, tarjeta u otros medios que ofrezca MP. No es un formulario de tarjeta embebido.
+                    </p>
+                  </div>
+                  <Switch id="cfg-mp-co" className="shrink-0 mt-0.5" checked={cfgMpCheckout} onCheckedChange={setCfgMpCheckout} />
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="cfg-mp-br" className="text-sm flex-1">Tarjeta — Bricks</Label>
-                  <Switch id="cfg-mp-br" checked={cfgMpBricks} onCheckedChange={setCfgMpBricks} />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <Label htmlFor="cfg-mp-br" className="text-sm">Tarjeta — Mercado Pago Bricks</Label>
+                    <p className="text-xs text-muted-foreground leading-snug">Formulario de tarjeta embebido en la página de pago.</p>
+                  </div>
+                  <Switch id="cfg-mp-br" className="shrink-0 mt-0.5" checked={cfgMpBricks} onCheckedChange={setCfgMpBricks} />
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0 space-y-1">
