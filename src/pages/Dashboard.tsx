@@ -163,12 +163,32 @@ interface NewDeliveryItem {
   ingredientesExcluidos?: number[]
 }
 
-// API devuelve instantes en ISO (UTC). Mostramos calendario y reloj en Argentina sin sumar offsets a mano
-// (evita doble corrección si el backend ya serializa bien con mysql timezone -03:00).
+// Pool MySQL usa timezone -03:00; a veces el JSON llega como "YYYY-MM-DD HH:mm:ss" o ISO sin Z.
+// Sin zona explícita, `new Date()` en el browser es ambiguo y suele desfasar ~3h respecto al instante real.
 const AR_TIMEZONE = 'America/Argentina/Buenos_Aires'
+const AR_OFFSET_SUFFIX = '-03:00'
+
+/** Instante absoluto coherente con el backend (ART para cadenas sin offset). */
+function parseDashboardDate(value: string | undefined | null): Date {
+  if (value == null || String(value).trim() === '') return new Date(NaN)
+  const s = String(value).trim()
+  if (/^\d+$/.test(s)) {
+    const n = Number(s)
+    return new Date(n > 1e12 ? n : n * 1000)
+  }
+  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{2}\d{2}$/.test(s)) {
+    return new Date(s)
+  }
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d{1,3})?/)
+  if (m) {
+    const frac = m[7] || ''
+    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${frac}${AR_OFFSET_SUFFIX}`)
+  }
+  return new Date(s)
+}
 
 function ymdInArgentina(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: AR_TIMEZONE })
+  return parseDashboardDate(iso).toLocaleDateString('en-CA', { timeZone: AR_TIMEZONE })
 }
 
 function addCalendarDaysYmd(ymd: string, delta: number): string {
@@ -178,7 +198,9 @@ function addCalendarDaysYmd(ymd: string, delta: number): string {
 }
 
 const getMinutesAgo = (dateString: string) => {
-  const diffMs = Date.now() - new Date(dateString).getTime()
+  const t = parseDashboardDate(dateString).getTime()
+  if (Number.isNaN(t)) return 0
+  const diffMs = Date.now() - t
   return Math.floor(diffMs / 60000)
 }
 
@@ -188,7 +210,7 @@ const formatTimeAgo = (dateString: string) => {
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ${minutes % 60}m`
-  return new Date(dateString).toLocaleDateString('es-ES', {
+  return parseDashboardDate(dateString).toLocaleDateString('es-ES', {
     day: 'numeric',
     month: 'short',
     timeZone: AR_TIMEZONE,
@@ -200,7 +222,7 @@ const getDateLabel = (dateString: string) => {
   const todayYmd = ymdInArgentina(new Date().toISOString())
   if (eventYmd === todayYmd) return 'Hoy'
   if (eventYmd === addCalendarDaysYmd(todayYmd, -1)) return 'Ayer'
-  return new Date(dateString).toLocaleDateString('es-AR', {
+  return parseDashboardDate(dateString).toLocaleDateString('es-AR', {
     day: '2-digit',
     month: '2-digit',
     timeZone: AR_TIMEZONE,
@@ -208,7 +230,7 @@ const getDateLabel = (dateString: string) => {
 }
 
 const formatOrderTime = (dateString: string) =>
-  new Date(dateString).toLocaleTimeString('es-AR', {
+  parseDashboardDate(dateString).toLocaleTimeString('es-AR', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: AR_TIMEZONE,
@@ -1552,8 +1574,8 @@ const Dashboard = () => {
     if (itemsWithDates.length === 0) return pedidoCreatedAt
 
     const lastItem = itemsWithDates.reduce((latest, item) => {
-      const itemDate = new Date(item.createdAt).getTime()
-      const latestDate = new Date(latest.createdAt).getTime()
+      const itemDate = parseDashboardDate(item.createdAt).getTime()
+      const latestDate = parseDashboardDate(latest.createdAt).getTime()
       return itemDate > latestDate ? item : latest
     })
 
@@ -1654,7 +1676,9 @@ const Dashboard = () => {
     })
 
     // Sort chronologically (newest first)
-    unified.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    unified.sort(
+      (a, b) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime()
+    )
 
     return {
       allUnifiedPedidos: unified.filter(p => p.estado !== 'archived'),
