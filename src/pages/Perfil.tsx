@@ -72,6 +72,7 @@ const Perfil = () => {
     deliveryFee: '',
     whatsappEnabled: false,
     whatsappNumber: '',
+    comprobantesWhatsapp: '',
     transferenciaAlias: '',
     colorPrimario: '',
     colorSecundario: '',
@@ -585,6 +586,7 @@ const Perfil = () => {
         deliveryFee: restaurante.deliveryFee || '',
         whatsappEnabled: restaurante.whatsappEnabled || false,
         whatsappNumber: restaurante.whatsappNumber || '',
+        comprobantesWhatsapp: restaurante.comprobantesWhatsapp || '',
         transferenciaAlias: restaurante.transferenciaAlias || '',
         colorPrimario: restaurante.colorPrimario || '',
         colorSecundario: restaurante.colorSecundario || '',
@@ -622,6 +624,7 @@ const Perfil = () => {
         deliveryFee?: string
         whatsappEnabled?: boolean
         whatsappNumber?: string
+        comprobantesWhatsapp?: string | null
         transferenciaAlias?: string
         colorPrimario?: string
         colorSecundario?: string
@@ -648,6 +651,10 @@ const Perfil = () => {
       }
       if (formData.whatsappNumber !== (restaurante?.whatsappNumber || '')) {
         updateData.whatsappNumber = formData.whatsappNumber
+      }
+      const prevComp = restaurante?.comprobantesWhatsapp || ''
+      if (formData.comprobantesWhatsapp.trim() !== prevComp) {
+        updateData.comprobantesWhatsapp = formData.comprobantesWhatsapp.trim() || null
       }
       if (formData.transferenciaAlias !== (restaurante?.transferenciaAlias || '')) {
         updateData.transferenciaAlias = formData.transferenciaAlias
@@ -1725,6 +1732,24 @@ const Perfil = () => {
                 </p>
               </div>
             )}
+
+            <div className="space-y-2 pt-4 border-t">
+              <h3 className="text-sm font-medium">WhatsApp para comprobantes (clientes)</h3>
+              <p className="text-xs text-muted-foreground">
+                Número al que el cliente puede enviar el comprobante en transferencias manuales. Es independiente del WhatsApp de notificaciones automáticas de pedidos (API).
+              </p>
+              <Label htmlFor="comprobantesWhatsapp">Número (opcional)</Label>
+              <Input
+                id="comprobantesWhatsapp"
+                value={formData.comprobantesWhatsapp}
+                onChange={(e) => setFormData({ ...formData, comprobantesWhatsapp: e.target.value })}
+                placeholder="Ej: 5493412345678 (sin +)"
+                disabled={isSubmitting}
+              />
+              <p className="text-xs text-muted-foreground">
+                Si lo dejás vacío, en la web de clientes se usa el teléfono del local (campo de arriba) como respaldo para armar el enlace de WhatsApp.
+              </p>
+            </div>
 
             {/* WhatsApp Notifications */}
             <div className="space-y-4 pt-4 border-t">

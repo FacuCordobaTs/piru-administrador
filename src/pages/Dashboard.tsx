@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi, pedidoUnificadoApi } from '@/lib/api'
+import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi } from '@/lib/api'
 import { type MesaConPedido, type ItemPedido as WSItemPedido } from '@/hooks/useAdminWebSocket'
 import { useAdminContext } from '@/context/AdminContext'
 import MesaQRCode from '@/components/MesaQRCode'
@@ -17,12 +17,13 @@ import CierreTurno from '@/components/CierreTurno'
 import {
   ShoppingCart, Users, Loader2, QrCode, Plus,
   Clock, CheckCircle, Coffee,
-  Utensils, ChefHat, Trash2, Archive,
+  Utensils, Trash2, Archive,
   User, Minus, Search, Package,
-  AlertTriangle, Play, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag, CalendarDays, Tag
+  Play, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag, CalendarDays, Tag, Settings
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, formatFactura, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
@@ -79,26 +80,6 @@ interface Producto {
   categoria?: string | null
   ingredientes?: Ingrediente[]
   etiquetas?: Etiqueta[]
-}
-
-interface KanbanCardData {
-  id: string
-  pedido: PedidoData
-  items: ItemPedidoConEstado[]
-  status: string
-  tipo: 'mesa' | 'delivery' | 'takeaway'
-  direccion?: string
-  nombreCliente?: string | null
-  rapiboyTrackingUrl?: string | null
-  /** Campos extra delivery/takeaway (pedido unificado) */
-  telefono?: string | null
-  notas?: string | null
-  montoDescuento?: string | number | null
-  codigoDescuentoCodigo?: string | null
-  /** Estado real del backend (pending, preparing, …) para abrir el detalle correcto */
-  estadoPedido?: string
-  pagado?: boolean
-  metodoPago?: string | null
 }
 
 // Delivery Types
@@ -236,6 +217,51 @@ const formatOrderTime = (dateString: string) =>
 const pedidoTieneCuponDescuento = (p: { montoDescuento?: string | number | null }) =>
   p.montoDescuento != null && parseFloat(String(p.montoDescuento)) > 0
 
+const metodoPagoListBadge = (metodoPago: string | null | undefined) => {
+  if (
+    metodoPago === 'mercadopago' ||
+    metodoPago === 'mercadopago_checkout' ||
+    metodoPago === 'mercadopago_bricks'
+  ) {
+    return {
+      label: metodoPago === 'mercadopago_bricks' ? 'Tarjeta (Bricks)' : 'Tarjeta',
+      className:
+        'text-[9px] bg-sky-50 dark:bg-sky-950/30 text-sky-800 dark:text-sky-300 border-sky-300 px-1 py-0 h-4',
+    }
+  }
+  if (
+    metodoPago === 'transferencia' ||
+    metodoPago === 'transferencia_automatica_cucuru' ||
+    metodoPago === 'transferencia_automatica_talo'
+  ) {
+    return {
+      label:
+        metodoPago === 'transferencia_automatica_talo'
+          ? 'Transf. auto (Talo)'
+          : metodoPago === 'transferencia_automatica_cucuru'
+            ? 'Transf. auto'
+            : 'Transferencia',
+      className:
+        'text-[9px] bg-purple-50 dark:bg-purple-950/30 text-purple-800 dark:text-purple-300 border-purple-300 px-1 py-0 h-4',
+    }
+  }
+  if (metodoPago === 'manual_transfer') {
+    return {
+      label: 'Transf. manual',
+      className:
+        'text-[9px] bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-300 border-amber-300 px-1 py-0 h-4',
+    }
+  }
+  if (metodoPago === 'cash' || metodoPago === 'efectivo') {
+    return {
+      label: 'Efectivo',
+      className:
+        'text-[9px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-300 px-1 py-0 h-4',
+    }
+  }
+  return null
+}
+
 // Helper: compute the actual delivery fee for a stored order.
 // Since pedido.total already includes the delivery fee and agregados from the backend,
 // we derive it as: total - sum((item.precioUnitario + item.agregados) * item.cantidad)
@@ -268,21 +294,52 @@ const formatAgregados = (agregadosData: any): any[] => {
   return []
 }
 
-const COLUMNS = [
-  { id: 'pending', title: 'Pendientes', icon: Clock, color: 'text-amber-600', bgHeader: 'bg-amber-100 dark:bg-amber-900/30' },
-  { id: 'preparing', title: 'En Cocina', icon: ChefHat, color: 'text-blue-600', bgHeader: 'bg-blue-100 dark:bg-blue-900/30' },
-  { id: 'delivered', title: 'Listos', icon: Utensils, color: 'text-emerald-600', bgHeader: 'bg-emerald-100 dark:bg-emerald-900/30' },
-  { id: 'served', title: 'Entregados', icon: CheckCircle, color: 'text-indigo-600', bgHeader: 'bg-indigo-100 dark:bg-indigo-900/30' },
-  { id: 'closedPending', title: 'Sin Pagar', icon: Clock, color: 'text-orange-600', bgHeader: 'bg-orange-100 dark:bg-orange-900/30' },
-  { id: 'closedPaid', title: 'Pagados', icon: CheckCircle, color: 'text-green-600', bgHeader: 'bg-green-100 dark:bg-green-900/30' },
-  { id: 'archived', title: 'Archivados', icon: Archive, color: 'text-slate-600', bgHeader: 'bg-slate-100 dark:bg-slate-900/30' },
-]
-
 const Dashboard = () => {
   const token = useAuthStore((state) => state.token)
   const restaurante = useAuthStore((state) => state.restaurante)
   const { restaurante: restauranteStore, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
   const splitPayment = restauranteStore?.splitPayment ?? true
+
+  const metodosPagoAutoTransferCopy = useMemo(() => {
+    const r = restauranteStore
+    if (!r) return { title: 'Transferencia automática', hint: '' as string }
+    const cucuru = !!r.cucuruConfigurado
+    const talo = !!(r.taloApiKey && r.taloUserId)
+    if (cucuru && !talo) {
+      return {
+        title: 'Transferencia automática (Cucuru)',
+        hint: 'Cobros con billetera virtual y confirmación vía webhook Cucuru.',
+      }
+    }
+    if (talo && !cucuru) {
+      return {
+        title: 'Transferencia automática (Talo)',
+        hint: 'Alias dinámicos y acreditación en tiempo real (API Talo).',
+      }
+    }
+    if (cucuru && talo) {
+      if (r.proveedorPago === 'talo') {
+        return {
+          title: 'Transferencia automática (Talo)',
+          hint: 'Proveedor activo en checkout: Talo. También tenés Cucuru configurado en Perfil.',
+        }
+      }
+      if (r.proveedorPago === 'cucuru') {
+        return {
+          title: 'Transferencia automática (Cucuru)',
+          hint: 'Proveedor activo en checkout: Cucuru. También tenés Talo configurado en Perfil.',
+        }
+      }
+      return {
+        title: 'Transferencia automática',
+        hint: 'Cucuru y Talo están configurados: elegí el proveedor activo en Perfil (Pasarela de pagos).',
+      }
+    }
+    return {
+      title: 'Transferencia automática',
+      hint: 'Sin Cucuru ni Talo: configurá uno en Perfil para ofrecer transferencia automática en el checkout.',
+    }
+  }, [restauranteStore])
 
   const { printRaw, selectedPrinter } = usePrinter()
 
@@ -305,12 +362,6 @@ const Dashboard = () => {
   const [selectedMesaId, setSelectedMesaId] = useState<number | null>(null)
   const [selectedPedidoFromKanban, setSelectedPedidoFromKanban] = useState<PedidoData | null>(null)
   const [verQR, setVerQR] = useState(false)
-  const [crearMesaDialog, setCrearMesaDialog] = useState(false)
-  const [nombreMesa, setNombreMesa] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
-
-  const [showDeleteMesaDialog, setShowDeleteMesaDialog] = useState(false)
-  const [isDeletingMesa, setIsDeletingMesa] = useState(false)
 
   const [subtotales, setSubtotales] = useState<SubtotalInfo[]>([])
   const [loadingSubtotales, setLoadingSubtotales] = useState(false)
@@ -337,23 +388,20 @@ const Dashboard = () => {
   const [updatingPago, setUpdatingPago] = useState<string | null>(null)
 
   // Mobile-specific state
-  const [mobileView, setMobileView] = useState<'mesas' | 'detail' | 'orders'>('orders')
+  const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
 
-  // Dashboard mode: mesas vs pedidos vs nuevoPedido
-  const [dashboardMode, setDashboardMode] = useState<'mesas' | 'pedidos' | 'nuevoPedido'>('mesas')
-  const previousDashboardMode = useRef<'mesas' | 'pedidos'>('mesas')
+  const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
 
   // Cierre de turno
   const [showCierreTurno, setShowCierreTurno] = useState(false)
 
   const enterNuevoPedidoMode = () => {
-    previousDashboardMode.current = dashboardMode === 'nuevoPedido' ? previousDashboardMode.current : (dashboardMode as 'mesas' | 'pedidos')
     setDashboardMode('nuevoPedido')
     setNuevoPedidoMobileTab('info')
   }
 
   const exitNuevoPedidoMode = () => {
-    setDashboardMode(previousDashboardMode.current)
+    setDashboardMode('orders')
     setNewPedidoMesaId(null)
   }
 
@@ -376,14 +424,61 @@ const Dashboard = () => {
   // Pedido filter state
   const [pedidoFilter, setPedidoFilter] = useState<'all' | 'mesa' | 'delivery' | 'takeaway'>('all')
 
-  // Desktop left panel tab state
-  const [desktopLeftTab, setDesktopLeftTab] = useState<'pedidos' | 'mesas'>('pedidos')
-
   // Selected unified pedido (for showing delivery/takeaway detail in center)
   const [selectedUnifiedPedido, setSelectedUnifiedPedido] = useState<UnifiedPedido | null>(null)
 
   // Rapiboy assignment state
   const [assigningRapiboyId, setAssigningRapiboyId] = useState<number | null>(null)
+
+  const [metodosPagoModalOpen, setMetodosPagoModalOpen] = useState(false)
+  const [cfgMpCheckout, setCfgMpCheckout] = useState(true)
+  const [cfgMpBricks, setCfgMpBricks] = useState(false)
+  const [cfgTfAuto, setCfgTfAuto] = useState(true)
+  const [cfgTfManual, setCfgTfManual] = useState(false)
+  const [cfgEfectivo, setCfgEfectivo] = useState(true)
+  const [cfgAlias, setCfgAlias] = useState('')
+  const [savingMetodosPago, setSavingMetodosPago] = useState(false)
+
+  const openMetodosPagoModal = () => {
+    const r = restauranteStore
+    if (!r) return
+    const c = r.metodosPagoConfig || {}
+    const mpOk = !!r.mpConnected
+    const taloCred = !!(r.taloApiKey && r.taloUserId)
+    const autoTf = !!(r.cucuruConfigurado || taloCred)
+    setCfgMpCheckout(c.mercadopagoCheckout ?? (mpOk && r.cardsPaymentsEnabled !== false))
+    setCfgMpBricks(c.mercadopagoBricks ?? false)
+    setCfgTfAuto(c.transferenciaAutomatica ?? autoTf)
+    setCfgTfManual(
+      c.transferenciaManual ??
+        (!autoTf && !!(r.transferenciaAlias && String(r.transferenciaAlias).trim()))
+    )
+    setCfgEfectivo(c.efectivo ?? true)
+    setCfgAlias(r.transferenciaAlias || '')
+    setMetodosPagoModalOpen(true)
+  }
+
+  const saveMetodosPago = async () => {
+    if (!token) return
+    setSavingMetodosPago(true)
+    try {
+      await restauranteApi.updateMetodosPago(token, {
+        mercadopagoCheckout: cfgMpCheckout,
+        mercadopagoBricks: cfgMpBricks,
+        transferenciaAutomatica: cfgTfAuto,
+        transferenciaManual: cfgTfManual,
+        efectivo: cfgEfectivo,
+        transferenciaAlias: cfgAlias,
+      })
+      await useRestauranteStore.getState().fetchData()
+      toast.success('Métodos de pago guardados')
+      setMetodosPagoModalOpen(false)
+    } catch (e) {
+      toast.error('No se pudieron guardar los métodos de pago')
+    } finally {
+      setSavingMetodosPago(false)
+    }
+  }
 
   const handleToggleDeliveryIngredient = (idx: number, ingredientId: number) => {
     setNewDeliveryItems(prev => prev.map((item, index) => {
@@ -429,15 +524,6 @@ const Dashboard = () => {
     }
     return null
   }, [selectedPedidoFromKanban, selectedMesa?.pedido, selectedMesa?.items, selectedMesa?.id, selectedMesa?.nombre, selectedMesa?.totalItems, pedidos])
-
-  const mesaNotifications = useMemo(() => {
-    const map = new Map<number, number>()
-    notifications.filter(n => !n.leida && n.mesaId).forEach(n => {
-      const count = map.get(n.mesaId!) || 0
-      map.set(n.mesaId!, count + 1)
-    })
-    return map
-  }, [notifications])
 
   // Efecto para sincronizar pedidos con WS y manejar IMPRESIÓN AUTOMÁTICA
   useEffect(() => {
@@ -747,21 +833,6 @@ const Dashboard = () => {
     fetchClosedPedidos()
   }, [fetchMesasREST, fetchClosedPedidos])
 
-  const handleSelectMesa = (mesaId: number) => {
-    setSelectedMesaId(mesaId)
-    setSelectedPedidoFromKanban(null)
-    setSelectedUnifiedPedido(null)
-
-    // On mobile, switch to detail view
-    if (window.innerWidth < 1024) {
-      setMobileView('detail')
-    }
-
-    notifications
-      .filter(n => n.mesaId === mesaId && !n.leida)
-      .forEach(n => markAsRead(n.id))
-  }
-
   const fetchSubtotales = useCallback(async () => {
     if (!displayedPedido) return
     setLoadingSubtotales(true)
@@ -846,255 +917,6 @@ const Dashboard = () => {
     fetchKanbanSubtotales()
   }, [pedidos, closedPedidosFromAPI, pedidosSubtotales])
 
-  const pedidosCerradosPagados = useMemo(() => {
-    const setPagados = new Set<number>()
-    Object.entries(pedidosSubtotales).forEach(([pedidoId, subs]) => {
-      if (subs.length > 0 && subs.every(s => s.pagado)) {
-        setPagados.add(Number(pedidoId))
-      }
-    })
-    return setPagados
-  }, [pedidosSubtotales])
-
-  const kanbanData = useMemo(() => {
-    const grouped: Record<string, KanbanCardData[]> = {
-      pending: [],
-      preparing: [],
-      delivered: [],
-      served: [],
-      closedPending: [],
-      closedPaid: [],
-      archived: [],
-    }
-
-    const allPedidosMap = new Map<number, PedidoData>()
-
-    pedidos.forEach(p => allPedidosMap.set(p.id, p))
-
-    closedPedidosFromAPI.forEach(p => {
-      if (!allPedidosMap.has(p.id)) {
-        allPedidosMap.set(p.id, p)
-      }
-    })
-
-    const allPedidos = Array.from(allPedidosMap.values())
-
-    // Process mesa pedidos
-    allPedidos.forEach(pedido => {
-      if (pedido.estado === 'archived') {
-        grouped.archived.push({
-          id: `mesa-${pedido.id}-archived`,
-          pedido,
-          items: pedido.items,
-          status: 'archived',
-          tipo: 'mesa',
-        })
-        return
-      }
-
-      if (pedido.estado === 'pending' && pedido.items.length > 0) {
-        grouped.pending.push({ id: `mesa-${pedido.id}-pending`, pedido, items: pedido.items, status: 'pending', tipo: 'mesa' })
-        return
-      }
-
-      if (pedido.estado === 'closed') {
-        const allItemsServed = pedido.items.every(i => i.estado === 'served' || i.estado === 'cancelled')
-
-        if (allItemsServed) {
-          const target = pedidosCerradosPagados.has(pedido.id) ? 'closedPaid' : 'closedPending'
-          grouped[target].push({
-            id: `mesa-${pedido.id}-closed`,
-            pedido,
-            items: pedido.items,
-            status: 'closed',
-            tipo: 'mesa',
-          })
-          return
-        }
-      }
-
-      const itemsPreparing = pedido.items.filter(i => !i.estado || i.estado === 'preparing' || i.estado === 'pending')
-      if (itemsPreparing.length > 0) {
-        grouped.preparing.push({ id: `mesa-${pedido.id}-preparing`, pedido, items: itemsPreparing, status: 'preparing', tipo: 'mesa' })
-      }
-
-      const itemsDelivered = pedido.items.filter(i => i.estado === 'delivered')
-      if (itemsDelivered.length > 0) {
-        grouped.delivered.push({ id: `mesa-${pedido.id}-delivered`, pedido, items: itemsDelivered, status: 'delivered', tipo: 'mesa' })
-      }
-
-      const itemsServed = pedido.items.filter(i => i.estado === 'served')
-      if (itemsServed.length > 0) {
-        grouped.served.push({ id: `mesa-${pedido.id}-served`, pedido, items: itemsServed, status: 'served', tipo: 'mesa' })
-      }
-    })
-
-    // Helper: map delivery/takeaway estado to kanban column
-    const mapEstadoToColumn = (estado: string): string | null => {
-      switch (estado) {
-        case 'pending': return 'pending'
-        case 'preparing': return 'preparing'
-        case 'ready': return 'delivered'
-        case 'dispatched': return 'delivered'
-        case 'delivered': return 'served'
-        case 'archived': return 'archived'
-        default: return null
-      }
-    }
-
-    // Helper: map delivery/takeaway estado to item-level estado
-    const mapEstadoToItemEstado = (estado: string): ItemPedidoConEstado['estado'] => {
-      switch (estado) {
-        case 'pending': return 'pending'
-        case 'preparing': return 'preparing'
-        case 'ready': return 'delivered'
-        case 'dispatched': return 'delivered'
-        case 'delivered': return 'served'
-        default: return 'preparing'
-      }
-    }
-
-    // Process delivery pedidos
-    deliveryPedidos.forEach(dp => {
-      const column = mapEstadoToColumn(dp.estado)
-      if (!column || !grouped[column]) return
-
-      const itemEstado = mapEstadoToItemEstado(dp.estado)
-      const items: ItemPedidoConEstado[] = dp.items.map(i => ({
-        ...i,
-        clienteNombre: dp.nombreCliente || 'Delivery',
-        estado: itemEstado,
-      }))
-
-      const pseudoPedido: PedidoData = {
-        id: dp.id,
-        mesaId: null,
-        mesaNombre: null,
-        estado: (dp.estado === 'ready' || dp.estado === 'dispatched') ? 'delivered' : dp.estado as PedidoData['estado'],
-        total: dp.total,
-        createdAt: dp.createdAt,
-        closedAt: dp.deliveredAt,
-        items,
-        totalItems: dp.totalItems,
-        nombrePedido: dp.nombreCliente,
-      }
-
-      grouped[column].push({
-        id: `delivery-${dp.id}-${column}`,
-        pedido: pseudoPedido,
-        items,
-        status: column === 'archived' ? 'archived' : dp.estado === 'pending' ? 'pending' : dp.estado === 'preparing' ? 'preparing' : (dp.estado === 'ready' || dp.estado === 'dispatched') ? 'delivered' : 'served',
-        tipo: 'delivery',
-        direccion: dp.direccion,
-        nombreCliente: dp.nombreCliente,
-        telefono: dp.telefono,
-        notas: dp.notas,
-        montoDescuento: dp.montoDescuento,
-        codigoDescuentoCodigo: dp.codigoDescuentoCodigo,
-        estadoPedido: dp.estado,
-        pagado: dp.pagado,
-        metodoPago: dp.metodoPago ?? undefined,
-        rapiboyTrackingUrl: dp.rapiboyTrackingUrl,
-      })
-    })
-
-    // Process takeaway pedidos
-    takeawayPedidos.forEach(tp => {
-      const column = mapEstadoToColumn(tp.estado)
-      if (!column || !grouped[column]) return
-
-      const itemEstado = mapEstadoToItemEstado(tp.estado)
-      const items: ItemPedidoConEstado[] = tp.items.map(i => ({
-        ...i,
-        clienteNombre: tp.nombreCliente || 'Take Away',
-        estado: itemEstado,
-      }))
-
-      const pseudoPedido: PedidoData = {
-        id: tp.id,
-        mesaId: null,
-        mesaNombre: null,
-        estado: (tp.estado === 'ready' || tp.estado === 'dispatched') ? 'delivered' : tp.estado as PedidoData['estado'],
-        total: tp.total,
-        createdAt: tp.createdAt,
-        closedAt: tp.deliveredAt,
-        items,
-        totalItems: tp.totalItems,
-        nombrePedido: tp.nombreCliente,
-      }
-
-      grouped[column].push({
-        id: `takeaway-${tp.id}-${column}`,
-        pedido: pseudoPedido,
-        items,
-        status: column === 'archived' ? 'archived' : tp.estado === 'pending' ? 'pending' : tp.estado === 'preparing' ? 'preparing' : (tp.estado === 'ready' || tp.estado === 'dispatched') ? 'delivered' : 'served',
-        tipo: 'takeaway',
-        nombreCliente: tp.nombreCliente,
-        telefono: tp.telefono,
-        notas: tp.notas,
-        montoDescuento: tp.montoDescuento,
-        codigoDescuentoCodigo: tp.codigoDescuentoCodigo,
-        estadoPedido: tp.estado,
-        pagado: tp.pagado,
-        metodoPago: tp.metodoPago ?? undefined,
-        rapiboyTrackingUrl: tp.rapiboyTrackingUrl,
-      })
-    })
-
-    Object.keys(grouped).forEach(key => {
-      grouped[key].sort((a, b) => {
-        const dateA = new Date(a.pedido.createdAt).getTime()
-        const dateB = new Date(b.pedido.createdAt).getTime()
-        if (key === 'closedPending' || key === 'closedPaid') {
-          return dateB - dateA
-        }
-        return dateA - dateB
-      })
-    })
-
-    return grouped
-  }, [pedidos, closedPedidosFromAPI, pedidosCerradosPagados, deliveryPedidos, takeawayPedidos])
-
-  const handleDeleteMesa = async (mesaId: number) => {
-    if (!token) return
-    setIsDeletingMesa(true)
-    try {
-      const response = await mesasApi.delete(token, mesaId) as { success: boolean }
-      if (response.success) {
-        setMesas(prev => prev.filter(m => m.id !== mesaId))
-        if (selectedMesaId === mesaId) {
-          setSelectedMesaId(null)
-          if (window.innerWidth < 1024) {
-            setMobileView('mesas')
-          }
-        }
-        setShowDeleteMesaDialog(false)
-      }
-    } catch (error) {
-      console.error('Error deleting mesa:', error)
-    } finally {
-      setIsDeletingMesa(false)
-    }
-  }
-
-  const handleCrearMesa = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!token || !nombreMesa.trim()) {
-      return
-    }
-    setIsCreating(true)
-    try {
-      await mesasApi.create(token, nombreMesa)
-      setCrearMesaDialog(false)
-      setNombreMesa('')
-      refresh()
-      await fetchMesasREST()
-    } catch (error) {
-    } finally {
-      setIsCreating(false)
-    }
-  }
-
   // Change estado for delivery/takeaway orders (order-level, since they don't have per-item tracking)
   const handleDeliveryTakeawayEstadoChange = async (tipo: 'delivery' | 'takeaway', id: number, nuevoEstado: string) => {
     if (!token) return
@@ -1108,21 +930,6 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error('Error al actualizar estado:', error)
-    }
-  }
-
-  const handleChangeItemEstado = async (pedidoId: number, itemId: number, nuevoEstado: string) => {
-    if (!token) return
-
-    setPedidos(prev => prev.map(p => {
-      if (p.id !== pedidoId) return p
-      return { ...p, items: p.items.map(i => i.id === itemId ? { ...i, estado: nuevoEstado as any } : i) }
-    }))
-
-    try {
-      await pedidosApi.updateItemEstado(token, pedidoId, itemId, nuevoEstado)
-    } catch (error) {
-      refresh()
     }
   }
 
@@ -1228,15 +1035,51 @@ const Dashboard = () => {
   }
 
 
+  const metodoPagoParaAprobar = (pedido: UnifiedPedido): string => {
+    const m = pedido.metodoPago
+    if (m === 'efectivo') return 'cash'
+    if (m && m !== 'mercadopago' && m !== 'transferencia') return m
+    if (m === 'transferencia') return 'manual_transfer'
+    return 'manual_transfer'
+  }
+
+  const handleAprobarPagoDt = async (pedido: UnifiedPedido) => {
+    if (!token) return
+    setUpdatingPago(`approve-${pedido.id}`)
+    try {
+      const mp = metodoPagoParaAprobar(pedido)
+      let response: any
+      if (pedido.tipo === 'delivery') {
+        response = await deliveryApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
+      } else {
+        response = await takeawayApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
+      }
+      if (response.success) {
+        const newPagado = response.data?.pagado ?? true
+        if (pedido.tipo === 'delivery') {
+          setDeliveryPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
+        } else {
+          setTakeawayPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
+        }
+        toast.success('Pago verificado')
+      }
+    } catch (error) {
+      console.error('Error aprobando pago:', error)
+      toast.error('No se pudo verificar el pago')
+    } finally {
+      setUpdatingPago(null)
+    }
+  }
+
   // Toggle pagado for any order type (mesa, delivery, takeaway)
   const handleTogglePagado = async (pedido: UnifiedPedido, metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
     if (!token) return
     try {
       let response: any
       if (pedido.tipo === 'delivery') {
-        response = await deliveryApi.marcarPagado(token, pedido.id, metodoPago)
+        response = await deliveryApi.marcarPagado(token, pedido.id, { metodoPago })
       } else if (pedido.tipo === 'takeaway') {
-        response = await takeawayApi.marcarPagado(token, pedido.id, metodoPago)
+        response = await takeawayApi.marcarPagado(token, pedido.id, { metodoPago })
       } else {
         response = await pedidosApi.marcarPagado(token, pedido.id, metodoPago)
       }
@@ -1387,26 +1230,8 @@ const Dashboard = () => {
     }
   }
 
-  const handleKanbanCardClick = (pedido: PedidoData) => {
-    if (pedido.mesaId) {
-      setSelectedMesaId(pedido.mesaId)
-      setSelectedPedidoFromKanban(pedido)
-      setSelectedUnifiedPedido(null)
-
-      // On mobile, switch to detail view when clicking a kanban card
-      if (window.innerWidth < 1024) {
-        setMobileView('detail')
-      }
-
-      notifications
-        .filter(n => n.mesaId === pedido.mesaId && !n.leida)
-        .forEach(n => markAsRead(n.id))
-    }
-  }
-
   const handleUnifiedPedidoClick = (pedido: UnifiedPedido) => {
     if (pedido.tipo === 'mesa') {
-      // For mesa orders, find the mesa and use existing flow
       const mesa = mesas.find(m => m.nombre === pedido.mesaNombre)
       if (mesa) {
         setSelectedMesaId(mesa.id)
@@ -1415,6 +1240,9 @@ const Dashboard = () => {
           setSelectedPedidoFromKanban(pedidoData)
         }
         setSelectedUnifiedPedido(null)
+        notifications
+          .filter(n => n.mesaId === mesa.id && !n.leida)
+          .forEach(n => markAsRead(n.id))
       }
     } else {
       // For delivery/takeaway, show in center with dedicated view
@@ -1451,6 +1279,7 @@ const Dashboard = () => {
     setMobileView('orders')
     setSelectedMesaId(null)
     setSelectedPedidoFromKanban(null)
+    setSelectedUnifiedPedido(null)
   }
 
   // Calculate active orders count for badge (pedidos PAGADOS y NO ARCHIVADOS)
@@ -1792,6 +1621,7 @@ const Dashboard = () => {
         items: p.items,
         totalItems: p.totalItems,
         pagado: p.pagado,
+        metodoPago: p.metodoPago,
         rapiboyTrackingUrl: p.rapiboyTrackingUrl,
         montoDescuento: p.montoDescuento,
         codigoDescuentoId: p.codigoDescuentoId,
@@ -1813,6 +1643,7 @@ const Dashboard = () => {
         items: p.items,
         totalItems: p.totalItems,
         pagado: p.pagado,
+        metodoPago: p.metodoPago,
         montoDescuento: p.montoDescuento,
         codigoDescuentoId: p.codigoDescuentoId,
         codigoDescuentoCodigo: p.codigoDescuentoCodigo,
@@ -1879,7 +1710,11 @@ const Dashboard = () => {
               </Button>
             )}
             <h1 className="text-lg lg:text-xl font-bold tracking-tight truncate">
-              {mobileView === 'detail' && selectedMesa ? selectedMesa.nombre : (restaurante?.nombre || 'Dashboard')}
+              {mobileView === 'detail'
+                ? displayedUnifiedPedido
+                  ? `${displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : displayedUnifiedPedido.tipo === 'takeaway' ? 'Take Away' : 'Mesa'} · #${displayedUnifiedPedido.id}`
+                  : selectedMesa?.nombre || 'Detalle'
+                : restaurante?.nombre || 'Pedidos'}
             </h1>
             {isConnected ? (
               <Badge variant="outline" className="gap-1 text-[10px] lg:text-xs bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 hidden sm:flex">
@@ -2000,251 +1835,8 @@ const Dashboard = () => {
         )}
       </div>
 
-      {/* Main Content - Desktop: 2 columns (left tabs + right detail), Mobile: Single view based on state */}
+      {/* Main Content: lista de pedidos + detalle (desktop); móvil lista / detalle */}
       <div className="flex-1 flex overflow-hidden">
-
-        {/* PEDIDOS (UNIFIED) MODE VIEW */}
-        {dashboardMode === 'pedidos' && (
-          <div className={`
-            ${mobileView === 'orders' ? 'flex' : 'hidden'} 
-            lg:flex lg:w-80 flex-col border-l bg-muted/10 overflow-hidden
-            w-full
-          `}>
-            <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 flex items-center justify-between">
-              <p className="text-sm font-semibold">Pedidos</p>
-              <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
-            </div>
-            <div className="flex-1 overflow-auto p-3 space-y-4">
-              {COLUMNS.map((column) => {
-                const columnCards = kanbanData[column.id] || []
-                const ColumnIcon = column.icon
-
-                return (
-                  <div key={column.id}>
-                    <div className={`flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg ${column.bgHeader}`}>
-                      <ColumnIcon className={`h-4 w-4 ${column.color}`} />
-                      <span className="font-semibold text-sm flex-1">{column.title}</span>
-                      <Badge variant="secondary" className="font-mono text-xs">{columnCards.length}</Badge>
-                    </div>
-
-                    {columnCards.length === 0 ? (
-                      <div className="text-center py-3 text-muted-foreground text-xs opacity-50">
-                        Sin pedidos
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {columnCards.map((card) => {
-                          const hasExclusions = card.items.some((i: any) => i.ingredientesExcluidosNombres?.length || formatAgregados(i.agregados).length > 0)
-                          const isMesa = card.tipo === 'mesa'
-
-                          const isClosed = card.pedido.estado === 'closed'
-                          const subtotalesData = isMesa ? (pedidosSubtotales[card.pedido.id] || []) : []
-                          const isFullyPaid = subtotalesData.length > 0 && subtotalesData.every(s => s.pagado)
-                          const totalPedido = subtotalesData.reduce((acc, curr) => acc + parseFloat(curr.subtotal), 0)
-                          const showUnifiedPayment = !splitPayment && isClosed && isMesa
-
-                          // Card title based on tipo
-                          const cardTitle = card.tipo === 'delivery'
-                            ? `🚚 ${card.nombreCliente || 'Delivery'}`
-                            : card.tipo === 'takeaway'
-                              ? `🛍️ ${card.nombreCliente || 'Take Away'}`
-                              : `🍽️ ${card.pedido.mesaNombre || 'Sin mesa'}`
-
-                          const canDispatch = !isMesa && card.status !== 'dispatched' && card.status !== 'delivered' && card.status !== 'cancelled' && card.status !== 'archived'
-
-                          return (
-                            <Card
-                              key={card.id}
-                              className={`cursor-pointer transition-all hover:border-primary/50 active:scale-[0.98] ${isMesa && selectedMesaId === card.pedido.mesaId ? 'ring-2 ring-primary' : ''
-                                }`}
-                              onClick={() => {
-                                if (isMesa) {
-                                  handleKanbanCardClick(card.pedido)
-                                } else {
-                                  const unified: UnifiedPedido = {
-                                    id: card.pedido.id,
-                                    tipo: card.tipo,
-                                    estado: card.estadoPedido ?? card.pedido.estado,
-                                    total: card.pedido.total,
-                                    createdAt: card.pedido.createdAt,
-                                    nombreCliente: card.nombreCliente || null,
-                                    telefono: card.telefono ?? null,
-                                    direccion: card.direccion,
-                                    notas: card.notas ?? null,
-                                    mesaNombre: null,
-                                    items: card.items,
-                                    totalItems: card.pedido.totalItems,
-                                    pagado: card.pagado,
-                                    metodoPago: card.metodoPago,
-                                    rapiboyTrackingUrl: card.rapiboyTrackingUrl,
-                                    montoDescuento: card.montoDescuento,
-                                    codigoDescuentoCodigo: card.codigoDescuentoCodigo,
-                                  }
-                                  handleUnifiedPedidoClick(unified)
-                                }
-                              }}
-                            >
-                              <CardContent className="p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-bold text-sm">{cardTitle}</span>
-                                    {!isMesa && pedidoTieneCuponDescuento(card as { montoDescuento?: string | number | null }) && (
-                                      <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[100px] truncate" title={card.codigoDescuentoCodigo || 'Cupón'}>
-                                        <Tag className="h-2.5 w-2.5 mr-0.5 inline" />
-                                        {card.codigoDescuentoCodigo || 'Cupón'}
-                                      </Badge>
-                                    )}
-                                    {hasExclusions && <AlertTriangle className="h-3 w-3 text-orange-500" />}
-                                    {isClosed && isMesa && (
-                                      <Badge
-                                        variant="outline"
-                                        className={isFullyPaid
-                                          ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 text-[10px] px-1.5 py-0"
-                                          : "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 text-[10px] px-1.5 py-0"}
-                                      >
-                                        {isFullyPaid ? "💳 Pagado" : "📋 Cuenta"}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(card.pedido.createdAt)}</span>
-                                </div>
-
-                                {card.tipo === 'delivery' && card.direccion && (
-                                  <div className="flex items-start gap-1.5 mb-2">
-                                    <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
-                                    <span className="text-xs text-muted-foreground truncate">{card.direccion}</span>
-                                  </div>
-                                )}
-
-                                {showUnifiedPayment && subtotalesData.length > 0 && (
-                                  <div className="mb-2 p-2 bg-muted/30 rounded-md">
-                                    <div className="flex justify-between items-center mb-1">
-                                      <span className="text-xs font-medium">Total Mesa</span>
-                                      <span className="text-sm font-bold">${totalPedido.toLocaleString()}</span>
-                                    </div>
-                                    {!isFullyPaid ? (
-                                      <div className="flex gap-1 w-full">
-                                        <Button
-                                          className="flex-1 h-7 px-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'efectivo')
-                                          }}
-                                          disabled={updatingPago === `all-${card.pedido.id}-efectivo` || updatingPago === `all-${card.pedido.id}-transferencia`}
-                                          title="Efectivo"
-                                        >
-                                          {updatingPago === `all-${card.pedido.id}-efectivo` ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                          ) : (
-                                            <span>💵 Efectivo</span>
-                                          )}
-                                        </Button>
-                                        <Button
-                                          className="flex-1 h-7 px-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-white"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleConfirmarPagoTotal(card.pedido.id, subtotalesData, 'transferencia')
-                                          }}
-                                          disabled={updatingPago === `all-${card.pedido.id}-transferencia` || updatingPago === `all-${card.pedido.id}-efectivo`}
-                                          title="Transferencia"
-                                        >
-                                          {updatingPago === `all-${card.pedido.id}-transferencia` ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                          ) : (
-                                            <span>🏦 Transf.</span>
-                                          )}
-                                        </Button>
-                                      </div>
-                                    ) : (
-                                      <div className="w-full py-1 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded text-center text-xs font-medium flex items-center justify-center gap-1">
-                                        <CheckCircle className="h-3 w-3" />
-                                        Pagado
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                <div className="space-y-1.5">
-                                  {card.items.slice(0, 3).map((item) => (
-                                    <div key={item.id} className="flex items-start gap-2 text-xs">
-                                      <span className="font-bold bg-muted rounded px-1 shrink-0">{item.cantidad}</span>
-                                      <div className="flex-1 min-w-0">
-                                        <span className="truncate block">{item.nombreProducto}</span>
-                                        {formatAgregados((item as any).agregados).length > 0 && (
-                                          <div className="text-blue-600 text-[10px] mt-0.5 w-full">
-                                            <span className="font-semibold">CON:</span>
-                                            <ul className="pl-1.5 space-y-0.5">
-                                              {formatAgregados((item as any).agregados).map((a: any, i: number) => (
-                                                <li key={i}>- {a.nombre}</li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )}
-                                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                          <div className="text-orange-600 text-[10px] mt-0.5 w-full">
-                                            <span className="font-semibold">SIN:</span>
-                                            <ul className="pl-1.5 space-y-0.5">
-                                              {item.ingredientesExcluidosNombres.map((nombre: string, i: number) => (
-                                                <li key={i}>- {nombre}</li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )}
-                                      </div>
-                                      {/* Per-item actions only for mesa orders */}
-                                      {(isMesa) && (
-                                        <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                                          {card.status === 'preparing' && (
-                                            <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-emerald-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'delivered')}>
-                                              <CheckCircle className="h-3 w-3" />
-                                            </Button>
-                                          )}
-                                          {card.status === 'delivered' && (
-                                            <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-indigo-600" onClick={() => handleChangeItemEstado(card.pedido.id, item.id, 'served')}>
-                                              <Utensils className="h-3 w-3" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                  {card.items.length > 3 && (
-                                    <p className="text-[10px] text-muted-foreground">+{card.items.length - 3} más</p>
-                                  )}
-                                </div>
-
-                                {canDispatch && (
-                                  <Button
-                                    size="sm"
-                                    className="w-full mt-2 h-7 text-xs text-white bg-blue-600 hover:bg-blue-700"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleDeliveryTakeawayEstadoChange(card.tipo as 'delivery' | 'takeaway', card.pedido.id, 'dispatched')
-                                    }}
-                                  >
-                                    <Truck className="h-3 w-3 mr-1" />
-                                    Despachar
-                                  </Button>
-                                )}
-                              </CardContent>
-                            </Card>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-
-              {Object.values(kanbanData).every(arr => arr.length === 0) && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Coffee className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">Sin pedidos activos</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* NUEVO PEDIDO MODE VIEW - Full screen 3-column layout */}
         {dashboardMode === 'nuevoPedido' && (
@@ -2751,46 +2343,22 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* MESAS MODE VIEW */}
-        {dashboardMode === 'mesas' && (
+        {dashboardMode === 'orders' && (
           <>
-            {/* LEFT: Tabbed Panel (Pedidos/Mesas) - Desktop, Mesa grid on Mobile */}
-            <div className={`
-          ${mobileView === 'mesas' ? 'flex' : 'hidden'} 
-          lg:flex lg:w-[380px] xl:w-[420px] flex-col border-r bg-muted/20 overflow-hidden
-          w-full
-        `}>
-              {/* Desktop Tab Switcher */}
-              <div className="hidden lg:flex items-center gap-1 p-2 border-b bg-background/95 backdrop-blur shrink-0">
-                <button
-                  onClick={() => setDesktopLeftTab('pedidos')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${desktopLeftTab === 'pedidos'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                    }`}
-                >
-                  <ShoppingCart className="h-4 w-4" />
-                  Pedidos
-                  {allUnifiedPedidos.length > 0 && (
-                    <Badge className={`ml-1 text-[10px] px-1.5 py-0 h-4 min-w-5 justify-center ${desktopLeftTab === 'pedidos' ? 'bg-primary-foreground/20 text-primary-foreground' : ''}`}>
-                      {allUnifiedPedidos.length}
-                    </Badge>
-                  )}
-                </button>
-                <button
-                  onClick={() => setDesktopLeftTab('mesas')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${desktopLeftTab === 'mesas'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                    }`}
-                >
-                  <Utensils className="h-4 w-4" />
-                  Mesas
-                </button>
+            <div className="hidden lg:flex lg:w-[380px] xl:w-[420px] flex-col border-r bg-muted/20 overflow-hidden shrink-0">
+              <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">Pedidos</p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={openMetodosPagoModal} title="Métodos de pago">
+                      <Settings className="h-3.5 w-3.5 mr-1" />
+                      Pagos
+                    </Button>
+                    <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
+                  </div>
+                </div>
               </div>
-
-              {/* DESKTOP: Pedidos Tab Content */}
-              <div className={`${desktopLeftTab === 'pedidos' ? 'hidden lg:flex' : 'hidden'} flex-col flex-1 overflow-hidden`}>
+              <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
                 <div className="flex-1 overflow-auto p-3">
                   {loadingDelivery ? (
                     <div className="flex items-center justify-center h-full">
@@ -2817,6 +2385,7 @@ const Dashboard = () => {
                     <div className="space-y-2">
                       {filteredUnifiedPedidos.map((pedido, index) => {
                         const tipoBadge = getTipoBadge(pedido.tipo)
+                        const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
                         const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                           || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
                         const dateLabel = getDateLabel(pedido.createdAt)
@@ -2851,6 +2420,11 @@ const Dashboard = () => {
                                       <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[140px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
                                         <Tag className="h-2.5 w-2.5 mr-0.5 inline shrink-0" />
                                         {pedido.codigoDescuentoCodigo || 'Cupón'}
+                                      </Badge>
+                                    )}
+                                    {pagoBadge && (
+                                      <Badge variant="outline" className={pagoBadge.className}>
+                                        {pagoBadge.label}
                                       </Badge>
                                     )}
                                   </div>
@@ -2909,6 +2483,7 @@ const Dashboard = () => {
                           </div>
                           {filteredArchivedPedidos.map((pedido, index) => {
                             const tipoBadge = getTipoBadge(pedido.tipo)
+                            const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
                             const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                               || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
                             const dateLabel = getDateLabel(pedido.createdAt)
@@ -2943,6 +2518,11 @@ const Dashboard = () => {
                                             {pedido.codigoDescuentoCodigo || 'Cupón'}
                                           </Badge>
                                         )}
+                                        {pagoBadge && (
+                                          <Badge variant="outline" className={`${pagoBadge.className} h-3.5`}>
+                                            {pagoBadge.label}
+                                          </Badge>
+                                        )}
                                       </div>
                                       {pedido.tipo === 'delivery' && pedido.direccion && (
                                         <p className="text-[10px] text-muted-foreground truncate">{pedido.direccion}</p>
@@ -2960,68 +2540,6 @@ const Dashboard = () => {
                       )}
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* DESKTOP: Mesas Tab Content / MOBILE: Mesas grid (shown via mobileView) */}
-              <div className={`
-                ${mobileView === 'mesas' ? 'flex' : 'hidden'}
-                ${desktopLeftTab === 'mesas' ? 'lg:flex' : 'lg:hidden'}
-                flex-col flex-1 overflow-hidden
-              `}>
-                <div className="p-3 lg:p-3 overflow-auto flex-1">
-                  <div className="items-center justify-between mb-3 hidden lg:flex">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mesas</p>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={() => setCrearMesaDialog(true)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-2">
-                    {mesas.map((mesa) => {
-                      const hasActiveOrder = mesa.pedido && mesa.pedido.estado !== 'closed' && mesa.pedido.estado !== 'archived' && mesa.totalItems > 0
-                      const notifCount = mesaNotifications.get(mesa.id) || 0
-                      const isSelected = selectedMesaId === mesa.id
-
-                      return (
-                        <button
-                          key={mesa.id}
-                          onClick={() => handleSelectMesa(mesa.id)}
-                          className={`relative aspect-square rounded-lg border-2 flex flex-col items-center justify-center text-center p-1 transition-all active:scale-95 lg:hover:scale-105 ${isSelected
-                            ? 'border-primary bg-primary/10 shadow-md'
-                            : hasActiveOrder
-                              ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
-                              : 'border-border bg-card hover:bg-accent'
-                            }`}
-                        >
-                          {notifCount > 0 && (
-                            <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
-                              {notifCount}
-                            </div>
-                          )}
-                          <span className="font-semibold text-xs truncate w-full px-1">{mesa.nombre}</span>
-                          {mesa.clientesConectados.length > 0 && (
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
-                              <Users className="h-2.5 w-2.5" />
-                              {mesa.clientesConectados.length}
-                            </span>
-                          )}
-                          {/* Mobile-only: show mini status indicator */}
-                          <div className="lg:hidden mt-1">
-                            {hasActiveOrder ? (
-                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            ) : (
-                              <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-                            )}
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
                 </div>
               </div>
             </div>
@@ -3046,6 +2564,14 @@ const Dashboard = () => {
                           {displayedUnifiedPedido.estado === 'archived' && (
                             <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">Archivado</Badge>
                           )}
+                          {(() => {
+                            const pb = metodoPagoListBadge(displayedUnifiedPedido.metodoPago)
+                            return pb ? (
+                              <Badge variant="outline" className={`${pb.className} text-xs h-5`}>
+                                {pb.label}
+                              </Badge>
+                            ) : null
+                          })()}
                         </div>
                         <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
                           <span>Pedido #{displayedUnifiedPedido.id}</span>
@@ -3178,11 +2704,11 @@ const Dashboard = () => {
                         )}
                         {displayedUnifiedPedido.estado !== 'archived' && (
                           <Button
-                            className={`hidden lg:flex font-bold h-9 text-white ${displayedUnifiedPedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                            className="hidden lg:flex font-bold h-9 text-white bg-slate-600 hover:bg-slate-700"
                             onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'archived')}
                           >
-                            {displayedUnifiedPedido.estado === 'dispatched' ? <Archive className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
-                            {displayedUnifiedPedido.estado === 'dispatched' ? 'Archivar' : 'Despachar'}
+                            <Archive className="mr-2 h-4 w-4" />
+                            Archivar
                           </Button>
                         )}
 
@@ -3279,11 +2805,11 @@ const Dashboard = () => {
                           </Button>
                         )}
                         <Button
-                          className={`w-full font-bold shadow-sm h-12 text-md text-white ${displayedUnifiedPedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                          className="w-full font-bold shadow-sm h-12 text-md text-white bg-slate-600 hover:bg-slate-700"
                           onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'archived')}
                         >
-                          {displayedUnifiedPedido.estado === 'dispatched' ? <Archive className="mr-2 h-5 w-5" /> : <Truck className="mr-2 h-5 w-5" />}
-                          {displayedUnifiedPedido.estado === 'dispatched' ? 'Archivar Manualmente' : 'Despachar Manualmente'}
+                          <Archive className="mr-2 h-5 w-5" />
+                          Archivar pedido
                         </Button>
                       </div>
                     )}
@@ -3397,30 +2923,21 @@ const Dashboard = () => {
                           </span>
                         </div>
                       ) : (
-                        <div className="flex gap-2 w-full">
+                        <div className="space-y-2">
+                          <div className="rounded-lg border border-amber-300/60 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                            Pendiente de acreditación: verificá el pago antes de preparar la comanda.
+                          </div>
                           <Button
-                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                            onClick={() => handleTogglePagado(displayedUnifiedPedido, 'efectivo')}
-                            disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                            onClick={() => handleAprobarPagoDt(displayedUnifiedPedido)}
+                            disabled={updatingPago === `approve-${displayedUnifiedPedido.id}`}
                           >
-                            {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
+                            {updatingPago === `approve-${displayedUnifiedPedido.id}` ? (
                               <Loader2 className="h-4 w-4 animate-spin mr-2" />
                             ) : (
-                              <span className="mr-2">💵</span>
+                              <CheckCircle className="h-4 w-4 mr-2" />
                             )}
-                            Efectivo
-                          </Button>
-                          <Button
-                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                            onClick={() => handleTogglePagado(displayedUnifiedPedido, 'transferencia')}
-                            disabled={updatingPago === `all-${displayedUnifiedPedido.id}`}
-                          >
-                            {updatingPago === `all-${displayedUnifiedPedido.id}` ? (
-                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                              <span className="mr-2">🏦</span>
-                            )}
-                            Transf.
+                            Verificar y aprobar pago
                           </Button>
                         </div>
                       )}
@@ -3464,13 +2981,6 @@ const Dashboard = () => {
                         )}
                       </div>
                       <div className="flex gap-1 lg:gap-2 shrink-0">
-                        <Button variant="outline" size="icon" className="lg:hidden h-9 w-9 text-red-600 hover:text-red-700 hover:bg-red-50 border-transparent shadow-none" onClick={() => setShowDeleteMesaDialog(true)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" className="hidden lg:flex text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 shadow-sm" onClick={() => setShowDeleteMesaDialog(true)}>
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Eliminar Mesa
-                        </Button>
                         <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setVerQR(true)}>
                           <QrCode className="h-4 w-4" />
                         </Button>
@@ -3776,8 +3286,8 @@ const Dashboard = () => {
                   <div className="h-full flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <ShoppingCart className="h-16 w-16 mx-auto mb-4 opacity-20" />
-                      <p className="text-lg">Selecciona una mesa o pedido</p>
-                      <p className="text-sm">para ver su detalle</p>
+                      <p className="text-lg">Seleccioná un pedido</p>
+                      <p className="text-sm">en la lista para ver el detalle</p>
                     </div>
                   </div>
                 )}
@@ -3786,7 +3296,18 @@ const Dashboard = () => {
 
             {/* Mobile: Orders Panel - visible only on mobile */}
             <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full' : 'hidden'} lg:hidden`}>
-              <div className="flex-1 overflow-auto p-4">
+              <div className="shrink-0 border-b bg-background/95 backdrop-blur px-3 py-2 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">Pedidos</p>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={openMetodosPagoModal} title="Métodos de pago">
+                      <Settings className="h-3.5 w-3.5" />
+                    </Button>
+                    <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto p-4 min-h-0">
                 {loadingDelivery ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -3800,12 +3321,20 @@ const Dashboard = () => {
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
                     <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
                     <p className="text-lg font-medium">No hay pedidos de este tipo</p>
+                    <Button variant="outline" size="sm" onClick={() => setPedidoFilter('all')}>
+                      Ver todos
+                    </Button>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {filteredUnifiedPedidos.map((pedido) => {
                       const tipoBadge = getTipoBadge(pedido.tipo)
-                      const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                      const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
+                      const isSelected =
+                        (selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo) ||
+                        (pedido.tipo === 'mesa' &&
+                          selectedMesaId !== null &&
+                          mesas.find((m) => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
                       return (
                         <Card
                           key={`mob-${pedido.tipo}-${pedido.id}`}
@@ -3818,11 +3347,19 @@ const Dashboard = () => {
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className={`${tipoBadge.className} text-sm font-semibold`}>
                                     {tipoBadge.label}
+                                    {pedido.tipo === 'mesa' && pedido.mesaNombre && (
+                                      <span className="text-xs font-normal"> {pedido.mesaNombre}</span>
+                                    )}
                                   </span>
                                   {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
                                     <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[120px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
                                       <Tag className="h-2.5 w-2.5 mr-0.5 inline" />
                                       {pedido.codigoDescuentoCodigo || 'Cupón'}
+                                    </Badge>
+                                  )}
+                                  {pagoBadge && (
+                                    <Badge variant="outline" className={pagoBadge.className}>
+                                      {pagoBadge.label}
                                     </Badge>
                                   )}
                                 </div>
@@ -3868,6 +3405,7 @@ const Dashboard = () => {
                         </div>
                         {filteredArchivedPedidos.map((pedido, index) => {
                           const tipoBadge = getTipoBadge(pedido.tipo)
+                          const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
                           const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                           const dateLabel = getDateLabel(pedido.createdAt)
                           const prevDateLabel = index > 0 ? getDateLabel(filteredArchivedPedidos[index - 1].createdAt) : null
@@ -3898,6 +3436,11 @@ const Dashboard = () => {
                                           <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-3.5 max-w-[90px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
                                             <Tag className="h-2 w-2 mr-0.5 inline" />
                                             {pedido.codigoDescuentoCodigo || 'Cupón'}
+                                          </Badge>
+                                        )}
+                                        {pagoBadge && (
+                                          <Badge variant="outline" className={`${pagoBadge.className} h-3.5`}>
+                                            {pagoBadge.label}
                                           </Badge>
                                         )}
                                       </div>
@@ -3943,50 +3486,64 @@ const Dashboard = () => {
         )
       }
 
-      <Dialog open={crearMesaDialog} onOpenChange={setCrearMesaDialog}>
-        <DialogContent className="max-w-md mx-4">
+      <Dialog open={metodosPagoModalOpen} onOpenChange={setMetodosPagoModalOpen}>
+        <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Crear Nueva Mesa</DialogTitle>
-            <DialogDescription>Agrega una nueva mesa a tu restaurante</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCrearMesa} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="nombreMesa">Nombre de la mesa *</Label>
-              <Input
-                id="nombreMesa"
-                value={nombreMesa}
-                onChange={(e) => setNombreMesa(e.target.value)}
-                placeholder="Ej: Mesa 1, Mesa VIP..."
-                required
-                disabled={isCreating}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => setCrearMesaDialog(false)} disabled={isCreating}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isCreating}>
-                {isCreating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creando...</> : <><Plus className="mr-2 h-4 w-4" />Crear Mesa</>}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showDeleteMesaDialog} onOpenChange={setShowDeleteMesaDialog}>
-        <DialogContent className="max-w-md mx-4">
-          <DialogHeader>
-            <DialogTitle className="text-destructive">¿Eliminar la mesa "{selectedMesa?.nombre}"?</DialogTitle>
+            <DialogTitle>Métodos de pago (Delivery / Take away)</DialogTitle>
             <DialogDescription>
-              Esta acción eliminará de forma completa la <b>mesa seleccionada</b>.
-              <br /><br />
-              <b>Nota:</b> Si deseas eliminar o cerrar un <em>pedido</em>, por favor hazlo desde "Cerrar Pedido" o el botón de eliminar pedido individual.
+              Los pagos automáticos (tarjeta MercadoPago o transferencia vía Cucuru o Talo) no se combinan con efectivo ni transferencia manual en el checkout público.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowDeleteMesaDialog(false)} disabled={isDeletingMesa}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => selectedMesa && handleDeleteMesa(selectedMesa.id)} disabled={isDeletingMesa}>
-              {isDeletingMesa ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Eliminando...</> : 'Sí, Eliminar Mesa'}
+          <div className="space-y-4 py-2">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Automáticos</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="cfg-mp-co" className="text-sm flex-1">Tarjeta — Checkout MercadoPago</Label>
+                  <Switch id="cfg-mp-co" checked={cfgMpCheckout} onCheckedChange={setCfgMpCheckout} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="cfg-mp-br" className="text-sm flex-1">Tarjeta — Bricks</Label>
+                  <Switch id="cfg-mp-br" checked={cfgMpBricks} onCheckedChange={setCfgMpBricks} />
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <Label htmlFor="cfg-tf-au" className="text-sm">{metodosPagoAutoTransferCopy.title}</Label>
+                    {metodosPagoAutoTransferCopy.hint ? (
+                      <p className="text-xs text-muted-foreground leading-snug">{metodosPagoAutoTransferCopy.hint}</p>
+                    ) : null}
+                  </div>
+                  <Switch id="cfg-tf-au" className="shrink-0 mt-0.5" checked={cfgTfAuto} onCheckedChange={setCfgTfAuto} />
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Manuales</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="cfg-tf-man" className="text-sm flex-1">Transferencia manual (alias fijo)</Label>
+                  <Switch id="cfg-tf-man" checked={cfgTfManual} onCheckedChange={setCfgTfManual} />
+                </div>
+                {cfgTfManual && (
+                  <div className="space-y-1.5 pl-0">
+                    <Label htmlFor="cfg-alias" className="text-xs">Alias CBU / CVU</Label>
+                    <Input id="cfg-alias" value={cfgAlias} onChange={(e) => setCfgAlias(e.target.value)} placeholder="ej. mi.local.mp" className="h-9" />
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="cfg-cash" className="text-sm flex-1">Efectivo</Label>
+                  <Switch id="cfg-cash" checked={cfgEfectivo} onCheckedChange={setCfgEfectivo} />
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setMetodosPagoModalOpen(false)} disabled={savingMetodosPago}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => void saveMetodosPago()} disabled={savingMetodosPago}>
+              {savingMetodosPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Guardar
             </Button>
           </DialogFooter>
         </DialogContent>

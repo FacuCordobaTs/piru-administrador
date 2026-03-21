@@ -62,6 +62,7 @@ interface RestauranteData {
   cardsPaymentsEnabled: boolean | null
   whatsappEnabled: boolean | null
   whatsappNumber: string | null
+  comprobantesWhatsapp: string | null
   transferenciaAlias: string | null
   sistemaPuntos: boolean | null
   colorPrimario: string | null
@@ -72,6 +73,13 @@ interface RestauranteData {
   taloApiKey: string | null
   taloUserId: string | null
   codigoDescuentoEnabled: boolean | null
+  metodosPagoConfig?: {
+    mercadopagoCheckout?: boolean
+    mercadopagoBricks?: boolean
+    transferenciaAutomatica?: boolean
+    transferenciaManual?: boolean
+    efectivo?: boolean
+  } | null
 }
 
 interface RestauranteState {

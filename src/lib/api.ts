@@ -323,6 +323,26 @@ export const restauranteApi = {
       body: JSON.stringify(data),
     })
   },
+
+  updateMetodosPago: async (
+    token: string,
+    data: {
+      mercadopagoCheckout?: boolean
+      mercadopagoBricks?: boolean
+      transferenciaAutomatica?: boolean
+      transferenciaManual?: boolean
+      efectivo?: boolean
+      transferenciaAlias?: string
+    }
+  ) => {
+    return fetchApi('/restaurante/metodos-pago', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
 }
 
 // Cucuru API
@@ -956,11 +976,22 @@ export const pedidoUnificadoApi = {
       body: JSON.stringify({ estado }),
     })
   },
-  marcarPagado: async (token: string, id: number, metodoPago?: string) => {
+  marcarPagado: async (
+    token: string,
+    id: number,
+    metodoPagoOrOpts?: string | { metodoPago?: string; pagado?: boolean }
+  ) => {
+    const opts =
+      typeof metodoPagoOrOpts === 'string'
+        ? { metodoPago: metodoPagoOrOpts }
+        : metodoPagoOrOpts ?? {}
+    const body: Record<string, unknown> = {}
+    if (opts.metodoPago !== undefined) body.metodoPago = opts.metodoPago
+    if (opts.pagado !== undefined) body.pagado = opts.pagado
     return fetchApi(`/pedido-unificado/${id}/pagado`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ metodoPago }),
+      body: JSON.stringify(body),
     })
   },
   delete: async (token: string, id: number) => {
@@ -988,7 +1019,11 @@ export const deliveryApi = {
     pedidoUnificadoApi.create(token, { tipo: 'delivery', ...data }),
   updateEstado: (token: string, id: number, estado: string) => pedidoUnificadoApi.updateEstado(token, id, estado),
   delete: (token: string, id: number) => pedidoUnificadoApi.delete(token, id),
-  marcarPagado: (token: string, id: number, metodoPago?: string) => pedidoUnificadoApi.marcarPagado(token, id, metodoPago),
+  marcarPagado: (
+    token: string,
+    id: number,
+    metodoPagoOrOpts?: string | { metodoPago?: string; pagado?: boolean }
+  ) => pedidoUnificadoApi.marcarPagado(token, id, metodoPagoOrOpts),
 }
 
 // Takeaway API - usa pedidoUnificado por detrás (compatibilidad)
@@ -1000,7 +1035,11 @@ export const takeawayApi = {
     pedidoUnificadoApi.create(token, { tipo: 'takeaway', ...data }),
   updateEstado: (token: string, id: number, estado: string) => pedidoUnificadoApi.updateEstado(token, id, estado),
   delete: (token: string, id: number) => pedidoUnificadoApi.delete(token, id),
-  marcarPagado: (token: string, id: number, metodoPago?: string) => pedidoUnificadoApi.marcarPagado(token, id, metodoPago),
+  marcarPagado: (
+    token: string,
+    id: number,
+    metodoPagoOrOpts?: string | { metodoPago?: string; pagado?: boolean }
+  ) => pedidoUnificadoApi.marcarPagado(token, id, metodoPagoOrOpts),
 }
 
 // Códigos de Descuento API
