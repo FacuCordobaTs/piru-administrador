@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
   SelectContent,
@@ -24,7 +25,6 @@ import {
   Mail,
   MapPin,
   Phone,
-  Calendar,
   Edit,
   LogOut,
   Store,
@@ -45,6 +45,14 @@ import {
   UtensilsCrossed,
   RefreshCw,
   Ticket,
+  Palette,
+  Zap,
+  Globe,
+  Copy,
+  Smartphone,
+  ChevronRight,
+  AlertCircle,
+  Package,
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
@@ -55,14 +63,76 @@ const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
 const MP_APP_ID = 38638191854826
 const MP_REDIRECT_URI = import.meta.env.VITE_MP_REDIRECT_URI || 'https://api.piru.app/api/mp/callback'
 
+// ─────────────────────────────────────────────
+// Small helper: row toggle for feature switches
+// ─────────────────────────────────────────────
+function ToggleRow({
+  icon,
+  iconBg,
+  title,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+}: {
+  icon: React.ReactNode
+  iconBg: string
+  title: string
+  description: string
+  checked: boolean
+  onCheckedChange: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-4">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={`shrink-0 h-9 w-9 rounded-lg flex items-center justify-center ${iconBg}`}>
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{title}</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{description}</p>
+        </div>
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// Integration Status Card wrapper
+// ─────────────────────────────────────────────
+function IntegrationCard({
+  connected,
+  accentClass,
+  children,
+}: {
+  connected: boolean
+  accentClass: string
+  children: React.ReactNode
+}) {
+  return (
+    <Card
+      className={`border transition-colors ${connected
+        ? `${accentClass} dark:border-opacity-40`
+        : 'border-zinc-200 dark:border-zinc-800'
+        }`}
+    >
+      {children}
+    </Card>
+  )
+}
+
 const Perfil = () => {
   const navigate = useNavigate()
   const logout = useAuthStore((state) => state.logout)
   const token = useAuthStore((state) => state.token)
   const restauranteStore = useRestauranteStore()
   const { restaurante, isLoading } = restauranteStore
+
   // Estados del modal de edición
   const [dialogAbierto, setDialogAbierto] = useState(false)
+  const [dialogTab, setDialogTab] = useState('info')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     nombre: '',
@@ -79,28 +149,29 @@ const Perfil = () => {
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [imageLightBase64, setImageLightBase64] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState('general')
+
+  // Estados de carga para diferentes acciones
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
   const [isTogglingOrderGroupEnabled, setIsTogglingOrderGroupEnabled] = useState(false)
   const [isTogglingCodigoDescuentoEnabled, setIsTogglingCodigoDescuentoEnabled] = useState(false)
   const [isTogglingCardsPaymentsEnabled, setIsTogglingCardsPaymentsEnabled] = useState(false)
   const [isTogglingCucuruCheckoutEnabled, setIsTogglingCucuruCheckoutEnabled] = useState(false)
-//
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
   const [cucuruCollectorId, setCucuruCollectorId] = useState('')
-
   const [isConfiguringRapiboy, setIsConfiguringRapiboy] = useState(false)
   const [rapiboyToken, setRapiboyToken] = useState('')
-
   const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
   const [taloClientIdInput, setTaloClientIdInput] = useState('')
   const [taloClientSecretInput, setTaloClientSecretInput] = useState('')
   const [taloUserIdInput, setTaloUserIdInput] = useState('')
-
   const [isSavingPasarela, setIsSavingPasarela] = useState(false)
-  const [proveedorPago, setProveedorPago] = useState<string>((restaurante as any)?.proveedorPago || 'manual')
+  const [proveedorPago, setProveedorPago] = useState<string>(
+    (restaurante as any)?.proveedorPago || 'manual'
+  )
   const [taloClientId, setTaloClientId] = useState('')
   const [taloClientSecret, setTaloClientSecret] = useState('')
   const [taloUserId, setTaloUserId] = useState('')
@@ -123,15 +194,23 @@ const Perfil = () => {
     const cargarHorarios = async () => {
       if (!token) return
       try {
-        const response = await restauranteApi.getHorarios(token) as {
+        const response = (await restauranteApi.getHorarios(token)) as {
           success: boolean
-          horarios?: Array<{ id: number; diaSemana: number; horaApertura: string; horaCierre: string }>
+          horarios?: Array<{
+            id: number
+            diaSemana: number
+            horaApertura: string
+            horaCierre: string
+          }>
         }
         if (response.success && response.horarios) {
           const agrupado: HorariosDia = {}
           for (const h of response.horarios) {
             if (!agrupado[h.diaSemana]) agrupado[h.diaSemana] = []
-            agrupado[h.diaSemana].push({ horaApertura: h.horaApertura, horaCierre: h.horaCierre })
+            agrupado[h.diaSemana].push({
+              horaApertura: h.horaApertura,
+              horaCierre: h.horaCierre,
+            })
           }
           setHorarios(agrupado)
         }
@@ -145,14 +224,14 @@ const Perfil = () => {
   }, [token])
 
   const agregarTurno = (dia: number) => {
-    setHorarios(prev => ({
+    setHorarios((prev) => ({
       ...prev,
-      [dia]: [...(prev[dia] || []), { horaApertura: '09:00', horaCierre: '18:00' }]
+      [dia]: [...(prev[dia] || []), { horaApertura: '09:00', horaCierre: '18:00' }],
     }))
   }
 
   const eliminarTurno = (dia: number, idx: number) => {
-    setHorarios(prev => {
+    setHorarios((prev) => {
       const turnos = [...(prev[dia] || [])]
       turnos.splice(idx, 1)
       const next = { ...prev }
@@ -165,8 +244,13 @@ const Perfil = () => {
     })
   }
 
-  const actualizarTurno = (dia: number, idx: number, campo: 'horaApertura' | 'horaCierre', valor: string) => {
-    setHorarios(prev => {
+  const actualizarTurno = (
+    dia: number,
+    idx: number,
+    campo: 'horaApertura' | 'horaCierre',
+    valor: string
+  ) => {
+    setHorarios((prev) => {
       const turnos = [...(prev[dia] || [])]
       turnos[idx] = { ...turnos[idx], [campo]: valor }
       return { ...prev, [dia]: turnos }
@@ -180,10 +264,14 @@ const Perfil = () => {
       const flat: Array<{ diaSemana: number; horaApertura: string; horaCierre: string }> = []
       for (const [dia, turnos] of Object.entries(horarios)) {
         for (const t of turnos) {
-          flat.push({ diaSemana: parseInt(dia), horaApertura: t.horaApertura, horaCierre: t.horaCierre })
+          flat.push({
+            diaSemana: parseInt(dia),
+            horaApertura: t.horaApertura,
+            horaCierre: t.horaCierre,
+          })
         }
       }
-      const response = await restauranteApi.updateHorarios(token, flat) as { success: boolean }
+      const response = (await restauranteApi.updateHorarios(token, flat)) as { success: boolean }
       if (response.success) {
         toast.success('Horarios actualizados correctamente')
       }
@@ -212,7 +300,7 @@ const Perfil = () => {
     }
   }, [restaurante])
 
-  // Manejar callback de MercadoPago (cuando vuelve de autorizar)
+  // Manejar callback de MercadoPago
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const mpStatus = urlParams.get('mp_status')
@@ -222,9 +310,7 @@ const Perfil = () => {
       toast.success('¡MercadoPago conectado!', {
         description: 'Ahora tus clientes pueden pagar con MercadoPago',
       })
-      // Refrescar datos para obtener el nuevo estado
       restauranteStore.fetchData()
-      // Limpiar URL
       window.history.replaceState({}, '', window.location.pathname)
     } else if (mpStatus === 'error') {
       let errorMessage = 'No se pudo conectar con MercadoPago'
@@ -232,10 +318,7 @@ const Perfil = () => {
       else if (mpError === 'config_error') errorMessage = 'Error de configuración del servidor'
       else if (mpError === 'oauth_failed') errorMessage = 'Error en la autenticación con MercadoPago'
 
-      toast.error('Error al conectar MercadoPago', {
-        description: errorMessage,
-      })
-      // Limpiar URL
+      toast.error('Error al conectar MercadoPago', { description: errorMessage })
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -257,49 +340,42 @@ const Perfil = () => {
   const handleTestPrint = async () => {
     if (!selectedPrinter) {
       toast.error('Selecciona una impresora predeterminada primero')
-      return;
+      return
     }
-
     setIsPrintingTest(true)
     try {
       const data = [
-        '\x1B\x40', // Init
-        '\x1B\x61\x01', // Center
-        '\x1B\x45\x01', // Bold on
+        '\x1B\x40',
+        '\x1B\x61\x01',
+        '\x1B\x45\x01',
         'PRUEBA DE COMANDA\n',
-        '\x1B\x45\x00', // Bold off
-        '\x1B\x61\x00', // Left align
+        '\x1B\x45\x00',
+        '\x1B\x61\x00',
         '--------------------------------\n',
         'Hamburguesa x1\n',
         '  SIN: Cebolla\n',
         'Papas Fritas x1\n',
         '--------------------------------\n',
         '\n\n\n',
-        '\x1D\x56\x41', // Cut
-      ];
-
+        '\x1D\x56\x41',
+      ]
       await printRaw(commandsToBytes(data))
-    } catch (error) {
-      // El error ya se maneja en el context
     } finally {
       setIsPrintingTest(false)
     }
   }
 
-  // Generar URL de vinculación con MercadoPago
   const getMercadoPagoAuthUrl = () => {
     if (!MP_APP_ID || !restaurante?.id) return null
     const state = restaurante.id.toString()
     return `https://auth.mercadopago.com.ar/authorization?client_id=${MP_APP_ID}&response_type=code&platform_id=mp&state=${state}&redirect_uri=${encodeURIComponent(MP_REDIRECT_URI)}`
   }
 
-  // Desconectar MercadoPago
   const handleDesconectarMP = async () => {
     if (!token) return
-
     setIsDisconnectingMP(true)
     try {
-      const response = await mercadopagoApi.desconectar(token) as { success: boolean }
+      const response = (await mercadopagoApi.desconectar(token)) as { success: boolean }
       if (response.success) {
         toast.success('MercadoPago desconectado')
         restauranteStore.fetchData()
@@ -319,20 +395,20 @@ const Perfil = () => {
     navigate('/login')
   }
 
-  // Handle configurar rapiboy
   const handleConfigurarRapiboy = async () => {
     if (!token) return
     if (!rapiboyToken.trim()) {
       toast.error('Debes ingresar el Token de Rapiboy')
       return
     }
-
     setIsConfiguringRapiboy(true)
     try {
-      const response = await restauranteApi.configurarRapiboy(token, rapiboyToken) as { success: boolean }
+      const response = (await restauranteApi.configurarRapiboy(token, rapiboyToken)) as {
+        success: boolean
+      }
       if (response.success) {
         toast.success('Rapiboy configurado con éxito', {
-          description: 'Tu sistema ahora puede gestionar la logística de envíos mediante Rapiboy.'
+          description: 'Tu sistema ahora puede gestionar la logística de envíos mediante Rapiboy.',
         })
         restauranteStore.fetchData()
         setRapiboyToken('')
@@ -345,17 +421,20 @@ const Perfil = () => {
     }
   }
 
-  // Handle configurar Talo
   const handleConfigurarTalo = async () => {
     if (!token) return
     if (!taloClientIdInput.trim() || !taloClientSecretInput.trim() || !taloUserIdInput.trim()) {
       toast.error('Debes ingresar Client ID, Client Secret y User ID de Talo')
       return
     }
-
     setIsConfiguringTalo(true)
     try {
-      const response = await restauranteApi.configurarTalo(token, taloClientIdInput.trim(), taloClientSecretInput.trim(), taloUserIdInput.trim()) as { success: boolean }
+      const response = (await restauranteApi.configurarTalo(
+        token,
+        taloClientIdInput.trim(),
+        taloClientSecretInput.trim(),
+        taloUserIdInput.trim()
+      )) as { success: boolean }
       if (response.success) {
         toast.success('Talo configurado con éxito', {
           description: 'Tus credenciales de Talo están listas para transferencias en tiempo real.',
@@ -373,20 +452,22 @@ const Perfil = () => {
     }
   }
 
-  // Handle configurar cucuru
   const handleConfigurarCucuru = async () => {
     if (!token) return
     if (!cucuruApiKey.trim() || !cucuruCollectorId.trim()) {
       toast.error('Debes ingresar API Key y Collector ID')
       return
     }
-
     setIsConfiguringCucuru(true)
     try {
-      const response = await cucuruApi.configurar(token, cucuruApiKey, cucuruCollectorId) as { success: boolean, data: any }
+      const response = (await cucuruApi.configurar(
+        token,
+        cucuruApiKey,
+        cucuruCollectorId
+      )) as { success: boolean; data: any }
       if (response.success) {
         toast.success('Billetera Virtual configurada con éxito', {
-          description: 'Tu cuenta Cucuru está lista para automatizar cobros.'
+          description: 'Tu cuenta Cucuru está lista para automatizar cobros.',
         })
         restauranteStore.fetchData()
         setCucuruApiKey('')
@@ -400,15 +481,21 @@ const Perfil = () => {
     }
   }
 
-  const taloYaConfigurado = !!(restaurante as any)?.taloClientId && !!(restaurante as any)?.taloClientSecret && !!(restaurante as any)?.taloUserId
+  const taloYaConfigurado =
+    !!(restaurante as any)?.taloClientId &&
+    !!(restaurante as any)?.taloClientSecret &&
+    !!(restaurante as any)?.taloUserId
 
   const handleGuardarPasarelaPago = async () => {
     if (!token) return
-    if (proveedorPago === 'talo' && !taloYaConfigurado && (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim())) {
+    if (
+      proveedorPago === 'talo' &&
+      !taloYaConfigurado &&
+      (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim())
+    ) {
       toast.error('Para usar Talo debes ingresar Client ID, Client Secret y User ID')
       return
     }
-
     setIsSavingPasarela(true)
     try {
       const payload: Record<string, unknown> = {
@@ -420,17 +507,24 @@ const Perfil = () => {
           payload.taloClientSecret = taloClientSecret.trim()
           payload.taloUserId = taloUserId.trim()
         }
-        // Si ya configurado y no ingresó nuevos, mantiene los existentes
       } else {
         payload.taloClientId = null
         payload.taloClientSecret = null
         payload.taloUserId = null
       }
-
-      const response = await restauranteApi.updatePasarelaPago(token, payload) as { success: boolean }
+      const response = (await restauranteApi.updatePasarelaPago(token, payload)) as {
+        success: boolean
+      }
       if (response.success) {
         toast.success('Pasarela de pago actualizada', {
-          description: `Proveedor configurado: ${proveedorPago === 'manual' ? 'Manual' : proveedorPago === 'talo' ? 'Talo' : proveedorPago === 'cucuru' ? 'Cucuru' : 'MercadoPago'}`,
+          description: `Proveedor configurado: ${proveedorPago === 'manual'
+            ? 'Manual'
+            : proveedorPago === 'talo'
+              ? 'Talo'
+              : proveedorPago === 'cucuru'
+                ? 'Cucuru'
+                : 'MercadoPago'
+            }`,
         })
         restauranteStore.fetchData()
         if (proveedorPago === 'talo') {
@@ -455,35 +549,36 @@ const Perfil = () => {
     if (!token) return
     setIsReenviandoWebhookCucuru(true)
     try {
-      const response = await cucuruApi.reconfigurarWebhook(token) as { success: boolean }
+      const response = (await cucuruApi.reconfigurarWebhook(token)) as { success: boolean }
       if (response.success) {
         toast.success('Webhook reenviado', {
-          description: 'La URL HTTPS del webhook se volvió a enviar a Cucuru correctamente.'
+          description: 'La URL HTTPS del webhook se volvió a enviar a Cucuru correctamente.',
         })
       }
     } catch (error) {
       console.error('Error al reenviar webhook Cucuru:', error)
       toast.error('Error al reenviar webhook', {
-        description: 'No se pudo reconfigurar. Verifica tus credenciales en Cucuru.'
+        description: 'No se pudo reconfigurar. Verifica tus credenciales en Cucuru.',
       })
     } finally {
       setIsReenviandoWebhookCucuru(false)
     }
   }
 
-  // Toggle pedido entre amigos
   const handleToggleOrderGroupEnabled = async () => {
     if (!token) return
-
     setIsTogglingOrderGroupEnabled(true)
     try {
-      const response = await restauranteApi.toggleOrderGroupEnabled(token) as { success: boolean; orderGroupEnabled: boolean }
+      const response = (await restauranteApi.toggleOrderGroupEnabled(token)) as {
+        success: boolean
+        orderGroupEnabled: boolean
+      }
       if (response.success) {
-        toast.success(response.orderGroupEnabled ? 'Pedido entre amigos activado' : 'Pedido entre amigos desactivado', {
-          description: response.orderGroupEnabled
-            ? 'El botón para armar pedidos grupales por link se mostrará en el menú'
-            : 'El botón para armar pedidos grupales estará oculto en el menú'
-        })
+        toast.success(
+          response.orderGroupEnabled
+            ? 'Pedido entre amigos activado'
+            : 'Pedido entre amigos desactivado'
+        )
         restauranteStore.fetchData()
       }
     } catch (error) {
@@ -494,19 +589,20 @@ const Perfil = () => {
     }
   }
 
-  // Toggle habilitar/deshabilitar códigos de descuento en checkout
   const handleToggleCodigoDescuentoEnabled = async () => {
     if (!token) return
-
     setIsTogglingCodigoDescuentoEnabled(true)
     try {
-      const response = await restauranteApi.toggleCodigoDescuentoEnabled(token) as { success: boolean; codigoDescuentoEnabled: boolean }
+      const response = (await restauranteApi.toggleCodigoDescuentoEnabled(token)) as {
+        success: boolean
+        codigoDescuentoEnabled: boolean
+      }
       if (response.success) {
-        toast.success(response.codigoDescuentoEnabled ? 'Códigos de descuento habilitados' : 'Códigos de descuento deshabilitados', {
-          description: response.codigoDescuentoEnabled
-            ? 'Los clientes podrán aplicar cupones en el checkout'
-            : 'El campo de cupones quedará oculto para clientes'
-        })
+        toast.success(
+          response.codigoDescuentoEnabled
+            ? 'Códigos de descuento habilitados'
+            : 'Códigos de descuento deshabilitados'
+        )
         restauranteStore.fetchData()
       }
     } catch (error) {
@@ -521,13 +617,14 @@ const Perfil = () => {
     if (!token) return
     setIsTogglingCardsPaymentsEnabled(true)
     try {
-      const response = await restauranteApi.toggleCardsPaymentsEnabled(token) as { success: boolean; cardsPaymentsEnabled: boolean }
+      const response = (await restauranteApi.toggleCardsPaymentsEnabled(token)) as {
+        success: boolean
+        cardsPaymentsEnabled: boolean
+      }
       if (response.success) {
-        toast.success(response.cardsPaymentsEnabled ? 'Tarjeta visible en checkout' : 'Tarjeta oculta en checkout', {
-          description: response.cardsPaymentsEnabled
-            ? 'Tus clientes pueden pagar con Mercado Pago en delivery/take away'
-            : 'El botón de tarjeta no se mostrará (útil si MP falla)'
-        })
+        toast.success(
+          response.cardsPaymentsEnabled ? 'Tarjeta visible en checkout' : 'Tarjeta oculta en checkout'
+        )
         restauranteStore.fetchData()
       }
     } catch (error) {
@@ -542,13 +639,14 @@ const Perfil = () => {
     if (!token) return
     setIsTogglingCucuruCheckoutEnabled(true)
     try {
-      const response = await restauranteApi.toggleCucuruEnabled(token) as { success: boolean; cucuruEnabled: boolean }
+      const response = (await restauranteApi.toggleCucuruEnabled(token)) as {
+        success: boolean
+        cucuruEnabled: boolean
+      }
       if (response.success) {
-        toast.success(response.cucuruEnabled ? 'Transferencia visible en checkout' : 'Transferencia oculta en checkout', {
-          description: response.cucuruEnabled
-            ? 'Se muestra transferencia automática (Cucuru/Talo) y/o alias manual'
-            : 'Se ocultan todas las opciones de transferencia en el checkout'
-        })
+        toast.success(
+          response.cucuruEnabled ? 'Transferencia visible en checkout' : 'Transferencia oculta en checkout'
+        )
         restauranteStore.fetchData()
       }
     } catch (error) {
@@ -559,19 +657,18 @@ const Perfil = () => {
     }
   }
 
-  // Toggle diseño alternativo
   const handleToggleDisenoAlternativo = async () => {
     if (!token) return
-
     setIsTogglingDisenoAlternativo(true)
     try {
-      const response = await restauranteApi.toggleDisenoAlternativo(token) as { success: boolean; disenoAlternativo: boolean }
+      const response = (await restauranteApi.toggleDisenoAlternativo(token)) as {
+        success: boolean
+        disenoAlternativo: boolean
+      }
       if (response.success) {
-        toast.success(response.disenoAlternativo ? 'Diseño alternativo activado' : 'Diseño alternativo desactivado', {
-          description: response.disenoAlternativo
-            ? 'El menú online usará el diseño que muestra la imagen completa'
-            : 'El menú online usará el diseño original'
-        })
+        toast.success(
+          response.disenoAlternativo ? 'Diseño alternativo activado' : 'Diseño alternativo desactivado'
+        )
         restauranteStore.fetchData()
       }
     } catch (error) {
@@ -599,118 +696,65 @@ const Perfil = () => {
       })
       setImageBase64(restaurante.imagenUrl || null)
       setImageLightBase64(restaurante.imagenLightUrl || null)
+      setDialogTab('info')
       setDialogAbierto(true)
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!token) {
       toast.error('No hay sesión activa')
       return
     }
-
-    // Validaciones
     if (!formData.nombre.trim()) {
       toast.error('El nombre es requerido')
       return
     }
-
     setIsSubmitting(true)
-
     try {
-      const updateData: {
-        nombre?: string
-        direccion?: string
-        telefono?: string
-        image?: string
-        imageLight?: string
-        username?: string
-        deliveryFee?: string
-        whatsappEnabled?: boolean
-        whatsappNumber?: string
-        comprobantesWhatsapp?: string | null
-        transferenciaAlias?: string
-        colorPrimario?: string
-        colorSecundario?: string
-      } = {}
-
-      // Solo enviar campos que cambiaron
-      if (formData.nombre !== restaurante?.nombre) {
-        updateData.nombre = formData.nombre
-      }
-      if (formData.direccion !== (restaurante?.direccion || '')) {
-        updateData.direccion = formData.direccion
-      }
-      if (formData.telefono !== (restaurante?.telefono || '')) {
-        updateData.telefono = formData.telefono
-      }
-      if (formData.username !== (restaurante?.username || '')) {
-        updateData.username = formData.username
-      }
-      if (formData.deliveryFee !== (restaurante?.deliveryFee || '')) {
+      const updateData: any = {}
+      if (formData.nombre !== restaurante?.nombre) updateData.nombre = formData.nombre
+      if (formData.direccion !== (restaurante?.direccion || '')) updateData.direccion = formData.direccion
+      if (formData.telefono !== (restaurante?.telefono || '')) updateData.telefono = formData.telefono
+      if (formData.username !== (restaurante?.username || '')) updateData.username = formData.username
+      if (formData.deliveryFee !== (restaurante?.deliveryFee || ''))
         updateData.deliveryFee = formData.deliveryFee
-      }
-      if (formData.whatsappEnabled !== (restaurante?.whatsappEnabled || false)) {
+      if (formData.whatsappEnabled !== (restaurante?.whatsappEnabled || false))
         updateData.whatsappEnabled = formData.whatsappEnabled
-      }
-      if (formData.whatsappNumber !== (restaurante?.whatsappNumber || '')) {
+      if (formData.whatsappNumber !== (restaurante?.whatsappNumber || ''))
         updateData.whatsappNumber = formData.whatsappNumber
-      }
-      const prevComp = restaurante?.comprobantesWhatsapp || ''
-      if (formData.comprobantesWhatsapp.trim() !== prevComp) {
+      if (
+        formData.comprobantesWhatsapp.trim() !== (restaurante?.comprobantesWhatsapp || '')
+      )
         updateData.comprobantesWhatsapp = formData.comprobantesWhatsapp.trim() || null
-      }
-      if (formData.transferenciaAlias !== (restaurante?.transferenciaAlias || '')) {
+      if (formData.transferenciaAlias !== (restaurante?.transferenciaAlias || ''))
         updateData.transferenciaAlias = formData.transferenciaAlias
-      }
-      if (formData.colorPrimario !== (restaurante?.colorPrimario || '')) {
+      if (formData.colorPrimario !== (restaurante?.colorPrimario || ''))
         updateData.colorPrimario = formData.colorPrimario
-      }
-      if (formData.colorSecundario !== (restaurante?.colorSecundario || '')) {
+      if (formData.colorSecundario !== (restaurante?.colorSecundario || ''))
         updateData.colorSecundario = formData.colorSecundario
-      }
-      // Si la imagen es nueva (base64), enviarla
-      if (imageBase64 && imageBase64.startsWith('data:image')) {
-        updateData.image = imageBase64
-      }
-
-      // Si la imagen light es nueva (base64), enviarla
-      if (imageLightBase64 && imageLightBase64.startsWith('data:image')) {
+      if (imageBase64 && imageBase64.startsWith('data:image')) updateData.image = imageBase64
+      if (imageLightBase64 && imageLightBase64.startsWith('data:image'))
         updateData.imageLight = imageLightBase64
-      }
 
-      // Verificar que hay algo que actualizar
       if (Object.keys(updateData).length === 0) {
         toast.info('No hay cambios para guardar')
         setDialogAbierto(false)
         return
       }
-
-      const response = await restauranteApi.update(token, updateData) as {
-        success: boolean
-        data?: any
-      }
-
+      const response = (await restauranteApi.update(token, updateData)) as { success: boolean }
       if (response.success) {
-        toast.success('Perfil actualizado', {
-          description: 'Los cambios se guardaron correctamente',
-        })
-        // Refrescar datos del store
+        toast.success('Perfil actualizado correctamente')
         await restauranteStore.fetchData()
         setDialogAbierto(false)
       }
     } catch (error) {
       console.error('Error al actualizar perfil:', error)
       if (error instanceof ApiError) {
-        toast.error('Error al guardar', {
-          description: error.message,
-        })
+        toast.error('Error al guardar', { description: error.message })
       } else {
-        toast.error('Error de conexión', {
-          description: 'No se pudo conectar con el servidor',
-        })
+        toast.error('Error de conexión')
       }
     } finally {
       setIsSubmitting(false)
@@ -719,1150 +763,1165 @@ const Perfil = () => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('es-ES', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
+    return date.toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })
   }
 
+  const copyLink = () => {
+    if (restaurante?.username) {
+      navigator.clipboard.writeText(`https://my.piru.app/${restaurante.username}`)
+      toast.success('Link copiado al portapapeles')
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Loading state
+  // ─────────────────────────────────────────────
   if (isLoading) {
     return (
-      <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-orange-600" />
+          <p className="text-sm text-zinc-500">Cargando perfil…</p>
+        </div>
       </div>
     )
   }
 
-  return (
-    <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between mt-12">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Perfil del Restaurante</h1>
-          <p className="text-muted-foreground">
-            Información y configuración de tu cuenta
-          </p>
-        </div>
-        <Button variant="destructive" onClick={handleLogout}>
-          <LogOut className="mr-2 h-4 w-4" />
-          Cerrar Sesión
-        </Button>
-      </div>
+  const TABS = [
+    { value: 'general', icon: Store, label: 'General' },
+    { value: 'pagos', icon: CreditCard, label: 'Pagos' },
+    { value: 'delivery', icon: Truck, label: 'Delivery' },
+    { value: 'experiencia', icon: Palette, label: 'Experiencia' },
+    { value: 'hardware', icon: Printer, label: 'Hardware' },
+  ]
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+  const productosActivos = restauranteStore.productos.filter((p) => p.activo).length
+  const totalProductos = restauranteStore.productos.length
+
+  // ─────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pb-24">
+
+      {/* ── Hero Header ── */}
+      <div className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+        {/* Orange banner */}
+        <div className="h-24 sm:h-28 bg-linear-to-r from-orange-600 via-orange-500 to-orange-400 relative overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-[0.07]"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(0deg,#000 0,#000 1px,transparent 0,transparent 40px),repeating-linear-gradient(90deg,#000 0,#000 1px,transparent 0,transparent 40px)',
+            }}
+          />
+        </div>
+
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Profile row — overlaps banner */}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 pb-5 -mt-10 sm:-mt-12">
+            {/* Avatar + name */}
+            <div className="flex items-end gap-4">
+              <div className="relative shrink-0">
+                <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl bg-white dark:bg-zinc-900 shadow-xl ring-4 ring-white dark:ring-zinc-900 overflow-hidden">
                   {restaurante?.imagenUrl ? (
                     <img
                       src={restaurante.imagenUrl}
                       alt={restaurante.nombre}
-                      className="h-16 w-16 rounded-full object-cover"
+                      className="h-full w-full object-cover"
                     />
                   ) : (
-                    <Store className="h-8 w-8 text-primary" />
+                    <div className="h-full w-full bg-linear-to-br from-orange-500 to-orange-600 flex items-center justify-center">
+                      <Store className="h-8 w-8 sm:h-10 sm:w-10 text-white" />
+                    </div>
                   )}
                 </div>
-                <div>
-                  <CardTitle className="text-2xl">{restaurante?.nombre || 'Sin nombre'}</CardTitle>
-                  <CardDescription>
-                    <Badge variant="default">Activo</Badge>
-                  </CardDescription>
-                </div>
-              </div>
-              <Button variant="outline" onClick={abrirDialogEditar}>
-                <Edit className="mr-2 h-4 w-4" />
-                Editar Perfil
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-4">
-              <div className="flex items-start space-x-3">
-                <Mail className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Correo Electrónico</p>
-                  <p className="text-base">{restaurante?.email || 'No especificado'}</p>
+                <div className="absolute -bottom-1 -right-1 bg-green-500 rounded-full p-1 ring-2 ring-white dark:ring-zinc-900">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-white" />
                 </div>
               </div>
 
-              <Separator />
-
-              <div className="flex items-start space-x-3">
-                <Link2 className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Enlace de Delivery / Take Away</p>
-                  <p className="text-base font-semibold">
-                    {restaurante?.username ? (
-                      <a href={`https://piru.app/${restaurante.username}`} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                        piru.app/{restaurante.username}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground font-normal">No configurado</span>
-                    )}
+              <div className="pb-1">
+                <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100 leading-tight">
+                  {restaurante?.nombre}
+                </h1>
+                <div className="flex items-center gap-1.5 mt-1 text-zinc-500 dark:text-zinc-400">
+                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-xs sm:text-sm truncate max-w-[200px] sm:max-w-none">
+                    {restaurante?.email}
+                  </span>
+                </div>
+                {restaurante?.createdAt && (
+                  <p className="text-xs text-zinc-400 mt-0.5 hidden sm:block">
+                    Miembro desde {formatDate(restaurante.createdAt)}
                   </p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="flex items-start space-x-3">
-                <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Dirección</p>
-                  <p className="text-base">
-                    {restaurante?.direccion || (
-                      <span className="text-muted-foreground">No especificada</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="flex items-start space-x-3">
-                <Phone className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Teléfono</p>
-                  <p className="text-base">
-                    {restaurante?.telefono || (
-                      <span className="text-muted-foreground">No especificado</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="flex items-start space-x-3">
-                <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Miembro desde</p>
-                  <p className="text-base">
-                    {restaurante?.createdAt ? formatDate(restaurante.createdAt) : 'No disponible'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="space-y-6">
-          {/* Tarjeta de Proveedor de Pasarela (Transferencias) */}
-          <Card className="border-amber-500/30 bg-linear-to-br from-amber-50/80 to-orange-50/50 dark:from-amber-950/20 dark:to-orange-950/10">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                Proveedor de Pasarela (Transferencias)
-              </CardTitle>
-              <CardDescription>
-                Elige qué plataforma usará tu local para cobrar transferencias. Los pedidos solo llegarán a cocina cuando el pago sea confirmado por la pasarela.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Proveedor activo</Label>
-                <Select
-                  value={proveedorPago || 'manual'}
-                  onValueChange={(v) => {
-                    if (v && ['cucuru', 'talo', 'mercadopago', 'manual'].includes(v)) {
-                      setProveedorPago(v)
-                    }
-                  }}
-                  disabled={isSavingPasarela}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Seleccionar proveedor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">
-                      <span className="flex items-center gap-2">
-                        Manual — Sin validación automática
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="cucuru">
-                      <span className="flex items-center gap-2">
-                        Cucuru — Billetera virtual
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="talo">
-                      <span className="flex items-center gap-2">
-                        Talo — Transferencias en tiempo real
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="mercadopago">
-                      <span className="flex items-center gap-2">
-                        MercadoPago — Pagos con tarjeta
-                      </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {proveedorPago === 'talo' && (
-                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-3">
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                    Credenciales de Talo
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Obtén tu Client ID, Client Secret y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
-                  </p>
-                  <div className="flex flex-col gap-2">
-                    <Input
-                      type="password"
-                      placeholder="Client ID de Talo"
-                      value={taloClientId}
-                      onChange={(e) => setTaloClientId(e.target.value)}
-                      disabled={isSavingPasarela}
-                      className="bg-background"
-                    />
-                    <Input
-                      type="password"
-                      placeholder="Client Secret de Talo"
-                      value={taloClientSecret}
-                      onChange={(e) => setTaloClientSecret(e.target.value)}
-                      disabled={isSavingPasarela}
-                      className="bg-background"
-                    />
-                    <Input
-                      placeholder="User ID de Talo"
-                      value={taloUserId}
-                      onChange={(e) => setTaloUserId(e.target.value)}
-                      disabled={isSavingPasarela}
-                      className="bg-background"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <Button
-                onClick={handleGuardarPasarelaPago}
-                disabled={isSavingPasarela || (proveedorPago === 'talo' && !taloYaConfigurado && (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim()))}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-              >
-                {isSavingPasarela ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Guardar configuración
-                  </>
                 )}
-              </Button>
-
-              {(restaurante as any)?.proveedorPago && (restaurante as any).proveedorPago !== 'manual' && (
-                <p className="text-xs text-muted-foreground">
-                  Actualmente configurado: <strong className="capitalize">{(restaurante as any).proveedorPago}</strong>
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de MercadoPago */}
-          <Card className={restaurante?.mpConnected ? "border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-sky-500/50 bg-sky-50/50 dark:bg-sky-950/20"}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
-                MercadoPago
-              </CardTitle>
-              <CardDescription>
-                {restaurante?.mpConnected
-                  ? 'Tu cuenta está conectada y lista para recibir pagos'
-                  : 'Conecta tu cuenta para recibir pagos de tus clientes'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {restaurante?.mpConnected ? (
-                <>
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <span className="font-medium">Cuenta conectada</span>
-                  </div>
-                  {restaurante.mpUserId && (
-                    <p className="text-sm text-muted-foreground">
-                      ID de usuario: {restaurante.mpUserId}
-                    </p>
-                  )}
-                  <Button
-                    variant="outline"
-                    className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
-                    onClick={handleDesconectarMP}
-                    disabled={isDisconnectingMP}
-                  >
-                    {isDisconnectingMP ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Desconectando...
-                      </>
-                    ) : (
-                      <>
-                        <Unlink className="mr-2 h-4 w-4" />
-                        Desconectar cuenta
-                      </>
-                    )}
-                  </Button>
-                  <div className="flex flex-row items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <Label className="text-base">Mostrar pago con tarjeta en checkout</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Si Mercado Pago falla, podés ocultar el botón sin desconectar la cuenta.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={(restaurante as any)?.cardsPaymentsEnabled !== false}
-                      onCheckedChange={() => handleToggleCardsPaymentsEnabled()}
-                      disabled={isTogglingCardsPaymentsEnabled}
-                    />
-                  </div>
-                  {isTogglingCardsPaymentsEnabled && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Actualizando...
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Al conectar tu cuenta de MercadoPago, tus clientes podrán pagar directamente desde la app.
-                  </p>
-                  {getMercadoPagoAuthUrl() ? (
-                    <Button
-                      asChild
-                      className="w-full bg-sky-500 hover:bg-sky-600 text-white"
-                    >
-                      <a href={getMercadoPagoAuthUrl()!}>
-                        <Link2 className="mr-2 h-4 w-4" />
-                        Conectar MercadoPago
-                        <ExternalLink className="ml-2 h-4 w-4" />
-                      </a>
-                    </Button>
-                  ) : (
-                    <p className="text-sm text-amber-600 dark:text-amber-400">
-                      Configuración de MercadoPago no disponible. Contacta al soporte.
-                    </p>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de Cucuru */}
-          <Card className={(restaurante as any)?.cucuruConfigurado ? "border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20" : "border-slate-200"}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Wallet className="h-5 w-5" />
-                Cucuru (Transferencias)
-              </CardTitle>
-              <CardDescription>
-                {(restaurante as any)?.cucuruConfigurado
-                  ? 'Tu billetera virtual Cucuru está configurada y activa'
-                  : 'Ingresa tus credenciales de Cucuru para automatizar cobros'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base">Mostrar transferencia en checkout</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Aplica a Cucuru/Talo automático y al alias de transferencia manual en delivery/take away.
-                  </p>
-                </div>
-                <Switch
-                  checked={(restaurante as any)?.cucuruEnabled !== false}
-                  onCheckedChange={() => handleToggleCucuruCheckoutEnabled()}
-                  disabled={isTogglingCucuruCheckoutEnabled}
-                />
               </div>
-              {isTogglingCucuruCheckoutEnabled && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Actualizando...
-                </div>
-              )}
-              {(restaurante as any)?.cucuruConfigurado ? (
-                <>
-                  <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <span className="font-medium">Webhooks configurados correctamente</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <p className="text-muted-foreground">
-                      Tu sistema ya recibe notificaciones de pagos transferidos a tu cuenta Cucuru.
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleReenviarWebhookCucuru}
-                    disabled={isReenviandoWebhookCucuru}
-                    className="border-purple-300 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/30"
-                  >
-                    {isReenviandoWebhookCucuru ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Reenviando...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4" /> Reenviar webhook HTTPS
-                      </>
-                    )}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Copia tu API Key y Collector ID desde tu panel de Cucuru.
-                  </p>
-                  <div className="flex flex-col gap-2">
-                    <Input
-                      placeholder="API Key"
-                      value={cucuruApiKey}
-                      onChange={(e) => setCucuruApiKey(e.target.value)}
-                      disabled={isConfiguringCucuru}
-                    />
-                    <Input
-                      placeholder="Collector ID"
-                      value={cucuruCollectorId}
-                      onChange={(e) => setCucuruCollectorId(e.target.value)}
-                      disabled={isConfiguringCucuru}
-                    />
-                    <Button
-                      onClick={handleConfigurarCucuru}
-                      disabled={isConfiguringCucuru || !cucuruApiKey.trim() || !cucuruCollectorId.trim()}
-                      className="bg-purple-600 hover:bg-purple-700 text-white w-full"
-                    >
-                      {isConfiguringCucuru ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Configurando...
-                        </>
-                      ) : (
-                        'Configurar Webhook'
-                      )}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+            </div>
 
-          {/* Tarjeta de Talo */}
-          <Card className={(restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId ? "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20" : "border-slate-200"}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Wallet className="h-5 w-5" />
-                Talo (Transferencias en tiempo real)
-              </CardTitle>
-              <CardDescription>
-                {(restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId
-                  ? 'Tus credenciales de Talo están configuradas y listas para usar'
-                  : 'Ingresa tu Client ID, Client Secret y User ID desde el panel de Talo para habilitar transferencias con alias dinámicos'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {(restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId ? (
-                <>
-                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <span className="font-medium">Credenciales configuradas correctamente</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Para actualizar las credenciales, ingresa los nuevos valores a continuación.
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Obtén tu Client ID, Client Secret y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
-                </p>
-              )}
-
-              <div className="flex flex-col gap-2">
-                <Input
-                  type="password"
-                  placeholder={(restaurante as any)?.taloClientId ? "Ingresar nuevo Client ID" : "Client ID de Talo"}
-                  value={taloClientIdInput}
-                  onChange={(e) => setTaloClientIdInput(e.target.value)}
-                  disabled={isConfiguringTalo}
-                  className="bg-background"
-                />
-                <Input
-                  type="password"
-                  placeholder={(restaurante as any)?.taloClientSecret ? "Ingresar nuevo Client Secret" : "Client Secret de Talo"}
-                  value={taloClientSecretInput}
-                  onChange={(e) => setTaloClientSecretInput(e.target.value)}
-                  disabled={isConfiguringTalo}
-                  className="bg-background"
-                />
-                <Input
-                  placeholder={(restaurante as any)?.taloUserId ? "Ingresar nuevo User ID" : "User ID de Talo"}
-                  value={taloUserIdInput}
-                  onChange={(e) => setTaloUserIdInput(e.target.value)}
-                  disabled={isConfiguringTalo}
-                  className="bg-background"
-                />
-                <Button
-                  onClick={handleConfigurarTalo}
-                  disabled={isConfiguringTalo || !taloClientIdInput.trim() || !taloClientSecretInput.trim() || !taloUserIdInput.trim()}
-                  className="bg-amber-600 hover:bg-amber-700 text-white w-full"
-                >
-                  {isConfiguringTalo ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Configurando...
-                    </>
-                  ) : (
-                    (restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId ? 'Actualizar credenciales' : 'Configurar Talo'
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de Rapiboy */}
-          <Card className={(restaurante as any)?.rapiboyToken ? "border-orange-500/50 bg-orange-50/50 dark:bg-orange-950/20" : "border-slate-200"}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Truck className="h-5 w-5" />
-                Rapiboy (Logística)
-              </CardTitle>
-              <CardDescription>
-                {(restaurante as any)?.rapiboyToken
-                  ? 'Tu integración con Rapiboy está configurada y activa'
-                  : 'Ingresa tu Token de Rapiboy para automatizar la logística de tus envíos'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {(restaurante as any)?.rapiboyToken && (
-                <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
-                  <CheckCircle2 className="h-5 w-5" />
-                  <span className="font-medium">Token configurado correctamente</span>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2">
-                <Input
-                  type="password"
-                  placeholder={(restaurante as any)?.rapiboyToken ? "Ingresar nuevo Token de Rapiboy (opcional)" : "Token de Rapiboy"}
-                  value={rapiboyToken}
-                  onChange={(e) => setRapiboyToken(e.target.value)}
-                  disabled={isConfiguringRapiboy}
-                />
-
-                <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-4 my-2 border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm text-blue-800 dark:text-blue-200">
-                    Para habilitar el seguimiento en tiempo real, ve a la sección 'Webhook' bajo la pestaña 'Mi Perfil' en Rapiboy y configura esta URL: <span className="font-mono font-bold">https://api.piru.app/api/webhooks/rapiboy</span>
-                  </p>
-                </div>
-
-                <Button
-                  onClick={handleConfigurarRapiboy}
-                  disabled={isConfiguringRapiboy || !rapiboyToken.trim()}
-                  className="bg-orange-600 hover:bg-orange-700 text-white w-full"
-                >
-                  {isConfiguringRapiboy ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
-                    </>
-                  ) : (
-                    (restaurante as any)?.rapiboyToken ? 'Actualizar Token' : 'Guardar Token'
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de Diseño Alternativo */}
-          <Card className={restaurante?.disenoAlternativo ? "border-pink-500/50 bg-pink-50/50 dark:bg-pink-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Store className="h-5 w-5" />
-                Diseño de Cartas de Producto
-              </CardTitle>
-              <CardDescription>
-                {restaurante?.disenoAlternativo
-                  ? 'Tus productos se mostrarán con la imagen completa'
-                  : 'Tus productos se mostrarán con el diseño original (glassmorphism)'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {restaurante?.disenoAlternativo ? (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Los clientes verán la imagen completa del producto sin el difuminado</p>
-                    <p>• La descripción del producto será visible en la carta</p>
-                    <p>• Ideal si quieres destacar tus fotos sobre tus productos</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300">
-                    Diseño Original Activo
-                  </Badge>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Diseño premium con glassmorphism original</p>
-                    <p>• Ideal para un look minimalista y moderno</p>
-                  </div>
-                  <Badge variant="secondary">
-                    Diseño Original (Glassmorphism)
-                  </Badge>
-                </>
-              )}
+            {/* Actions */}
+            <div className="flex items-center gap-2 pb-1 self-end sm:self-auto">
               <Button
                 variant="outline"
-                className="w-full"
-                onClick={handleToggleDisenoAlternativo}
-                disabled={isTogglingDisenoAlternativo}
+                size="sm"
+                onClick={abrirDialogEditar}
+                className="gap-2 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800"
               >
-                {isTogglingDisenoAlternativo ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cambiando...
-                  </>
-                ) : (
-                  <>
-                    <Store className="mr-2 h-4 w-4" />
-                    {restaurante?.disenoAlternativo ? 'Volver al Diseño Principal' : 'Activar Diseño 2 (Imagen Completa + Descripción)'}
-                  </>
-                )}
+                <Edit className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Editar perfil</span>
+                <span className="sm:hidden">Editar</span>
               </Button>
-            </CardContent>
-          </Card>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLogout}
+                className="gap-2 text-zinc-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Cerrar sesión</span>
+              </Button>
+            </div>
+          </div>
 
-          {/* Tarjeta de Pedido entre Amigos */}
-          <Card className={(restaurante as any)?.orderGroupEnabled ? "border-teal-500/50 bg-teal-50/50 dark:bg-teal-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <UtensilsCrossed className="h-5 w-5" />
-                Pedido entre Amigos
-              </CardTitle>
-              <CardDescription>
-                {(restaurante as any)?.orderGroupEnabled
-                  ? 'Los clientes pueden crear un link para armar pedidos grupales'
-                  : 'El botón para armar pedidos entre amigos está oculto en el menú'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base">Mostrar botón "Armar pedido entre amigos"</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Cuando está activo, los clientes ven el botón para compartir un link y armar pedidos grupales.
-                  </p>
-                </div>
-                <Switch
-                  checked={(restaurante as any)?.orderGroupEnabled !== false}
-                  onCheckedChange={() => handleToggleOrderGroupEnabled()}
-                  disabled={isTogglingOrderGroupEnabled}
-                />
-              </div>
-              {isTogglingOrderGroupEnabled && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Actualizando...
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de Códigos de Descuento */}
-          <Card className={(restaurante as any)?.codigoDescuentoEnabled !== false ? "border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Ticket className="h-5 w-5" />
-                Códigos de Descuento
-              </CardTitle>
-              <CardDescription>
-                {(restaurante as any)?.codigoDescuentoEnabled !== false
-                  ? 'Los clientes pueden aplicar cupones en el checkout'
-                  : 'Los cupones están deshabilitados para clientes'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base">Permitir uso de códigos de descuento</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Activa o desactiva globalmente el uso de cupones para delivery y take away.
-                  </p>
-                </div>
-                <Switch
-                  checked={(restaurante as any)?.codigoDescuentoEnabled !== false}
-                  onCheckedChange={() => handleToggleCodigoDescuentoEnabled()}
-                  disabled={isTogglingCodigoDescuentoEnabled}
-                />
-              </div>
-              {isTogglingCodigoDescuentoEnabled && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Actualizando...
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de Impresoras (Tauri Native) */}
-          <Card className={selectedPrinter ? "border-green-500/50 bg-green-50/50 dark:bg-green-950/20" : ""}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Printer className="h-5 w-5" />
-                Impresora de Comandas (Cocina)
-              </CardTitle>
-              <CardDescription>
-                {selectedPrinter
-                  ? `Impresora seleccionada: ${selectedPrinter}`
-                  : 'Selecciona una impresora para las comandas'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {selectedPrinter ? (
-                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-2">
-                  <CheckCircle2 className="h-5 w-5" />
-                  <span className="font-medium">Impresora configurada</span>
-                </div>
-              ) : (
-                <div className="text-sm text-yellow-600 dark:text-yellow-400 mb-2">
-                  <p>Selecciona una impresora de la lista.</p>
-                </div>
-              )}
-
-              <div className="grid gap-4">
-                <Button
-                  variant="outline"
-                  onClick={handleListPrinters}
-                  disabled={isListingPrinters}
-                  className="w-full justify-start"
+          {/* Link in Bio pill */}
+          {restaurante?.username && (
+            <div className="pb-5 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl max-w-fit group">
+                <Globe className="h-3.5 w-3.5 text-orange-600 shrink-0" />
+                <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  my.piru.app/{restaurante.username}
+                </span>
+                <button
+                  onClick={copyLink}
+                  className="text-zinc-400 hover:text-orange-600 transition-colors ml-0.5"
+                  title="Copiar link"
                 >
-                  {isListingPrinters ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <List className="mr-2 h-4 w-4" />}
-                  Actualizar Lista de Impresoras
-                </Button>
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+                <a
+                  href={`https://my.piru.app/${restaurante.username}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-zinc-400 hover:text-orange-600 transition-colors"
+                  title="Abrir link"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+              <span className="text-xs text-zinc-400">Tu link de pedidos online · compartí esto en Instagram</span>
+            </div>
+          )}
+        </div>
+      </div>
 
-                {printers.length > 0 && (
-                  <div className="space-y-2">
-                    <Label>Seleccionar Impresora Predeterminada</Label>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      value={selectedPrinter || ''}
-                      onChange={(e) => setSelectedPrinter(e.target.value)}
+      {/* ── Main content ── */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+
+          {/* Tab bar */}
+          <div className="-mx-4 px-4 overflow-x-auto scrollbar-none">
+            <TabsList className="inline-flex min-w-max w-full sm:w-auto bg-transparent p-0 border-b border-zinc-200 dark:border-zinc-800 rounded-none h-auto gap-0">
+              {TABS.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="
+                    relative flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-medium rounded-none
+                    text-zinc-500 dark:text-zinc-400 bg-transparent shadow-none
+                    hover:text-zinc-900 dark:hover:text-zinc-100
+                    data-[state=active]:text-orange-600 dark:data-[state=active]:text-orange-500
+                    data-[state=active]:shadow-none
+                    after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5
+                    after:bg-orange-600 after:rounded-full after:opacity-0
+                    data-[state=active]:after:opacity-100
+                    transition-all whitespace-nowrap
+                  "
+                >
+                  <tab.icon className="h-4 w-4 shrink-0" />
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+
+          {/* ─────────────────────────────────────────────
+              TAB: GENERAL
+          ───────────────────────────────────────────── */}
+          <TabsContent value="general" className="space-y-4 animate-in fade-in-0 slide-in-from-bottom-2">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+              {/* Business info */}
+              <Card className="lg:col-span-2 border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Store className="h-4 w-4 text-orange-600" />
+                        Información del negocio
+                      </CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Datos visibles para tus clientes
+                      </CardDescription>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={abrirDialogEditar} className="gap-1.5 text-zinc-500 hover:text-orange-600">
+                      <Edit className="h-3.5 w-3.5" />
+                      Editar
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-0">
+                  {[
+                    { icon: Store, label: 'Nombre', value: restaurante?.nombre },
+                    { icon: Link2, label: 'Alias / URL', value: restaurante?.username ? `my.piru.app/${restaurante.username}` : undefined },
+                    { icon: MapPin, label: 'Dirección', value: restaurante?.direccion },
+                    { icon: Phone, label: 'Teléfono', value: restaurante?.telefono },
+                    { icon: Truck, label: 'Costo de envío', value: restaurante?.deliveryFee ? `$${restaurante.deliveryFee}` : undefined },
+                  ].map(({ icon: Icon, label, value }) => (
+                    <div
+                      key={label}
+                      className="flex items-center gap-3 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0"
                     >
-                      <option value="">Seleccionar impresora...</option>
-                      {printers.map((p, i) => (
-                        <option key={i} value={p}>{p}</option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-muted-foreground">
-                      Esta impresora se usará automáticamente para las comandas de cocina.
-                    </p>
+                      <Icon className="h-4 w-4 text-zinc-400 shrink-0" />
+                      <span className="text-xs text-zinc-400 w-24 shrink-0">{label}</span>
+                      <span className={`text-sm font-medium ${value ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 italic'}`}>
+                        {value || 'No configurado'}
+                      </span>
+                    </div>
+                  ))}
+
+                  <Separator className="my-2" />
+
+                  {/* WhatsApp status */}
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3">
+                      <Smartphone className="h-4 w-4 text-green-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Notificaciones WhatsApp</p>
+                        {restaurante?.whatsappEnabled && restaurante.whatsappNumber && (
+                          <p className="text-xs text-zinc-500 mt-0.5">{restaurante.whatsappNumber}</p>
+                        )}
+                      </div>
+                    </div>
+                    <Badge
+                      variant={restaurante?.whatsappEnabled ? 'default' : 'secondary'}
+                      className={restaurante?.whatsappEnabled ? 'bg-green-600 hover:bg-green-600' : ''}
+                    >
+                      {restaurante?.whatsappEnabled ? 'Activo' : 'Inactivo'}
+                    </Badge>
+                  </div>
+
+                  {restaurante?.transferenciaAlias && (
+                    <div className="flex items-center gap-3 py-3 border-t border-zinc-100 dark:border-zinc-800">
+                      <Wallet className="h-4 w-4 text-zinc-400 shrink-0" />
+                      <span className="text-xs text-zinc-400 w-24 shrink-0">Alias CVU</span>
+                      <code className="text-sm font-mono text-zinc-900 dark:text-zinc-100">
+                        {restaurante.transferenciaAlias}
+                      </code>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Right column: Stats + Quick nav */}
+              <div className="space-y-4">
+                {/* Stats */}
+                <Card className="border-0 bg-linear-to-br from-orange-600 to-orange-500 text-white overflow-hidden">
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-sm font-medium text-orange-100">Catálogo</p>
+                      <Package className="h-4 w-4 text-orange-200" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-3xl font-bold tabular-nums">{productosActivos}</p>
+                        <p className="text-xs text-orange-200 mt-0.5">Activos</p>
+                      </div>
+                      <div>
+                        <p className="text-3xl font-bold tabular-nums">{totalProductos}</p>
+                        <p className="text-xs text-orange-200 mt-0.5">Total</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Quick links */}
+                <Card className="border-zinc-200 dark:border-zinc-800">
+                  <CardContent className="p-0">
+                    {[
+                      { label: 'Configurar pagos', desc: 'Integraciones y pasarelas', tab: 'pagos', icon: CreditCard },
+                      { label: 'Horarios y delivery', desc: 'Turnos y zonas de envío', tab: 'delivery', icon: Clock },
+                      { label: 'Personalizar menú', desc: 'Diseño y funcionalidades', tab: 'experiencia', icon: Palette },
+                    ].map(({ label, desc, tab, icon: Icon }, i, arr) => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group ${i < arr.length - 1 ? 'border-b border-zinc-100 dark:border-zinc-800' : ''}`}
+                      >
+                        <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0 group-hover:bg-orange-50 dark:group-hover:bg-orange-950/30 transition-colors">
+                          <Icon className="h-4 w-4 text-zinc-500 group-hover:text-orange-600 transition-colors" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</p>
+                          <p className="text-xs text-zinc-500 truncate">{desc}</p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-zinc-300 group-hover:text-orange-500 transition-colors shrink-0" />
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ─────────────────────────────────────────────
+              TAB: PAGOS
+          ───────────────────────────────────────────── */}
+          <TabsContent value="pagos" className="space-y-4 animate-in fade-in-0 slide-in-from-bottom-2">
+
+            {/* Provider selector */}
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Settings className="h-4 w-4 text-orange-600" />
+                  Proveedor de cobros principal
+                </CardTitle>
+                <CardDescription>Cómo validás automáticamente los pagos de tus clientes</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { value: 'manual', label: 'Manual', sub: 'Sin validación', color: 'zinc' },
+                    { value: 'cucuru', label: 'Cucuru', sub: 'Billetera virtual', color: 'purple' },
+                    { value: 'talo', label: 'Talo', sub: 'Tiempo real', color: 'amber' },
+                    { value: 'mercadopago', label: 'MercadoPago', sub: 'Tarjetas', color: 'sky' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setProveedorPago(opt.value)}
+                      className={`rounded-xl border-2 p-3 text-left transition-all ${proveedorPago === opt.value
+                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/20'
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                        }`}
+                    >
+                      <div className={`h-2 w-2 rounded-full mb-2 ${proveedorPago === opt.value ? 'bg-orange-500' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{opt.label}</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">{opt.sub}</p>
+                    </button>
+                  ))}
+                </div>
+
+                {proveedorPago === 'talo' && !taloYaConfigurado && (
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl space-y-3">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Credenciales de Talo</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <Input type="password" placeholder="Client ID" value={taloClientId} onChange={(e) => setTaloClientId(e.target.value)} className="text-sm" />
+                      <Input type="password" placeholder="Client Secret" value={taloClientSecret} onChange={(e) => setTaloClientSecret(e.target.value)} className="text-sm" />
+                      <Input placeholder="User ID" value={taloUserId} onChange={(e) => setTaloUserId(e.target.value)} className="text-sm" />
+                    </div>
                   </div>
                 )}
 
+                <Button
+                  onClick={handleGuardarPasarelaPago}
+                  disabled={isSavingPasarela}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  {isSavingPasarela && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Guardar configuración
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Integrations grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+              {/* MercadoPago */}
+              <IntegrationCard connected={!!restaurante?.mpConnected} accentClass="border-sky-400/60 bg-sky-50/40 dark:bg-sky-950/10">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+                        <CreditCard className="h-4 w-4 text-sky-600" />
+                      </div>
+                      MercadoPago
+                    </CardTitle>
+                    <Badge className={restaurante?.mpConnected ? 'bg-sky-600 hover:bg-sky-600 text-white' : ''} variant={restaurante?.mpConnected ? 'default' : 'secondary'}>
+                      {restaurante?.mpConnected ? 'Conectado' : 'Desconectado'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {restaurante?.mpConnected ? (
+                    <>
+                      <div className="flex items-center justify-between p-3 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                        <div>
+                          <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Cuenta activa</p>
+                          <p className="text-xs text-zinc-400 mt-0.5">ID: {restaurante.mpUserId}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-zinc-500">Visible</span>
+                          <Switch
+                            checked={(restaurante as any)?.cardsPaymentsEnabled !== false}
+                            onCheckedChange={handleToggleCardsPaymentsEnabled}
+                            disabled={isTogglingCardsPaymentsEnabled}
+                          />
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" className="w-full text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-950/30 dark:border-red-900" onClick={handleDesconectarMP} disabled={isDisconnectingMP}>
+                        {isDisconnectingMP ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Unlink className="mr-2 h-3.5 w-3.5" />}
+                        Desconectar
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-zinc-500">Tarjetas de crédito, débito y dinero en cuenta.</p>
+                      <Button asChild size="sm" className="w-full bg-sky-500 hover:bg-sky-600 text-white">
+                        <a href={getMercadoPagoAuthUrl() || '#'}>
+                          <Link2 className="mr-2 h-3.5 w-3.5" />
+                          Conectar MercadoPago
+                        </a>
+                      </Button>
+                    </>
+                  )}
+                </CardContent>
+              </IntegrationCard>
+
+              {/* Cucuru */}
+              <IntegrationCard connected={!!(restaurante as any)?.cucuruConfigurado} accentClass="border-purple-400/60 bg-purple-50/40 dark:bg-purple-950/10">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center">
+                        <Wallet className="h-4 w-4 text-purple-600" />
+                      </div>
+                      Cucuru
+                    </CardTitle>
+                    <Badge className={(restaurante as any)?.cucuruConfigurado ? 'bg-purple-600 hover:bg-purple-600 text-white' : ''} variant={(restaurante as any)?.cucuruConfigurado ? 'default' : 'secondary'}>
+                      {(restaurante as any)?.cucuruConfigurado ? 'Activo' : 'Inactivo'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-zinc-500">Mostrar en checkout</span>
+                    <Switch checked={(restaurante as any)?.cucuruEnabled !== false} onCheckedChange={handleToggleCucuruCheckoutEnabled} disabled={isTogglingCucuruCheckoutEnabled} />
+                  </div>
+                  {(restaurante as any)?.cucuruConfigurado ? (
+                    <>
+                      <div className="flex items-center gap-2 text-xs text-green-700 dark:text-green-400 p-2 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-900">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                        Webhooks configurados correctamente
+                      </div>
+                      <Button variant="outline" size="sm" className="w-full" onClick={handleReenviarWebhookCucuru} disabled={isReenviandoWebhookCucuru}>
+                        {isReenviandoWebhookCucuru ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
+                        Reenviar webhook
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input placeholder="API Key" value={cucuruApiKey} onChange={(e) => setCucuruApiKey(e.target.value)} className="text-sm" />
+                      <Input placeholder="Collector ID" value={cucuruCollectorId} onChange={(e) => setCucuruCollectorId(e.target.value)} className="text-sm" />
+                      <Button size="sm" className="w-full bg-purple-600 hover:bg-purple-700 text-white" onClick={handleConfigurarCucuru} disabled={isConfiguringCucuru}>
+                        {isConfiguringCucuru && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                        Configurar
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </IntegrationCard>
+
+              {/* Talo */}
+              <IntegrationCard connected={taloYaConfigurado} accentClass="border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/10">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                        <Zap className="h-4 w-4 text-amber-600" />
+                      </div>
+                      Talo
+                    </CardTitle>
+                    <Badge className={taloYaConfigurado ? 'bg-amber-600 hover:bg-amber-600 text-white' : ''} variant={taloYaConfigurado ? 'default' : 'secondary'}>
+                      {taloYaConfigurado ? 'Configurado' : 'Sin configurar'}
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs">Transferencias verificadas en tiempo real</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <Input type="password" placeholder="Client ID" value={taloClientIdInput} onChange={(e) => setTaloClientIdInput(e.target.value)} className="text-sm" />
+                  <Input type="password" placeholder="Client Secret" value={taloClientSecretInput} onChange={(e) => setTaloClientSecretInput(e.target.value)} className="text-sm" />
+                  <Input placeholder="User ID" value={taloUserIdInput} onChange={(e) => setTaloUserIdInput(e.target.value)} className="text-sm" />
+                  <Button size="sm" className="w-full bg-amber-600 hover:bg-amber-700 text-white" onClick={handleConfigurarTalo} disabled={isConfiguringTalo}>
+                    {isConfiguringTalo && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                    {taloYaConfigurado ? 'Actualizar credenciales' : 'Configurar Talo'}
+                  </Button>
+                </CardContent>
+              </IntegrationCard>
+
+              {/* Transferencia manual */}
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                      <Wallet className="h-4 w-4 text-zinc-500" />
+                    </div>
+                    Transferencia manual
+                  </CardTitle>
+                  <CardDescription className="text-xs">Alias para cuando el cliente paga por transferencia</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {restaurante?.transferenciaAlias ? (
+                    <div className="flex items-center gap-2 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                      <code className="text-sm font-mono text-zinc-900 dark:text-zinc-100">
+                        {restaurante.transferenciaAlias}
+                      </code>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700">
+                      <AlertCircle className="h-4 w-4 text-zinc-400 shrink-0" />
+                      <p className="text-sm text-zinc-400">Sin alias configurado</p>
+                    </div>
+                  )}
+                  <Button variant="link" size="sm" className="px-0 mt-2 text-orange-600 h-auto" onClick={abrirDialogEditar}>
+                    {restaurante?.transferenciaAlias ? 'Modificar alias' : 'Configurar alias'}
+                    <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Discount codes */}
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="px-5 py-4">
+                <ToggleRow
+                  icon={<Ticket className="h-4 w-4 text-indigo-600" />}
+                  iconBg="bg-indigo-50 dark:bg-indigo-950/50"
+                  title="Códigos de descuento"
+                  description="Permite a los clientes aplicar cupones en el checkout"
+                  checked={(restaurante as any)?.codigoDescuentoEnabled !== false}
+                  onCheckedChange={handleToggleCodigoDescuentoEnabled}
+                  disabled={isTogglingCodigoDescuentoEnabled}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ─────────────────────────────────────────────
+              TAB: DELIVERY
+          ───────────────────────────────────────────── */}
+          <TabsContent value="delivery" className="space-y-4 animate-in fade-in-0 slide-in-from-bottom-2">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+              {/* Horarios */}
+              <Card className="lg:col-span-2 border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-orange-600" />
+                    Horarios de atención
+                  </CardTitle>
+                  <CardDescription>
+                    Configurá los turnos de cada día. Sin turnos = cerrado ese día.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!horariosLoaded ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {DIAS_SEMANA.map((nombreDia, diaIdx) => {
+                        const turnos = horarios[diaIdx] || []
+                        const estaAbierto = turnos.length > 0
+                        return (
+                          <div
+                            key={diaIdx}
+                            className={`rounded-xl p-3 transition-colors ${estaAbierto ? 'bg-zinc-50 dark:bg-zinc-900/50' : 'opacity-60'}`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                              <div className="flex items-center gap-2 sm:w-28 shrink-0">
+                                <div className={`h-2 w-2 rounded-full shrink-0 ${estaAbierto ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{nombreDia}</span>
+                              </div>
+
+                              <div className="flex-1 flex flex-col gap-2">
+                                {turnos.length === 0 ? (
+                                  <span className="text-xs text-zinc-400 italic py-1">Cerrado</span>
+                                ) : (
+                                  turnos.map((turno, tIdx) => (
+                                    <div key={tIdx} className="flex items-center gap-2">
+                                      <Input
+                                        type="time"
+                                        value={turno.horaApertura}
+                                        onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaApertura', e.target.value)}
+                                        className="h-8 w-28 text-xs"
+                                      />
+                                      <span className="text-zinc-400 text-xs">→</span>
+                                      <Input
+                                        type="time"
+                                        value={turno.horaCierre}
+                                        onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaCierre', e.target.value)}
+                                        className="h-8 w-28 text-xs"
+                                      />
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                        onClick={() => eliminarTurno(diaIdx, tIdx)}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => agregarTurno(diaIdx)}
+                                className="h-7 text-xs shrink-0 self-start sm:self-auto"
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Turno
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      <div className="pt-3">
+                        <Button
+                          onClick={guardarHorarios}
+                          disabled={isSavingHorarios}
+                          className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                        >
+                          {isSavingHorarios && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Guardar horarios
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Rapiboy */}
+              <IntegrationCard connected={!!(restaurante as any)?.rapiboyToken} accentClass="border-orange-400/60 bg-orange-50/40 dark:bg-orange-950/10">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center">
+                        <Truck className="h-4 w-4 text-orange-600" />
+                      </div>
+                      Rapiboy
+                    </CardTitle>
+                    <Badge className={(restaurante as any)?.rapiboyToken ? 'bg-orange-600 hover:bg-orange-600 text-white' : ''} variant={(restaurante as any)?.rapiboyToken ? 'default' : 'secondary'}>
+                      {(restaurante as any)?.rapiboyToken ? 'Configurado' : 'Sin configurar'}
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs">Logística de envíos automatizada</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input
+                    type="password"
+                    placeholder="Token de Rapiboy"
+                    value={rapiboyToken}
+                    onChange={(e) => setRapiboyToken(e.target.value)}
+                    className="text-sm"
+                  />
+                  <div className="p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900">
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mb-1 font-medium">Webhook URL</p>
+                    <code className="text-xs font-mono text-blue-600 dark:text-blue-400 break-all">
+                      https://api.piru.app/api/webhooks/rapiboy
+                    </code>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                    onClick={handleConfigurarRapiboy}
+                    disabled={isConfiguringRapiboy || !rapiboyToken.trim()}
+                  >
+                    {isConfiguringRapiboy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                    {(restaurante as any)?.rapiboyToken ? 'Actualizar token' : 'Guardar token'}
+                  </Button>
+                </CardContent>
+              </IntegrationCard>
+            </div>
+
+            {/* Zonas de delivery */}
+            <Suspense
+              fallback={
+                <Card className="border-zinc-200 dark:border-zinc-800">
+                  <CardContent className="flex items-center justify-center py-16">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+                      <p className="text-sm text-zinc-400">Cargando mapa…</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              }
+            >
+              <ZonasDeliveryMap />
+            </Suspense>
+          </TabsContent>
+
+          {/* ─────────────────────────────────────────────
+              TAB: EXPERIENCIA
+          ───────────────────────────────────────────── */}
+          <TabsContent value="experiencia" className="space-y-4 animate-in fade-in-0 slide-in-from-bottom-2">
+
+            {/* Design picker */}
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Palette className="h-4 w-4 text-pink-600" />
+                  Diseño del menú
+                </CardTitle>
+                <CardDescription>Cómo se ven los productos cuando tus clientes abren tu link</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Option: Glassmorphism */}
+                  <button
+                    onClick={() => restaurante?.disenoAlternativo && handleToggleDisenoAlternativo()}
+                    disabled={isTogglingDisenoAlternativo && !restaurante?.disenoAlternativo}
+                    className={`relative rounded-2xl border-2 p-4 text-left transition-all hover:shadow-sm ${!restaurante?.disenoAlternativo
+                      ? 'border-orange-500 shadow-sm shadow-orange-100 dark:shadow-orange-950'
+                      : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                      }`}
+                  >
+                    {!restaurante?.disenoAlternativo && (
+                      <div className="absolute top-2 right-2">
+                        <CheckCircle2 className="h-4 w-4 text-orange-500" />
+                      </div>
+                    )}
+                    {/* Preview */}
+                    <div className="aspect-video rounded-lg overflow-hidden mb-3 bg-linear-to-br from-zinc-800 to-zinc-900 relative">
+                      <div className="absolute inset-0 bg-linear-to-br from-orange-500/20 to-transparent" />
+                      <div className="absolute bottom-2 left-2 right-2 h-10 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20" />
+                      <div className="absolute bottom-3 left-3 h-1.5 w-16 bg-white/60 rounded-full" />
+                      <div className="absolute bottom-6 left-3 h-1 w-10 bg-white/30 rounded-full" />
+                    </div>
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Glassmorphism</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Diseño premium original</p>
+                  </button>
+
+                  {/* Option: Full image */}
+                  <button
+                    onClick={() => !restaurante?.disenoAlternativo && handleToggleDisenoAlternativo()}
+                    disabled={isTogglingDisenoAlternativo && !!restaurante?.disenoAlternativo}
+                    className={`relative rounded-2xl border-2 p-4 text-left transition-all hover:shadow-sm ${restaurante?.disenoAlternativo
+                      ? 'border-orange-500 shadow-sm shadow-orange-100 dark:shadow-orange-950'
+                      : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                      }`}
+                  >
+                    {restaurante?.disenoAlternativo && (
+                      <div className="absolute top-2 right-2">
+                        <CheckCircle2 className="h-4 w-4 text-orange-500" />
+                      </div>
+                    )}
+                    {/* Preview */}
+                    <div className="aspect-video rounded-lg overflow-hidden mb-3 bg-zinc-100 dark:bg-zinc-800 relative">
+                      <div className="absolute inset-0 bg-linear-to-br from-zinc-300 to-zinc-400 dark:from-zinc-700 dark:to-zinc-600" />
+                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-white dark:bg-zinc-900">
+                        <div className="h-2 w-14 bg-zinc-900/20 dark:bg-zinc-100/20 rounded-full" />
+                        <div className="h-1.5 w-20 bg-zinc-400/30 rounded-full mt-1" />
+                      </div>
+                    </div>
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Imagen completa</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Destaca tus fotos</p>
+                  </button>
+                </div>
+
+                {isTogglingDisenoAlternativo && (
+                  <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Aplicando cambios…
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Feature toggles */}
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Settings className="h-4 w-4 text-zinc-600" />
+                  Funcionalidades
+                </CardTitle>
+                <CardDescription>Activá o desactivá características del menú online</CardDescription>
+              </CardHeader>
+              <CardContent className="divide-y divide-zinc-100 dark:divide-zinc-800 px-5">
+                <ToggleRow
+                  icon={<UtensilsCrossed className="h-4 w-4 text-teal-600" />}
+                  iconBg="bg-teal-50 dark:bg-teal-950/50"
+                  title="Pedido entre amigos"
+                  description="Los clientes pueden armar pedidos grupales compartiendo un link"
+                  checked={(restaurante as any)?.orderGroupEnabled !== false}
+                  onCheckedChange={handleToggleOrderGroupEnabled}
+                  disabled={isTogglingOrderGroupEnabled}
+                />
+                <ToggleRow
+                  icon={<Ticket className="h-4 w-4 text-indigo-600" />}
+                  iconBg="bg-indigo-50 dark:bg-indigo-950/50"
+                  title="Códigos de descuento"
+                  description="Permite aplicar cupones durante el checkout"
+                  checked={(restaurante as any)?.codigoDescuentoEnabled !== false}
+                  onCheckedChange={handleToggleCodigoDescuentoEnabled}
+                  disabled={isTogglingCodigoDescuentoEnabled}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ─────────────────────────────────────────────
+              TAB: HARDWARE
+          ───────────────────────────────────────────── */}
+          <TabsContent value="hardware" className="space-y-4 animate-in fade-in-0 slide-in-from-bottom-2">
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Printer className="h-4 w-4 text-green-600" />
+                  Impresora de comandas
+                </CardTitle>
+                <CardDescription>Impresora térmica para el sistema de cocina</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+
+                {/* Status banner */}
+                {selectedPrinter ? (
+                  <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-xl">
+                    <div className="h-9 w-9 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-green-900 dark:text-green-100">Impresora configurada</p>
+                      <p className="text-xs text-green-700 dark:text-green-300 mt-0.5">{selectedPrinter}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-xl">
+                    <div className="h-9 w-9 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
+                      <AlertCircle className="h-5 w-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Sin impresora seleccionada</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">Escaneá los dispositivos disponibles para comenzar</p>
+                    </div>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Scan & select */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={handleListPrinters}
+                    disabled={isListingPrinters}
+                    className="h-auto py-4 justify-start gap-3"
+                  >
+                    {isListingPrinters ? (
+                      <Loader2 className="h-5 w-5 text-zinc-400 animate-spin shrink-0" />
+                    ) : (
+                      <List className="h-5 w-5 text-zinc-400 shrink-0" />
+                    )}
+                    <div className="text-left">
+                      <p className="text-sm font-medium">Buscar impresoras</p>
+                      <p className="text-xs text-zinc-500">Escanear dispositivos disponibles</p>
+                    </div>
+                  </Button>
+
+                  {printers.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-zinc-500">Seleccionar impresora</Label>
+                      <Select value={selectedPrinter || ''} onValueChange={setSelectedPrinter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {printers.map((p, i) => (
+                            <SelectItem key={i} value={p}>{p}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Test print */}
                 <Button
                   variant="outline"
                   onClick={handleTestPrint}
                   disabled={isPrintingTest || !selectedPrinter}
-                  className="w-full justify-start"
+                  className="w-full h-auto py-4 border-dashed border-2 gap-3 justify-center"
                 >
-                  {isPrintingTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-                  Imprimir Prueba de Comanda
+                  {isPrintingTest ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+                  ) : (
+                    <Printer className="h-4 w-4 text-zinc-400" />
+                  )}
+                  <span className="text-sm">Imprimir prueba de comanda</span>
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tarjeta de Zonas de Delivery */}
-          <Suspense fallback={
-            <Card>
-              <CardContent className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </CardContent>
             </Card>
-          }>
-            <ZonasDeliveryMap />
-          </Suspense>
+          </TabsContent>
 
-          {/* Tarjeta de Horarios de Atención */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Horarios de Atención
-              </CardTitle>
-              <CardDescription>
-                Define en qué horarios abrís cada día. Podés agregar varios turnos por día (ej: mediodía y noche).
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!horariosLoaded ? (
-                <div className="flex justify-center py-6">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <>
-                  {DIAS_SEMANA.map((nombreDia, diaIdx) => {
-                    const turnos = horarios[diaIdx] || []
-                    return (
-                      <div key={diaIdx} className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{nombreDia}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => agregarTurno(diaIdx)}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Turno
-                          </Button>
-                        </div>
-                        {turnos.length === 0 ? (
-                          <p className="text-xs text-muted-foreground pl-1">Cerrado</p>
-                        ) : (
-                          turnos.map((turno, tIdx) => (
-                            <div key={tIdx} className="flex items-center gap-2 pl-1">
-                              <Input
-                                type="time"
-                                value={turno.horaApertura}
-                                onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaApertura', e.target.value)}
-                                className="w-28 h-8 text-xs"
-                              />
-                              <span className="text-xs text-muted-foreground">a</span>
-                              <Input
-                                type="time"
-                                value={turno.horaCierre}
-                                onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaCierre', e.target.value)}
-                                className="w-28 h-8 text-xs"
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => eliminarTurno(diaIdx, tIdx)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )
-                  })}
-                  <Button
-                    className="w-full"
-                    onClick={guardarHorarios}
-                    disabled={isSavingHorarios}
-                  >
-                    {isSavingHorarios ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Guardando...
-                      </>
-                    ) : (
-                      'Guardar Horarios'
-                    )}
-                  </Button>
-                  <p className="text-[11px] text-muted-foreground">
-                    Si un turno cruza la medianoche (ej: 20:00 a 02:00), el sistema lo maneja automáticamente.
-                    Los días sin turnos se consideran cerrados.
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Estadísticas Rápidas</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Mesas Totales</p>
-                <p className="text-3xl font-bold text-primary">
-                  {restauranteStore.mesas.length}
-                </p>
-              </div>
-              <Separator />
-              <div>
-                <p className="text-sm text-muted-foreground">Productos Activos</p>
-                <p className="text-3xl font-bold text-primary">
-                  {restauranteStore.productos.filter(p => p.activo).length}
-                </p>
-              </div>
-              <Separator />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Productos</p>
-                <p className="text-3xl font-bold text-muted-foreground">
-                  {restauranteStore.productos.length}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-destructive/50 bg-destructive/5">
-            <CardHeader>
-              <CardTitle className="text-lg text-destructive">Zona Peligrosa</CardTitle>
-              <CardDescription>
-                Acciones irreversibles con tu cuenta
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                variant="destructive"
-                className="w-full"
-                onClick={handleLogout}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Cerrar Sesión
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        </Tabs>
       </div>
 
-      {/* Modal de Editar Perfil */}
+      {/* ─────────────────────────────────────────────
+          DIALOG: Editar perfil
+      ───────────────────────────────────────────── */}
       <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Editar Perfil del Restaurante
-            </DialogTitle>
-            <DialogDescription>
-              Modifica la información de tu restaurante
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label>Logo del Restaurante (Dark Mode)</Label>
-                <ImageUpload
-                  onImageChange={setImageBase64}
-                  currentImage={imageBase64}
-                  maxSize={5}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Se usa en el menú cuando está en Dark Mode (o por defecto). Tamaño máximo: 5MB.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Logo del Restaurante (Light Mode)</Label>
-                <ImageUpload
-                  onImageChange={setImageLightBase64}
-                  currentImage={imageLightBase64}
-                  maxSize={5}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Se usa en el menú cuando está en Light Mode. Tamaño máximo: 5MB.
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Nombre */}
-            <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre del Restaurante *</Label>
-              <Input
-                id="nombre"
-                value={formData.nombre}
-                onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                placeholder="Ej: Mi Restaurante"
-                required
-                disabled={isSubmitting}
-              />
-            </div>
-
-            {/* Alias / Username */}
-            <div className="space-y-2">
-              <Label htmlFor="username">Alias (Link de Perfil)</Label>
-              <Input
-                id="username"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                placeholder="Ej: mi-restaurante"
-                disabled={isSubmitting}
-              />
-              <p className="text-xs text-muted-foreground">Tu enlace en Piru será: piru.app/{formData.username || 'tu-alias'}</p>
-            </div>
-
-            {/* Dirección */}
-            <div className="space-y-2">
-              <Label htmlFor="direccion">Dirección</Label>
-              <Input
-                id="direccion"
-                value={formData.direccion}
-                onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-                placeholder="Ej: Av. Principal 123"
-                disabled={isSubmitting}
-              />
-            </div>
-
-            {/* Teléfono */}
-            <div className="space-y-2">
-              <Label htmlFor="telefono">Teléfono</Label>
-              <Input
-                id="telefono"
-                value={formData.telefono}
-                onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-                placeholder="Ej: +54 11 1234-5678"
-                disabled={isSubmitting}
-              />
-            </div>
-
-            {/* Delivery Fee */}
-            <div className="space-y-2">
-              <Label htmlFor="deliveryFee">Modificar costo del envio</Label>
-              <Input
-                id="deliveryFee"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.deliveryFee}
-                onChange={(e) => setFormData({ ...formData, deliveryFee: e.target.value })}
-                placeholder="Ej: 800"
-                disabled={isSubmitting}
-              />
-            </div>
-
-            {/* Alias Transferencia */}
-            {(!restaurante?.mpConnected && !restaurante?.cucuruConfigurado) && (
-              <div className="space-y-2">
-                <Label htmlFor="transferenciaAlias">Alias para Transferencias Manuales</Label>
-                <Input
-                  id="transferenciaAlias"
-                  value={formData.transferenciaAlias}
-                  onChange={(e) => setFormData({ ...formData, transferenciaAlias: e.target.value })}
-                  placeholder="Ej: mi.restaurante.mp"
-                  disabled={isSubmitting}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Al no usar pasarelas automáticas, este alias se mostrará al cliente al finalizar el pedido.
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-2 pt-4 border-t">
-              <h3 className="text-sm font-medium">WhatsApp para comprobantes (clientes)</h3>
-              <p className="text-xs text-muted-foreground">
-                Número al que el cliente puede enviar el comprobante en transferencias manuales. Es independiente del WhatsApp de notificaciones automáticas de pedidos (API).
-              </p>
-              <Label htmlFor="comprobantesWhatsapp">Número (opcional)</Label>
-              <Input
-                id="comprobantesWhatsapp"
-                value={formData.comprobantesWhatsapp}
-                onChange={(e) => setFormData({ ...formData, comprobantesWhatsapp: e.target.value })}
-                placeholder="Ej: 5493412345678 (sin +)"
-                disabled={isSubmitting}
-              />
-              <p className="text-xs text-muted-foreground">
-                Si lo dejás vacío, en la web de clientes se usa el teléfono del local (campo de arriba) como respaldo para armar el enlace de WhatsApp.
-              </p>
-            </div>
-
-            {/* WhatsApp Notifications */}
-            <div className="space-y-4 pt-4 border-t">
-              <h3 className="text-sm font-medium">Notificaciones por WhatsApp</h3>
-              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base">Recibir pedidos por WhatsApp</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Enviaremos una notificación a tu número cada vez que entre un nuevo pedido.
-                  </p>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+          {/* Dialog header */}
+          <div className="px-6 pt-6 pb-4 border-b border-zinc-200 dark:border-zinc-800">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center">
+                  <Settings className="h-4 w-4 text-orange-600" />
                 </div>
-                <Switch
-                  checked={formData.whatsappEnabled}
-                  onCheckedChange={(checked) => setFormData({ ...formData, whatsappEnabled: checked })}
-                  disabled={isSubmitting}
-                />
-              </div>
+                Editar perfil
+              </DialogTitle>
+              <DialogDescription className="text-sm text-zinc-500">
+                Actualizá la información y personalización de tu negocio
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-              {formData.whatsappEnabled && (
-                <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                  <Label htmlFor="whatsappNumber">Número de WhatsApp</Label>
-                  <Input
-                    id="whatsappNumber"
-                    value={formData.whatsappNumber}
-                    onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                    placeholder="Ej: 54934123..."
-                    disabled={isSubmitting}
+          {/* Internal tabs */}
+          <Tabs value={dialogTab} onValueChange={setDialogTab} className="flex flex-col">
+            <div className="border-b border-zinc-200 dark:border-zinc-800 px-6">
+              <TabsList className="bg-transparent p-0 h-auto gap-6 rounded-none">
+                {[
+                  { value: 'info', label: 'Información' },
+                  { value: 'branding', label: 'Branding' },
+                  { value: 'comunicacion', label: 'WhatsApp' },
+                ].map((t) => (
+                  <TabsTrigger
+                    key={t.value}
+                    value={t.value}
+                    className="
+                      relative bg-transparent shadow-none rounded-none px-0 py-3 text-sm font-medium
+                      text-zinc-500 data-[state=active]:text-orange-600
+                      data-[state=active]:shadow-none
+                      after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5
+                      after:bg-orange-600 after:rounded-full after:opacity-0
+                      data-[state=active]:after:opacity-100
+                    "
+                  >
+                    {t.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              {/* Tab: Información */}
+              <TabsContent value="info" className="px-6 py-5 space-y-4 mt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="nombre" className="text-sm">Nombre del negocio <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="nombre"
+                      value={formData.nombre}
+                      onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                      placeholder="Ej: La Esquina Burger"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="username" className="text-sm">Alias URL</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400 pointer-events-none select-none">piru.app/</span>
+                      <Input
+                        id="username"
+                        value={formData.username}
+                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                        placeholder="mi-negocio"
+                        className="pl-[4.8rem]"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="telefono" className="text-sm">Teléfono</Label>
+                    <Input
+                      id="telefono"
+                      value={formData.telefono}
+                      onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
+                      placeholder="Ej: 3412345678"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="deliveryFee" className="text-sm">Costo de envío por defecto</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400 pointer-events-none select-none">$</span>
+                      <Input
+                        id="deliveryFee"
+                        type="number"
+                        step="0.01"
+                        value={formData.deliveryFee}
+                        onChange={(e) => setFormData({ ...formData, deliveryFee: e.target.value })}
+                        placeholder="0.00"
+                        className="pl-6"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="direccion" className="text-sm">Dirección</Label>
+                    <Input
+                      id="direccion"
+                      value={formData.direccion}
+                      onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
+                      placeholder="Ej: Av. Córdoba 1234, Rosario"
+                    />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="transferenciaAlias" className="text-sm">Alias CVU / transferencia manual</Label>
+                    <Input
+                      id="transferenciaAlias"
+                      value={formData.transferenciaAlias}
+                      onChange={(e) => setFormData({ ...formData, transferenciaAlias: e.target.value })}
+                      placeholder="Ej: micuenta.mp"
+                      className="font-mono"
+                    />
+                    <p className="text-xs text-zinc-400">Se muestra cuando el cliente elige transferencia manual</p>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Tab: Branding */}
+              <TabsContent value="branding" className="px-6 py-5 space-y-5 mt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Logo (modo oscuro)</Label>
+                    <ImageUpload onImageChange={setImageBase64} currentImage={imageBase64} maxSize={5} />
+                    <p className="text-xs text-zinc-400">Recomendado: PNG transparente sobre fondo oscuro</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Logo (modo claro)</Label>
+                    <ImageUpload onImageChange={setImageLightBase64} currentImage={imageLightBase64} maxSize={5} />
+                    <p className="text-xs text-zinc-400">Recomendado: PNG transparente sobre fondo claro</p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">Colores de marca</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="colorPrimario" className="text-sm">Color primario (dark)</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="colorPrimario"
+                          type="color"
+                          className="w-10 h-10 p-1 cursor-pointer rounded-lg border"
+                          value={formData.colorPrimario || '#000000'}
+                          onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })}
+                        />
+                        <Input
+                          value={formData.colorPrimario}
+                          onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })}
+                          className="flex-1 font-mono text-sm"
+                          placeholder="#000000"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="colorSecundario" className="text-sm">Color secundario (light)</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="colorSecundario"
+                          type="color"
+                          className="w-10 h-10 p-1 cursor-pointer rounded-lg border"
+                          value={formData.colorSecundario || '#ffffff'}
+                          onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })}
+                        />
+                        <Input
+                          value={formData.colorSecundario}
+                          onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })}
+                          className="flex-1 font-mono text-sm"
+                          placeholder="#ffffff"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Tab: WhatsApp / Comunicación */}
+              <TabsContent value="comunicacion" className="px-6 py-5 space-y-4 mt-0">
+                <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg bg-green-100 dark:bg-green-900/50 flex items-center justify-center">
+                      <Smartphone className="h-4 w-4 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Notificaciones de pedidos</p>
+                      <p className="text-xs text-zinc-500">Recibís un WhatsApp con cada nuevo pedido</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={formData.whatsappEnabled}
+                    onCheckedChange={(checked) => setFormData({ ...formData, whatsappEnabled: checked })}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Incluye el código de país sin el + (Ejemplo: 54934... para Argentina).
-                  </p>
                 </div>
-              )}
-            </div>
 
-            {/* Colores */}
-            <div className="space-y-4 pt-4 border-t">
-              <h3 className="text-sm font-medium">Personalización de Colores</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="colorPrimario">Color Primario (Dark Mode Fondo)</Label>
-                  <Input
-                    id="colorPrimario"
-                    type="color"
-                    className="h-10 cursor-pointer"
-                    value={formData.colorPrimario}
-                    onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })}
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-muted-foreground">Ej: #0a331d</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="colorSecundario">Color Secundario (Light Mode Fondo)</Label>
-                  <Input
-                    id="colorSecundario"
-                    type="color"
-                    className="h-10 cursor-pointer"
-                    value={formData.colorSecundario}
-                    onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })}
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-muted-foreground">Ej: #eae7e0</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Botones */}
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDialogAbierto(false)}
-                disabled={isSubmitting}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  'Guardar Cambios'
+                {formData.whatsappEnabled && (
+                  <div className="space-y-1.5 animate-in fade-in-0 slide-in-from-top-1">
+                    <Label className="text-sm">Número de WhatsApp (con código de país)</Label>
+                    <Input
+                      placeholder="Ej: 5493412345678"
+                      value={formData.whatsappNumber}
+                      onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                    />
+                    <p className="text-xs text-zinc-400">Formato: código país + código área + número. Sin el "+".</p>
+                  </div>
                 )}
-              </Button>
-            </div>
-          </form>
+
+                <Separator />
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="comprobantesWhatsapp" className="text-sm">Número para comprobantes (clientes)</Label>
+                  <Input
+                    id="comprobantesWhatsapp"
+                    placeholder="Ej: 5493412345678"
+                    value={formData.comprobantesWhatsapp}
+                    onChange={(e) => setFormData({ ...formData, comprobantesWhatsapp: e.target.value })}
+                  />
+                  <p className="text-xs text-zinc-400">
+                    Adónde tus clientes envían los comprobantes de pago por transferencia
+                  </p>
+                </div>
+              </TabsContent>
+
+              {/* Footer actions */}
+              <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDialogAbierto(false)}
+                  disabled={isSubmitting}
+                  className="text-zinc-500"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-orange-600 hover:bg-orange-700 text-white gap-2"
+                >
+                  {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Guardar cambios
+                </Button>
+              </div>
+            </form>
+          </Tabs>
         </DialogContent>
       </Dialog>
-    </div >
+    </div>
   )
 }
 
