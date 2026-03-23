@@ -821,7 +821,7 @@ const Perfil = () => {
           {/* Profile row — overlaps banner */}
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 pb-5 -mt-10 sm:-mt-12">
             {/* Avatar + name */}
-            <div className="flex items-end gap-4">
+            <div className="flex items-end gap-4 pt-4">
               <div className="relative shrink-0">
                 <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl bg-white dark:bg-zinc-900 shadow-xl ring-4 ring-white dark:ring-zinc-900 overflow-hidden">
                   {restaurante?.imagenUrl ? (
