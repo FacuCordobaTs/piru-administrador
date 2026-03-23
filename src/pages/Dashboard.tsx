@@ -168,6 +168,9 @@ interface NewDeliveryItem {
 const AR_TIMEZONE = 'America/Argentina/Buenos_Aires'
 const AR_OFFSET_SUFFIX = '-03:00'
 
+/** El backend expone `createdAt` ~3h desfasado respecto al instante real; solo se corrige el “hace X” de tarjetas. */
+const PEDIDO_RELATIVE_TIME_OFFSET_MS = 3 * 60 * 60 * 1000
+
 /** Instante absoluto coherente con el backend (ART para cadenas sin offset). */
 function parseDashboardDate(value: string | undefined | null): Date {
   if (value == null || String(value).trim() === '') return new Date(NaN)
@@ -198,7 +201,7 @@ function addCalendarDaysYmd(ymd: string, delta: number): string {
 }
 
 const getMinutesAgo = (dateString: string) => {
-  const t = parseDashboardDate(dateString).getTime()
+  const t = parseDashboardDate(dateString).getTime() + PEDIDO_RELATIVE_TIME_OFFSET_MS
   if (Number.isNaN(t)) return 0
   const diffMs = Date.now() - t
   return Math.floor(diffMs / 60000)
@@ -317,6 +320,22 @@ const formatAgregados = (agregadosData: any): any[] => {
     }
   }
   return []
+}
+
+/**
+ * Comanda a cocina: si el pago se acredita por webhook (Cucuru/Talo auto, MP Bricks/Checkout),
+ * no imprimir solo por pasar a preparing; imprimir cuando `pagado` pasa a true.
+ * Incluye legacy: Cucuru + `transferencia` o método vacío.
+ */
+const deferComandaHastaPagado = (
+  metodoPago: string | null | undefined,
+  cucuruConfigurado: boolean | null | undefined
+): boolean => {
+  const m = String(metodoPago || '').trim()
+  if (m === 'transferencia_automatica_cucuru' || m === 'transferencia_automatica_talo') return true
+  if (m === 'mercadopago' || m === 'mercadopago_checkout' || m === 'mercadopago_bricks') return true
+  if (cucuruConfigurado && (m === 'transferencia' || m === '')) return true
+  return false
 }
 
 const Dashboard = () => {
@@ -568,19 +587,22 @@ const Dashboard = () => {
           const currentPagado = mesa.pedido.pagado
 
           const prevData = processedOrdersRef.current.get(pedidoKey)
-          const isCucuruTransfer = restauranteStore?.cucuruConfigurado && ((mesa.pedido as any).metodoPago === 'transferencia' || !(mesa.pedido as any).metodoPago)
+          const deferUntilPaid = deferComandaHastaPagado(
+            (mesa.pedido as any).metodoPago,
+            restauranteStore?.cucuruConfigurado
+          )
 
           let shouldPrintComanda = false;
 
           // 1. Detectar transición PENDING -> PREPARING (Confirmación desde App Cliente)
           if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
-            if (!isCucuruTransfer) {
+            if (!deferUntilPaid) {
               shouldPrintComanda = true;
             }
           }
 
-          // Impresión diferida por Cucuru (solo imprimir comanda cuando el pago entra)
-          if (isCucuruTransfer && currentPagado) {
+          // Impresión diferida: Cucuru/Talo auto o MP — comanda cuando el pago entra (webhook)
+          if (deferUntilPaid && currentPagado) {
             if (prevData && !prevData.pagado) {
               // Transición en vivo detectada
               shouldPrintComanda = true;
@@ -695,7 +717,7 @@ const Dashboard = () => {
         }))
       setPedidos(pedidosFromMesas)
     }
-  }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw])
+  }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw, restauranteStore?.cucuruConfigurado])
 
   // ==== AUTO-PRINT PARA DELIVERY Y TAKEAWAY ====
   useEffect(() => {
@@ -712,7 +734,7 @@ const Dashboard = () => {
       const currentItemIds = new Set(pedido.items.map(i => i.id))
       const currentPagado = pedido.pagado
       const prevData = processedOrdersRef.current.get(pedidoKey)
-      const isCucuruTransfer = restauranteStore?.cucuruConfigurado && (pedido.metodoPago === 'transferencia' || !pedido.metodoPago)
+      const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
 
       // GUARD: si la BD ya dice que fue impreso, no reimprimir
       if (pedido.impreso) {
@@ -726,13 +748,13 @@ const Dashboard = () => {
 
       // 1. Detectar transición PENDING -> PREPARING (Confirmación desde admin o trigger auto)
       if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
-        if (!isCucuruTransfer) {
+        if (!deferUntilPaid) {
           shouldPrintComanda = true
         }
       }
 
-      // Impresión diferida por Cucuru (solo imprimir comanda cuando el pago entra)
-      if (isCucuruTransfer && currentPagado) {
+      // Impresión diferida: transferencia auto (Cucuru/Talo) o MP — comanda al acreditar pago
+      if (deferUntilPaid && currentPagado) {
         if (prevData && !prevData.pagado) {
           shouldPrintComanda = true
         } else if (!prevData) {
@@ -814,7 +836,7 @@ const Dashboard = () => {
 
       processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: currentItemIds, pagado: currentPagado })
     })
-  }, [deliveryPedidos, takeawayPedidos, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw, token])
+  }, [deliveryPedidos, takeawayPedidos, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw, token, restauranteStore?.cucuruConfigurado])
 
   const fetchMesasREST = useCallback(async () => {
     if (!token) return
