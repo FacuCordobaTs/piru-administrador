@@ -348,7 +348,7 @@ const Dashboard = () => {
     const r = restauranteStore
     if (!r) return { title: 'Transferencia automática', hint: '' as string }
     const cucuru = !!r.cucuruConfigurado
-    const talo = !!(r.taloApiKey && r.taloUserId)
+    const talo = !!(r.taloClientId && r.taloClientSecret && r.taloUserId)
     if (cucuru && !talo) {
       return {
         title: 'Transferencia automática (Cucuru)',
@@ -488,7 +488,7 @@ const Dashboard = () => {
     if (!r) return
     const c = r.metodosPagoConfig || {}
     const mpOk = !!r.mpConnected
-    const taloCred = !!(r.taloApiKey && r.taloUserId)
+    const taloCred = !!(r.taloClientId && r.taloClientSecret && r.taloUserId)
     const autoTf = !!(r.cucuruConfigurado || taloCred)
     setCfgMpCheckout(c.mercadopagoCheckout ?? (mpOk && r.cardsPaymentsEnabled !== false))
     setCfgMpBricks(c.mercadopagoBricks ?? false)

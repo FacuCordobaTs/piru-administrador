@@ -70,7 +70,8 @@ interface RestauranteData {
   disenoAlternativo: boolean | null
   rapiboyToken: string | null
   proveedorPago: 'cucuru' | 'talo' | 'mercadopago' | 'manual' | null
-  taloApiKey: string | null
+  taloClientId: string | null
+  taloClientSecret: string | null
   taloUserId: string | null
   codigoDescuentoEnabled: boolean | null
   metodosPagoConfig?: {

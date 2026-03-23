@@ -297,13 +297,13 @@ export const restauranteApi = {
     })
   },
 
-  configurarTalo: async (token: string, taloApiKey: string, taloUserId: string) => {
+  configurarTalo: async (token: string, taloClientId: string, taloClientSecret: string, taloUserId: string) => {
     return fetchApi('/restaurante/configurar-talo', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ taloApiKey, taloUserId })
+      body: JSON.stringify({ taloClientId, taloClientSecret, taloUserId })
     })
   },
 
@@ -311,7 +311,8 @@ export const restauranteApi = {
     token: string,
     data: {
       proveedorPago?: 'cucuru' | 'talo' | 'mercadopago' | 'manual'
-      taloApiKey?: string | null
+      taloClientId?: string | null
+      taloClientSecret?: string | null
       taloUserId?: string | null
     }
   ) => {

@@ -95,12 +95,14 @@ const Perfil = () => {
   const [rapiboyToken, setRapiboyToken] = useState('')
 
   const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
-  const [taloApiKeyInput, setTaloApiKeyInput] = useState('')
+  const [taloClientIdInput, setTaloClientIdInput] = useState('')
+  const [taloClientSecretInput, setTaloClientSecretInput] = useState('')
   const [taloUserIdInput, setTaloUserIdInput] = useState('')
 
   const [isSavingPasarela, setIsSavingPasarela] = useState(false)
   const [proveedorPago, setProveedorPago] = useState<string>((restaurante as any)?.proveedorPago || 'manual')
-  const [taloApiKey, setTaloApiKey] = useState('')
+  const [taloClientId, setTaloClientId] = useState('')
+  const [taloClientSecret, setTaloClientSecret] = useState('')
   const [taloUserId, setTaloUserId] = useState('')
 
   // Tauri Printer State
@@ -346,20 +348,21 @@ const Perfil = () => {
   // Handle configurar Talo
   const handleConfigurarTalo = async () => {
     if (!token) return
-    if (!taloApiKeyInput.trim() || !taloUserIdInput.trim()) {
-      toast.error('Debes ingresar API Key y User ID de Talo')
+    if (!taloClientIdInput.trim() || !taloClientSecretInput.trim() || !taloUserIdInput.trim()) {
+      toast.error('Debes ingresar Client ID, Client Secret y User ID de Talo')
       return
     }
 
     setIsConfiguringTalo(true)
     try {
-      const response = await restauranteApi.configurarTalo(token, taloApiKeyInput.trim(), taloUserIdInput.trim()) as { success: boolean }
+      const response = await restauranteApi.configurarTalo(token, taloClientIdInput.trim(), taloClientSecretInput.trim(), taloUserIdInput.trim()) as { success: boolean }
       if (response.success) {
         toast.success('Talo configurado con éxito', {
           description: 'Tus credenciales de Talo están listas para transferencias en tiempo real.',
         })
         restauranteStore.fetchData()
-        setTaloApiKeyInput('')
+        setTaloClientIdInput('')
+        setTaloClientSecretInput('')
         setTaloUserIdInput('')
       }
     } catch (error) {
@@ -397,12 +400,12 @@ const Perfil = () => {
     }
   }
 
-  const taloYaConfigurado = !!(restaurante as any)?.taloApiKey && !!(restaurante as any)?.taloUserId
+  const taloYaConfigurado = !!(restaurante as any)?.taloClientId && !!(restaurante as any)?.taloClientSecret && !!(restaurante as any)?.taloUserId
 
   const handleGuardarPasarelaPago = async () => {
     if (!token) return
-    if (proveedorPago === 'talo' && !taloYaConfigurado && (!taloApiKey.trim() || !taloUserId.trim())) {
-      toast.error('Para usar Talo debes ingresar API Key y User ID')
+    if (proveedorPago === 'talo' && !taloYaConfigurado && (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim())) {
+      toast.error('Para usar Talo debes ingresar Client ID, Client Secret y User ID')
       return
     }
 
@@ -412,13 +415,15 @@ const Perfil = () => {
         proveedorPago: proveedorPago as 'cucuru' | 'talo' | 'mercadopago' | 'manual',
       }
       if (proveedorPago === 'talo') {
-        if (taloApiKey.trim() && taloUserId.trim()) {
-          payload.taloApiKey = taloApiKey.trim()
+        if (taloClientId.trim() && taloClientSecret.trim() && taloUserId.trim()) {
+          payload.taloClientId = taloClientId.trim()
+          payload.taloClientSecret = taloClientSecret.trim()
           payload.taloUserId = taloUserId.trim()
         }
-        // Si ya configurado y no ingresó nuevos, no enviamos taloApiKey/taloUserId (mantiene los existentes)
+        // Si ya configurado y no ingresó nuevos, mantiene los existentes
       } else {
-        payload.taloApiKey = null
+        payload.taloClientId = null
+        payload.taloClientSecret = null
         payload.taloUserId = null
       }
 
@@ -429,7 +434,8 @@ const Perfil = () => {
         })
         restauranteStore.fetchData()
         if (proveedorPago === 'talo') {
-          setTaloApiKey('')
+          setTaloClientId('')
+          setTaloClientSecret('')
           setTaloUserId('')
         }
       }
@@ -902,14 +908,22 @@ const Perfil = () => {
                     Credenciales de Talo
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Obtén tu API Key y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
+                    Obtén tu Client ID, Client Secret y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
                   </p>
                   <div className="flex flex-col gap-2">
                     <Input
                       type="password"
-                      placeholder="API Key de Talo"
-                      value={taloApiKey}
-                      onChange={(e) => setTaloApiKey(e.target.value)}
+                      placeholder="Client ID de Talo"
+                      value={taloClientId}
+                      onChange={(e) => setTaloClientId(e.target.value)}
+                      disabled={isSavingPasarela}
+                      className="bg-background"
+                    />
+                    <Input
+                      type="password"
+                      placeholder="Client Secret de Talo"
+                      value={taloClientSecret}
+                      onChange={(e) => setTaloClientSecret(e.target.value)}
                       disabled={isSavingPasarela}
                       className="bg-background"
                     />
@@ -926,7 +940,7 @@ const Perfil = () => {
 
               <Button
                 onClick={handleGuardarPasarelaPago}
-                disabled={isSavingPasarela || (proveedorPago === 'talo' && !taloYaConfigurado && (!taloApiKey.trim() || !taloUserId.trim()))}
+                disabled={isSavingPasarela || (proveedorPago === 'talo' && !taloYaConfigurado && (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim()))}
                 className="w-full bg-amber-600 hover:bg-amber-700 text-white"
               >
                 {isSavingPasarela ? (
@@ -1141,21 +1155,21 @@ const Perfil = () => {
           </Card>
 
           {/* Tarjeta de Talo */}
-          <Card className={(restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId ? "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20" : "border-slate-200"}>
+          <Card className={(restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId ? "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20" : "border-slate-200"}>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Wallet className="h-5 w-5" />
                 Talo (Transferencias en tiempo real)
               </CardTitle>
               <CardDescription>
-                {(restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId
+                {(restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId
                   ? 'Tus credenciales de Talo están configuradas y listas para usar'
-                  : 'Ingresa tu API Key y User ID desde el panel de Talo para habilitar transferencias con alias dinámicos'
+                  : 'Ingresa tu Client ID, Client Secret y User ID desde el panel de Talo para habilitar transferencias con alias dinámicos'
                 }
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {(restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId ? (
+              {(restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId ? (
                 <>
                   <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                     <CheckCircle2 className="h-5 w-5" />
@@ -1167,16 +1181,24 @@ const Perfil = () => {
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Obtén tu API Key y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
+                  Obtén tu Client ID, Client Secret y User ID desde el panel de Talo. Estas credenciales permiten generar alias dinámicos y recibir confirmaciones de pago.
                 </p>
               )}
 
               <div className="flex flex-col gap-2">
                 <Input
                   type="password"
-                  placeholder={(restaurante as any)?.taloApiKey ? "Ingresar nuevo API Key" : "API Key de Talo"}
-                  value={taloApiKeyInput}
-                  onChange={(e) => setTaloApiKeyInput(e.target.value)}
+                  placeholder={(restaurante as any)?.taloClientId ? "Ingresar nuevo Client ID" : "Client ID de Talo"}
+                  value={taloClientIdInput}
+                  onChange={(e) => setTaloClientIdInput(e.target.value)}
+                  disabled={isConfiguringTalo}
+                  className="bg-background"
+                />
+                <Input
+                  type="password"
+                  placeholder={(restaurante as any)?.taloClientSecret ? "Ingresar nuevo Client Secret" : "Client Secret de Talo"}
+                  value={taloClientSecretInput}
+                  onChange={(e) => setTaloClientSecretInput(e.target.value)}
                   disabled={isConfiguringTalo}
                   className="bg-background"
                 />
@@ -1189,7 +1211,7 @@ const Perfil = () => {
                 />
                 <Button
                   onClick={handleConfigurarTalo}
-                  disabled={isConfiguringTalo || !taloApiKeyInput.trim() || !taloUserIdInput.trim()}
+                  disabled={isConfiguringTalo || !taloClientIdInput.trim() || !taloClientSecretInput.trim() || !taloUserIdInput.trim()}
                   className="bg-amber-600 hover:bg-amber-700 text-white w-full"
                 >
                   {isConfiguringTalo ? (
@@ -1197,7 +1219,7 @@ const Perfil = () => {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Configurando...
                     </>
                   ) : (
-                    (restaurante as any)?.taloApiKey && (restaurante as any)?.taloUserId ? 'Actualizar credenciales' : 'Configurar Talo'
+                    (restaurante as any)?.taloClientId && (restaurante as any)?.taloClientSecret && (restaurante as any)?.taloUserId ? 'Actualizar credenciales' : 'Configurar Talo'
                   )}
                 </Button>
               </div>
