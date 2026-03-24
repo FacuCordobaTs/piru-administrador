@@ -44,14 +44,8 @@ const router = createBrowserRouter([
     element: <ProtectedLayout />,
     children: [
       {
-        path: "",
-        element: <DashboardLayout />,
-        children: [
-          {
-            index: true,
-            element: <Pedido />,
-          },
-        ],
+        index: true,
+        element: <Pedido />,
       },
     ],
   },

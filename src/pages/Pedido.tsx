@@ -1,37 +1,31 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-
 import { pedidoUnificadoApi } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, ArrowLeft, Archive, Trash2, Truck, MapPin, Phone, User, XCircle, CheckCircle, Package } from 'lucide-react'
+import {
+  Loader2, ArrowLeft, Trash2, Truck,
+  Phone, XCircle, CheckCircle
+} from 'lucide-react'
 
 const getMetodoPagoDisplay = (metodoPago: string | null | undefined) => {
-  if (
-    metodoPago === 'mercadopago' ||
-    metodoPago === 'mercadopago_checkout' ||
-    metodoPago === 'mercadopago_bricks'
-  ) {
-    return { name: metodoPago === 'mercadopago_checkout' ? 'MP Checkout' : 'Tarjeta (Bricks)', icon: '💳' };
+  if (metodoPago === 'mercadopago' || metodoPago === 'mercadopago_checkout' || metodoPago === 'mercadopago_bricks') {
+    return { name: metodoPago === 'mercadopago_checkout' ? 'MP Checkout' : 'Tarjeta (Bricks)', icon: '💳' }
   }
-  if (
-    metodoPago === 'transferencia' ||
-    metodoPago === 'transferencia_automatica_cucuru' ||
-    metodoPago === 'transferencia_automatica_talo'
-  ) {
-    return { name: metodoPago === 'transferencia_automatica_talo' ? 'Transf. auto (Talo)' : metodoPago === 'transferencia_automatica_cucuru' ? 'Transf. auto' : 'Transferencia', icon: '🏦' };
+  if (metodoPago === 'transferencia' || metodoPago === 'transferencia_automatica_cucuru' || metodoPago === 'transferencia_automatica_talo') {
+    return {
+      name: metodoPago === 'transferencia_automatica_talo' ? 'Transf. auto (Talo)'
+        : metodoPago === 'transferencia_automatica_cucuru' ? 'Transf. auto'
+          : 'Transferencia',
+      icon: '🏦'
+    }
   }
-  if (metodoPago === 'manual_transfer') {
-    return { name: 'Transf. manual', icon: '🏦' };
-  }
-  if (metodoPago === 'cash' || metodoPago === 'efectivo') {
-    return { name: 'Efectivo', icon: '💵' };
-  }
-  return { name: metodoPago || 'No especificado', icon: '💳' };
-};
+  if (metodoPago === 'manual_transfer') return { name: 'Transf. manual', icon: '🏦' }
+  if (metodoPago === 'cash' || metodoPago === 'efectivo') return { name: 'Efectivo', icon: '💵' }
+  return { name: metodoPago || 'No especificado', icon: '💳' }
+}
 
 interface UnifiedPedidoItem {
   id: number
@@ -63,34 +57,34 @@ interface UnifiedPedido {
 
 const getMinutesAgo = (dateString: string) => {
   const date = new Date(dateString)
-  // Adjusted for timezone if needed, as in Dashboard.tsx
   const adjustedDate = new Date(date.getTime() + 3 * 60 * 60 * 1000)
   const now = new Date()
-  const diffMs = now.getTime() - adjustedDate.getTime()
-  return Math.floor(diffMs / 60000)
+  return Math.floor((now.getTime() - adjustedDate.getTime()) / 60000)
 }
 
 const formatTimeAgo = (dateString: string) => {
   const minutes = getMinutesAgo(dateString)
-  if (minutes < 1) return 'Ahora'
-  if (minutes < 60) return `${minutes} min`
+  if (minutes < 1) return 'ahora'
+  if (minutes < 60) return `hace ${minutes} min`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ${minutes % 60}m`
+  if (hours < 24) return `hace ${hours}h ${minutes % 60}m`
   return new Date(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
 }
 
-const getDateLabel = (dateString: string) => {
-  const date = new Date(dateString)
-  const today = new Date()
-  if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()) {
-    return 'Hoy'
+const simplifyAddress = (address: string) => {
+  if (!address) return ''
+  const parts = address.split(',')
+  const keptParts = []
+  
+  for (let part of parts) {
+    const p = part.trim().toLowerCase()
+    if (p === 'argentina' || p === 'santa fe' || p === 'santa fe de la vera cruz') continue
+    if (/\b[a-z]\d{4}\b/i.test(p)) continue
+    if (/\b\d{4}\b/.test(p) && p.includes('santa fe')) continue
+    keptParts.push(part.trim())
   }
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  if (date.getFullYear() === yesterday.getFullYear() && date.getMonth() === yesterday.getMonth() && date.getDate() === yesterday.getDate()) {
-    return 'Ayer'
-  }
-  return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`
+  
+  return keptParts.join(', ') || address
 }
 
 export default function Pedido() {
@@ -99,38 +93,50 @@ export default function Pedido() {
   const token = useAuthStore((state) => state.token)
   const restauranteStore = useRestauranteStore()
 
-  // Compute the per-order delivery fee from the stored total (which already includes it)
   const getOrderDeliveryFee = (p: UnifiedPedido) => {
     const total = parseFloat(p.total)
     const itemsSubtotal = p.items.reduce((sum, item) =>
-      sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
-    )
+      sum + (parseFloat(item.precioUnitario) * item.cantidad), 0)
     return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
   }
 
   const [pedido, setPedido] = useState<UnifiedPedido | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
-  const [updatingPago, setUpdatingPago] = useState<boolean>(false)
+  const [updatingPago, setUpdatingPago] = useState(false)
   const [assigningRapiboyId, setAssigningRapiboyId] = useState<number | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  // Ajustar tema según el dispositivo del usuario
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const applyTheme = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) {
+        document.documentElement.classList.add('dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+      }
+    }
+    
+    applyTheme(mediaQuery)
+    mediaQuery.addEventListener('change', applyTheme)
+    
+    return () => mediaQuery.removeEventListener('change', applyTheme)
+  }, [])
 
   const handleAsignarRapiboy = async () => {
     if (!token || !pedido) return
     setAssigningRapiboyId(pedido.id)
     try {
-      const response = await pedidoUnificadoApi.asignarRapiboy(token, pedido.id) as {
-        success: boolean;
-        message: string;
-      }
+      const response = await pedidoUnificadoApi.asignarRapiboy(token, pedido.id) as { success: boolean; message: string }
       if (response.success) {
-        toast.success('Cadete Rapiboy asignado exitosamente')
-        await fetchPedidoData() // Refresh pedido
+        toast.success('Cadete Rapiboy asignado')
+        await fetchPedidoData()
       } else {
         toast.error(response.message || 'Error al asignar cadete')
       }
-    } catch (error) {
-      console.error('Error al asignar Rapiboy:', error)
-      toast.error('Ocurrió un error al contactar con la API de Rapiboy')
+    } catch {
+      toast.error('Error al contactar Rapiboy')
     } finally {
       setAssigningRapiboyId(null)
     }
@@ -139,9 +145,8 @@ export default function Pedido() {
   const fetchPedidoData = useCallback(async () => {
     if (!token || !id) return
     setIsLoading(true)
-
     try {
-      const res = await pedidoUnificadoApi.getById(token, Number(id)) as any;
+      const res = await pedidoUnificadoApi.getById(token, Number(id)) as any
       if (res.success && res.data) {
         setPedido({
           id: res.data.id,
@@ -158,28 +163,25 @@ export default function Pedido() {
           pagado: res.data.pagado,
           metodoPago: res.data.metodoPago,
           rapiboyTrackingUrl: res.data.rapiboyTrackingUrl,
-          montoDescuento: res.data.montoDescuento
+          montoDescuento: res.data.montoDescuento,
         })
       }
     } catch (e) {
-      console.error('Error fetching pedido unificado:', e)
+      console.error('Error fetching pedido:', e)
     }
-
     setIsLoading(false)
   }, [id, token])
 
-  useEffect(() => {
-    fetchPedidoData()
-  }, [fetchPedidoData])
+  useEffect(() => { fetchPedidoData() }, [fetchPedidoData])
 
   const handleUpdateEstado = async (nuevoEstado: string) => {
-    if (!token || !pedido) return;
+    if (!token || !pedido) return
     setIsUpdating(true)
     try {
-      await pedidoUnificadoApi.updateEstado(token, pedido.id, nuevoEstado);
-      toast.success('Estado actualizado')
+      await pedidoUnificadoApi.updateEstado(token, pedido.id, nuevoEstado)
+      toast.success('Pedido despachado')
       setPedido(prev => prev ? { ...prev, estado: nuevoEstado } : null)
-    } catch (error) {
+    } catch {
       toast.error('Error al actualizar estado')
     } finally {
       setIsUpdating(false)
@@ -187,19 +189,19 @@ export default function Pedido() {
   }
 
   const handleTogglePagado = async (metodoPago: string) => {
-    if (!token || !pedido) return;
+    if (!token || !pedido) return
     setUpdatingPago(true)
     try {
       if (pedido.tipo === 'mesa') {
-        toast.info("Para gestionar pagos de mesa, usa el dashboard viejo.");
+        toast.info('Para gestionar pagos de mesa, usá el dashboard viejo.')
       } else {
-        const res = await pedidoUnificadoApi.marcarPagado(token, pedido.id, metodoPago) as any;
+        const res = await pedidoUnificadoApi.marcarPagado(token, pedido.id, metodoPago) as any
         if (res.success) {
-          toast.success('Pago actualizado');
-          setPedido(prev => prev ? { ...prev, pagado: !prev.pagado, metodoPago } : null);
+          toast.success('Pago confirmado')
+          setPedido(prev => prev ? { ...prev, pagado: !prev.pagado, metodoPago } : null)
         }
       }
-    } catch (error) {
+    } catch {
       toast.error('Error al procesar pago')
     } finally {
       setUpdatingPago(false)
@@ -207,238 +209,322 @@ export default function Pedido() {
   }
 
   const handleDelete = async () => {
-    if (!token || !pedido) return;
-    if (!confirm('¿Seguro que deseas eliminar este pedido?')) return;
+    if (!token || !pedido) return
     try {
-      await pedidoUnificadoApi.delete(token, pedido.id);
+      await pedidoUnificadoApi.delete(token, pedido.id)
       toast.success('Pedido eliminado')
       navigate('/dashboard')
-    } catch (e) {
+    } catch {
       toast.error('Error al eliminar')
     }
   }
 
-  const handleArchive = async () => {
-    await handleUpdateEstado('archived');
-  }
-
+  // ─── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
-    return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   if (!pedido) {
     return (
       <div className="flex flex-col items-center justify-center h-[80vh] gap-4">
-        <XCircle className="h-12 w-12 text-muted-foreground opacity-30" />
-        <p className="text-muted-foreground">Pedido no encontrado.</p>
-        <Button onClick={() => navigate('/dashboard')} variant="outline">Volver al Dashboard</Button>
+        <XCircle className="h-10 w-10 text-muted-foreground opacity-20" />
+        <p className="text-sm text-muted-foreground">Pedido no encontrado.</p>
+        <Button onClick={() => navigate('/dashboard')} variant="ghost" size="sm">
+          Volver al Dashboard
+        </Button>
       </div>
     )
   }
 
   const isDelivery = pedido.tipo === 'delivery'
   const isTakeaway = pedido.tipo === 'takeaway'
-  const isMesa = pedido.tipo === 'mesa'
+  const finalTotal = parseFloat(pedido.total)
+  const isArchived = pedido.estado === 'archived'
 
-  const finalTotal = parseFloat(pedido.total);
+  const tipoLabel = isDelivery ? 'Delivery' : isTakeaway ? 'Take Away' : `Mesa ${pedido.mesaNombre || ''}`
+  const tipoEmoji = isDelivery ? '🚚' : isTakeaway ? '🛍️' : '🍽️'
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 animate-in fade-in pb-32">
-      <div className="mb-6">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')} className="-ml-2 text-muted-foreground">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Volver al Dashboard
-        </Button>
-      </div>
+    <div className="min-h-screen bg-background">
+      <div className="w-full max-w-lg mx-auto px-5 pt-5 pb-40">
 
-      <div className="space-y-4 max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl md:text-2xl font-bold truncate">
-                {isDelivery && '🚚 Delivery'}
-                {isTakeaway && '🛍️ Take Away'}
-                {isMesa && `🍽️ Mesa ${pedido.mesaNombre || ''}`}
-              </h2>
-            </div>
-            <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
-              <span>Pedido #{pedido.id}</span>
-              <span>·</span>
-              <span>{getDateLabel(pedido.createdAt)}, {new Date(pedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
-              <span className="text-muted-foreground/60">({formatTimeAgo(pedido.createdAt)})</span>
-            </p>
+        {/* ── Top Nav ─────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-8">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+
+          <div className="flex items-center gap-2">
+            {isArchived && (
+              <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+                Archivado
+              </span>
+            )}
+            {pedido.pagado ? (
+              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full flex items-center gap-1">
+                <CheckCircle className="h-3 w-3" />
+                Pagado
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full">
+                Sin cobrar
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Banner Archivado */}
-        {pedido.estado === 'archived' && (
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 w-fit px-3 py-1.5 rounded-md mt-2">
-            <Archive className="h-4 w-4" />
-            <span>Pedido Archivado</span>
+        {/* ── Hero: Total + Cliente ────────────────────────────── */}
+        <div className="text-center mb-10">
+          <p className="text-sm text-muted-foreground mb-1">
+            {tipoEmoji} {tipoLabel}
+          </p>
+          <p className="text-5xl font-bold tracking-tight mb-3">
+            ${finalTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+          </p>
+          <div className="flex flex-col items-center gap-1 text-sm text-muted-foreground">
+            {isDelivery && pedido.direccion && (
+              <span className="font-medium text-foreground text-center leading-snug max-w-xs">
+                {simplifyAddress(pedido.direccion)}
+              </span>
+            )}
+            <span className="text-xs text-muted-foreground/60 mt-0.5">
+              {formatTimeAgo(pedido.createdAt)}
+            </span>
+          </div>
+        </div>
+
+        {/* ── Separador ───────────────────────────────────────── */}
+        <div className="h-px bg-border/50 mb-8" />
+
+        {/* ── Pago pendiente (solo si no pagado) ──────────────── */}
+        {!pedido.pagado && (
+          <div className="mb-8">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
+              Confirmar pago
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-10 rounded-xl bg-transparent border-border/60 hover:bg-muted/50 text-sm"
+                onClick={() => handleTogglePagado('efectivo')}
+                disabled={updatingPago}
+              >
+                {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">💵</span>}
+                Efectivo
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-10 rounded-xl bg-transparent border-border/60 hover:bg-muted/50 text-sm"
+                onClick={() => handleTogglePagado('transferencia')}
+                disabled={updatingPago}
+              >
+                {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">🏦</span>}
+                Transferencia
+              </Button>
+            </div>
           </div>
         )}
 
+        {/* ── Datos de contacto extra (notas) ──────── */}
+        {pedido.notas && (
+          <div className="mb-8">
+            <p className="text-sm text-muted-foreground italic leading-snug">
+              📝 {pedido.notas}
+            </p>
+          </div>
+        )}
 
-        {/* Pago Info Section */}
-        <div className="space-y-3 mt-6">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Pago</h3>
+        {/* ── Separador ───────────────────────────────────────── */}
+        {(pedido.notas || !pedido.pagado) && (
+          <div className="h-px bg-border/50 mb-8" />
+        )}
 
-          {pedido.pagado ? (
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium">
-                <CheckCircle className="h-4 w-4" />
-                <span>Pagado {pedido.metodoPago ? `con ${getMetodoPagoDisplay(pedido.metodoPago).name}` : ''}</span>
+        {/* ── Items ───────────────────────────────────────────── */}
+        <div className="rounded-xl p-2 md:p-4">
+          {pedido.items.map((item: any, idx: number) => (
+            <div key={item.id} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+              <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">{item.cantidad}x</span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm">{item.nombreProducto}</span>
+                  {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                    <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                  )}
+                </div>
               </div>
-              <span className="font-bold tabular-nums">
-                ${finalTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+              <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                ${(parseFloat(item.precioUnitario) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
               </span>
             </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pedido.metodoPago && (
-                <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-500">
-                  <span className="text-base">⚠️</span>
-                  <span>Aguardando pago por <strong>{getMetodoPagoDisplay(pedido.metodoPago).name}</strong></span>
-                </div>
-              )}
-              <div className="flex gap-2 w-full">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 border-dashed bg-transparent hover:bg-muted/50"
-                  onClick={() => handleTogglePagado('efectivo')}
-                  disabled={updatingPago}
-                >
-                  {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">💵</span>}
-                  Confirmar Efectivo
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 border-dashed bg-transparent hover:bg-muted/50"
-                  onClick={() => handleTogglePagado('transferencia')}
-                  disabled={updatingPago}
-                >
-                  {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">🏦</span>}
-                  Confirmar Transf.
-                </Button>
+          ))}
+          {isDelivery && pedido && getOrderDeliveryFee(pedido) > 0 && (
+            <div className="flex items-baseline justify-between py-3 border-t border-border/40">
+              <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">1x</span>
+                <span className="text-sm flex items-center gap-1.5">
+                  <Truck className="h-3.5 w-3.5 text-foreground inline" />
+                  Delivery
+                </span>
               </div>
+              <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                ${getOrderDeliveryFee(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+              </span>
             </div>
           )}
-        </div>
-
-        {/* Client Info Card */}
-        <Card className="shadow-sm border-0 border-border/40 bg-transparent">
-          <CardContent className="pb-4 px-2 space-y-2">
-            {isDelivery && pedido.direccion && (
-              <div className="flex items-center gap-2 font-bold">
-                <MapPin className="h-5 w-5 text-muted-foreground shrink-0" />
-                <span>{pedido.direccion}</span>
+          {(isDelivery || isTakeaway) && pedido.montoDescuento != null && parseFloat(String(pedido.montoDescuento)) > 0 && (
+            <div className="flex items-baseline justify-between py-3 border-t border-border/40">
+              <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                <span className="text-muted-foreground text-sm font-mono w-6 shrink-0"></span>
+                <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Código de descuento</span>
               </div>
-            )}
-            {pedido.nombreCliente && (
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span>{pedido.nombreCliente}</span>
-              </div>
-            )}
-            {pedido.telefono && (
-              <div className="flex items-center gap-2">
-                <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span>{pedido.telefono}</span>
-              </div>
-            )}
-            {pedido.notas && (
-              <div className="flex items-start gap-2 mt-2 pt-2 text-muted-foreground">
-                <span className="text-sm italic">📝 {pedido.notas}</span>
-              </div>
-            )}
-            {!pedido.nombreCliente && !pedido.telefono && !pedido.direccion && !pedido.notas && (
-              <p className="text-sm text-muted-foreground">Sin datos del cliente o notas asignadas</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Pedido Breakdown */}
-        <div className="space-y-1 mt-6">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">Pedido</h3>
-          <div className="rounded-xl p-2 md:p-4">
-            {pedido.items.map((item: any, idx: number) => (
-              <div key={item.id} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
-                <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                  <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">{item.cantidad}x</span>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm">{item.nombreProducto}</span>
-                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                      <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                    )}
-                  </div>
-                </div>
-                <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                  ${(parseFloat(item.precioUnitario) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                </span>
-              </div>
-            ))}
-            {isDelivery && pedido && getOrderDeliveryFee(pedido) > 0 && (
-              <div className="flex items-baseline justify-between py-3 border-t border-border/40">
-                <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                  <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">1x</span>
-                  <span className="text-sm flex items-center gap-1.5">
-                    <Truck className="h-3.5 w-3.5 text-foreground inline" />
-                    Delivery
-                  </span>
-                </div>
-                <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                  ${getOrderDeliveryFee(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                </span>
-              </div>
-            )}
-            {(isDelivery || isTakeaway) && pedido.montoDescuento != null && parseFloat(String(pedido.montoDescuento)) > 0 && (
-              <div className="flex items-baseline justify-between py-3 border-t border-border/40">
-                <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                  <span className="text-muted-foreground text-sm font-mono w-6 shrink-0"></span>
-                  <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Código de descuento</span>
-                </div>
-                <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium shrink-0 ml-4">
-                  -${parseFloat(String(pedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pt-4 mt-2 border-t border-border">
-              <span className="text-base font-medium">Total</span>
-              <span className="text-xl font-bold tabular-nums">
-                ${finalTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium shrink-0 ml-4">
+                -${parseFloat(String(pedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
               </span>
             </div>
+          )}
+          <div className="flex items-center justify-between pt-4 mt-2 border-t border-border">
+            <span className="text-base font-medium">Total</span>
+            <span className="text-xl font-bold tabular-nums">
+              ${finalTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+            </span>
           </div>
+        </div>
+
+        {/* ── Info Extra Abajo ─────────────────────────────────── */}
+        <div className="mt-8 mb-4 p-4 rounded-2xl bg-muted/30 border border-border/40 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground uppercase">ID Pedido</span>
+            <span className="text-sm font-mono font-medium text-foreground">#{pedido.id}</span>
+          </div>
+
+          {pedido.nombreCliente && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Cliente</span>
+              <span className="text-sm font-medium text-foreground">{pedido.nombreCliente}</span>
+            </div>
+          )}
+
+          {pedido.telefono && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Teléfono</span>
+              <a
+                href={`tel:${pedido.telefono}`}
+                className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-orange-500 transition-colors"
+              >
+                <Phone className="h-3.5 w-3.5" />
+                {pedido.telefono}
+              </a>
+            </div>
+          )}
+
+          {pedido.pagado && pedido.metodoPago && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">Método de pago</span>
+              <span className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                {getMetodoPagoDisplay(pedido.metodoPago).icon} {getMetodoPagoDisplay(pedido.metodoPago).name}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Mobile Action Bar Below the Pago area if active context, resembling Dashboard Mobile Style */}
-      <div className="fixed bottom-0 left-0 w-full bg-background border-t p-4 z-40 flex items-center justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-        <div className="flex items-center gap-2">
-          {pedido.estado !== 'archived' && (
-            <Button size="icon" variant="outline" className="h-12 w-12 text-destructive mr-1 border-dashed" onClick={handleDelete} title="Eliminar Pedido">
-              <Trash2 className="h-5 w-5" />
-            </Button>
-          )}
+      {/* ── Bottom Bar ──────────────────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 w-full z-40">
+        <div className="bg-background/90 backdrop-blur-xl border-t border-border/50 p-4 pb-safe shadow-[0_-10px_40px_rgba(0,0,0,0.1)] dark:shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+          <div className="max-w-xl mx-auto flex flex-col gap-3">
 
-          {isDelivery && restauranteStore.restaurante?.rapiboyToken && pedido.estado !== 'archived' && (
-            <Button className="h-12 px-6 rounded-full text-base bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-600/20" onClick={handleAsignarRapiboy} disabled={assigningRapiboyId === pedido.id}>
-              {assigningRapiboyId === pedido.id ? <Loader2 className="animate-spin mr-2" /> : <Truck className="h-4 w-4 mr-2" />}
-              Asignar Rapiboy
-            </Button>
-          )}
+            <div className="flex items-end justify-between px-1 mb-1">
+              <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">
+                {pedido.pagado ? 'Total cobrado' : 'Total a cobrar'}
+              </span>
+              <span className="text-3xl font-black tracking-tight text-foreground">
+                ${finalTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+              </span>
+            </div>
 
-          {pedido.estado !== 'archived' && (
-            <Button className="h-12 px-6 rounded-full text-base bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20" onClick={handleArchive} disabled={isUpdating}>
-              {isUpdating ? <Loader2 className="animate-spin mr-2" /> : <Package className="h-4 w-4 mr-2" />} Despachar
-            </Button>
-          )}
+            <div className="flex flex-col gap-2">
+              {isDelivery && restauranteStore.restaurante?.rapiboyToken && !isArchived && (
+                <Button
+                  variant="outline"
+                  className="w-full h-12 rounded-2xl bg-secondary/50 border-border/50 text-secondary-foreground hover:bg-secondary hover:text-foreground font-semibold text-base transition-all"
+                  onClick={handleAsignarRapiboy}
+                  disabled={assigningRapiboyId === pedido.id}
+                >
+                  {assigningRapiboyId === pedido.id ? <Loader2 className="animate-spin mr-2" /> : <Truck className="h-4 w-4 mr-2" />}
+                  Asignar Rapiboy
+                </Button>
+              )}
+
+              {!isArchived ? (
+                <div className="flex items-center gap-2">
+                  {!showDeleteConfirm ? (
+                    <>
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30 transition-colors shrink-0"
+                        title="Eliminar pedido"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                      <Button
+                        className="flex-1 h-14 rounded-2xl bg-[#F97316] hover:bg-[#EA580C] text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]"
+                        onClick={() => handleUpdateEstado('archived')}
+                        disabled={isUpdating}
+                      >
+                        {isUpdating ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
+                        {isUpdating ? 'Procesando...' : 'Despachar Pedido'}
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 w-full animate-in fade-in slide-in-from-bottom-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1 h-14 rounded-2xl bg-secondary/50 border-border/50 text-foreground hover:bg-secondary"
+                        onClick={() => setShowDeleteConfirm(false)}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="flex-1 h-14 rounded-2xl font-bold"
+                        onClick={handleDelete}
+                      >
+                        Sí, eliminar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full h-14 rounded-2xl bg-secondary/50 border-border/50 text-foreground hover:bg-secondary hover:text-foreground font-semibold text-base transition-all"
+                  onClick={() => navigate('/dashboard')}
+                >
+                  Volver al Dashboard
+                </Button>
+              )}
+            </div>
+
+            {/* Timestamp sutil */}
+            {!showDeleteConfirm && !isArchived && (
+              <p className="text-center text-xs text-muted-foreground/40 mt-1 max-w-lg mx-auto">
+                Recibido {formatTimeAgo(pedido.createdAt)}
+              </p>
+            )}
+
+          </div>
         </div>
       </div>
     </div>
   )
 }
+
