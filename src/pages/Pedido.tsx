@@ -34,6 +34,7 @@ interface UnifiedPedidoItem {
   precioUnitario: string
   nombreProducto: string
   ingredientesExcluidosNombres?: string[]
+  agregados?: any[]
 }
 
 interface UnifiedPedido {
@@ -75,7 +76,7 @@ const simplifyAddress = (address: string) => {
   if (!address) return ''
   const parts = address.split(',')
   const keptParts = []
-  
+
   for (let part of parts) {
     const p = part.trim().toLowerCase()
     if (p === 'argentina' || p === 'santa fe' || p === 'santa fe de la vera cruz') continue
@@ -83,7 +84,7 @@ const simplifyAddress = (address: string) => {
     if (/\b\d{4}\b/.test(p) && p.includes('santa fe')) continue
     keptParts.push(part.trim())
   }
-  
+
   return keptParts.join(', ') || address
 }
 
@@ -95,8 +96,16 @@ export default function Pedido() {
 
   const getOrderDeliveryFee = (p: UnifiedPedido) => {
     const total = parseFloat(p.total)
-    const itemsSubtotal = p.items.reduce((sum, item) =>
-      sum + (parseFloat(item.precioUnitario) * item.cantidad), 0)
+    const itemsSubtotal = p.items.reduce((sum, item) => {
+      const basePrice = parseFloat(item.precioUnitario || '0')
+      let agregadosTotal = 0
+      if (item.agregados && Array.isArray(item.agregados)) {
+        item.agregados.forEach((ag: any) => {
+          agregadosTotal += parseFloat(ag.precio || '0')
+        })
+      }
+      return sum + ((basePrice + agregadosTotal) * item.cantidad)
+    }, 0)
     return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
   }
 
@@ -117,10 +126,10 @@ export default function Pedido() {
         document.documentElement.classList.remove('dark')
       }
     }
-    
+
     applyTheme(mediaQuery)
     mediaQuery.addEventListener('change', applyTheme)
-    
+
     return () => mediaQuery.removeEventListener('change', applyTheme)
   }, [])
 
@@ -350,22 +359,48 @@ export default function Pedido() {
 
         {/* ── Items ───────────────────────────────────────────── */}
         <div className="rounded-xl p-2 md:p-4">
-          {pedido.items.map((item: any, idx: number) => (
-            <div key={item.id} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
-              <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">{item.cantidad}x</span>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm">{item.nombreProducto}</span>
-                  {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                    <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
-                  )}
+          {pedido.items.map((item: any, idx: number) => {
+            const basePrice = parseFloat(item.precioUnitario || '0')
+            let agregadosTotal = 0
+            if (item.agregados && Array.isArray(item.agregados)) {
+              item.agregados.forEach((ag: any) => {
+                agregadosTotal += parseFloat(ag.precio || '0')
+              })
+            }
+            const lineTotal = (basePrice + agregadosTotal) * item.cantidad
+
+            return (
+              <div key={item.id} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                  <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">{item.cantidad}x</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm">{item.nombreProducto}</span>
+                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                      <p className="text-[11px] text-orange-500 mt-0.5">Sin: {item.ingredientesExcluidosNombres.join(', ')}</p>
+                    )}
+                    {item.agregados && Array.isArray(item.agregados) && item.agregados.map((ag: any, i: number) => (
+                      <div key={i} className="flex items-baseline gap-1.5 mt-1.5">
+                        <span className="text-[9px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                          Extra
+                        </span>
+                        <span className="text-xs font-medium text-foreground">
+                          {ag.nombre}
+                        </span>
+                        {parseFloat(ag.precio || '0') > 0 && (
+                          <span className="text-[11px] font-semibold text-emerald-600/90 dark:text-emerald-400/90 ml-1">
+                            (+${parseFloat(ag.precio || '0').toLocaleString('es-AR', { minimumFractionDigits: 0 })})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
+                <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                  ${lineTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                </span>
               </div>
-              <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                ${(parseFloat(item.precioUnitario) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-              </span>
-            </div>
-          ))}
+            )
+          })}
           {isDelivery && pedido && getOrderDeliveryFee(pedido) > 0 && (
             <div className="flex items-baseline justify-between py-3 border-t border-border/40">
               <div className="flex items-baseline gap-3 flex-1 min-w-0">
