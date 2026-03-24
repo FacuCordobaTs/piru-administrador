@@ -297,6 +297,15 @@ export const restauranteApi = {
     })
   },
 
+  borrarRapiboy: async (token: string) => {
+    return fetchApi('/restaurante/borrar-rapiboy', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+  },
+
   configurarTalo: async (token: string, taloClientId: string, taloClientSecret: string, taloUserId: string) => {
     return fetchApi('/restaurante/configurar-talo', {
       method: 'POST',

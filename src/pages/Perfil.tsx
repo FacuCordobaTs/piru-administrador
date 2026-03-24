@@ -164,6 +164,7 @@ const Perfil = () => {
   const [cucuruApiKey, setCucuruApiKey] = useState('')
   const [cucuruCollectorId, setCucuruCollectorId] = useState('')
   const [isConfiguringRapiboy, setIsConfiguringRapiboy] = useState(false)
+  const [isBorrandoRapiboy, setIsBorrandoRapiboy] = useState(false)
   const [rapiboyToken, setRapiboyToken] = useState('')
   const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
   const [taloClientIdInput, setTaloClientIdInput] = useState('')
@@ -419,6 +420,26 @@ const Perfil = () => {
       toast.error('Error al configurar Rapiboy')
     } finally {
       setIsConfiguringRapiboy(false)
+    }
+  }
+
+  const handleBorrarRapiboy = async () => {
+    if (!token) return
+    setIsBorrandoRapiboy(true)
+    try {
+      const response = (await restauranteApi.borrarRapiboy(token)) as { success: boolean }
+      if (response.success) {
+        toast.success('Credenciales borradas', {
+          description: 'Se han eliminado las credenciales de Rapiboy.',
+        })
+        restauranteStore.fetchData()
+        setRapiboyToken('')
+      }
+    } catch (error) {
+      console.error('Error al borrar Rapiboy:', error)
+      toast.error('Error al borrar credenciales')
+    } finally {
+      setIsBorrandoRapiboy(false)
     }
   }
 
@@ -1437,15 +1458,29 @@ const Perfil = () => {
                       https://api.piru.app/api/webhooks/rapiboy
                     </code>
                   </div>
-                  <Button
-                    size="sm"
-                    className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-                    onClick={handleConfigurarRapiboy}
-                    disabled={isConfiguringRapiboy || !rapiboyToken.trim()}
-                  >
-                    {isConfiguringRapiboy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                    {(restaurante as any)?.rapiboyToken ? 'Actualizar token' : 'Guardar token'}
-                  </Button>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      size="sm"
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                      onClick={handleConfigurarRapiboy}
+                      disabled={isConfiguringRapiboy || !rapiboyToken.trim()}
+                    >
+                      {isConfiguringRapiboy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                      {(restaurante as any)?.rapiboyToken ? 'Actualizar token' : 'Guardar token'}
+                    </Button>
+                    {(restaurante as any)?.rapiboyToken && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-950/30 dark:border-red-900"
+                        onClick={handleBorrarRapiboy}
+                        disabled={isBorrandoRapiboy}
+                      >
+                        {isBorrandoRapiboy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
+                        Borrar credenciales
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </IntegrationCard>
             </div>

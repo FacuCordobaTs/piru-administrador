@@ -2,13 +2,36 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 
-import { pedidosApi, deliveryApi, takeawayApi } from '@/lib/api'
+import { pedidoUnificadoApi } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, ArrowLeft, Archive, Trash2, Truck, MapPin, Phone, User, XCircle, CheckCircle } from 'lucide-react'
+import { Loader2, ArrowLeft, Archive, Trash2, Truck, MapPin, Phone, User, XCircle, CheckCircle, Package } from 'lucide-react'
+
+const getMetodoPagoDisplay = (metodoPago: string | null | undefined) => {
+  if (
+    metodoPago === 'mercadopago' ||
+    metodoPago === 'mercadopago_checkout' ||
+    metodoPago === 'mercadopago_bricks'
+  ) {
+    return { name: metodoPago === 'mercadopago_checkout' ? 'MP Checkout' : 'Tarjeta (Bricks)', icon: '💳' };
+  }
+  if (
+    metodoPago === 'transferencia' ||
+    metodoPago === 'transferencia_automatica_cucuru' ||
+    metodoPago === 'transferencia_automatica_talo'
+  ) {
+    return { name: metodoPago === 'transferencia_automatica_talo' ? 'Transf. auto (Talo)' : metodoPago === 'transferencia_automatica_cucuru' ? 'Transf. auto' : 'Transferencia', icon: '🏦' };
+  }
+  if (metodoPago === 'manual_transfer') {
+    return { name: 'Transf. manual', icon: '🏦' };
+  }
+  if (metodoPago === 'cash' || metodoPago === 'efectivo') {
+    return { name: 'Efectivo', icon: '💵' };
+  }
+  return { name: metodoPago || 'No especificado', icon: '💳' };
+};
 
 interface UnifiedPedidoItem {
   id: number
@@ -95,7 +118,7 @@ export default function Pedido() {
     if (!token || !pedido) return
     setAssigningRapiboyId(pedido.id)
     try {
-      const response = await deliveryApi.asignarRapiboy(token, pedido.id) as {
+      const response = await pedidoUnificadoApi.asignarRapiboy(token, pedido.id) as {
         success: boolean;
         message: string;
       }
@@ -117,82 +140,31 @@ export default function Pedido() {
     if (!token || !id) return
     setIsLoading(true)
 
-    let found: UnifiedPedido | null = null;
-    let fallbackToMesa = true;
-
-    // Intentar buscar como Delivery
     try {
-      const resD = await deliveryApi.getById(token, Number(id)) as any;
-      if (resD.success && resD.data) {
-        found = {
-          id: resD.data.id,
-          tipo: 'delivery',
-          estado: resD.data.estado,
-          total: resD.data.total,
-          createdAt: resD.data.createdAt,
-          nombreCliente: resD.data.nombreCliente,
-          telefono: resD.data.telefono,
-          direccion: resD.data.direccion,
-          notas: resD.data.notas,
-          items: resD.data.items,
-          totalItems: resD.data.totalItems,
-          pagado: resD.data.pagado,
-          metodoPago: resD.data.metodoPago,
-          rapiboyTrackingUrl: resD.data.rapiboyTrackingUrl,
-          montoDescuento: resD.data.montoDescuento
-        }
-        fallbackToMesa = false;
+      const res = await pedidoUnificadoApi.getById(token, Number(id)) as any;
+      if (res.success && res.data) {
+        setPedido({
+          id: res.data.id,
+          tipo: res.data.tipo,
+          estado: res.data.estado,
+          total: res.data.total,
+          createdAt: res.data.createdAt,
+          nombreCliente: res.data.nombreCliente,
+          telefono: res.data.telefono,
+          direccion: res.data.direccion,
+          notas: res.data.notas,
+          items: res.data.items,
+          totalItems: res.data.totalItems,
+          pagado: res.data.pagado,
+          metodoPago: res.data.metodoPago,
+          rapiboyTrackingUrl: res.data.rapiboyTrackingUrl,
+          montoDescuento: res.data.montoDescuento
+        })
       }
-    } catch (e) { }
-
-    // Intentar buscar como Takeaway si falla Delivery
-    if (fallbackToMesa) {
-      try {
-        const resT = await takeawayApi.getById(token, Number(id)) as any;
-        if (resT.success && resT.data) {
-          found = {
-            id: resT.data.id,
-            tipo: 'takeaway',
-            estado: resT.data.estado,
-            total: resT.data.total,
-            createdAt: resT.data.createdAt,
-            nombreCliente: resT.data.nombreCliente,
-            telefono: resT.data.telefono,
-            notas: resT.data.notas,
-            items: resT.data.items,
-            totalItems: resT.data.totalItems,
-            pagado: resT.data.pagado,
-            metodoPago: resT.data.metodoPago,
-            montoDescuento: resT.data.montoDescuento
-          }
-          fallbackToMesa = false;
-        }
-      } catch (e) { }
+    } catch (e) {
+      console.error('Error fetching pedido unificado:', e)
     }
 
-    // Intentar buscar como Mesa
-    if (fallbackToMesa && !found) {
-      try {
-        const resM = await pedidosApi.getById(token, Number(id)) as any;
-        if (resM.success && resM.data) {
-          found = {
-            id: resM.data.id,
-            tipo: 'mesa',
-            estado: resM.data.estado,
-            total: resM.data.total,
-            createdAt: resM.data.createdAt,
-            mesaNombre: resM.data.mesaNombre,
-            nombreCliente: resM.data.nombrePedido || 'Mesa',
-            telefono: null,
-            items: resM.data.items,
-            totalItems: resM.data.totalItems,
-            pagado: resM.data.pago?.estado === 'paid'
-          }
-        }
-      } catch (e) { }
-    }
-
-    if (found) setPedido(found)
     setIsLoading(false)
   }, [id, token])
 
@@ -204,9 +176,7 @@ export default function Pedido() {
     if (!token || !pedido) return;
     setIsUpdating(true)
     try {
-      if (pedido.tipo === 'delivery') await deliveryApi.updateEstado(token, pedido.id, nuevoEstado);
-      else if (pedido.tipo === 'takeaway') await takeawayApi.updateEstado(token, pedido.id, nuevoEstado);
-      else await pedidosApi.updateEstado(token, pedido.id, nuevoEstado);
+      await pedidoUnificadoApi.updateEstado(token, pedido.id, nuevoEstado);
       toast.success('Estado actualizado')
       setPedido(prev => prev ? { ...prev, estado: nuevoEstado } : null)
     } catch (error) {
@@ -220,20 +190,14 @@ export default function Pedido() {
     if (!token || !pedido) return;
     setUpdatingPago(true)
     try {
-      if (pedido.tipo === 'delivery') {
-        const res = await deliveryApi.marcarPagado(token, pedido.id, metodoPago) as any;
-        if (res.success) {
-          toast.success('Pago actualizado');
-          setPedido(prev => prev ? { ...prev, pagado: !prev.pagado } : null);
-        }
-      } else if (pedido.tipo === 'takeaway') {
-        const res = await takeawayApi.marcarPagado(token, pedido.id, metodoPago) as any;
-        if (res.success) {
-          toast.success('Pago actualizado');
-          setPedido(prev => prev ? { ...prev, pagado: !prev.pagado } : null);
-        }
+      if (pedido.tipo === 'mesa') {
+        toast.info("Para gestionar pagos de mesa, usa el dashboard viejo.");
       } else {
-        toast.info("Para gestionar pagos de mesa, dirígete a las configuraciones manuales o mercadopago.");
+        const res = await pedidoUnificadoApi.marcarPagado(token, pedido.id, metodoPago) as any;
+        if (res.success) {
+          toast.success('Pago actualizado');
+          setPedido(prev => prev ? { ...prev, pagado: !prev.pagado, metodoPago } : null);
+        }
       }
     } catch (error) {
       toast.error('Error al procesar pago')
@@ -246,9 +210,7 @@ export default function Pedido() {
     if (!token || !pedido) return;
     if (!confirm('¿Seguro que deseas eliminar este pedido?')) return;
     try {
-      if (pedido.tipo === 'delivery') await deliveryApi.delete(token, pedido.id);
-      else if (pedido.tipo === 'takeaway') await takeawayApi.delete(token, pedido.id);
-      else await pedidosApi.delete(token, pedido.id);
+      await pedidoUnificadoApi.delete(token, pedido.id);
       toast.success('Pedido eliminado')
       navigate('/dashboard')
     } catch (e) {
@@ -258,7 +220,6 @@ export default function Pedido() {
 
   const handleArchive = async () => {
     await handleUpdateEstado('archived');
-    navigate('/dashboard');
   }
 
   if (isLoading) {
@@ -300,9 +261,6 @@ export default function Pedido() {
                 {isTakeaway && '🛍️ Take Away'}
                 {isMesa && `🍽️ Mesa ${pedido.mesaNombre || ''}`}
               </h2>
-              {pedido.estado === 'archived' && (
-                <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">Archivado</Badge>
-              )}
             </div>
             <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
               <span>Pedido #{pedido.id}</span>
@@ -311,34 +269,70 @@ export default function Pedido() {
               <span className="text-muted-foreground/60">({formatTimeAgo(pedido.createdAt)})</span>
             </p>
           </div>
-
-          <div className="flex gap-2 shrink-0">
-            {pedido.estado !== 'archived' && (
-              <Button variant="outline" size="sm" onClick={handleArchive} className="hidden sm:flex text-muted-foreground hover:text-foreground">
-                <Archive className="h-4 w-4 mr-2" /> Archivar
-              </Button>
-            )}
-          </div>
         </div>
 
         {/* Banner Archivado */}
         {pedido.estado === 'archived' && (
-          <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4 flex items-center gap-3 mt-4">
-            <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-              <Archive className="h-5 w-5 text-slate-500" />
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700 dark:text-slate-300">Pedido Archivado</p>
-              <p className="text-sm text-slate-500">Este pedido ha sido archivado y no requiere más acciones.</p>
-            </div>
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 w-fit px-3 py-1.5 rounded-md mt-2">
+            <Archive className="h-4 w-4" />
+            <span>Pedido Archivado</span>
           </div>
         )}
 
+
+        {/* Pago Info Section */}
+        <div className="space-y-3 mt-6">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Pago</h3>
+
+          {pedido.pagado ? (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium">
+                <CheckCircle className="h-4 w-4" />
+                <span>Pagado {pedido.metodoPago ? `con ${getMetodoPagoDisplay(pedido.metodoPago).name}` : ''}</span>
+              </div>
+              <span className="font-bold tabular-nums">
+                ${finalTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pedido.metodoPago && (
+                <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-500">
+                  <span className="text-base">⚠️</span>
+                  <span>Aguardando pago por <strong>{getMetodoPagoDisplay(pedido.metodoPago).name}</strong></span>
+                </div>
+              )}
+              <div className="flex gap-2 w-full">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 border-dashed bg-transparent hover:bg-muted/50"
+                  onClick={() => handleTogglePagado('efectivo')}
+                  disabled={updatingPago}
+                >
+                  {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">💵</span>}
+                  Confirmar Efectivo
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 border-dashed bg-transparent hover:bg-muted/50"
+                  onClick={() => handleTogglePagado('transferencia')}
+                  disabled={updatingPago}
+                >
+                  {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">🏦</span>}
+                  Confirmar Transf.
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Client Info Card */}
-        <Card className="shadow-sm border-0 border-border/40 bg-transparent mt-4">
-          <CardContent className="py-4 px-2 space-y-2">
+        <Card className="shadow-sm border-0 border-border/40 bg-transparent">
+          <CardContent className="pb-4 px-2 space-y-2">
             {isDelivery && pedido.direccion && (
-              <div className="flex items-center gap-2 text-xl font-bold">
+              <div className="flex items-center gap-2 font-bold">
                 <MapPin className="h-5 w-5 text-muted-foreground shrink-0" />
                 <span>{pedido.direccion}</span>
               </div>
@@ -420,78 +414,10 @@ export default function Pedido() {
             </div>
           </div>
         </div>
-
-        {/* Pago Info Section */}
-        <div className="space-y-1 mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Pago</h3>
-            {pedido.pagado && (
-              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <CheckCircle className="h-4 w-4" />
-                <span className="text-sm font-medium">Pagado</span>
-              </div>
-            )}
-          </div>
-
-          {pedido.pagado ? (
-            <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-muted/30 border border-border/40">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                  <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">{pedido.nombreCliente || (isDelivery ? 'Delivery' : 'Take Away')}</p>
-                </div>
-              </div>
-              <span className="text-sm font-bold tabular-nums">
-                ${finalTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-              </span>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3 w-full">
-              {pedido.metodoPago && (
-                <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-500 p-3 rounded-lg border border-amber-200 dark:border-amber-800/50 flex items-start gap-2 text-sm font-medium">
-                  <span className="mt-0.5">⚠️</span>
-                  <p>
-                    El cliente seleccionó pagar con <strong>{pedido.metodoPago === 'efectivo' ? 'Efectivo' : pedido.metodoPago === 'transferencia' ? 'Transferencia' : pedido.metodoPago}</strong>. Por favor, confirmá la recepción del pago presionando el botón correspondiente.
-                  </p>
-                </div>
-              )}
-              <div className="flex gap-2 w-full">
-                <Button
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                  onClick={() => handleTogglePagado('efectivo')}
-                  disabled={updatingPago}
-                >
-                  {updatingPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <span className="mr-2">💵</span>}
-                  Efectivo
-                </Button>
-                <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={() => handleTogglePagado('transferencia')}
-                  disabled={updatingPago}
-                >
-                  {updatingPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <span className="mr-2">🏦</span>}
-                  Transf.
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Mobile Action Bar Below the Pago area if active context, resembling Dashboard Mobile Style */}
-      <div className="fixed bottom-0 left-0 w-full bg-background border-t p-4 z-40 flex items-center justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-        <div className="flex flex-col">
-          <span className="text-xs text-muted-foreground uppercase tracking-widest mb-0.5">Estado:</span>
-          <span className={`text-sm font-bold ${pedido.estado === 'pending' ? 'text-amber-600' : 'text-primary'}`}>
-            {pedido.estado === 'pending' && 'Por Preparar'}
-            {pedido.estado === 'preparing' && 'En Cocina'}
-            {pedido.estado === 'delivered' && 'Finalizado'}
-            {pedido.estado === 'archived' && 'Archivado'}
-          </span>
-        </div>
-
+      <div className="fixed bottom-0 left-0 w-full bg-background border-t p-4 z-40 flex items-center justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
         <div className="flex items-center gap-2">
           {pedido.estado !== 'archived' && (
             <Button size="icon" variant="outline" className="h-12 w-12 text-destructive mr-1 border-dashed" onClick={handleDelete} title="Eliminar Pedido">
@@ -499,28 +425,16 @@ export default function Pedido() {
             </Button>
           )}
 
-          {pedido.estado === 'pending' && (
-            <Button className="h-12 px-6 rounded-full text-base shadow-lg shadow-primary/20" onClick={() => handleUpdateEstado('preparing')} disabled={isUpdating}>
-              {isUpdating ? <Loader2 className="animate-spin" /> : "Empezar"}
-            </Button>
-          )}
-
-          {pedido.estado === 'preparing' && (
-            <Button className="h-12 px-6 rounded-full text-base bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20" onClick={() => handleUpdateEstado('delivered')} disabled={isUpdating}>
-              {isUpdating ? <Loader2 className="animate-spin mr-2" /> : null} Listo
-            </Button>
-          )}
-
-          {isDelivery && restauranteStore.restaurante?.rapiboyToken && pedido.estado !== 'archived' && pedido.estado !== 'delivered' && (
+          {isDelivery && restauranteStore.restaurante?.rapiboyToken && pedido.estado !== 'archived' && (
             <Button className="h-12 px-6 rounded-full text-base bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-600/20" onClick={handleAsignarRapiboy} disabled={assigningRapiboyId === pedido.id}>
               {assigningRapiboyId === pedido.id ? <Loader2 className="animate-spin mr-2" /> : <Truck className="h-4 w-4 mr-2" />}
               Asignar Rapiboy
             </Button>
           )}
 
-          {pedido.estado === 'delivered' && (
-            <Button variant="secondary" className="h-12 px-6 rounded-full bg-slate-900 text-white hover:bg-slate-800" onClick={handleArchive}>
-              <Archive className="mr-2 h-4 w-4" /> Archivar
+          {pedido.estado !== 'archived' && (
+            <Button className="h-12 px-6 rounded-full text-base bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20" onClick={handleArchive} disabled={isUpdating}>
+              {isUpdating ? <Loader2 className="animate-spin mr-2" /> : <Package className="h-4 w-4 mr-2" />} Despachar
             </Button>
           )}
         </div>
