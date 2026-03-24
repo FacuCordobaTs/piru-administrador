@@ -56,6 +56,7 @@ import {
 } from 'lucide-react'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
+import { PWAInstallButton } from '@/components/PWAInstallButton'
 
 const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
 
@@ -861,6 +862,7 @@ const Perfil = () => {
 
             {/* Actions */}
             <div className="flex items-center gap-2 pb-1 self-end sm:self-auto">
+              <PWAInstallButton />
               <Button
                 variant="outline"
                 size="sm"
