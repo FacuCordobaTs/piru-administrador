@@ -159,13 +159,14 @@ const Perfil = () => {
   const [isTogglingCodigoDescuentoEnabled, setIsTogglingCodigoDescuentoEnabled] = useState(false)
   const [isTogglingCardsPaymentsEnabled, setIsTogglingCardsPaymentsEnabled] = useState(false)
   const [isTogglingCucuruCheckoutEnabled, setIsTogglingCucuruCheckoutEnabled] = useState(false)
+  const [isTogglingNotificarClientesWhatsapp, setIsTogglingNotificarClientesWhatsapp] = useState(false)
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
   const [cucuruCollectorId, setCucuruCollectorId] = useState('')
-  const [isConfiguringRapiboy, setIsConfiguringRapiboy] = useState(false)
-  const [isBorrandoRapiboy, setIsBorrandoRapiboy] = useState(false)
-  const [rapiboyToken, setRapiboyToken] = useState('')
+  // const [isConfiguringRapiboy, setIsConfiguringRapiboy] = useState(false)
+  // const [isBorrandoRapiboy, setIsBorrandoRapiboy] = useState(false)
+  // const [rapiboyToken, setRapiboyToken] = useState('')
   const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
   const [taloClientIdInput, setTaloClientIdInput] = useState('')
   const [taloClientSecretInput, setTaloClientSecretInput] = useState('')
@@ -397,51 +398,51 @@ const Perfil = () => {
     navigate('/login')
   }
 
-  const handleConfigurarRapiboy = async () => {
-    if (!token) return
-    if (!rapiboyToken.trim()) {
-      toast.error('Debes ingresar el Token de Rapiboy')
-      return
-    }
-    setIsConfiguringRapiboy(true)
-    try {
-      const response = (await restauranteApi.configurarRapiboy(token, rapiboyToken)) as {
-        success: boolean
-      }
-      if (response.success) {
-        toast.success('Rapiboy configurado con éxito', {
-          description: 'Tu sistema ahora puede gestionar la logística de envíos mediante Rapiboy.',
-        })
-        restauranteStore.fetchData()
-        setRapiboyToken('')
-      }
-    } catch (error) {
-      console.error('Error al configurar Rapiboy:', error)
-      toast.error('Error al configurar Rapiboy')
-    } finally {
-      setIsConfiguringRapiboy(false)
-    }
-  }
+  // const handleConfigurarRapiboy = async () => {
+  //   if (!token) return
+  //   if (!rapiboyToken.trim()) {
+  //     toast.error('Debes ingresar el Token de Rapiboy')
+  //     return
+  //   }
+  //   setIsConfiguringRapiboy(true)
+  //   try {
+  //     const response = (await restauranteApi.configurarRapiboy(token, rapiboyToken)) as {
+  //       success: boolean
+  //     }
+  //     if (response.success) {
+  //       toast.success('Rapiboy configurado con éxito', {
+  //         description: 'Tu sistema ahora puede gestionar la logística de envíos mediante Rapiboy.',
+  //       })
+  //       restauranteStore.fetchData()
+  //       setRapiboyToken('')
+  //     }
+  //   } catch (error) {
+  //     console.error('Error al configurar Rapiboy:', error)
+  //     toast.error('Error al configurar Rapiboy')
+  //   } finally {
+  //     setIsConfiguringRapiboy(false)
+  //   }
+  // }
 
-  const handleBorrarRapiboy = async () => {
-    if (!token) return
-    setIsBorrandoRapiboy(true)
-    try {
-      const response = (await restauranteApi.borrarRapiboy(token)) as { success: boolean }
-      if (response.success) {
-        toast.success('Credenciales borradas', {
-          description: 'Se han eliminado las credenciales de Rapiboy.',
-        })
-        restauranteStore.fetchData()
-        setRapiboyToken('')
-      }
-    } catch (error) {
-      console.error('Error al borrar Rapiboy:', error)
-      toast.error('Error al borrar credenciales')
-    } finally {
-      setIsBorrandoRapiboy(false)
-    }
-  }
+  // const handleBorrarRapiboy = async () => {
+  //   if (!token) return
+  //   setIsBorrandoRapiboy(true)
+  //   try {
+  //     const response = (await restauranteApi.borrarRapiboy(token)) as { success: boolean }
+  //     if (response.success) {
+  //       toast.success('Credenciales borradas', {
+  //         description: 'Se han eliminado las credenciales de Rapiboy.',
+  //       })
+  //       restauranteStore.fetchData()
+  //       setRapiboyToken('')
+  //     }
+  //   } catch (error) {
+  //     console.error('Error al borrar Rapiboy:', error)
+  //     toast.error('Error al borrar credenciales')
+  //   } finally {
+  //     setIsBorrandoRapiboy(false)
+  //   }
+  // }
 
   const handleConfigurarTalo = async () => {
     if (!token) return
@@ -608,6 +609,30 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingOrderGroupEnabled(false)
+    }
+  }
+
+  const handleToggleNotificarClientesWhatsapp = async () => {
+    if (!token) return
+    setIsTogglingNotificarClientesWhatsapp(true)
+    try {
+      const response = (await restauranteApi.toggleNotificarClientesWhatsapp(token)) as {
+        success: boolean
+        notificarClientesWhatsapp: boolean
+      }
+      if (response.success) {
+        toast.success(
+          response.notificarClientesWhatsapp
+            ? 'Notificaciones a clientes activadas'
+            : 'Notificaciones a clientes desactivadas'
+        )
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      console.error('Error al cambiar notificaciones de whatsapp:', error)
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingNotificarClientesWhatsapp(false)
     }
   }
 
@@ -1033,6 +1058,21 @@ const Perfil = () => {
                     </Badge>
                   </div>
 
+                  <div className="flex items-center justify-between py-3 border-t border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-3">
+                      <Smartphone className="h-4 w-4 text-orange-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Notificar cambios de estado</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">Enviaremos mensajes automáticos a los clientes cuando su pedido cambie de estado, si ellos aceptan recibirlos.</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={(restaurante as any)?.notificarClientesWhatsapp !== false}
+                      onCheckedChange={handleToggleNotificarClientesWhatsapp}
+                      disabled={isTogglingNotificarClientesWhatsapp}
+                    />
+                  </div>
+
                   {restaurante?.transferenciaAlias && (
                     <div className="flex items-center gap-3 py-3 border-t border-zinc-100 dark:border-zinc-800">
                       <Wallet className="h-4 w-4 text-zinc-400 shrink-0" />
@@ -1429,7 +1469,7 @@ const Perfil = () => {
               </Card>
 
               {/* Rapiboy */}
-              <IntegrationCard connected={!!(restaurante as any)?.rapiboyToken} accentClass="border-orange-400/60 bg-orange-50/40 dark:bg-orange-950/10">
+              {/* <IntegrationCard connected={!!(restaurante as any)?.rapiboyToken} accentClass="border-orange-400/60 bg-orange-50/40 dark:bg-orange-950/10">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -1482,7 +1522,7 @@ const Perfil = () => {
                     )}
                   </div>
                 </CardContent>
-              </IntegrationCard>
+              </IntegrationCard> */}
             </div>
 
             {/* Zonas de delivery */}

@@ -17,6 +17,7 @@ import Perfil from './pages/Perfil'
 import Clientes from './pages/Clientes'
 import CodigosDescuento from './pages/CodigosDescuento'
 import { PrinterProvider } from './context/PrinterContext'
+import Onboarding from './pages/Onboarding';
 
 
 
@@ -37,6 +38,10 @@ const router = createBrowserRouter([
         path: "/register",
         element: <Register />,
       },
+      {
+        path: "/onboarding",
+        element: <Onboarding />
+      }
     ],
   },
   {

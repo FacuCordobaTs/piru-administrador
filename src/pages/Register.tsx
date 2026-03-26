@@ -3,10 +3,10 @@ import { useNavigate, Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/store/authStore'
 import { authApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
+import { CheckCircle2 } from 'lucide-react'
 
 const Register = () => {
   const navigate = useNavigate()
@@ -41,10 +41,10 @@ const Register = () => {
     }
 
     setIsLoading(true)
-    
+
     try {
       const response = await authApi.register(email, password, nombre)
-      
+
       if (
         typeof response === 'object' &&
         response !== null &&
@@ -54,17 +54,13 @@ const Register = () => {
         const { token, newRestaurante, message } = response as { token: string; newRestaurante: any; message?: string };
         setAuth(token, newRestaurante[0])
         toast.success('¡Cuenta creada!', {
-          description: message || 'Registro exitoso',
+          description: message || 'Bienvenido a Piru',
         })
-        navigate('/dashboard')
+        navigate('/dashboard') // Redirigiremos al onboarding luego
       } else {
-        console.error('Register error:', response)
-        const data = await response as { token: string; newRestaurante: any; message?: string }
-        console.error('Register error:', data)
         toast.error('Error en la respuesta del servidor')
       }
     } catch (error) {
-      console.error('Register error:', error)
       if (error instanceof ApiError) {
         toast.error('Error al registrarse', {
           description: error.message,
@@ -80,48 +76,87 @@ const Register = () => {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-primary/10 via-background to-primary/5 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto mb-4">
-            <h1 className="text-4xl md:text-5xl font-bold bg-linear-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              PIRU
-            </h1>
+    <div className="min-h-screen flex w-full bg-background selection:bg-primary/20">
+
+      {/* Panel Izquierdo - Branding & Valor (Oculto en móviles) */}
+      <div className="hidden lg:flex w-1/2 bg-zinc-950 text-white flex-col justify-between p-12 relative overflow-hidden">
+        {/* Efecto de fondo sutil */}
+        <div className="absolute top-0 left-0 w-full h-full bg-linear-to-br from-[#FF7A00]/10 to-transparent pointer-events-none" />
+
+        <div className="relative z-10">
+          <img src="/logopiru.jpeg" alt="Piru Logo" className="h-12 w-auto mb-16" />
+
+          <h1 className="text-4xl xl:text-5xl font-bold mb-6 leading-tight">
+            Tu tienda de Delivery,<br />
+            en el link de tu bio.
+          </h1>
+
+          <p className="text-lg text-zinc-400 mb-10 max-w-md leading-relaxed">
+            Piru es la forma más simple de recibir pedidos. Sin aplicaciones pesadas. Tus clientes piden desde su celular, pagan online y vos recibís todo directo en tu cocina y por WhatsApp.
+          </p>
+
+          <ul className="space-y-5">
+            <li className="flex items-center text-zinc-300 text-lg">
+              <CheckCircle2 className="mr-4 h-6 w-6 text-[#FF7A00]" />
+              Link único para tu Instagram
+            </li>
+            <li className="flex items-center text-zinc-300 text-lg">
+              <CheckCircle2 className="mr-4 h-6 w-6 text-[#FF7A00]" />
+              Pagos automáticos (MP, Cucuru, Talo)
+            </li>
+            <li className="flex items-center text-zinc-300 text-lg">
+              <CheckCircle2 className="mr-4 h-6 w-6 text-[#FF7A00]" />
+              Avisos por WhatsApp al instante
+            </li>
+          </ul>
+        </div>
+
+        <div className="relative z-10 text-sm text-zinc-500 font-medium">
+          © {new Date().getFullYear()} Piru.app — Simple. Rápido. Rentable.
+        </div>
+      </div>
+
+      {/* Panel Derecho - Formulario de Registro */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 animate-in fade-in duration-700">
+        <div className="w-full max-w-md space-y-8">
+
+          {/* Header Móvil */}
+          <div className="text-center lg:text-left">
+            <img src="/logopiru.jpeg" alt="Piru" className="h-12 w-auto mx-auto lg:hidden mb-8" />
+            <h2 className="text-3xl font-bold tracking-tight text-foreground">Crear tu tienda</h2>
+            <p className="text-muted-foreground mt-2 text-lg">Ingresa los datos de tu local para empezar.</p>
           </div>
-          <CardTitle className="text-2xl">Crear Cuenta</CardTitle>
-          <CardDescription>
-            Regístrate para comenzar a gestionar tu restaurante
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre del restaurante</Label>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2.5">
+              <Label htmlFor="nombre" className="text-sm font-medium">Nombre del local</Label>
               <Input
                 id="nombre"
                 type="text"
-                placeholder="Mi Restaurante"
+                placeholder="Ej: Burger Brothers"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 required
                 minLength={3}
-                className="transition-all focus:ring-2 focus:ring-primary"
+                className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-background focus:border-primary transition-all text-base"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Correo electrónico</Label>
+
+            <div className="space-y-2.5">
+              <Label htmlFor="email" className="text-sm font-medium">Correo electrónico</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@restaurante.com"
+                placeholder="hola@tu-local.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="transition-all focus:ring-2 focus:ring-primary"
+                className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-background focus:border-primary transition-all text-base"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
+
+            <div className="space-y-2.5">
+              <Label htmlFor="password" className="text-sm font-medium">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
@@ -130,11 +165,12 @@ const Register = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={3}
-                className="transition-all focus:ring-2 focus:ring-primary"
+                className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-background focus:border-primary transition-all text-base"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+
+            <div className="space-y-2.5">
+              <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirmar contraseña</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -143,30 +179,29 @@ const Register = () => {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 minLength={3}
-                className="transition-all focus:ring-2 focus:ring-primary"
+                className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-background focus:border-primary transition-all text-base"
               />
             </div>
-            <Button 
-              type="submit" 
-              className="w-full" 
-              size="lg"
+
+            <Button
+              type="submit"
+              className="w-full h-14 rounded-xl text-lg font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20 transition-all active:scale-[0.98] mt-4"
               disabled={isLoading}
             >
-              {isLoading ? 'Creando cuenta...' : 'Registrarse'}
+              {isLoading ? 'Preparando tu tienda...' : 'Registrar mi local'}
             </Button>
           </form>
-          
-          <div className="mt-6 text-center text-sm text-muted-foreground">
+
+          <div className="text-center text-sm text-muted-foreground font-medium">
             ¿Ya tienes una cuenta?{' '}
-            <Link to="/login" className="text-primary hover:underline font-medium">
+            <Link to="/login" className="text-[#FF7A00] hover:text-[#E66E00] hover:underline transition-colors">
               Inicia sesión
             </Link>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }
 
 export default Register
-
