@@ -1,6 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -174,10 +174,10 @@ const Perfil = () => {
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
   const [cucuruCollectorId, setCucuruCollectorId] = useState('')
-  const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
-  const [taloClientIdInput, setTaloClientIdInput] = useState('')
-  const [taloClientSecretInput, setTaloClientSecretInput] = useState('')
-  const [taloUserIdInput, setTaloUserIdInput] = useState('')
+  // const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
+  // const [taloClientIdInput, setTaloClientIdInput] = useState('')
+  // const [taloClientSecretInput, setTaloClientSecretInput] = useState('')
+  // const [taloUserIdInput, setTaloUserIdInput] = useState('')
   const [isSavingPasarela, setIsSavingPasarela] = useState(false)
   const [proveedorPago, setProveedorPago] = useState<string>(
     (restaurante as any)?.proveedorPago || 'manual'
@@ -402,35 +402,35 @@ const Perfil = () => {
     navigate('/login')
   }
 
-  const handleConfigurarTalo = async () => {
-    if (!token) return
-    if (!taloClientIdInput.trim() || !taloClientSecretInput.trim() || !taloUserIdInput.trim()) {
-      toast.error('Debes ingresar Client ID, Client Secret y User ID de Talo')
-      return
-    }
-    setIsConfiguringTalo(true)
-    try {
-      const response = (await restauranteApi.configurarTalo(
-        token,
-        taloClientIdInput.trim(),
-        taloClientSecretInput.trim(),
-        taloUserIdInput.trim()
-      )) as { success: boolean }
-      if (response.success) {
-        toast.success('Talo configurado con éxito', {
-          description: 'Tus credenciales de Talo están listas para transferencias en tiempo real.',
-        })
-        restauranteStore.fetchData()
-        setTaloClientIdInput('')
-        setTaloClientSecretInput('')
-        setTaloUserIdInput('')
-      }
-    } catch (error) {
-      toast.error('Error al configurar Talo')
-    } finally {
-      setIsConfiguringTalo(false)
-    }
-  }
+  // const handleConfigurarTalo = async () => {
+  //   if (!token) return
+  //   if (!taloClientIdInput.trim() || !taloClientSecretInput.trim() || !taloUserIdInput.trim()) {
+  //     toast.error('Debes ingresar Client ID, Client Secret y User ID de Talo')
+  //     return
+  //   }
+  //   setIsConfiguringTalo(true)
+  //   try {
+  //     const response = (await restauranteApi.configurarTalo(
+  //       token,
+  //       taloClientIdInput.trim(),
+  //       taloClientSecretInput.trim(),
+  //       taloUserIdInput.trim()
+  //     )) as { success: boolean }
+  //     if (response.success) {
+  //       toast.success('Talo configurado con éxito', {
+  //         description: 'Tus credenciales de Talo están listas para transferencias en tiempo real.',
+  //       })
+  //       restauranteStore.fetchData()
+  //       setTaloClientIdInput('')
+  //       setTaloClientSecretInput('')
+  //       setTaloUserIdInput('')
+  //     }
+  //   } catch (error) {
+  //     toast.error('Error al configurar Talo')
+  //   } finally {
+  //     setIsConfiguringTalo(false)
+  //   }
+  // }
 
   const handleConfigurarCucuru = async () => {
     if (!token) return
@@ -755,7 +755,7 @@ const Perfil = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="min-h-dvh flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
           <p className="text-sm text-zinc-500 font-medium">Cargando tu espacio…</p>
@@ -776,7 +776,7 @@ const Perfil = () => {
   const totalProductos = restauranteStore.productos.length
 
   return (
-    <div className="min-h-[100dvh] bg-zinc-50 dark:bg-background pb-24 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
+    <div className="min-h-dvh bg-zinc-50 dark:bg-background pb-24 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
 
       {/* ── Hero Header ── */}
       <div className="bg-white dark:bg-zinc-950/50 border-b border-zinc-200 dark:border-zinc-800/80 pb-6">
