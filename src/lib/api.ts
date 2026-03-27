@@ -783,6 +783,18 @@ export const pedidosApi = {
   },
 }
 
+// Metricas API
+export const metricasApi = {
+  get: async (token: string) => {
+    return fetchApi('/metricas', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+}
+
 // MercadoPago API
 export const mercadopagoApi = {
   // Obtener estado de conexión

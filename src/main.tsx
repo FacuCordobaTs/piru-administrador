@@ -18,6 +18,7 @@ import Clientes from './pages/Clientes'
 import CodigosDescuento from './pages/CodigosDescuento'
 import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
+import Metricas from './pages/Metricas';
 
 
 
@@ -65,6 +66,10 @@ const router = createBrowserRouter([
           {
             index: true,
             element: <Dashboard />,
+          },
+          {
+            path: "metricas",
+            element: <Metricas />,
           },
           {
             path: "pedidos",
