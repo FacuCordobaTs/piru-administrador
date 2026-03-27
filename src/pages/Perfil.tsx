@@ -307,6 +307,12 @@ const Perfil = () => {
     if (prov && ['cucuru', 'talo', 'mercadopago', 'manual'].includes(prov)) {
       setProveedorPago(prov)
     }
+
+    if (restaurante) {
+      if ((restaurante as any).taloClientId) setTaloClientId((restaurante as any).taloClientId)
+      if ((restaurante as any).taloClientSecret) setTaloClientSecret((restaurante as any).taloClientSecret)
+      if ((restaurante as any).taloUserId) setTaloUserId((restaurante as any).taloUserId)
+    }
   }, [restaurante])
 
   useEffect(() => {
@@ -460,16 +466,10 @@ const Perfil = () => {
     }
   }
 
-  const taloYaConfigurado =
-    !!(restaurante as any)?.taloClientId &&
-    !!(restaurante as any)?.taloClientSecret &&
-    !!(restaurante as any)?.taloUserId
-
   const handleGuardarPasarelaPago = async () => {
     if (!token) return
     if (
       proveedorPago === 'talo' &&
-      !taloYaConfigurado &&
       (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim())
     ) {
       toast.error('Para usar Talo debes ingresar Client ID, Client Secret y User ID')
@@ -497,11 +497,6 @@ const Perfil = () => {
       if (response.success) {
         toast.success('Pasarela de pago actualizada')
         restauranteStore.fetchData()
-        if (proveedorPago === 'talo') {
-          setTaloClientId('')
-          setTaloClientSecret('')
-          setTaloUserId('')
-        }
       }
     } catch (error) {
       if (error instanceof ApiError) {
@@ -1046,7 +1041,7 @@ const Perfil = () => {
                   ))}
                 </div>
 
-                {proveedorPago === 'talo' && !taloYaConfigurado && (
+                {proveedorPago === 'talo' && (
                   <div className="p-6 mb-8 bg-zinc-50 dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800">
                     <h4 className="font-semibold mb-4 text-foreground">Credenciales Talo</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

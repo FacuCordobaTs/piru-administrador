@@ -26,7 +26,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,5 +35,12 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://api.piru.app/public/updates/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU3NUFFM0E5QUQzNTdDMUMKUldRY2ZEV3RxZU5hNTZ0MWYzTitGNUtNMFpqb2N3S2hDMWd5RDl0S1RtNmk1bXlsUllYYWljd3cK"
+    }
+  }
 }

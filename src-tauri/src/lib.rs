@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::Write;
-use std::time::Duration;
 #[cfg(windows)]
 use std::ptr::null_mut;
+use std::time::Duration;
 #[cfg(windows)]
 use widestring::U16CString;
 
@@ -10,9 +10,9 @@ use widestring::U16CString;
 use windows_sys::Win32::{
     Foundation::{GetLastError, BOOL, FALSE, HANDLE},
     Graphics::Printing::{
-        ClosePrinter, EndDocPrinter, EndPagePrinter, EnumPrintersW, OpenPrinterW,
-        StartDocPrinterW, StartPagePrinter, WritePrinter, DOC_INFO_1W, PRINTER_DEFAULTSW,
-        PRINTER_ENUM_LOCAL, PRINTER_INFO_2W,
+        ClosePrinter, EndDocPrinter, EndPagePrinter, EnumPrintersW, OpenPrinterW, StartDocPrinterW,
+        StartPagePrinter, WritePrinter, DOC_INFO_1W, PRINTER_DEFAULTSW, PRINTER_ENUM_LOCAL,
+        PRINTER_INFO_2W,
     },
 };
 
@@ -110,7 +110,7 @@ fn send_print_job(printer_name: String, content: Vec<u8>) -> Result<(), String> 
                 }
                 println!("Ticket guardado exitosamente en: {}", path);
                 Ok(())
-            },
+            }
             Err(e) => Err(format!("No se pudo crear el archivo: {}", e)),
         };
     }
@@ -122,7 +122,9 @@ fn send_print_job(printer_name: String, content: Vec<u8>) -> Result<(), String> 
             .open()
             .map_err(|e| format!("Error abriendo puerto serial {}: {}", printer_name, e))?;
 
-        return port.write_all(&content).map_err(|e| format!("Error escribiendo en puerto serial: {}", e));
+        return port
+            .write_all(&content)
+            .map_err(|e| format!("Error escribiendo en puerto serial: {}", e));
     }
 
     // 3. LOGICA NORMAL (WINDOWS):
@@ -140,7 +142,7 @@ fn send_print_job(printer_name: String, content: Vec<u8>) -> Result<(), String> 
 fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), String> {
     let printer_name_wide = U16CString::from_str(printer_name)
         .map_err(|_| "Nombre de impresora inválido".to_string())?;
-    
+
     let mut printer_handle: HANDLE = std::ptr::null_mut();
 
     // Abrir la impresora
@@ -150,7 +152,7 @@ fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), Stri
             pDevMode: null_mut(),
             DesiredAccess: 0,
         };
-        
+
         let result: BOOL = OpenPrinterW(
             printer_name_wide.as_ptr() as *mut _,
             &mut printer_handle,
@@ -159,14 +161,17 @@ fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), Stri
 
         if result == FALSE {
             let error = GetLastError();
-            return Err(format!("No se pudo abrir la impresora '{}'. Error: {}", printer_name, error));
+            return Err(format!(
+                "No se pudo abrir la impresora '{}'. Error: {}",
+                printer_name, error
+            ));
         }
     }
 
     // Crear el documento de impresión
     let doc_name_wide = U16CString::from_str("Tauri RAW Print").unwrap();
     let data_type_wide = U16CString::from_str("RAW").unwrap();
-    
+
     let doc_info = DOC_INFO_1W {
         pDocName: doc_name_wide.as_ptr() as *mut _,
         pOutputFile: null_mut(),
@@ -178,7 +183,10 @@ fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), Stri
         if job_id == 0 {
             let error = GetLastError();
             ClosePrinter(printer_handle);
-            return Err(format!("No se pudo iniciar el documento de impresión. Error: {}", error));
+            return Err(format!(
+                "No se pudo iniciar el documento de impresión. Error: {}",
+                error
+            ));
         }
 
         let start_page_result: BOOL = StartPagePrinter(printer_handle);
@@ -186,7 +194,10 @@ fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), Stri
             let error = GetLastError();
             EndDocPrinter(printer_handle);
             ClosePrinter(printer_handle);
-            return Err(format!("No se pudo iniciar la página de impresión. Error: {}", error));
+            return Err(format!(
+                "No se pudo iniciar la página de impresión. Error: {}",
+                error
+            ));
         }
 
         // Escribir los bytes raw
@@ -203,7 +214,10 @@ fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), Stri
             EndPagePrinter(printer_handle);
             EndDocPrinter(printer_handle);
             ClosePrinter(printer_handle);
-            return Err(format!("Error al escribir en la impresora. Error: {}", error));
+            return Err(format!(
+                "Error al escribir en la impresora. Error: {}",
+                error
+            ));
         }
 
         // Cerrar todo
@@ -218,6 +232,7 @@ fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), Stri
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

@@ -27,3 +27,8 @@ package-lock.json
 
 piru_nueva.key
 piru_nueva.key.pub
+
+app.key
+*.key
+*.key.pub
+updater.json
