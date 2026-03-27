@@ -486,10 +486,6 @@ const Perfil = () => {
           payload.taloClientSecret = taloClientSecret.trim()
           payload.taloUserId = taloUserId.trim()
         }
-      } else {
-        payload.taloClientId = null
-        payload.taloClientSecret = null
-        payload.taloUserId = null
       }
       const response = (await restauranteApi.updatePasarelaPago(token, payload)) as {
         success: boolean
