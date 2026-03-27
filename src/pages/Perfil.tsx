@@ -480,12 +480,10 @@ const Perfil = () => {
       const payload: Record<string, unknown> = {
         proveedorPago: proveedorPago as 'cucuru' | 'talo' | 'mercadopago' | 'manual',
       }
-      if (proveedorPago === 'talo') {
-        if (taloClientId.trim() && taloClientSecret.trim() && taloUserId.trim()) {
-          payload.taloClientId = taloClientId.trim()
-          payload.taloClientSecret = taloClientSecret.trim()
-          payload.taloUserId = taloUserId.trim()
-        }
+      if (taloClientId.trim() && taloClientSecret.trim() && taloUserId.trim()) {
+        payload.taloClientId = taloClientId.trim()
+        payload.taloClientSecret = taloClientSecret.trim()
+        payload.taloUserId = taloUserId.trim()
       }
       const response = (await restauranteApi.updatePasarelaPago(token, payload)) as {
         success: boolean
