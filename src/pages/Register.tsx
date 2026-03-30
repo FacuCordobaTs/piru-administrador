@@ -56,7 +56,7 @@ const Register = () => {
         toast.success('¡Cuenta creada!', {
           description: message || 'Bienvenido a Piru',
         })
-        navigate('/dashboard') // Redirigiremos al onboarding luego
+        navigate('/onboarding') // Redirigiremos al onboarding
       } else {
         toast.error('Error en la respuesta del servidor')
       }

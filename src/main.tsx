@@ -19,6 +19,7 @@ import CodigosDescuento from './pages/CodigosDescuento'
 import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
 import Metricas from './pages/Metricas';
+import UpdaterPrompt from './components/UpdaterPrompt';
 
 
 
@@ -38,10 +39,6 @@ const router = createBrowserRouter([
       {
         path: "/register",
         element: <Register />,
-      },
-      {
-        path: "/onboarding",
-        element: <Onboarding />
       }
     ],
   },
@@ -54,6 +51,16 @@ const router = createBrowserRouter([
         element: <Pedido />,
       },
     ],
+  },
+  {
+    path: "/onboarding",
+    element: <ProtectedLayout />,
+    children: [
+      {
+        index: true,
+        element: <Onboarding />
+      }
+    ]
   },
   {
     path: "/dashboard",
@@ -106,7 +113,12 @@ const router = createBrowserRouter([
 ]);
 
 function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      <UpdaterPrompt />
+    </>
+  );
 }
 
 

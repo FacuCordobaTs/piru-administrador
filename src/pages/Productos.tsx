@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -9,10 +9,21 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
-import { productosApi, categoriasApi, ingredientesApi, agregadosApi, ApiError } from '@/lib/api'
+import { productosApi, categoriasApi, ingredientesApi, agregadosApi } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
-import { Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, X, Power, Settings2, AlertTriangle, Tag, Percent } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import {
+  Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
+  X, Power, AlertTriangle, Tag, Percent, Image as ImageIcon
+} from 'lucide-react'
+
+// ─────────────────────────────────────────────
+// Estilos base "Phantom"
+// ─────────────────────────────────────────────
+const phantomCardClass = "bg-white dark:bg-[#121212] rounded-[32px] shadow-sm border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+const phantomInputClass = "h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
+const phantomLabelClass = "text-sm font-bold text-foreground ml-1 mb-2 block"
 
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
@@ -55,9 +66,11 @@ const Productos = () => {
   const [nuevoAgregadoPrecio, setNuevoAgregadoPrecio] = useState('')
   const [dialogAgregadoAbierto, setDialogAgregadoAbierto] = useState(false)
   const [isCreandoAgregado, setIsCreandoAgregado] = useState(false)
+
   const [dialogEliminarAbierto, setDialogEliminarAbierto] = useState(false)
   const [productoAEliminar, setProductoAEliminar] = useState<typeof productos[0] | null>(null)
   const [isEliminando, setIsEliminando] = useState(false)
+
   const [dialogDesactivarAbierto, setDialogDesactivarAbierto] = useState(false)
   const [productoADesactivar, setProductoADesactivar] = useState<typeof productos[0] | null>(null)
   const [isDesactivando, setIsDesactivando] = useState(false)
@@ -79,7 +92,7 @@ const Productos = () => {
     }
   }, [])
 
-  // Cargar ingredientes
+  // Cargar ingredientes y agregados
   useEffect(() => {
     const cargarIngredientes = async () => {
       if (!token) return
@@ -88,9 +101,7 @@ const Productos = () => {
           success: boolean
           ingredientes?: Array<{ id: number; nombre: string }>
         }
-        if (response.success && response.ingredientes) {
-          setIngredientes(response.ingredientes)
-        }
+        if (response.success && response.ingredientes) setIngredientes(response.ingredientes)
       } catch (error) {
         console.error('Error cargando ingredientes:', error)
       }
@@ -104,9 +115,7 @@ const Productos = () => {
           success: boolean
           agregados?: Array<{ id: number; nombre: string; precio: string }>
         }
-        if (response.success && response.agregados) {
-          setAgregados(response.agregados)
-        }
+        if (response.success && response.agregados) setAgregados(response.agregados)
       } catch (error) {
         console.error('Error cargando agregados:', error)
       }
@@ -119,33 +128,18 @@ const Productos = () => {
       toast.error('El nombre del ingrediente es requerido')
       return
     }
-
     setIsCreandoIngrediente(true)
     try {
-      const response = await ingredientesApi.create(token, {
-        nombre: nuevoIngredienteNombre.trim()
-      }) as { success: boolean; data?: any }
-
+      const response = await ingredientesApi.create(token, { nombre: nuevoIngredienteNombre.trim() }) as { success: boolean; data?: any }
       if (response.success) {
         toast.success('Ingrediente creado')
         setNuevoIngredienteNombre('')
         setDialogIngredienteAbierto(false)
-        // Recargar ingredientes
-        const ingredientesResponse = await ingredientesApi.getAll(token) as {
-          success: boolean
-          ingredientes?: Array<{ id: number; nombre: string }>
-        }
-        if (ingredientesResponse.success && ingredientesResponse.ingredientes) {
-          setIngredientes(ingredientesResponse.ingredientes)
-        }
+        const ingredientesResponse = await ingredientesApi.getAll(token) as any
+        if (ingredientesResponse.success && ingredientesResponse.ingredientes) setIngredientes(ingredientesResponse.ingredientes)
       }
-    } catch (error) {
-      console.error('Error al crear ingrediente:', error)
-      if (error instanceof ApiError) {
-        toast.error('Error al crear ingrediente', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+    } catch (error: any) {
+      toast.error('Error al crear ingrediente', { description: error.message || 'Error de conexión' })
     } finally {
       setIsCreandoIngrediente(false)
     }
@@ -156,41 +150,24 @@ const Productos = () => {
       toast.error('Nombre y precio del agregado son requeridos')
       return
     }
-
     const precio = parseFloat(nuevoAgregadoPrecio)
     if (isNaN(precio) || precio < 0) {
       toast.error('El precio debe ser un número válido')
       return
     }
-
     setIsCreandoAgregado(true)
     try {
-      const response = await agregadosApi.create(token, {
-        nombre: nuevoAgregadoNombre.trim(),
-        precio
-      }) as { success: boolean; data?: any }
-
+      const response = await agregadosApi.create(token, { nombre: nuevoAgregadoNombre.trim(), precio }) as { success: boolean; data?: any }
       if (response.success) {
         toast.success('Agregado creado')
         setNuevoAgregadoNombre('')
         setNuevoAgregadoPrecio('')
         setDialogAgregadoAbierto(false)
-        // Recargar agregados
-        const agregadosResponse = await agregadosApi.getAll(token) as {
-          success: boolean
-          agregados?: Array<{ id: number; nombre: string; precio: string }>
-        }
-        if (agregadosResponse.success && agregadosResponse.agregados) {
-          setAgregados(agregadosResponse.agregados)
-        }
+        const agregadosResponse = await agregadosApi.getAll(token) as any
+        if (agregadosResponse.success && agregadosResponse.agregados) setAgregados(agregadosResponse.agregados)
       }
-    } catch (error) {
-      console.error('Error al crear agregado:', error)
-      if (error instanceof ApiError) {
-        toast.error('Error al crear agregado', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+    } catch (error: any) {
+      toast.error('Error al crear agregado', { description: error.message || 'Error de conexión' })
     } finally {
       setIsCreandoAgregado(false)
     }
@@ -201,52 +178,28 @@ const Productos = () => {
       toast.error('El nombre de la categoría es requerido')
       return
     }
-
     setIsCreandoCategoria(true)
     try {
-      const response = await categoriasApi.create(token, {
-        nombre: nuevaCategoriaNombre.trim()
-      }) as { success: boolean; data?: any }
-
+      const response = await categoriasApi.create(token, { nombre: nuevaCategoriaNombre.trim() }) as { success: boolean; data?: any }
       if (response.success) {
         toast.success('Categoría creada')
         setNuevaCategoriaNombre('')
         setDialogCategoriaAbierto(false)
-        // Recargar categorías
-        const categoriasResponse = await categoriasApi.getAll(token) as {
-          success: boolean
-          categorias?: any[]
-        }
-        if (categoriasResponse.success && categoriasResponse.categorias) {
-          setCategorias(categoriasResponse.categorias)
-        }
+        const categoriasResponse = await categoriasApi.getAll(token) as any
+        if (categoriasResponse.success && categoriasResponse.categorias) setCategorias(categoriasResponse.categorias)
       }
-    } catch (error) {
-      console.error('Error al crear categoría:', error)
-      if (error instanceof ApiError) {
-        toast.error('Error al crear categoría', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+    } catch (error: any) {
+      toast.error('Error al crear categoría', { description: error.message || 'Error de conexión' })
     } finally {
       setIsCreandoCategoria(false)
     }
   }
 
   const eliminarCategoria = async () => {
-    if (!token || !categoriaAEliminar) {
-      toast.error('Error: No se puede eliminar la categoría')
-      return
-    }
-
+    if (!token || !categoriaAEliminar) return
     setIsEliminandoCategoria(true)
     try {
-      const response = await categoriasApi.delete(token, categoriaAEliminar.id) as {
-        success: boolean
-        message?: string
-        productosActualizados?: number
-      }
-
+      const response = await categoriasApi.delete(token, categoriaAEliminar.id) as any
       if (response.success) {
         const mensaje = response.productosActualizados && response.productosActualizados > 0
           ? `Categoría eliminada. ${response.productosActualizados} producto(s) movido(s) a "Sin categoría"`
@@ -254,25 +207,16 @@ const Productos = () => {
         toast.success(mensaje)
         setDialogEliminarCategoriaAbierto(false)
         setCategoriaAEliminar(null)
-        // Recargar datos para actualizar categorías y productos
         await fetchData()
       }
-    } catch (error) {
-      console.error('Error al eliminar categoría:', error)
-      if (error instanceof ApiError) {
-        toast.error('Error al eliminar categoría', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+    } catch (error: any) {
+      toast.error('Error al eliminar categoría', { description: error.message || 'Error de conexión' })
     } finally {
       setIsEliminandoCategoria(false)
     }
   }
 
-  // Contar productos por categoría
-  const contarProductosPorCategoria = (categoriaId: number) => {
-    return productos.filter(p => p.categoriaId === categoriaId).length
-  }
+  const contarProductosPorCategoria = (categoriaId: number) => productos.filter(p => p.categoriaId === categoriaId).length
 
   const productosFiltrados = productos.filter(p => {
     const term = busqueda.toLowerCase()
@@ -287,22 +231,13 @@ const Productos = () => {
     if (!token) return
     setIsBackfillingEtiquetas(true)
     try {
-      const response = await productosApi.backfillEtiquetas(token) as {
-        success: boolean
-        asignadas?: number
-        message?: string
-      }
+      const response = await productosApi.backfillEtiquetas(token) as any
       if (response.success) {
         toast.success(response.message || `Etiquetas asignadas: ${response.asignadas || 0}`)
         await fetchData()
       }
-    } catch (error) {
-      console.error('Error al asignar etiquetas:', error)
-      if (error instanceof ApiError) {
-        toast.error('Error al asignar etiquetas', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+    } catch (error: any) {
+      toast.error('Error al asignar etiquetas', { description: error.message || 'Error de conexión' })
     } finally {
       setIsBackfillingEtiquetas(false)
     }
@@ -331,131 +266,60 @@ const Productos = () => {
       descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : ''
     })
     setImageBase64(producto.imagenUrl || null)
-
-    // Cargar etiquetas del producto
     setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
     setNuevaEtiqueta('')
 
-    // Cargar ingredientes del producto
     if (token) {
       try {
-        const response = await ingredientesApi.getByProducto(token, producto.id) as {
-          success: boolean
-          ingredientes?: Array<{ id: number; nombre: string }>
-        }
-        if (response.success && response.ingredientes) {
-          setIngredientesSeleccionados(response.ingredientes.map(ing => ing.id))
-        } else {
-          setIngredientesSeleccionados([])
-        }
-      } catch (error) {
-        console.error('Error cargando ingredientes del producto:', error)
-        setIngredientesSeleccionados([])
-      }
+        const response = await ingredientesApi.getByProducto(token, producto.id) as any
+        setIngredientesSeleccionados(response.success && response.ingredientes ? response.ingredientes.map((ing: any) => ing.id) : [])
+      } catch (error) { setIngredientesSeleccionados([]) }
 
       try {
-        const response2 = await agregadosApi.getByProducto(token, producto.id) as {
-          success: boolean
-          agregados?: Array<{ id: number; nombre: string; precio: string }>
-        }
-        if (response2.success && response2.agregados) {
-          setAgregadosSeleccionados(response2.agregados.map(ag => ag.id))
-        } else {
-          setAgregadosSeleccionados([])
-        }
-      } catch (error) {
-        console.error('Error cargando agregados del producto:', error)
-        setAgregadosSeleccionados([])
-      }
+        const response2 = await agregadosApi.getByProducto(token, producto.id) as any
+        setAgregadosSeleccionados(response2.success && response2.agregados ? response2.agregados.map((ag: any) => ag.id) : [])
+      } catch (error) { setAgregadosSeleccionados([]) }
     }
-
     setDialogAbierto(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (!token) {
-      toast.error('No hay sesión activa')
-      return
-    }
-
-    // Validaciones
-    if (!formData.nombre.trim()) {
-      toast.error('El nombre es requerido')
-      return
-    }
-
-    if (!formData.descripcion.trim()) {
-      toast.error('La descripción es requerida')
-      return
-    }
-
+    if (!token) { toast.error('No hay sesión activa'); return }
+    if (!formData.nombre.trim()) { toast.error('El nombre es requerido'); return }
+    if (!formData.descripcion.trim()) { toast.error('La descripción es requerida'); return }
     const precio = parseFloat(formData.precio)
-    if (isNaN(precio) || precio <= 0) {
-      toast.error('El precio debe ser mayor a 0')
-      return
-    }
+    if (isNaN(precio) || precio <= 0) { toast.error('El precio debe ser mayor a 0'); return }
 
     setIsSubmitting(true)
-
     try {
-      // Convertir categoriaId: si es '0' o vacío, usar undefined/null
       const parsedCategoriaId = parseInt(formData.categoriaId)
-      const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0)
-        ? parsedCategoriaId
-        : undefined
+      const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0) ? parsedCategoriaId : undefined
+      const payload = {
+        nombre: formData.nombre,
+        descripcion: formData.descripcion,
+        precio: precio,
+        image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
+        categoriaId: categoriaId !== undefined ? categoriaId : null,
+        ingredienteIds: ingredientesSeleccionados,
+        agregadoIds: agregadosSeleccionados,
+        etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
+        puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
+        puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
+        descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0
+      }
 
       if (productoEditando) {
-        // Editar producto existente
-        await productosApi.update(token, {
-          id: productoEditando.id,
-          nombre: formData.nombre,
-          descripcion: formData.descripcion,
-          precio: precio,
-          image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
-          categoriaId: categoriaId !== undefined ? categoriaId : null,
-          ingredienteIds: ingredientesSeleccionados,
-          agregadoIds: agregadosSeleccionados,
-          etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
-          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
-          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
-          descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0
-        })
+        await productosApi.update(token, { id: productoEditando.id, ...payload } as any)
         toast.success('Producto actualizado')
-        await fetchData()
       } else {
-        // Crear nuevo producto
-        await productosApi.create(token, {
-          nombre: formData.nombre,
-          descripcion: formData.descripcion,
-          precio: precio,
-          image: imageBase64 || undefined,
-          categoriaId: categoriaId,
-          ingredienteIds: ingredientesSeleccionados,
-          agregadoIds: agregadosSeleccionados,
-          etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
-          puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
-          puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
-          descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0
-        })
+        await productosApi.create(token, payload as any)
         toast.success('Producto creado')
-        await fetchData()
       }
-
+      await fetchData()
       setDialogAbierto(false)
-      setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '' })
-      setImageBase64(null)
-      setIngredientesSeleccionados([])
-      setEtiquetasProducto([])
-      setNuevaEtiqueta('')
-    } catch (error) {
-      console.error('Error al guardar producto:', error)
-      if (error instanceof ApiError) {
-        toast.error('Error al guardar', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+    } catch (error: any) {
+      toast.error('Error al guardar', { description: error.message || 'Error de conexión' })
     } finally {
       setIsSubmitting(false)
     }
@@ -467,11 +331,7 @@ const Productos = () => {
   }
 
   const eliminarProducto = async () => {
-    if (!token || !productoAEliminar) {
-      toast.error('Error: No se puede eliminar el producto')
-      return
-    }
-
+    if (!token || !productoAEliminar) return
     setIsEliminando(true)
     try {
       await productosApi.delete(token, productoAEliminar.id)
@@ -479,20 +339,14 @@ const Productos = () => {
       setDialogEliminarAbierto(false)
       setProductoAEliminar(null)
       await fetchData()
-    } catch (error) {
-      console.error('Error al eliminar producto:', error)
-      if (error instanceof ApiError) {
-        // Verificar si el error es por pedidos asociados
-        const errorMessage = error.message || error.response?.message || ''
-        if (errorMessage.includes('pedidos asociados') || errorMessage.includes('pedido')) {
-          toast.error('No se puede eliminar el producto', {
-            description: 'Este producto tiene pedidos asociados. Desactívalo en su lugar para ocultarlo del menú sin perder el historial.'
-          })
-        } else {
-          toast.error('Error al eliminar producto', { description: errorMessage })
-        }
+    } catch (error: any) {
+      const errorMessage = error.message || error.response?.message || ''
+      if (errorMessage.includes('pedidos asociados') || errorMessage.includes('pedido')) {
+        toast.error('No se puede eliminar el producto', {
+          description: 'Este producto tiene pedidos asociados. Desactívalo en su lugar para ocultarlo del menú sin perder el historial.'
+        })
       } else {
-        toast.error('Error de conexión')
+        toast.error('Error al eliminar producto', { description: errorMessage })
       }
     } finally {
       setIsEliminando(false)
@@ -505,29 +359,17 @@ const Productos = () => {
   }
 
   const toggleActivoProducto = async () => {
-    if (!token || !productoADesactivar) {
-      toast.error('Error: No se puede cambiar el estado del producto')
-      return
-    }
-
+    if (!token || !productoADesactivar) return
     const nuevoEstado = !productoADesactivar.activo
     setIsDesactivando(true)
     try {
-      await productosApi.update(token, {
-        id: productoADesactivar.id,
-        activo: nuevoEstado
-      })
+      await productosApi.update(token, { id: productoADesactivar.id, activo: nuevoEstado })
       toast.success(nuevoEstado ? 'Producto activado correctamente' : 'Producto desactivado correctamente')
       setDialogDesactivarAbierto(false)
       setProductoADesactivar(null)
       await fetchData()
-    } catch (error) {
-      console.error('Error al cambiar estado del producto:', error)
-      if (error instanceof ApiError) {
-        toast.error('Error al cambiar estado del producto', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+    } catch (error: any) {
+      toast.error('Error al cambiar estado', { description: error.message || 'Error de conexión' })
     } finally {
       setIsDesactivando(false)
     }
@@ -535,1028 +377,585 @@ const Productos = () => {
 
   if (isLoading) {
     return (
-      <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-dvh flex items-center justify-center bg-zinc-50 dark:bg-[#0A0A0A]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
       </div>
     )
   }
 
   return (
-    <div className="w-full max-w-7xl lg:max-w-[1600px] xl:max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 space-y-4 md:space-y-6 animate-in fade-in duration-500 pb-20 md:pb-0">
+    <div className="min-h-dvh bg-zinc-50 dark:bg-[#0A0A0A] pb-24 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
 
-      {/* Header Sticky */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 py-4 md:py-6 md:static md:bg-transparent -mx-4 sm:-mx-6 lg:-mx-8 xl:-mx-12 px-4 sm:px-6 lg:px-8 xl:px-12 md:mx-0 md:px-0 border-b md:border-none">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center justify-between">
+      {/* ── Header Flotante ── */}
+      <div className="sticky top-0 z-20 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Productos</h1>
-              <p className="text-sm md:text-base text-muted-foreground">
-                Gestiona el menú de tu restaurante
-              </p>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">Catálogo</h1>
+              <p className="text-sm font-medium text-muted-foreground mt-0.5">Gestiona el menú de tu restaurante</p>
             </div>
-            {/* Botón Nuevo en Mobile (Compacto) */}
-            <Button size="sm" onClick={abrirDialogNuevo} className="md:hidden h-8">
-              <Plus className="mr-1 h-4 w-4" />
-              Nuevo
-            </Button>
-          </div>
 
-          <div className="flex gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:flex-none">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar productos o etiquetas..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                className="pl-10 w-full md:w-64"
-              />
-            </div>
-            {/* Botón asignar etiquetas a productos sin etiqueta */}
-            {productosSinEtiqueta > 0 && (
-              <Button
-                variant="outline"
-                onClick={backfillEtiquetas}
-                disabled={isBackfillingEtiquetas}
-                className="hidden md:flex cursor-pointer"
-              >
-                {isBackfillingEtiquetas ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Tag className="mr-2 h-4 w-4" />
-                )}
-                Etiquetar ({productosSinEtiqueta})
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-72">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar productos..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  className="pl-11 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-transparent focus:bg-background focus:border-[#FF7A00] transition-colors"
+                />
+              </div>
+
+              {productosSinEtiqueta > 0 && (
+                <Button variant="outline" onClick={backfillEtiquetas} disabled={isBackfillingEtiquetas} className="hidden lg:flex h-12 rounded-xl px-4 border-zinc-200 dark:border-zinc-800">
+                  {isBackfillingEtiquetas ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tag className="mr-2 h-4 w-4" />}
+                  Autocompletar ({productosSinEtiqueta})
+                </Button>
+              )}
+
+              <Button onClick={abrirDialogNuevo} className="hidden sm:flex h-12 rounded-xl px-6 bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20">
+                <Plus className="mr-2 h-5 w-5" />
+                Nuevo Plato
               </Button>
-            )}
-            {/* Botón Nuevo en Desktop */}
-            <Button onClick={abrirDialogNuevo} className="hidden md:flex cursor-pointer">
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo Producto
-            </Button>
+            </div>
           </div>
         </div>
       </div>
 
-      {productosFiltrados.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <UtensilsCrossed className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
-            <p className="text-muted-foreground text-center mb-4">
-              {busqueda ? 'No se encontraron productos' : 'No hay productos registrados'}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {productosFiltrados.length === 0 ? (
+          <div className={cn(phantomCardClass, "flex flex-col items-center justify-center py-20 text-center")}>
+            <div className="h-20 w-20 rounded-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center mb-6">
+              <UtensilsCrossed className="h-10 w-10 text-muted-foreground/50" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">{busqueda ? 'No hay resultados' : 'Tu menú está vacío'}</h3>
+            <p className="text-muted-foreground mb-8 max-w-sm">
+              {busqueda ? 'Intenta buscar con otros términos.' : 'Comienza a agregar los deliciosos platos que ofreces a tus clientes.'}
             </p>
-            {productos.length === 0 && !busqueda && (
-              <Button onClick={abrirDialogNuevo} variant="outline">
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Primer Producto
+            {!busqueda && (
+              <Button onClick={abrirDialogNuevo} className="h-12 rounded-xl px-8 bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20">
+                <Plus className="mr-2 h-5 w-5" /> Crear Primer Producto
               </Button>
             )}
-          </CardContent>
-        </Card>
-      ) : (
-        /* PRODUCTOS AGRUPADOS POR CATEGORÍA */
-        <div className="space-y-8">
-          {(() => {
-            const porCategoria = productosFiltrados.reduce((acc, producto) => {
-              const cat = producto.categoria || 'Sin categoría'
-              if (!acc[cat]) acc[cat] = []
-              acc[cat].push(producto)
-              return acc
-            }, {} as Record<string, typeof productosFiltrados>)
+          </div>
+        ) : (
+          /* PRODUCTOS AGRUPADOS POR CATEGORÍA */
+          <div className="space-y-12">
+            {(() => {
+              const porCategoria = productosFiltrados.reduce((acc, producto) => {
+                const cat = producto.categoria || 'Sin categoría'
+                if (!acc[cat]) acc[cat] = []
+                acc[cat].push(producto)
+                return acc
+              }, {} as Record<string, typeof productosFiltrados>)
 
-            const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
-              if (a === 'Sin categoría') return 1
-              if (b === 'Sin categoría') return -1
-              return a.localeCompare(b)
-            })
+              const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
+                if (a === 'Sin categoría') return 1
+                if (b === 'Sin categoría') return -1
+                return a.localeCompare(b)
+              })
 
-            return categoriasOrdenadas.map((categoriaNombre) => (
-              <div key={categoriaNombre} className="space-y-3">
-                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">
-                  {categoriaNombre}
-                  <Badge variant="secondary" className="ml-2 text-xs font-normal">{porCategoria[categoriaNombre].length}</Badge>
-                </h2>
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {porCategoria[categoriaNombre].map((producto) => (
-                    <Card
-                      key={producto.id}
-                      className={`
-                        group overflow-hidden transition-all duration-300 hover:shadow-md border-muted
-                        flex flex-row md:flex-col
-                        ${!producto.activo ? 'opacity-60 bg-muted/20' : ''}
-                      `}
-                    >
-                      <div className="w-32 h-32 md:w-full md:h-48 md:aspect-video shrink-0 bg-muted relative overflow-hidden">
-                        {producto.imagenUrl ? (
-                          <img
-                            src={producto.imagenUrl}
-                            alt={producto.nombre}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-secondary/50">
-                            <Package className="h-8 w-8 text-muted-foreground/50" />
-                          </div>
+              return categoriasOrdenadas.map((categoriaNombre) => (
+                <div key={categoriaNombre} className="space-y-4">
+                  <div className="flex items-center gap-3 px-2">
+                    <h2 className="text-lg font-black tracking-tight text-foreground uppercase">{categoriaNombre}</h2>
+                    <Badge variant="secondary" className="bg-zinc-200 dark:bg-zinc-800 text-foreground font-bold px-2.5 py-0.5 rounded-full">
+                      {porCategoria[categoriaNombre].length}
+                    </Badge>
+                  </div>
+
+                  <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {porCategoria[categoriaNombre].map((producto) => (
+                      <Card
+                        key={producto.id}
+                        className={cn(
+                          "group rounded-3xl border-2 transition-all hover:shadow-lg dark:hover:shadow-none hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-[#121212] overflow-hidden flex flex-row sm:flex-col min-h-[130px] sm:min-h-0 sm:h-auto",
+                          !producto.activo ? "opacity-60 grayscale-[0.3]" : "border-zinc-100 dark:border-zinc-800"
                         )}
-                        <div className="absolute top-2 left-2 md:left-auto md:right-2 flex gap-1">
-                          {producto.descuento && producto.descuento > 0 && (
-                            <Badge
-                              className="shadow-sm backdrop-blur-sm h-5 text-[10px] px-1.5 bg-emerald-500/90 text-white border-none"
-                            >
-                              <Percent className="h-3 w-3 mr-0.5" />
-                              {producto.descuento}% OFF
-                            </Badge>
-                          )}
-                          <Badge
-                            variant={producto.activo ? 'default' : 'secondary'}
-                            className={`shadow-sm backdrop-blur-sm h-5 text-[10px] px-1.5 ${producto.activo ? 'bg-primary/90' : 'bg-secondary/90'}`}
-                          >
-                            {producto.activo ? 'Activo' : 'Inactivo'}
-                          </Badge>
-                        </div>
-                      </div>
-
-                      <div className="flex-1 flex flex-col justify-between p-3 min-w-0">
-                        <div className="space-y-1">
-                          <h3 className="font-semibold text-base leading-tight truncate">
-                            {producto.nombre}
-                          </h3>
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {producto.descripcion || 'Sin descripción'}
-                          </p>
-                          {producto.etiquetas && producto.etiquetas.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {producto.etiquetas.map((etiqueta) => (
-                                <Badge
-                                  key={etiqueta.id}
-                                  variant="outline"
-                                  className="text-[10px] px-1.5 py-0 h-4 bg-violet-50 dark:bg-violet-950/30 border-violet-300 text-violet-700 dark:text-violet-400"
-                                >
-                                  <Tag className="h-2.5 w-2.5 mr-0.5" />
-                                  {etiqueta.nombre}
-                                </Badge>
-                              ))}
+                      >
+                        {/* Imagen del Producto */}
+                        <div className="w-[110px] sm:w-full sm:h-48 shrink-0 bg-zinc-100 dark:bg-zinc-900 relative overflow-hidden">
+                          {producto.imagenUrl ? (
+                            <img
+                              src={producto.imagenUrl}
+                              alt={producto.nombre}
+                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 w-full h-full flex items-center justify-center">
+                              <ImageIcon className="h-8 w-8 sm:h-10 sm:w-10 text-zinc-300 dark:text-zinc-700" />
                             </div>
                           )}
-                        </div>
 
-                        <div className="flex items-center justify-between mt-3">
-                          <div className="flex flex-col">
+                          {/* Badges Flotantes sobre la imagen (en Desktop) */}
+                          <div className="absolute top-3 left-3 right-3 hidden sm:flex justify-between items-start">
                             {producto.descuento && producto.descuento > 0 ? (
-                              <>
-                                <span className="text-xs text-muted-foreground line-through">
-                                  ${parseFloat(producto.precio).toFixed(0)}
-                                </span>
-                                <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                  ${(parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-lg font-bold text-primary">
-                                ${parseFloat(producto.precio).toFixed(0)}
-                              </span>
+                              <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm">
+                                <Percent className="h-3 w-3 mr-1" /> {producto.descuento}% OFF
+                              </Badge>
+                            ) : <div />}
+                            {!producto.activo && (
+                              <Badge variant="secondary" className="bg-zinc-900/80 text-white border-none backdrop-blur-md">
+                                Inactivo
+                              </Badge>
                             )}
                           </div>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
-                              onClick={() => abrirDialogEditar(producto)}
-                              title="Editar producto"
-                            >
-                              <Edit className="h-4 w-4" />
-                              <span className="sr-only">Editar</span>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={`h-8 w-8 ${producto.activo
-                                ? 'hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
-                                : 'hover:bg-green-100 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
-                                }`}
-                              onClick={() => abrirDialogToggleActivo(producto)}
-                              title={producto.activo ? 'Desactivar producto' : 'Activar producto'}
-                            >
-                              {producto.activo ? (
-                                <Package className="h-4 w-4" />
+                        </div>
+
+                        {/* Contenido de la Tarjeta */}
+                        <div className="flex-1 flex flex-col p-3 sm:p-5 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <h3 className="font-bold text-base sm:text-lg leading-tight line-clamp-2">{producto.nombre}</h3>
+
+                            {/* Precio en Mobile (arriba a la derecha) */}
+                            <div className="sm:hidden shrink-0 mt-0.5">
+                              <span className="text-sm font-black text-foreground">
+                                ${producto.descuento && producto.descuento > 0
+                                  ? (parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)
+                                  : parseFloat(producto.precio).toFixed(0)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
+                            {producto.descripcion || 'Sin descripción'}
+                          </p>
+
+                          {/* Spacer para empujar los botones hacia el fondo en mobile */}
+                          <div className="flex-1" />
+
+                          <div className="flex items-center justify-between mt-3 sm:mt-4">
+                            {/* Precio en Desktop (abajo a la izquierda) */}
+                            <div className="hidden sm:flex flex-col">
+                              {producto.descuento && producto.descuento > 0 ? (
+                                <>
+                                  <span className="text-xs text-muted-foreground line-through font-medium">
+                                    ${parseFloat(producto.precio).toFixed(0)}
+                                  </span>
+                                  <span className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 leading-none">
+                                    ${(parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)}
+                                  </span>
+                                </>
                               ) : (
-                                <Power className="h-4 w-4" />
+                                <span className="text-lg sm:text-xl font-black text-foreground leading-none">
+                                  ${parseFloat(producto.precio).toFixed(0)}
+                                </span>
                               )}
-                              <span className="sr-only">{producto.activo ? 'Desactivar' : 'Activar'}</span>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={`h-8 w-8 ${producto.activo ? 'hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-green-100 hover:text-green-600'}`}
-                              onClick={() => producto.activo ? abrirDialogEliminar(producto) : null}
-                              disabled={!producto.activo}
-                              title={producto.activo ? 'Eliminar producto' : 'Producto inactivo'}
-                            >
-                              {producto.activo ? (
+                            </div>
+
+                            {/* Badges Mobile */}
+                            <div className="flex sm:hidden items-center gap-1">
+                              {!producto.activo && <Badge variant="secondary" className="text-[9px] px-1 h-4">Inactivo</Badge>}
+                              {producto.descuento && producto.descuento > 0 && <Badge className="bg-emerald-500 text-white text-[9px] px-1 h-4 border-none">-{producto.descuento}%</Badge>}
+                            </div>
+
+                            {/* Acciones */}
+                            <div className="flex gap-1.5 ml-auto">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800" onClick={() => abrirDialogToggleActivo(producto)} title={producto.activo ? 'Desactivar' : 'Activar'}>
+                                <Power className={cn("h-4 w-4", producto.activo ? "text-green-600" : "text-zinc-400")} />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-500" onClick={() => abrirDialogEditar(producto)} title="Editar">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/30 dark:hover:bg-red-900/50 flex" onClick={() => producto.activo ? abrirDialogEliminar(producto) : null} disabled={!producto.activo} title="Eliminar">
                                 <Trash2 className="h-4 w-4" />
-                              ) : (
-                                <Package className="h-4 w-4" />
-                              )}
-                              <span className="sr-only">{producto.activo ? 'Eliminar' : 'Inactivo'}</span>
-                            </Button>
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))
-          })()}
-        </div>
-      )}
+              ))
+            })()}
+          </div>
+        )}
+      </div>
 
-      {/* FAB (Floating Action Button) para Mobile */}
+      {/* FAB (Mobile Only) */}
       <Button
-        className="md:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-xl z-50 animate-in zoom-in duration-300"
+        className="sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50 animate-in zoom-in"
         onClick={abrirDialogNuevo}
       >
         <Plus className="h-6 w-6" />
       </Button>
 
-      {/* Dialog Formulario */}
+      {/* ─────────────────────────────────────────────
+          MODAL: CREAR / EDITAR PRODUCTO
+      ───────────────────────────────────────────── */}
       <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
-        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto mx-4 rounded-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {productoEditando ? 'Editar Producto' : 'Nuevo Producto'}
-            </DialogTitle>
-            <DialogDescription>
-              {productoEditando
-                ? 'Modifica los detalles del plato'
-                : 'Agrega un nuevo plato a tu menú'}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre</Label>
-              <Input
-                id="nombre"
-                value={formData.nombre}
-                onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                placeholder="Ej: Hamburguesa Doble"
-                required
-                disabled={isSubmitting}
-              />
-            </div>
+        <DialogContent className="max-w-2xl p-0 gap-0 sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden max-h-[90dvh] flex flex-col">
 
-            <div className="space-y-2">
-              <Label htmlFor="descripcion">Descripción</Label>
-              <Textarea
-                id="descripcion"
-                value={formData.descripcion}
-                onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                placeholder="Ingredientes, detalles..."
-                rows={3}
-                required
-                disabled={isSubmitting}
-                className="resize-none"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="precio">Precio</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                <Input
-                  id="precio"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData.precio}
-                  onChange={(e) => setFormData({ ...formData, precio: e.target.value })}
-                  placeholder="0.00"
-                  required
-                  disabled={isSubmitting}
-                  className="pl-7"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="descuento">Descuento (%)</Label>
-                {formData.descuento && parseInt(formData.descuento) > 0 && formData.precio && (
-                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                    Precio final: ${(parseFloat(formData.precio) * (1 - parseInt(formData.descuento) / 100)).toFixed(0)}
-                  </span>
-                )}
-              </div>
-              <div className="relative">
-                <Percent className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="descuento"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={formData.descuento}
-                  onChange={(e) => setFormData({ ...formData, descuento: e.target.value })}
-                  placeholder="0"
-                  disabled={isSubmitting}
-                  className="pl-9"
-                />
-              </div>
-              <p className="text-[10px] text-muted-foreground leading-tight">Dejá vacío o en 0 para precio normal. Ej: 20 = 20% de descuento.</p>
-            </div>
-
-            {restaurante?.sistemaPuntos && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="puntosGanados">Puntos que otorga</Label>
-                  <Input
-                    id="puntosGanados"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={formData.puntosGanados}
-                    onChange={(e) => setFormData({ ...formData, puntosGanados: e.target.value })}
-                    placeholder="Ej: 10"
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-[10px] text-muted-foreground leading-tight">Canjeables si se paga en efectivo.</p>
+          <div className="px-6 sm:px-8 pt-8 pb-4 shrink-0 bg-white dark:bg-zinc-950 z-10 border-b border-zinc-100 dark:border-zinc-800">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center">
+                  <Package className="h-5 w-5 text-[#FF7A00]" />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="puntosNecesarios">Puntos para canjear</Label>
-                  <Input
-                    id="puntosNecesarios"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={formData.puntosNecesarios}
-                    onChange={(e) => setFormData({ ...formData, puntosNecesarios: e.target.value })}
-                    placeholder="Ej: 50"
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-[10px] text-muted-foreground leading-tight">Costo en puntos para llevárselo gratis.</p>
+                {productoEditando ? 'Editar Producto' : 'Nuevo Producto'}
+              </DialogTitle>
+              <DialogDescription className="text-base text-muted-foreground mt-2">
+                Completa la información para que tus clientes vean este plato en tu menú.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-8">
+            <form id="productForm" onSubmit={handleSubmit} className="space-y-8">
+
+              {/* Información Principal */}
+              <div className="space-y-5">
+                <h3 className="font-bold text-lg border-b border-zinc-100 dark:border-zinc-800 pb-2">Información Principal</h3>
+
+                <div className="space-y-1">
+                  <Label htmlFor="nombre" className={phantomLabelClass}>Nombre del Plato <span className="text-red-500">*</span></Label>
+                  <Input id="nombre" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} placeholder="Ej: Burger Triple Cheddar" required disabled={isSubmitting} className={phantomInputClass} />
                 </div>
-              </div>
-            )}
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="categoria">Categoría</Label>
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDialogGestionCategoriasAbierto(true)}
-                    className="h-7 text-xs"
-                    title="Gestionar categorías"
-                  >
-                    <Settings2 className="h-3 w-3 mr-1" />
-                    Gestionar
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDialogCategoriaAbierto(true)}
-                    className="h-7 text-xs"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Nueva
-                  </Button>
+                <div className="space-y-1">
+                  <Label htmlFor="descripcion" className={phantomLabelClass}>Descripción <span className="text-red-500">*</span></Label>
+                  <Textarea id="descripcion" value={formData.descripcion} onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} placeholder="Doble medallón de carne, extra cheddar, panceta crispy..." rows={3} required disabled={isSubmitting} className="min-h-[100px] rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 py-4 w-full resize-none" />
                 </div>
-              </div>
-              <Select
-                value={formData.categoriaId}
-                onValueChange={(value) => setFormData({ ...formData, categoriaId: value })}
-                disabled={isSubmitting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar categoría (opcional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Sin categoría</SelectItem>
-                  {categorias.map((categoria) => (
-                    <SelectItem key={categoria.id} value={categoria.id.toString()}>
-                      {categoria.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
-            <div className="space-y-2">
-              <Label>Foto del plato</Label>
-              <ImageUpload
-                onImageChange={setImageBase64}
-                currentImage={imageBase64}
-                maxSize={5}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="ingredientes">Ingredientes</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDialogIngredienteAbierto(true)}
-                  className="h-7 text-xs"
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Nuevo
-                </Button>
-              </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
-                {ingredientes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No hay ingredientes. Crea uno nuevo.
-                  </p>
-                ) : (
-                  ingredientes.map((ingrediente) => {
-                    const estaSeleccionado = ingredientesSeleccionados.includes(ingrediente.id)
-                    return (
-                      <div
-                        key={ingrediente.id}
-                        className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${estaSeleccionado
-                          ? 'bg-primary/10 border-primary'
-                          : 'bg-background hover:bg-muted'
-                          }`}
-                        onClick={() => {
-                          if (estaSeleccionado) {
-                            setIngredientesSeleccionados(ingredientesSeleccionados.filter(id => id !== ingrediente.id))
-                          } else {
-                            setIngredientesSeleccionados([...ingredientesSeleccionados, ingrediente.id])
-                          }
-                        }}
-                      >
-                        <span className="text-sm font-medium">{ingrediente.nombre}</span>
-                        {estaSeleccionado && (
-                          <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-                            <X className="h-3 w-3 text-primary-foreground" />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-              {ingredientesSeleccionados.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {ingredientesSeleccionados.length} ingrediente{ingredientesSeleccionados.length !== 1 ? 's' : ''} seleccionado{ingredientesSeleccionados.length !== 1 ? 's' : ''}
-                </p>
-              )}
-            </div>
-            {/* Agregados */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="agregados">Agregados Opcionales</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDialogAgregadoAbierto(true)}
-                  className="h-7 text-xs"
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Nuevo
-                </Button>
-              </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
-                {agregados.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No hay agregados. Crea uno nuevo.
-                  </p>
-                ) : (
-                  agregados.map((agregado) => {
-                    const estaSeleccionado = agregadosSeleccionados.includes(agregado.id)
-                    return (
-                      <div
-                        key={agregado.id}
-                        className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${estaSeleccionado
-                          ? 'bg-primary/10 border-primary'
-                          : 'bg-background hover:bg-muted'
-                          }`}
-                        onClick={() => {
-                          if (estaSeleccionado) {
-                            setAgregadosSeleccionados(agregadosSeleccionados.filter(id => id !== agregado.id))
-                          } else {
-                            setAgregadosSeleccionados([...agregadosSeleccionados, agregado.id])
-                          }
-                        }}
-                      >
-                        <span className="text-sm font-medium">{agregado.nombre} <span className="text-muted-foreground text-xs ml-1">${agregado.precio}</span></span>
-                        {estaSeleccionado && (
-                          <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-                            <X className="h-3 w-3 text-primary-foreground" />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-              {agregadosSeleccionados.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {agregadosSeleccionados.length} agregado{agregadosSeleccionados.length !== 1 ? 's' : ''} seleccionado{agregadosSeleccionados.length !== 1 ? 's' : ''}
-                </p>
-              )}
-            </div>
-
-            {/* Etiquetas */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="etiquetas">Etiquetas</Label>
-                <span className="text-xs text-muted-foreground">
-                  {etiquetasProducto.length > 0 ? `${etiquetasProducto.length} etiqueta${etiquetasProducto.length !== 1 ? 's' : ''}` : 'Se genera automáticamente'}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  id="nuevaEtiqueta"
-                  value={nuevaEtiqueta}
-                  onChange={(e) => setNuevaEtiqueta(e.target.value)}
-                  placeholder="Ej: PM, PIZ, HAM..."
-                  disabled={isSubmitting}
-                  className="flex-1"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      const tag = nuevaEtiqueta.trim().toLowerCase()
-                      if (tag && !etiquetasProducto.includes(tag)) {
-                        setEtiquetasProducto([...etiquetasProducto, tag])
-                        setNuevaEtiqueta('')
-                      }
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  disabled={!nuevaEtiqueta.trim() || etiquetasProducto.includes(nuevaEtiqueta.trim().toLowerCase())}
-                  onClick={() => {
-                    const tag = nuevaEtiqueta.trim().toLowerCase()
-                    if (tag && !etiquetasProducto.includes(tag)) {
-                      setEtiquetasProducto([...etiquetasProducto, tag])
-                      setNuevaEtiqueta('')
-                    }
-                  }}
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Agregar
-                </Button>
-              </div>
-              {etiquetasProducto.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 p-2 border rounded-lg bg-muted/30">
-                  {etiquetasProducto.map((tag) => (
-                    <Badge
-                      key={tag}
-                      variant="secondary"
-                      className="gap-1 text-xs cursor-pointer hover:bg-destructive/20 transition-colors"
-                      onClick={() => setEtiquetasProducto(etiquetasProducto.filter(t => t !== tag))}
-                    >
-                      <Tag className="h-3 w-3" />
-                      {tag}
-                      <X className="h-3 w-3" />
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              <p className="text-[11px] text-muted-foreground">
-                Si no agregás etiquetas, se genera una automáticamente con las iniciales del producto.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-background pb-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setDialogAbierto(false)}
-                disabled={isSubmitting}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  'Guardar'
-                )}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para crear nuevo ingrediente */}
-      <Dialog open={dialogIngredienteAbierto} onOpenChange={setDialogIngredienteAbierto}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Nuevo Ingrediente</DialogTitle>
-            <DialogDescription>
-              Crea un nuevo ingrediente para usar en tus productos
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="ingredienteNombre">Nombre del ingrediente</Label>
-              <Input
-                id="ingredienteNombre"
-                value={nuevoIngredienteNombre}
-                onChange={(e) => setNuevoIngredienteNombre(e.target.value)}
-                placeholder="Ej: Ketchup, Cebolla, Queso..."
-                required
-                disabled={isCreandoIngrediente}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isCreandoIngrediente) {
-                    e.preventDefault()
-                    crearIngrediente()
-                  }
-                }}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setDialogIngredienteAbierto(false)
-                  setNuevoIngredienteNombre('')
-                }}
-                disabled={isCreandoIngrediente}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                onClick={crearIngrediente}
-                disabled={isCreandoIngrediente || !nuevoIngredienteNombre.trim()}
-              >
-                {isCreandoIngrediente ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creando...
-                  </>
-                ) : (
-                  'Crear'
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para crear nuevo agregado */}
-      <Dialog open={dialogAgregadoAbierto} onOpenChange={setDialogAgregadoAbierto}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Nuevo Agregado Opcional</DialogTitle>
-            <DialogDescription>
-              Crea un nuevo agregado que tus clientes puedan añadir a los productos
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="agregadoNombre">Nombre</Label>
-              <Input
-                id="agregadoNombre"
-                value={nuevoAgregadoNombre}
-                onChange={(e) => setNuevoAgregadoNombre(e.target.value)}
-                placeholder="Ej: Doble medallón de carne"
-                required
-                disabled={isCreandoAgregado}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="agregadoPrecio">Precio</Label>
-              <Input
-                id="agregadoPrecio"
-                type="number"
-                min="0"
-                step="0.01"
-                value={nuevoAgregadoPrecio}
-                onChange={(e) => setNuevoAgregadoPrecio(e.target.value)}
-                placeholder="Ej: 1500"
-                required
-                disabled={isCreandoAgregado}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isCreandoAgregado) {
-                    e.preventDefault()
-                    crearAgregado()
-                  }
-                }}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setDialogAgregadoAbierto(false)
-                  setNuevoAgregadoNombre('')
-                  setNuevoAgregadoPrecio('')
-                }}
-                disabled={isCreandoAgregado}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                onClick={crearAgregado}
-                disabled={isCreandoAgregado || !nuevoAgregadoNombre.trim() || !nuevoAgregadoPrecio}
-              >
-                {isCreandoAgregado ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creando...
-                  </>
-                ) : (
-                  'Crear'
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para crear nueva categoría */}
-      <Dialog open={dialogCategoriaAbierto} onOpenChange={setDialogCategoriaAbierto}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Nueva Categoría</DialogTitle>
-            <DialogDescription>
-              Crea una nueva categoría para organizar tus productos
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="categoriaNombre">Nombre de la categoría</Label>
-              <Input
-                id="categoriaNombre"
-                value={nuevaCategoriaNombre}
-                onChange={(e) => setNuevaCategoriaNombre(e.target.value)}
-                placeholder="Ej: Bebidas, Pizzas, Hamburguesas..."
-                required
-                disabled={isCreandoCategoria}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isCreandoCategoria) {
-                    e.preventDefault()
-                    crearCategoria()
-                  }
-                }}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setDialogCategoriaAbierto(false)
-                  setNuevaCategoriaNombre('')
-                }}
-                disabled={isCreandoCategoria}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                onClick={crearCategoria}
-                disabled={isCreandoCategoria || !nuevaCategoriaNombre.trim()}
-              >
-                {isCreandoCategoria ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creando...
-                  </>
-                ) : (
-                  'Crear'
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog Confirmar Eliminación */}
-      <Dialog open={dialogEliminarAbierto} onOpenChange={setDialogEliminarAbierto}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>¿Eliminar producto?</DialogTitle>
-            <DialogDescription>
-              Esta acción no se puede deshacer. El producto <strong>{productoAEliminar?.nombre}</strong> será eliminado permanentemente, incluyendo su imagen.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setDialogEliminarAbierto(false)
-                setProductoAEliminar(null)
-              }}
-              disabled={isEliminando}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={eliminarProducto}
-              disabled={isEliminando}
-              variant="destructive"
-            >
-              {isEliminando ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Eliminando...
-                </>
-              ) : (
-                'Eliminar'
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog Confirmar Activar/Desactivar */}
-      <Dialog open={dialogDesactivarAbierto} onOpenChange={setDialogDesactivarAbierto}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {productoADesactivar?.activo ? '¿Desactivar producto?' : '¿Activar producto?'}
-            </DialogTitle>
-            <DialogDescription>
-              {productoADesactivar?.activo ? (
-                <>
-                  El producto <strong>{productoADesactivar?.nombre}</strong> se ocultará del menú pero se mantendrá en el sistema. Podrás reactivarlo más tarde.
-                </>
-              ) : (
-                <>
-                  El producto <strong>{productoADesactivar?.nombre}</strong> volverá a estar visible en el menú para los clientes.
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setDialogDesactivarAbierto(false)
-                setProductoADesactivar(null)
-              }}
-              disabled={isDesactivando}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={toggleActivoProducto}
-              disabled={isDesactivando}
-              className={productoADesactivar?.activo
-                ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                : 'bg-green-500 hover:bg-green-600 text-white'
-              }
-            >
-              {isDesactivando ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {productoADesactivar?.activo ? 'Desactivando...' : 'Activando...'}
-                </>
-              ) : (
-                productoADesactivar?.activo ? 'Desactivar' : 'Activar'
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog Gestionar Categorías */}
-      <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={setDialogGestionCategoriasAbierto}>
-        <DialogContent className="max-w-md max-h-[80dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Gestionar Categorías</DialogTitle>
-            <DialogDescription>
-              Administra las categorías de tu menú. Al eliminar una categoría, los productos asociados pasarán a "Sin categoría".
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 pt-2">
-            {categorias.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No hay categorías creadas</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => {
-                    setDialogGestionCategoriasAbierto(false)
-                    setDialogCategoriaAbierto(true)
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Crear primera categoría
-                </Button>
-              </div>
-            ) : (
-              <>
-                {categorias.map((categoria) => {
-                  const cantidadProductos = contarProductosPorCategoria(categoria.id)
-                  return (
-                    <div
-                      key={categoria.id}
-                      className="flex items-center justify-between p-3 rounded-lg border bg-background hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{categoria.nombre}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {cantidadProductos} producto{cantidadProductos !== 1 ? 's' : ''}
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                        onClick={() => {
-                          setCategoriaAEliminar(categoria)
-                          setDialogEliminarCategoriaAbierto(true)
-                        }}
-                        title="Eliminar categoría"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-1">
+                    <Label htmlFor="precio" className={phantomLabelClass}>Precio ($) <span className="text-red-500">*</span></Label>
+                    <div className="relative">
+                      <span className="absolute left-5 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
+                      <Input id="precio" type="number" step="0.01" min="0" value={formData.precio} onChange={(e) => setFormData({ ...formData, precio: e.target.value })} placeholder="0.00" required disabled={isSubmitting} className={cn(phantomInputClass, "pl-9 font-bold")} />
                     </div>
-                  )
-                })}
-                <div className="pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      setDialogGestionCategoriasAbierto(false)
-                      setDialogCategoriaAbierto(true)
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Nueva categoría
-                  </Button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="descuento" className={phantomLabelClass}>Descuento (%)</Label>
+                      {formData.descuento && parseInt(formData.descuento) > 0 && formData.precio && (
+                        <span className="text-xs font-bold text-emerald-600 mb-2">Queda en: ${(parseFloat(formData.precio) * (1 - parseInt(formData.descuento) / 100)).toFixed(0)}</span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input id="descuento" type="number" min="0" max="100" step="1" value={formData.descuento} onChange={(e) => setFormData({ ...formData, descuento: e.target.value })} placeholder="0" disabled={isSubmitting} className={cn(phantomInputClass, "pl-10")} />
+                    </div>
+                  </div>
                 </div>
-              </>
-            )}
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <Label htmlFor="categoria" className="text-sm font-bold text-foreground ml-1 block">Categoría</Label>
+                    <Button type="button" variant="link" className="h-auto p-0 text-[#FF7A00] text-sm font-semibold" onClick={() => setDialogGestionCategoriasAbierto(true)}>Gestionar categorías</Button>
+                  </div>
+                  <Select value={formData.categoriaId} onValueChange={(value) => setFormData({ ...formData, categoriaId: value })} disabled={isSubmitting}>
+                    <SelectTrigger className="h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:ring-2 focus:ring-[#FF7A00]/20 text-base font-medium px-5">
+                      <SelectValue placeholder="Seleccionar categoría (opcional)" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl border-zinc-200 dark:border-zinc-800">
+                      <SelectItem value="0" className="py-3">Sin categoría</SelectItem>
+                      {categorias.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id.toString()} className="py-3">{cat.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className={phantomLabelClass}>Foto del Plato</Label>
+                  <div className="bg-zinc-50 dark:bg-zinc-900/30 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl p-2 hover:border-[#FF7A00]/50 transition-colors">
+                    <ImageUpload onImageChange={setImageBase64} currentImage={imageBase64} maxSize={5} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Personalización y Extras */}
+              <div className="space-y-5 pt-4">
+                <h3 className="font-bold text-lg border-b border-zinc-100 dark:border-zinc-800 pb-2">Personalización</h3>
+
+                {/* Ingredientes */}
+                <div className="space-y-3 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base font-bold text-foreground">Ingredientes</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">El cliente podrá quitarlos (Ej: Sin Cebolla).</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setDialogIngredienteAbierto(true)} className="h-9 rounded-xl font-semibold border-zinc-300 dark:border-zinc-700">
+                      <Plus className="h-4 w-4 mr-1" /> Nuevo
+                    </Button>
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-2">
+                    {ingredientes.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic py-4 text-center">No hay ingredientes creados.</p>
+                    ) : (
+                      ingredientes.map((ing) => {
+                        const isSelected = ingredientesSeleccionados.includes(ing.id)
+                        return (
+                          <div
+                            key={ing.id}
+                            className={cn(
+                              "flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all",
+                              isSelected ? "bg-orange-50/50 dark:bg-orange-950/20 border-[#FF7A00] shadow-sm shadow-orange-500/10" : "bg-white dark:bg-zinc-950 border-transparent hover:border-zinc-200 dark:hover:border-zinc-800"
+                            )}
+                            onClick={() => {
+                              if (isSelected) setIngredientesSeleccionados(prev => prev.filter(id => id !== ing.id))
+                              else setIngredientesSeleccionados(prev => [...prev, ing.id])
+                            }}
+                          >
+                            <span className={cn("text-sm font-semibold", isSelected ? "text-[#FF7A00]" : "text-foreground")}>{ing.nombre}</span>
+                            {isSelected && <CheckCircle2 className="h-5 w-5 text-[#FF7A00]" />}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Agregados */}
+                <div className="space-y-3 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base font-bold text-foreground">Extras / Agregados</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">Opciones con costo adicional (Ej: Extra Cheddar).</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setDialogAgregadoAbierto(true)} className="h-9 rounded-xl font-semibold border-zinc-300 dark:border-zinc-700">
+                      <Plus className="h-4 w-4 mr-1" /> Nuevo
+                    </Button>
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-2">
+                    {agregados.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic py-4 text-center">No hay agregados creados.</p>
+                    ) : (
+                      agregados.map((ag) => {
+                        const isSelected = agregadosSeleccionados.includes(ag.id)
+                        return (
+                          <div
+                            key={ag.id}
+                            className={cn(
+                              "flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all",
+                              isSelected ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 shadow-sm shadow-emerald-500/10" : "bg-white dark:bg-zinc-950 border-transparent hover:border-zinc-200 dark:hover:border-zinc-800"
+                            )}
+                            onClick={() => {
+                              if (isSelected) setAgregadosSeleccionados(prev => prev.filter(id => id !== ag.id))
+                              else setAgregadosSeleccionados(prev => [...prev, ag.id])
+                            }}
+                          >
+                            <span className={cn("text-sm font-semibold", isSelected ? "text-emerald-700 dark:text-emerald-400" : "text-foreground")}>
+                              {ag.nombre} <span className="opacity-60 ml-1">+${ag.precio}</span>
+                            </span>
+                            {isSelected && <CheckCircle2 className="h-5 w-5 text-emerald-500" />}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Etiquetas */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-bold text-foreground">Etiquetas visuales</Label>
+                    <span className="text-xs text-muted-foreground font-medium bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded-md">
+                      {etiquetasProducto.length} seleccionadas
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input id="nuevaEtiqueta" value={nuevaEtiqueta} onChange={(e) => setNuevaEtiqueta(e.target.value)} placeholder="Ej: Vegano, Sin TACC..." disabled={isSubmitting} className="h-12 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:border-[#FF7A00]" onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        const tag = nuevaEtiqueta.trim().toLowerCase()
+                        if (tag && !etiquetasProducto.includes(tag)) { setEtiquetasProducto([...etiquetasProducto, tag]); setNuevaEtiqueta('') }
+                      }
+                    }} />
+                    <Button type="button" variant="secondary" className="h-12 px-6 rounded-xl font-bold bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700" disabled={!nuevaEtiqueta.trim() || etiquetasProducto.includes(nuevaEtiqueta.trim().toLowerCase())} onClick={() => {
+                      const tag = nuevaEtiqueta.trim().toLowerCase()
+                      if (tag && !etiquetasProducto.includes(tag)) { setEtiquetasProducto([...etiquetasProducto, tag]); setNuevaEtiqueta('') }
+                    }}>
+                      Agregar
+                    </Button>
+                  </div>
+                  {etiquetasProducto.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {etiquetasProducto.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="h-8 px-3 gap-2 text-xs font-semibold cursor-pointer hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-950/30 transition-colors bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800" onClick={() => setEtiquetasProducto(etiquetasProducto.filter(t => t !== tag))}>
+                          <Tag className="h-3 w-3" /> {tag} <X className="h-3 w-3 opacity-50" />
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sistema de puntos (Si está activo) */}
+              {restaurante?.sistemaPuntos && (
+                <div className="space-y-4 pt-4">
+                  <h3 className="font-bold text-lg border-b border-zinc-100 dark:border-zinc-800 pb-2">Sistema de Puntos</h3>
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="space-y-1">
+                      <Label htmlFor="puntosGanados" className={phantomLabelClass}>Puntos que otorga</Label>
+                      <Input id="puntosGanados" type="number" min="0" step="1" value={formData.puntosGanados} onChange={(e) => setFormData({ ...formData, puntosGanados: e.target.value })} placeholder="0" disabled={isSubmitting} className={phantomInputClass} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="puntosNecesarios" className={phantomLabelClass}>Costo en puntos</Label>
+                      <Input id="puntosNecesarios" type="number" min="0" step="1" value={formData.puntosNecesarios} onChange={(e) => setFormData({ ...formData, puntosNecesarios: e.target.value })} placeholder="0" disabled={isSubmitting} className={phantomInputClass} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </form>
+          </div>
+
+          {/* Footer Sticky */}
+          <div className="px-6 sm:px-8 py-5 shrink-0 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-end gap-3 z-10">
+            <Button type="button" variant="ghost" onClick={() => setDialogAbierto(false)} disabled={isSubmitting} className="h-12 px-6 rounded-xl font-semibold text-muted-foreground hover:text-foreground">
+              Cancelar
+            </Button>
+            <Button type="submit" form="productForm" disabled={isSubmitting} className="h-12 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-transform">
+              {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+              {productoEditando ? 'Guardar Cambios' : 'Crear Producto'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Confirmar Eliminación de Categoría */}
-      <Dialog open={dialogEliminarCategoriaAbierto} onOpenChange={setDialogEliminarCategoriaAbierto}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              ¿Eliminar categoría?
-            </DialogTitle>
-            <DialogDescription className="space-y-2">
-              <span className="block">
-                Estás a punto de eliminar la categoría <strong>"{categoriaAEliminar?.nombre}"</strong>.
-              </span>
-              {categoriaAEliminar && contarProductosPorCategoria(categoriaAEliminar.id) > 0 && (
-                <span className="block text-amber-600 dark:text-amber-400">
-                  ⚠️ Esta categoría tiene {contarProductosPorCategoria(categoriaAEliminar.id)} producto(s) asociado(s).
-                  Estos productos pasarán a "Sin categoría".
-                </span>
-              )}
-            </DialogDescription>
+      {/* ─────────────────────────────────────────────
+          MODAL: NUEVO INGREDIENTE
+      ───────────────────────────────────────────── */}
+      <Dialog open={dialogIngredienteAbierto} onOpenChange={setDialogIngredienteAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-zinc-200 dark:border-zinc-800">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-xl font-bold">Nuevo Ingrediente</DialogTitle>
           </DialogHeader>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setDialogEliminarCategoriaAbierto(false)
-                setCategoriaAEliminar(null)
-              }}
-              disabled={isEliminandoCategoria}
-            >
-              Cancelar
+          <div className="space-y-4">
+            <Input value={nuevoIngredienteNombre} onChange={(e) => setNuevoIngredienteNombre(e.target.value)} placeholder="Ej: Tomate, Cheddar..." disabled={isCreandoIngrediente} className={phantomInputClass} onKeyDown={(e) => { if (e.key === 'Enter') crearIngrediente() }} />
+            <Button className="w-full h-14 rounded-2xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={crearIngrediente} disabled={isCreandoIngrediente || !nuevoIngredienteNombre.trim()}>
+              {isCreandoIngrediente ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Crear Ingrediente'}
             </Button>
-            <Button
-              type="button"
-              onClick={eliminarCategoria}
-              disabled={isEliminandoCategoria}
-              variant="destructive"
-            >
-              {isEliminandoCategoria ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Eliminando...
-                </>
-              ) : (
-                'Eliminar'
-              )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─────────────────────────────────────────────
+          MODAL: NUEVO AGREGADO
+      ───────────────────────────────────────────── */}
+      <Dialog open={dialogAgregadoAbierto} onOpenChange={setDialogAgregadoAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-zinc-200 dark:border-zinc-800">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-xl font-bold text-emerald-600 dark:text-emerald-500">Nuevo Extra</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input value={nuevoAgregadoNombre} onChange={(e) => setNuevoAgregadoNombre(e.target.value)} placeholder="Nombre (Ej: Doble carne)" disabled={isCreandoAgregado} className={phantomInputClass} />
+            <div className="relative">
+              <span className="absolute left-5 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
+              <Input type="number" step="0.01" value={nuevoAgregadoPrecio} onChange={(e) => setNuevoAgregadoPrecio(e.target.value)} placeholder="Precio" disabled={isCreandoAgregado} className={cn(phantomInputClass, "pl-9 font-bold")} onKeyDown={(e) => { if (e.key === 'Enter') crearAgregado() }} />
+            </div>
+            <Button className="w-full h-14 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white" onClick={crearAgregado} disabled={isCreandoAgregado || !nuevoAgregadoNombre.trim() || !nuevoAgregadoPrecio}>
+              {isCreandoAgregado ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Crear Extra'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─────────────────────────────────────────────
+          MODAL: GESTIONAR Y CREAR CATEGORÍAS
+      ───────────────────────────────────────────── */}
+      <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={setDialogGestionCategoriasAbierto}>
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-hidden flex flex-col rounded-[32px] p-0 border-zinc-200 dark:border-zinc-800">
+          <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-zinc-50/50 dark:bg-zinc-950">
+            <DialogTitle className="text-xl font-bold">Gestión de Categorías</DialogTitle>
+            <DialogDescription className="mt-1 text-sm">Organiza tu menú. Al eliminar, los productos pasan a "Sin categoría".</DialogDescription>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-2">
+            {categorias.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">No hay categorías creadas.</p>
+            ) : (
+              categorias.map((categoria) => (
+                <div key={categoria.id} className="flex items-center justify-between p-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121212]">
+                  <div className="font-semibold text-foreground">{categoria.nombre} <span className="text-xs font-normal text-muted-foreground ml-2">{contarProductosPorCategoria(categoria.id)} ítems</span></div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg" onClick={() => { setCategoriaAEliminar(categoria); setDialogEliminarCategoriaAbierto(true) }}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
+            <Button className="w-full h-12 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={() => { setDialogGestionCategoriasAbierto(false); setDialogCategoriaAbierto(true) }}>
+              <Plus className="h-5 w-5 mr-2" /> Nueva Categoría
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Crear Categoría */}
+      <Dialog open={dialogCategoriaAbierto} onOpenChange={setDialogCategoriaAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-zinc-200 dark:border-zinc-800">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-xl font-bold">Nueva Categoría</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input value={nuevaCategoriaNombre} onChange={(e) => setNuevaCategoriaNombre(e.target.value)} placeholder="Ej: Pizzas, Bebidas..." disabled={isCreandoCategoria} className={phantomInputClass} onKeyDown={(e) => { if (e.key === 'Enter') crearCategoria() }} />
+            <Button className="w-full h-14 rounded-2xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={crearCategoria} disabled={isCreandoCategoria || !nuevaCategoriaNombre.trim()}>
+              {isCreandoCategoria ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Crear Categoría'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─────────────────────────────────────────────
+          MODALES DE CONFIRMACIÓN (ELIMINAR / TOGGLE)
+      ───────────────────────────────────────────── */}
+      <Dialog open={dialogEliminarAbierto} onOpenChange={setDialogEliminarAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
+          <div className="h-16 w-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Trash2 className="h-8 w-8 text-red-600 dark:text-red-500" />
+          </div>
+          <DialogTitle className="text-2xl font-bold mb-2">Eliminar Producto</DialogTitle>
+          <DialogDescription className="text-base mb-8">
+            ¿Eliminar <strong>{productoAEliminar?.nombre}</strong> permanentemente? Esta acción no se puede deshacer.
+          </DialogDescription>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEliminarAbierto(false)}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={eliminarProducto} disabled={isEliminando}>
+              {isEliminando ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogEliminarCategoriaAbierto} onOpenChange={setDialogEliminarCategoriaAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
+          <div className="h-16 w-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="h-8 w-8 text-red-600 dark:text-red-500" />
+          </div>
+          <DialogTitle className="text-xl font-bold mb-2">Eliminar Categoría</DialogTitle>
+          <DialogDescription className="text-sm mb-8">
+            Los {categoriaAEliminar && contarProductosPorCategoria(categoriaAEliminar.id)} productos en <strong>{categoriaAEliminar?.nombre}</strong> quedarán "Sin categoría".
+          </DialogDescription>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold" onClick={() => setDialogEliminarCategoriaAbierto(false)}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={eliminarCategoria} disabled={isEliminandoCategoria}>
+              {isEliminandoCategoria ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogDesactivarAbierto} onOpenChange={setDialogDesactivarAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
+          <div className={cn("h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4", productoADesactivar?.activo ? "bg-orange-100 dark:bg-orange-500/10" : "bg-green-100 dark:bg-green-500/10")}>
+            <Power className={cn("h-8 w-8", productoADesactivar?.activo ? "text-orange-600" : "text-green-600")} />
+          </div>
+          <DialogTitle className="text-2xl font-bold mb-2">
+            {productoADesactivar?.activo ? '¿Ocultar producto?' : '¿Activar producto?'}
+          </DialogTitle>
+          <DialogDescription className="text-base mb-8">
+            {productoADesactivar?.activo ? 'El producto desaparecerá del menú público, pero seguirá en el sistema.' : 'El producto volverá a estar disponible para la venta.'}
+          </DialogDescription>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogDesactivarAbierto(false)}>Cancelar</Button>
+            <Button className={cn("flex-1 h-12 rounded-xl font-bold text-white shadow-sm", productoADesactivar?.activo ? "bg-orange-500 hover:bg-orange-600" : "bg-green-500 hover:bg-green-600")} onClick={toggleActivoProducto} disabled={isDesactivando}>
+              {isDesactivando ? <Loader2 className="h-5 w-5 animate-spin" /> : (productoADesactivar?.activo ? 'Ocultar' : 'Activar')}
             </Button>
           </div>
         </DialogContent>

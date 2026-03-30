@@ -116,6 +116,19 @@ export const authApi = {
   },
 }
 
+// Onboarding API
+export const onboardingApi = {
+  complete: async (token: string, data: any) => {
+    return fetchApi('/onboarding/complete', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    })
+  }
+}
+
 export const clientesApi = {
   getAll: async (token: string) => {
     return fetchApi('/clientes/list', {
@@ -785,8 +798,15 @@ export const pedidosApi = {
 
 // Metricas API
 export const metricasApi = {
-  get: async (token: string) => {
-    return fetchApi('/metricas', {
+  get: async (token: string, filters?: { month?: number; year?: number; from?: string; to?: string }) => {
+    const params = new URLSearchParams()
+    if (filters?.month) params.append('month', String(filters.month))
+    if (filters?.year) params.append('year', String(filters.year))
+    if (filters?.from) params.append('from', filters.from)
+    if (filters?.to) params.append('to', filters.to)
+    const query = params.toString() ? `?${params.toString()}` : ''
+
+    return fetchApi(`/metricas${query}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,

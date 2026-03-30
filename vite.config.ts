@@ -4,11 +4,15 @@ import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+
+const plugins: any[] = [
+  react(),
+  tailwindcss(),
+];
+
+if (!isTauri) {
+  plugins.push(
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['piru192.png', 'piru512.png', 'piruappletouch.png'],
@@ -40,7 +44,12 @@ export default defineConfig({
         ]
       }
     })
-  ],
+  );
+}
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins,
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

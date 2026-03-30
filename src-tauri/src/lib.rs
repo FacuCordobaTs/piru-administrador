@@ -232,6 +232,7 @@ fn send_print_job_windows(printer_name: &str, content: &[u8]) -> Result<(), Stri
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -243,7 +244,6 @@ pub fn run() {
             }
             Ok(())
         })
-        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![get_printers, send_print_job])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

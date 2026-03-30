@@ -27,6 +27,20 @@ const ProtectedLayout = () => {
   if (isTokenExpired(token)) {
     return <Navigate to="/login" replace />
   }
+  
+  // Extraemos la información del restaurante si la página actual no es /onboarding
+  // Asumimos que window.location.pathname servirá porque ProtectedLayout es el parent
+  const currentPath = window.location.pathname
+  const restaurante = restauranteStore.restaurante as any
+
+  if (restaurante && !restaurante.completedOnboarding && currentPath !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />
+  }
+  
+  // Opcional: Si currentPath === '/onboarding' y YA COMPLETO el onboarding, lo enviamos al dashboard
+  if (restaurante && restaurante.completedOnboarding && currentPath === '/onboarding') {
+    return <Navigate to="/dashboard" replace />
+  }
 
   return (
     <AdminProvider>

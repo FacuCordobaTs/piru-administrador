@@ -771,6 +771,13 @@ const Perfil = () => {
       <div className="bg-white dark:bg-zinc-950/50 border-b border-zinc-200 dark:border-zinc-800/80 pb-6">
         {/* Orange banner */}
         <div className="h-32 sm:h-40 bg-[#FF7A00] relative overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-[0.07]"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(0deg,#000 0,#000 1px,transparent 0,transparent 40px),repeating-linear-gradient(90deg,#000 0,#000 1px,transparent 0,transparent 40px)',
+            }}
+          />
           <div className="absolute inset-0 bg-black/10 mix-blend-overlay" />
         </div>
 
@@ -1175,10 +1182,10 @@ const Perfil = () => {
               TAB: DELIVERY (Horarios)
           ───────────────────────────────────────────── */}
           <TabsContent value="delivery" className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="flex flex-col gap-6">
 
               {/* Horarios */}
-              <div className={cn(phantomCardClass, "lg:col-span-2")}>
+              <div className={phantomCardClass}>
                 <div className="p-6 sm:p-8">
                   <div className="max-w-xl mb-8">
                     <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
@@ -1208,50 +1215,54 @@ const Perfil = () => {
                             )}
                           >
                             <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+
                               <div className="flex items-center gap-3 sm:w-32 shrink-0 pt-2">
                                 <div className={cn("h-3 w-3 rounded-full shrink-0", estaAbierto ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-700")} />
                                 <span className="text-base font-bold text-foreground">{nombreDia}</span>
                               </div>
 
-                              <div className="flex-1 flex flex-col gap-3">
+                              <div className="flex-1 flex flex-col gap-3 min-w-0">
                                 {turnos.length === 0 ? (
                                   <span className="text-sm text-muted-foreground italic py-2">Cerrado</span>
                                 ) : (
-                                  turnos.map((turno, tIdx) => (
-                                    <div key={tIdx} className="flex items-center gap-2 sm:gap-4 bg-zinc-50 dark:bg-zinc-950 p-2 rounded-2xl w-max border border-zinc-100 dark:border-zinc-900">
-                                      <Input
-                                        type="time"
-                                        value={turno.horaApertura}
-                                        onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaApertura', e.target.value)}
-                                        className="h-10 w-28 rounded-xl bg-white dark:bg-zinc-900 border-none font-medium"
-                                      />
-                                      <span className="text-muted-foreground font-medium text-sm">a</span>
-                                      <Input
-                                        type="time"
-                                        value={turno.horaCierre}
-                                        onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaCierre', e.target.value)}
-                                        className="h-10 w-28 rounded-xl bg-white dark:bg-zinc-900 border-none font-medium"
-                                      />
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-10 w-10 text-muted-foreground hover:text-red-500 rounded-xl"
-                                        onClick={() => eliminarTurno(diaIdx, tIdx)}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  ))
+                                  <div className="flex flex-col gap-3">
+                                    {turnos.map((turno, tIdx) => (
+                                      <div key={tIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-4 bg-zinc-50 dark:bg-zinc-950 p-2 rounded-2xl w-full xl:w-fit border border-zinc-100 dark:border-zinc-900">
+                                        <Input
+                                          type="time"
+                                          value={turno.horaApertura}
+                                          onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaApertura', e.target.value)}
+                                          className="h-10 flex-1 min-w-[90px] sm:w-28 rounded-xl bg-white dark:bg-zinc-900 border-none font-medium"
+                                        />
+                                        <span className="text-muted-foreground font-medium text-sm">a</span>
+                                        <Input
+                                          type="time"
+                                          value={turno.horaCierre}
+                                          onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaCierre', e.target.value)}
+                                          className="h-10 flex-1 min-w-[90px] sm:w-28 rounded-xl bg-white dark:bg-zinc-900 border-none font-medium"
+                                        />
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-10 w-10 text-muted-foreground hover:text-red-500 rounded-xl shrink-0"
+                                          onClick={() => eliminarTurno(diaIdx, tIdx)}
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </div>
                                 )}
+
+                                <Button
+                                  variant="outline"
+                                  onClick={() => agregarTurno(diaIdx)}
+                                  className="h-10 rounded-xl px-4 text-sm font-semibold w-full sm:w-fit mt-1"
+                                >
+                                  <Plus className="h-4 w-4 mr-2" /> Agregar turno
+                                </Button>
                               </div>
 
-                              <Button
-                                variant="outline"
-                                onClick={() => agregarTurno(diaIdx)}
-                                className="h-10 rounded-xl px-4 text-sm font-semibold shrink-0 self-start sm:mt-2"
-                              >
-                                <Plus className="h-4 w-4 mr-2" /> Agregar
-                              </Button>
                             </div>
                           </div>
                         )
@@ -1273,7 +1284,7 @@ const Perfil = () => {
               </div>
 
               {/* Mapa Zonas */}
-              <div className="lg:col-span-1">
+              <div>
                 <Suspense
                   fallback={
                     <div className={cn(phantomCardClass, "flex items-center justify-center py-20")}>
