@@ -1,11 +1,11 @@
 {
-    "version": "1.3.6",
-    "notes": "Mejoras en el panel de administración y corrección de bugs.",
+    "version": "1.3.8",
+    "notes": "Cambio en diseño de pedidos y nuevo boton de notificar al cliente",
     "pub_date": "2026-03-29T16:00:00Z",
     "platforms": {
         "windows-x86_64": {
-            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNXc4ZmVWYUlUbklHN1VXaDJCUzhZRU8wR3luWHVJUjEyS3FuV0hXS3dodERDeDhOeHhad054eVhpajZ6bGZoeEIyK0JlaWNuTnd1ZmcrVVFIbEZsK2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc0ODIxMTM5CWZpbGU6cGlydV8xLjMuNl94NjQtc2V0dXAuZXhlCitHc1NDQk9WdVNpRUY2aC85WDc0aDRDMW5sOUdURXo2L0hVUzB4OURVcmdjbUZRV0pGY2ZZK0ZrWHJnOE5BQkxLSnUzZjZsT1dKejlrMXJNZzF6b0RnPT0K",
-            "url": "https://api.piru.app/public/updates/piru_1.3.6_x64-setup.exe"
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNS9nM05qK2wwbEhsdkxCQys0NWtnK29taHRLTW0xT0Vvdjk1UkVqMVpQVGRPeVBqWEh0cm9uL3AyQTROdDBPQXMxM0tiVmlCR0E0QTBqT0lGai9yZ3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc1MDc5NDk1CWZpbGU6cGlydV8xLjMuOF94NjQtc2V0dXAuZXhlCjF6K2lLRHBKRkh5YVNYb1pwV1JvUzFVWDVxSGZxWFhlZGFUTW95eTk2NCtrbFM0azZSOTdBMnpPSjdNTFZVaENwTWtpNkRQVGJ4dktLSXowQk9EeER3PT0K",
+            "url": "https://api.piru.app/public/updates/piru_1.3.8_x64-setup.exe"
         }
     }
 }

@@ -1058,6 +1058,12 @@ export const pedidoUnificadoApi = {
       body: JSON.stringify({ pedidoId }),
     })
   },
+  notificarCliente: async (token: string, pedidoId: number) => {
+    return fetchApi(`/pedido-unificado/${pedidoId}/notificar-cliente`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }
 
 // Delivery API - usa pedidoUnificado por detrás (compatibilidad)

@@ -1,177 +1,51 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { mesasApi, pedidosApi, productosApi, mercadopagoApi, deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi } from '@/lib/api'
-import { type MesaConPedido, type ItemPedido as WSItemPedido } from '@/hooks/useAdminWebSocket'
+import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi } from '@/lib/api'
 import { useAdminContext } from '@/context/AdminContext'
-import MesaQRCode from '@/components/MesaQRCode'
 import CierreTurno from '@/components/CierreTurno'
 import {
-  ShoppingCart, Users, Loader2, QrCode, Plus,
-  Clock, CheckCircle, Coffee,
-  Utensils, Trash2, Archive,
-  User, Minus, Search, Package,
-  Play, List, ArrowLeft, Printer, Truck, MapPin, Phone, X, ShoppingBag, CalendarDays, Tag, Settings
+  Loader2, Plus, Clock, Trash2, AlertCircle,
+  User, ArrowLeft, Printer, Truck, MapPin,
+  Phone, ShoppingBag, CalendarDays, Tag, Settings, CheckCircle2,
+  Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle, MessageCircle
 } from 'lucide-react'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, formatFactura, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
-// Types
-interface ItemPedidoConEstado extends WSItemPedido {
-  estado?: 'pending' | 'preparing' | 'delivered' | 'served' | 'cancelled'
-}
-
-interface PedidoData {
-  id: number
-  mesaId: number | null
-  mesaNombre: string | null
-  estado: 'pending' | 'preparing' | 'delivered' | 'served' | 'closed' | 'archived'
-  total: string
-  createdAt: string
-  closedAt?: string | null
-  items: ItemPedidoConEstado[]
-  totalItems: number
-  nombrePedido?: string | null
-  pagado?: boolean
-  metodoPago?: string | null
-}
-
-interface SubtotalInfo {
-  clienteNombre: string
-  subtotal: string
-  pagado: boolean
-  metodo?: string
-  estado?: 'pending' | 'pending_cash' | 'paid' | 'failed'
-  isMozoItem?: boolean
-  itemId?: number
-  nombreProducto?: string
-}
-
-interface Ingrediente {
-  id: number
-  nombre: string
-}
-
-interface Etiqueta {
-  id: number
-  nombre: string
-}
-
-interface Producto {
-  id: number
-  nombre: string
-  descripcion: string | null
-  precio: string
-  activo: boolean
-  imagenUrl: string | null
-  categoriaId?: number | null
-  categoria?: string | null
-  ingredientes?: Ingrediente[]
-  etiquetas?: Etiqueta[]
-}
-
-// Delivery Types
+// ─────────────────────────────────────────────
+// TIPOS
+// ─────────────────────────────────────────────
 interface DeliveryItem {
-  id: number
-  productoId: number
-  cantidad: number
-  precioUnitario: string
-  nombreProducto: string
-  imagenUrl: string | null
-  ingredientesExcluidos: number[]
-  ingredientesExcluidosNombres?: string[]
+  id: number; productoId: number; cantidad: number; precioUnitario: string;
+  nombreProducto: string; imagenUrl: string | null;
+  ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
+  agregados?: any;
 }
-
-interface DeliveryPedido {
-  id: number
-  direccion: string
-  nombreCliente: string | null
-  telefono: string | null
-  estado: 'pending' | 'preparing' | 'ready' | 'dispatched' | 'delivered' | 'cancelled' | 'archived'
-  total: string
-  notas: string | null
-  createdAt: string
-  deliveredAt: string | null
-  items: DeliveryItem[]
-  totalItems: number
-  pagado?: boolean
-  metodoPago?: string | null
-  impreso?: boolean
-  rapiboyTrackingUrl?: string | null
-  montoDescuento?: string | number | null
-  codigoDescuentoId?: number | null
-  codigoDescuentoCodigo?: string | null
-}
-
-interface TakeawayPedido {
-  id: number
-  nombreCliente: string | null
-  telefono: string | null
-  estado: 'pending' | 'preparing' | 'ready' | 'dispatched' | 'delivered' | 'cancelled' | 'archived'
-  total: string
-  notas: string | null
-  createdAt: string
-  deliveredAt: string | null
-  items: DeliveryItem[]
-  totalItems: number
-  pagado?: boolean
-  metodoPago?: string | null
-  impreso?: boolean
-  rapiboyTrackingUrl?: string | null
-  montoDescuento?: string | number | null
-  codigoDescuentoId?: number | null
-  codigoDescuentoCodigo?: string | null
-}
-
-// Unified order type for the all-orders list
 interface UnifiedPedido {
-  id: number
-  tipo: 'mesa' | 'delivery' | 'takeaway'
-  estado: string
-  total: string
-  createdAt: string
-  nombreCliente: string | null
-  telefono: string | null
-  direccion?: string | null
-  mesaNombre?: string | null
-  notas?: string | null
-  items: DeliveryItem[] | ItemPedidoConEstado[]
-  totalItems: number
-  pagado?: boolean
-  metodoPago?: string | null
-  rapiboyTrackingUrl?: string | null
-  montoDescuento?: string | number | null
-  codigoDescuentoId?: number | null
-  codigoDescuentoCodigo?: string | null
+  id: number; tipo: 'delivery' | 'takeaway'; estado: string; total: string; createdAt: string;
+  nombreCliente: string | null; telefono: string | null; direccion?: string | null; notas?: string | null;
+  items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
+  montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
 }
 
-interface NewDeliveryItem {
-  productoId: number
-  cantidad: number
-  ingredientesExcluidos?: number[]
-}
-
-// Pool MySQL usa timezone -03:00; a veces el JSON llega como "YYYY-MM-DD HH:mm:ss" o ISO sin Z.
-// Sin zona explícita, `new Date()` en el browser es ambiguo y suele desfasar ~3h respecto al instante real.
+// ─────────────────────────────────────────────
+// UTILIDADES FECHAS Y FORMATOS
+// ─────────────────────────────────────────────
 const AR_TIMEZONE = 'America/Argentina/Buenos_Aires'
 const AR_OFFSET_SUFFIX = '-03:00'
-
-/** El backend expone `createdAt` ~3h desfasado respecto al instante real; solo se corrige el “hace X” de tarjetas. */
 const PEDIDO_RELATIVE_TIME_OFFSET_MS = 3 * 60 * 60 * 1000
 
-/** Instante absoluto coherente con el backend (ART para cadenas sin offset). */
 function parseDashboardDate(value: string | undefined | null): Date {
   if (value == null || String(value).trim() === '') return new Date(NaN)
   const s = String(value).trim()
@@ -179,135 +53,41 @@ function parseDashboardDate(value: string | undefined | null): Date {
     const n = Number(s)
     return new Date(n > 1e12 ? n : n * 1000)
   }
-  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{2}\d{2}$/.test(s)) {
-    return new Date(s)
-  }
+  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{2}\d{2}$/.test(s)) return new Date(s)
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d{1,3})?/)
-  if (m) {
-    const frac = m[7] || ''
-    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${frac}${AR_OFFSET_SUFFIX}`)
-  }
+  if (m) return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${m[7] || ''}${AR_OFFSET_SUFFIX}`)
   return new Date(s)
-}
-
-function ymdInArgentina(iso: string): string {
-  return parseDashboardDate(iso).toLocaleDateString('en-CA', { timeZone: AR_TIMEZONE })
-}
-
-function addCalendarDaysYmd(ymd: string, delta: number): string {
-  const [y, m, d] = ymd.split('-').map(Number)
-  const u = new Date(Date.UTC(y, m - 1, d + delta))
-  return u.toISOString().slice(0, 10)
 }
 
 const getMinutesAgo = (dateString: string) => {
   const t = parseDashboardDate(dateString).getTime() + PEDIDO_RELATIVE_TIME_OFFSET_MS
   if (Number.isNaN(t)) return 0
-  const diffMs = Date.now() - t
-  return Math.floor(diffMs / 60000)
+  return Math.floor((Date.now() - t) / 60000)
 }
 
 const formatTimeAgo = (dateString: string) => {
   const minutes = getMinutesAgo(dateString)
   if (minutes < 1) return 'Ahora'
-  if (minutes < 60) return `${minutes} min`
+  if (minutes < 60) return `hace ${minutes} min`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ${minutes % 60}m`
-  return parseDashboardDate(dateString).toLocaleDateString('es-ES', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: AR_TIMEZONE,
-  })
+  if (hours < 24) return `hace ${hours}h ${minutes % 60}m`
+  return parseDashboardDate(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: AR_TIMEZONE })
 }
 
 const getDateLabel = (dateString: string) => {
-  const eventYmd = ymdInArgentina(dateString)
-  const todayYmd = ymdInArgentina(new Date().toISOString())
-  if (eventYmd === todayYmd) return 'Hoy'
-  if (eventYmd === addCalendarDaysYmd(todayYmd, -1)) return 'Ayer'
-  return parseDashboardDate(dateString).toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: AR_TIMEZONE,
-  })
+  const eventDate = parseDashboardDate(dateString)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  const isSameDay = (d1: Date, d2: Date) =>
+    d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear()
+
+  if (isSameDay(eventDate, today)) return 'Hoy'
+  if (isSameDay(eventDate, yesterday)) return 'Ayer'
+  return eventDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', timeZone: AR_TIMEZONE })
 }
 
-const formatOrderTime = (dateString: string) =>
-  parseDashboardDate(dateString).toLocaleTimeString('es-AR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: AR_TIMEZONE,
-  })
-
-const pedidoTieneCuponDescuento = (p: { montoDescuento?: string | number | null }) =>
-  p.montoDescuento != null && parseFloat(String(p.montoDescuento)) > 0
-
-const metodoPagoListBadge = (metodoPago: string | null | undefined) => {
-  if (
-    metodoPago === 'mercadopago' ||
-    metodoPago === 'mercadopago_checkout' ||
-    metodoPago === 'mercadopago_bricks'
-  ) {
-    return {
-      label:
-        metodoPago === 'mercadopago_checkout'
-          ? 'MP Checkout'
-          : 'Tarjeta (Bricks)',
-      className:
-        'text-[9px] bg-sky-50 dark:bg-sky-950/30 text-sky-800 dark:text-sky-300 border-sky-300 px-1 py-0 h-4',
-    }
-  }
-  if (
-    metodoPago === 'transferencia' ||
-    metodoPago === 'transferencia_automatica_cucuru' ||
-    metodoPago === 'transferencia_automatica_talo'
-  ) {
-    return {
-      label:
-        metodoPago === 'transferencia_automatica_talo'
-          ? 'Transf. auto (Talo)'
-          : metodoPago === 'transferencia_automatica_cucuru'
-            ? 'Transf. auto'
-            : 'Transferencia',
-      className:
-        'text-[9px] bg-purple-50 dark:bg-purple-950/30 text-purple-800 dark:text-purple-300 border-purple-300 px-1 py-0 h-4',
-    }
-  }
-  if (metodoPago === 'manual_transfer') {
-    return {
-      label: 'Transf. manual',
-      className:
-        'text-[9px] bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-300 border-amber-300 px-1 py-0 h-4',
-    }
-  }
-  if (metodoPago === 'cash' || metodoPago === 'efectivo') {
-    return {
-      label: 'Efectivo',
-      className:
-        'text-[9px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-300 px-1 py-0 h-4',
-    }
-  }
-  return null
-}
-
-// Helper: compute the actual delivery fee for a stored order.
-// Since pedido.total already includes the delivery fee and agregados from the backend,
-// we derive it as: total - sum((item.precioUnitario + item.agregados) * item.cantidad)
-const getOrderDeliveryFee = (pedido: { total: string; items: any[] }) => {
-  const total = parseFloat(pedido.total)
-  const itemsSubtotal = pedido.items.reduce((sum, item) => {
-    const basePrice = parseFloat(item.precioUnitario || '0')
-    let agregadosTotal = 0
-    const agregadosArray = formatAgregados(item.agregados)
-    agregadosArray.forEach((ag: any) => {
-      agregadosTotal += parseFloat(ag.precio || '0')
-    })
-    return sum + ((basePrice + agregadosTotal) * item.cantidad)
-  }, 0)
-  return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
-}
-
-// Helper: parse agregados securely supporting JSON strings and objects
 const formatAgregados = (agregadosData: any): any[] => {
   if (!agregadosData) return []
   if (Array.isArray(agregadosData)) return agregadosData
@@ -315,165 +95,71 @@ const formatAgregados = (agregadosData: any): any[] => {
     try {
       const parsed = JSON.parse(agregadosData)
       return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
+    } catch { return [] }
   }
   return []
 }
 
-/**
- * Comanda a cocina: si el pago se acredita por webhook (Cucuru/Talo auto, MP Bricks/Checkout),
- * no imprimir solo por pasar a preparing; imprimir cuando `pagado` pasa a true.
- * Incluye legacy: Cucuru + `transferencia` o método vacío.
- */
-const deferComandaHastaPagado = (
-  metodoPago: string | null | undefined,
-  cucuruConfigurado: boolean | null | undefined
-): boolean => {
+const getOrderDeliveryFee = (pedido: { total: string; items: any[] }) => {
+  const total = parseFloat(pedido.total)
+  const itemsSubtotal = pedido.items.reduce((sum, item) => {
+    const basePrice = parseFloat(item.precioUnitario || '0')
+    const agregadosTotal = formatAgregados(item.agregados).reduce((a, ag) => a + parseFloat(ag.precio || '0'), 0)
+    return sum + ((basePrice + agregadosTotal) * item.cantidad)
+  }, 0)
+  return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
+}
+
+const deferComandaHastaPagado = (metodoPago: string | null | undefined, cucuruConfigurado: boolean | null | undefined): boolean => {
   const m = String(metodoPago || '').trim()
-  if (m === 'transferencia_automatica_cucuru' || m === 'transferencia_automatica_talo') return true
-  if (m === 'mercadopago' || m === 'mercadopago_checkout' || m === 'mercadopago_bricks') return true
+  if (['transferencia_automatica_cucuru', 'transferencia_automatica_talo', 'mercadopago', 'mercadopago_checkout', 'mercadopago_bricks'].includes(m)) return true
   if (cucuruConfigurado && (m === 'transferencia' || m === '')) return true
   return false
 }
 
+const metodoPagoListBadge = (metodoPago: string | null | undefined) => {
+  const m = String(metodoPago || '').trim()
+  if (m.includes('mercadopago')) return { label: 'MP', className: 'bg-[#009EE3]/10 text-[#009EE3] border-[#009EE3]/20', icon: '💳' }
+  if (m.includes('transferencia_automatica_talo')) return { label: 'Talo', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-500 border-amber-500/20', icon: '🏦' }
+  if (m.includes('transferencia_automatica_cucuru')) return { label: 'Cucuru', className: 'bg-purple-500/10 text-purple-600 dark:text-purple-500 border-purple-500/20', icon: '🏦' }
+  if (m.includes('manual_transfer') || m === 'transferencia') return { label: 'Transf. Manual', className: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/20', icon: '🏦' }
+  if (m === 'cash' || m === 'efectivo') return { label: 'Efectivo', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border-emerald-500/20', icon: '💵' }
+  return null
+}
+
+const pedidoTieneCuponDescuento = (p: { montoDescuento?: string | number | null }) =>
+  p.montoDescuento != null && parseFloat(String(p.montoDescuento)) > 0
+
+// ─────────────────────────────────────────────
+// COMPONENTE PRINCIPAL
+// ─────────────────────────────────────────────
 const Dashboard = () => {
   const token = useAuthStore((state) => state.token)
   const restaurante = useAuthStore((state) => state.restaurante)
-  const { restaurante: restauranteStore, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
-  const splitPayment = restauranteStore?.splitPayment ?? true
-
-  const metodosPagoAutoTransferCopy = useMemo(() => {
-    const r = restauranteStore
-    if (!r) return { title: 'Transferencia automática', hint: '' as string }
-    const cucuru = !!r.cucuruConfigurado
-    const talo = !!(r.taloClientId && r.taloClientSecret && r.taloUserId)
-    if (cucuru && !talo) {
-      return {
-        title: 'Transferencia automática (Cucuru)',
-        hint: 'Cobros con billetera virtual y confirmación vía webhook Cucuru.',
-      }
-    }
-    if (talo && !cucuru) {
-      return {
-        title: 'Transferencia automática (Talo)',
-        hint: 'Alias dinámicos y acreditación en tiempo real (API Talo).',
-      }
-    }
-    if (cucuru && talo) {
-      if (r.proveedorPago === 'talo') {
-        return {
-          title: 'Transferencia automática (Talo)',
-          hint: 'Proveedor activo en checkout: Talo. También tenés Cucuru configurado en Perfil.',
-        }
-      }
-      if (r.proveedorPago === 'cucuru') {
-        return {
-          title: 'Transferencia automática (Cucuru)',
-          hint: 'Proveedor activo en checkout: Cucuru. También tenés Talo configurado en Perfil.',
-        }
-      }
-      return {
-        title: 'Transferencia automática',
-        hint: 'Cucuru y Talo están configurados: elegí el proveedor activo en Perfil (Pasarela de pagos).',
-      }
-    }
-    return {
-      title: 'Transferencia automática',
-      hint: 'Sin Cucuru ni Talo: configurá uno en Perfil para ofrecer transferencia automática en el checkout.',
-    }
-  }, [restauranteStore])
+  const { restaurante: restauranteStore, productos: allProductos } = useRestauranteStore()
 
   const { printRaw, selectedPrinter } = usePrinter()
-
-  // Ref para rastrear pedidos procesados para impresión automática
   const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
+  const { isConnected, lastUpdate } = useAdminContext()
 
-  const {
-    mesas: mesasWS,
-    notifications,
-    isConnected,
-    refresh,
-    markAsRead,
-    lastUpdate
-  } = useAdminContext()
-
-  const [mesas, setMesas] = useState<MesaConPedido[]>([])
-  const [pedidos, setPedidos] = useState<PedidoData[]>([])
-  const [closedPedidosFromAPI, setClosedPedidosFromAPI] = useState<PedidoData[]>([])
+  // Estados Principales
+  const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedMesaId, setSelectedMesaId] = useState<number | null>(null)
-  const [selectedPedidoFromKanban, setSelectedPedidoFromKanban] = useState<PedidoData | null>(null)
-  const [verQR, setVerQR] = useState(false)
-
-  const [subtotales, setSubtotales] = useState<SubtotalInfo[]>([])
-  const [loadingSubtotales, setLoadingSubtotales] = useState(false)
-  const [marcandoPagoEfectivo, setMarcandoPagoEfectivo] = useState<string | null>(null)
-  const [updatingPedido, setUpdatingPedido] = useState<number | null>(null)
-
-  const [addProductSheet, setAddProductSheet] = useState(false)
-  const [productos, setProductos] = useState<Producto[]>([])
-  const [loadingProductos, setLoadingProductos] = useState(false)
-  const [searchProducto, setSearchProducto] = useState('')
-  const [configuringProduct, setConfiguringProduct] = useState<Producto | null>(null)
-  const [excludedIngredients, setExcludedIngredients] = useState<number[]>([])
-
-  // Estados para agregar múltiples productos a un pedido existente
-  const [productosSeleccionados, setProductosSeleccionados] = useState<NewDeliveryItem[]>([])
-  const [expandedProductosSeleccionados, setExpandedProductosSeleccionados] = useState<number[]>([])
-  const [addingMultipleProducts, setAddingMultipleProducts] = useState(false)
-  const [addProductMobileTab, setAddProductMobileTab] = useState<'carrito' | 'productos'>('productos')
-
-  const [showDeletePedidoDialog, setShowDeletePedidoDialog] = useState(false)
-  const [itemAEliminar, setItemAEliminar] = useState<ItemPedidoConEstado | null>(null)
-
-  const [pedidosSubtotales, setPedidosSubtotales] = useState<Record<number, SubtotalInfo[]>>({})
-  const [updatingPago, setUpdatingPago] = useState<string | null>(null)
-
-  // Mobile-specific state
-  const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
-
-  const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
-
-  // Cierre de turno
-  const [showCierreTurno, setShowCierreTurno] = useState(false)
-
-  const enterNuevoPedidoMode = () => {
-    setDashboardMode('nuevoPedido')
-    setNuevoPedidoMobileTab('info')
-  }
-
-  const exitNuevoPedidoMode = () => {
-    setDashboardMode('orders')
-    setNewPedidoMesaId(null)
-  }
-
-  // Delivery state
-  const [deliveryPedidos, setDeliveryPedidos] = useState<DeliveryPedido[]>([])
-  const [loadingDelivery, setLoadingDelivery] = useState(false)
-  const [newDeliveryItems, setNewDeliveryItems] = useState<NewDeliveryItem[]>([])
-  const [newDeliveryDireccion, setNewDeliveryDireccion] = useState('')
-  const [newDeliveryNombre, setNewDeliveryNombre] = useState('')
-  const [newDeliveryTelefono, setNewDeliveryTelefono] = useState('')
-  const [newDeliveryNotas, setNewDeliveryNotas] = useState('')
-  const [newPedidoMesaId, setNewPedidoMesaId] = useState<number | null>(null)
-  const [creatingDelivery, setCreatingDelivery] = useState(false)
-  const [expandedDeliveryItems, setExpandedDeliveryItems] = useState<number[]>([])
-  const [nuevoPedidoMobileTab, setNuevoPedidoMobileTab] = useState<'info' | 'productos'>('info')
-
-  // Takeaway state
-  const [takeawayPedidos, setTakeawayPedidos] = useState<TakeawayPedido[]>([])
-
-  // Pedido filter state
-  const [pedidoFilter, setPedidoFilter] = useState<'all' | 'mesa' | 'delivery' | 'takeaway'>('all')
-
-  // Selected unified pedido (for showing delivery/takeaway detail in center)
   const [selectedUnifiedPedido, setSelectedUnifiedPedido] = useState<UnifiedPedido | null>(null)
 
-  // Rapiboy assignment state
-  const [assigningRapiboyId, setAssigningRapiboyId] = useState<number | null>(null)
+  // Paginación y Lazy Loading
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
+  const [updatingPago, setUpdatingPago] = useState<string | null>(null)
+  const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
+  const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
+  const [showCierreTurno, setShowCierreTurno] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [sendingNotification, setSendingNotification] = useState<string | null>(null)
+
+  // Estados Modal Pagos
   const [metodosPagoModalOpen, setMetodosPagoModalOpen] = useState(false)
   const [cfgMpCheckout, setCfgMpCheckout] = useState(true)
   const [cfgMpBricks, setCfgMpBricks] = useState(false)
@@ -483,6 +169,171 @@ const Dashboard = () => {
   const [cfgAlias, setCfgAlias] = useState('')
   const [savingMetodosPago, setSavingMetodosPago] = useState(false)
 
+  // ─────────────────────────────────────────────
+  // FETCH Y WEBSOCKETS
+  // ─────────────────────────────────────────────
+  const fetchPedidos = useCallback(async (pageNum = 1, append = false) => {
+    if (!token) return
+    if (!append) setIsLoading(true)
+    else setIsLoadingMore(true)
+
+    try {
+      const response = await pedidoUnificadoApi.getAll(token, 'all', pageNum, 50) as any
+      if (response.success && response.data) {
+        const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway') as UnifiedPedido[]
+
+        setUnifiedPedidos(prev => {
+          const combined: UnifiedPedido[] = append ? [...prev, ...validPedidos] : validPedidos
+          const uniqueMap = new Map<string, UnifiedPedido>()
+          combined.forEach((item: UnifiedPedido) => uniqueMap.set(`${item.tipo}-${item.id}`, item))
+          const unique = Array.from(uniqueMap.values())
+          return unique.sort((a: UnifiedPedido, b: UnifiedPedido) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime())
+        })
+
+        setHasMore(response.pagination?.hasMore ?? false)
+
+        if (!append) {
+          setSelectedUnifiedPedido((prevSelected) => {
+            if (!prevSelected) return prevSelected
+            const updated = validPedidos.find((p: any) => p.id === prevSelected.id && p.tipo === prevSelected.tipo)
+            return updated || prevSelected
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching pedidos:', error)
+    } finally {
+      setIsLoading(false)
+      setIsLoadingMore(false)
+    }
+  }, [token])
+
+  useEffect(() => { fetchPedidos(1, false) }, [fetchPedidos])
+  useEffect(() => {
+    if (lastUpdate && (lastUpdate.type === 'delivery' || lastUpdate.type === 'takeaway')) fetchPedidos(1, false)
+  }, [lastUpdate, fetchPedidos])
+
+  const handleLoadMore = () => {
+    if (!hasMore || isLoadingMore) return
+    const nextPage = page + 1
+    setPage(nextPage)
+    fetchPedidos(nextPage, true)
+  }
+
+  // ─────────────────────────────────────────────
+  // AUTO-IMPRESIÓN
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedPrinter) return
+
+    unifiedPedidos.forEach(pedido => {
+      const pedidoKey = `${pedido.tipo}-${pedido.id}`
+      const currentStatus = pedido.estado
+      const currentPagado = pedido.pagado
+      const prevData = processedOrdersRef.current.get(pedidoKey)
+      const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
+
+      if (pedido.impreso) {
+        if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
+        return
+      }
+
+      let shouldPrintComanda = false
+      if (prevData && prevData.status === 'pending' && currentStatus === 'preparing' && !deferUntilPaid) shouldPrintComanda = true
+      if (deferUntilPaid && currentPagado && (!prevData || !prevData.pagado)) shouldPrintComanda = true
+
+      if (shouldPrintComanda) {
+        const itemsToPrint = pedido.items.map(item => {
+          const producto = allProductos.find(p => p.id === item.productoId)
+          return { ...item, producto }
+        })
+
+        if (itemsToPrint.length > 0) {
+          const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
+          const comandaData = formatComanda({
+            id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
+            direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
+            tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
+          }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+
+          printRaw(commandsToBytes(comandaData))
+            .then(() => {
+              setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
+            })
+            .catch(console.error)
+        }
+      }
+      processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
+    })
+  }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore])
+
+  // ─────────────────────────────────────────────
+  // ACCIONES DE PEDIDO
+  // ─────────────────────────────────────────────
+  const handleEstadoChange = async (tipo: 'delivery' | 'takeaway', id: number, nuevoEstado: string) => {
+    if (!token) return
+    try {
+      if (tipo === 'delivery') await deliveryApi.updateEstado(token, id, nuevoEstado)
+      else await takeawayApi.updateEstado(token, id, nuevoEstado)
+      setUnifiedPedidos(prev => prev.map(p => p.id === id && p.tipo === tipo ? { ...p, estado: nuevoEstado } : p))
+      if (nuevoEstado === 'archived') {
+        setSelectedUnifiedPedido(null)
+        setMobileView('orders')
+        toast.success('Pedido despachado')
+      }
+    } catch (error) { toast.error('Error al actualizar estado') }
+  }
+
+  const handleAprobarPago = async (pedido: UnifiedPedido, metodoOverrides?: 'efectivo' | 'transferencia') => {
+    if (!token) return
+    setUpdatingPago(pedido.id.toString())
+    try {
+      const mp = metodoOverrides ? (metodoOverrides === 'efectivo' ? 'cash' : 'manual_transfer') : (pedido.metodoPago === 'efectivo' ? 'cash' : 'manual_transfer')
+      const res: any = (pedido.tipo === 'delivery'
+        ? await deliveryApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
+        : await takeawayApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp }))
+
+      if (res.success) {
+        setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id && p.tipo === pedido.tipo ? { ...p, pagado: true, metodoPago: mp } : p))
+        toast.success('Pago verificado correctamente')
+      }
+    } catch (error) { toast.error('No se pudo verificar el pago') }
+    finally { setUpdatingPago(null) }
+  }
+
+  const handleDeletePedido = async () => {
+    if (!token || !selectedUnifiedPedido) return
+    try {
+      if (selectedUnifiedPedido.tipo === 'delivery') await deliveryApi.delete(token, selectedUnifiedPedido.id)
+      else await takeawayApi.delete(token, selectedUnifiedPedido.id)
+      setUnifiedPedidos(prev => prev.filter(p => !(p.id === selectedUnifiedPedido.id && p.tipo === selectedUnifiedPedido.tipo)))
+      setShowDeleteDialog(false)
+      setSelectedUnifiedPedido(null)
+      setMobileView('orders')
+      toast.success('Pedido eliminado')
+    } catch (error) { toast.error('Error al eliminar') }
+  }
+
+  const handleNotificarCliente = async (pedido: UnifiedPedido) => {
+    if (!token) return
+    setSendingNotification(pedido.id.toString())
+    try {
+      const res: any = await pedidoUnificadoApi.notificarCliente(token, pedido.id)
+      if (res.success) {
+        toast.success('Mensaje de WhatsApp enviado al cliente')
+      } else {
+        toast.error(res.message || 'No se pudo enviar la notificación')
+      }
+    } catch (error) {
+      toast.error('Error al enviar la notificación')
+    } finally {
+      setSendingNotification(null)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // MODAL MÉTODOS DE PAGO
+  // ─────────────────────────────────────────────
   const openMetodosPagoModal = () => {
     const r = restauranteStore
     if (!r) return
@@ -493,10 +344,7 @@ const Dashboard = () => {
     setCfgMpCheckout(c.mercadopagoCheckout ?? (mpOk && r.cardsPaymentsEnabled !== false))
     setCfgMpBricks(c.mercadopagoBricks ?? false)
     setCfgTfAuto(c.transferenciaAutomatica ?? autoTf)
-    setCfgTfManual(
-      c.transferenciaManual ??
-        (!autoTf && !!(r.transferenciaAlias && String(r.transferenciaAlias).trim()))
-    )
+    setCfgTfManual(c.transferenciaManual ?? (!autoTf && !!(r.transferenciaAlias && String(r.transferenciaAlias).trim())))
     setCfgEfectivo(c.efectivo ?? true)
     setCfgAlias(r.transferenciaAlias || '')
     setMetodosPagoModalOpen(true)
@@ -524,3425 +372,802 @@ const Dashboard = () => {
     }
   }
 
-  const handleToggleDeliveryIngredient = (idx: number, ingredientId: number) => {
-    setNewDeliveryItems(prev => prev.map((item, index) => {
-      if (index === idx) {
-        const currentExclusions = item.ingredientesExcluidos || []
-        const newExclusions = currentExclusions.includes(ingredientId)
-          ? currentExclusions.filter(id => id !== ingredientId)
-          : [...currentExclusions, ingredientId]
-        return { ...item, ingredientesExcluidos: newExclusions }
-      }
-      return item
-    }))
-  }
-
-  const selectedMesa = useMemo(() => {
-    return mesas.find(m => m.id === selectedMesaId) || null
-  }, [mesas, selectedMesaId])
-
-  const displayedPedido = useMemo(() => {
-    if (selectedPedidoFromKanban) {
-      return selectedPedidoFromKanban
-    }
-    if (selectedMesa?.pedido) {
-      return {
-        id: selectedMesa.pedido.id,
-        mesaId: selectedMesa.id,
-        mesaNombre: selectedMesa.nombre,
-        estado: selectedMesa.pedido.estado as PedidoData['estado'],
-        total: selectedMesa.pedido.total,
-        createdAt: selectedMesa.pedido.createdAt,
-        closedAt: selectedMesa.pedido.closedAt,
-        items: selectedMesa.items as ItemPedidoConEstado[],
-        totalItems: selectedMesa.totalItems,
-        nombrePedido: selectedMesa.pedido.nombrePedido
-      }
-    }
-    // Fallback: try to find pedido for this mesa in the pedidos array
-    if (selectedMesa) {
-      const pedidoFromList = pedidos.find(p => p.mesaId === selectedMesa.id)
-      if (pedidoFromList) {
-        return pedidoFromList
-      }
-    }
-    return null
-  }, [selectedPedidoFromKanban, selectedMesa?.pedido, selectedMesa?.items, selectedMesa?.id, selectedMesa?.nombre, selectedMesa?.totalItems, pedidos])
-
-  // Efecto para sincronizar pedidos con WS y manejar IMPRESIÓN AUTOMÁTICA
-  useEffect(() => {
-    if (mesasWS.length > 0) {
-      setMesas(mesasWS)
-      setIsLoading(false)
-
-      // Lógica de impresión automática
-      if (selectedPrinter) {
-        mesasWS.forEach(mesa => {
-          if (!mesa.pedido) return
-
-          const pedidoId = mesa.pedido.id
-          const pedidoKey = `mesa-${pedidoId}`
-          const currentStatus = mesa.pedido.estado
-          const currentItemIds = new Set(mesa.items.map(i => i.id))
-          const currentPagado = mesa.pedido.pagado
-
-          const prevData = processedOrdersRef.current.get(pedidoKey)
-          const deferUntilPaid = deferComandaHastaPagado(
-            (mesa.pedido as any).metodoPago,
-            restauranteStore?.cucuruConfigurado
-          )
-
-          let shouldPrintComanda = false;
-
-          // 1. Detectar transición PENDING -> PREPARING (Confirmación desde App Cliente)
-          if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
-            if (!deferUntilPaid) {
-              shouldPrintComanda = true;
-            }
-          }
-
-          // Impresión diferida: Cucuru/Talo auto o MP — comanda cuando el pago entra (webhook)
-          if (deferUntilPaid && currentPagado) {
-            if (prevData && !prevData.pagado) {
-              // Transición en vivo detectada
-              shouldPrintComanda = true;
-            } else if (!prevData) {
-              // Si el pedido llega ya pagado al inicializar o por filtros de red
-              const printKey = `cucuru_comanda_${pedidoKey}`;
-              if (localStorage.getItem(printKey) !== 'true') {
-                shouldPrintComanda = true;
-                localStorage.setItem(printKey, 'true');
-              }
-            }
-          }
-
-          if (shouldPrintComanda) {
-            const itemsToPrint = mesa.items
-              .map(item => {
-                const producto = allProductos.find(p => p.id === item.productoId)
-                const categoria = producto && producto.categoriaId
-                  ? allCategorias.find(c => c.id === producto.categoriaId)
-                  : null
-                return { ...item, producto, categoria }
-              })
-              .filter(data => {
-                if (!data.producto || !data.categoria) return true
-                return !data.categoria.nombre.toLowerCase().includes('bebidas')
-              })
-              .map(data => ({
-                ...data,
-                categoriaNombre: data.categoria ? data.categoria.nombre : undefined
-              }))
-
-            if (itemsToPrint.length > 0) {
-              console.log("🖨️ [Dashboard] Auto-printing mesa order:", pedidoId)
-              const comandaData = formatComanda({ id: mesa.pedido!.id, mesaNombre: mesa.nombre, nombrePedido: mesa.pedido?.nombrePedido, tipo: 'mesa', total: mesa.pedido!.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
-              printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err))
-            }
-          }
-
-          // 2. Detectar NUEVOS ITEMS en pedido ya confirmado (PREPARING)
-          if (!shouldPrintComanda && currentStatus === 'preparing' && prevData) {
-            const newItems = mesa.items.filter(item => !prevData.itemIds.has(item.id))
-
-            if (newItems.length > 0) {
-              const itemsToPrint = newItems
-                .map(item => {
-                  const producto = allProductos.find(p => p.id === item.productoId)
-                  const categoria = producto && producto.categoriaId
-                    ? allCategorias.find(c => c.id === producto.categoriaId)
-                    : null
-                  return { ...item, producto, categoria }
-                })
-                .filter(data => {
-                  if (!data.producto || !data.categoria) return true
-                  return !data.categoria.nombre.toLowerCase().includes('bebida')
-                })
-                .map(data => ({
-                  ...data,
-                  categoriaNombre: data.categoria ? data.categoria.nombre : undefined
-                }))
-
-              if (itemsToPrint.length > 0) {
-                console.log("🖨️ [Dashboard] Auto-printing new items mesa:", pedidoId)
-                const comandaData = formatComanda({ id: mesa.pedido!.id, mesaNombre: mesa.nombre, nombrePedido: mesa.pedido?.nombrePedido, tipo: 'mesa', total: mesa.pedido!.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
-                printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err))
-              }
-            }
-          }
-
-          // 3. Detectar transición a CLOSED (Cliente pidió la cuenta) -> Imprimir FACTURA automáticamente
-          if (prevData && prevData.status !== 'closed' && currentStatus === 'closed') {
-            console.log("🧾 [Dashboard] Auto-printing factura for closed order:", pedidoId)
-            const facturaData = formatFactura(
-              {
-                id: mesa.pedido.id,
-                mesaNombre: mesa.nombre,
-                nombrePedido: mesa.pedido.nombrePedido,
-                tipo: 'mesa',
-                total: mesa.pedido.total
-              },
-              mesa.items,
-              restaurante?.nombre || 'Restaurante'
-            )
-            printRaw(commandsToBytes(facturaData)).catch((err: Error) => console.error("Error printing factura:", err))
-          }
-
-          // Actualizar Ref
-          processedOrdersRef.current.set(pedidoKey, {
-            status: currentStatus,
-            itemIds: currentItemIds,
-            pagado: currentPagado
-          })
-        })
-      }
-
-
-
-      const pedidosFromMesas: PedidoData[] = mesasWS
-        .filter(m => m.pedido)
-        .map(m => ({
-          id: m.pedido!.id,
-          mesaId: m.id,
-          mesaNombre: m.nombre,
-          estado: m.pedido!.estado as PedidoData['estado'],
-          total: m.pedido!.total,
-          createdAt: m.pedido!.createdAt,
-          closedAt: m.pedido!.closedAt,
-          items: m.items.map(i => ({ ...i, estado: (i as any).estado || 'preparing' })),
-          totalItems: m.totalItems,
-          nombrePedido: m.pedido!.nombrePedido,
-          pagado: m.pedido!.pagado,
-          metodoPago: (m.pedido as any).metodoPago
-        }))
-      setPedidos(pedidosFromMesas)
-    }
-  }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw, restauranteStore?.cucuruConfigurado])
-
-  // ==== AUTO-PRINT PARA DELIVERY Y TAKEAWAY ====
-  useEffect(() => {
-    if (!selectedPrinter) return
-
-    const unifiedDT = [
-      ...deliveryPedidos.map(p => ({ ...p, tipo: 'delivery' as const })),
-      ...takeawayPedidos.map(p => ({ ...p, tipo: 'takeaway' as const }))
-    ]
-
-    unifiedDT.forEach(pedido => {
-      const pedidoKey = `${pedido.tipo}-${pedido.id}`
-      const currentStatus = pedido.estado
-      const currentItemIds = new Set(pedido.items.map(i => i.id))
-      const currentPagado = pedido.pagado
-      const prevData = processedOrdersRef.current.get(pedidoKey)
-      const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
-
-      // GUARD: si la BD ya dice que fue impreso, no reimprimir
-      if (pedido.impreso) {
-        if (!prevData) {
-          processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: currentItemIds, pagado: currentPagado })
-        }
-        return
-      }
-
-      let shouldPrintComanda = false
-
-      // 1. Detectar transición PENDING -> PREPARING (Confirmación desde admin o trigger auto)
-      if (prevData && prevData.status === 'pending' && currentStatus === 'preparing') {
-        if (!deferUntilPaid) {
-          shouldPrintComanda = true
-        }
-      }
-
-      // Impresión diferida: transferencia auto (Cucuru/Talo) o MP — comanda al acreditar pago
-      if (deferUntilPaid && currentPagado) {
-        if (prevData && !prevData.pagado) {
-          shouldPrintComanda = true
-        } else if (!prevData) {
-          shouldPrintComanda = true
-        }
-      }
-
-      if (shouldPrintComanda) {
-        const itemsToPrint = pedido.items
-          .map(item => {
-            const producto = allProductos.find(p => p.id === item.productoId)
-            const categoria = producto && producto.categoriaId
-              ? allCategorias.find(c => c.id === producto.categoriaId)
-              : null
-            return { ...item, producto, categoria }
-          })
-          .filter(data => {
-            if (!data.producto || !data.categoria) return true
-            return !data.categoria.nombre.toLowerCase().includes('bebidas')
-          })
-          .map(data => ({
-            ...data,
-            categoriaNombre: data.categoria ? data.categoria.nombre : undefined
-          }))
-
-        if (itemsToPrint.length > 0) {
-          console.log(`[Dashboard] Auto-printing new ${pedido.tipo} order:`, pedido.id)
-          const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
-          const comandaData = formatComanda({
-            id: pedido.id,
-            nombrePedido: pedido.nombreCliente,
-            telefono: pedido.telefono,
-            direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
-            tipo: pedido.tipo,
-            total: pedido.total,
-            deliveryFee,
-            notas: pedido.notas,
-            montoDescuento: pedido.montoDescuento,
-            codigoDescuentoCodigo: pedido.codigoDescuentoCodigo ?? null,
-          }, itemsToPrint, restaurante?.nombre || 'Restaurante')
-          printRaw(commandsToBytes(comandaData))
-            .then(() => {
-              // Optimistic update: marcar localmente como impreso para evitar doble impresión
-              if (pedido.tipo === 'delivery') {
-                setDeliveryPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
-              } else {
-                setTakeawayPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
-              }
-              // Persistir en BD
-              if (token) {
-                pedidosApi.marcarImpreso(token, pedido.tipo, pedido.id).catch(err => console.error("Error marcando impreso en BD:", err))
-              }
-            })
-            .catch((err: Error) => console.error("Error printing DT order:", err))
-        }
-      }
-
-      // 2. Factura al entregarse o estar listo
-      if (prevData && prevData.status !== 'ready' && prevData.status !== 'delivered' && (currentStatus === 'ready' || currentStatus === 'delivered')) {
-        console.log(`[Dashboard] Auto-printing factura for ${pedido.tipo}:`, pedido.id)
-        const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
-        const facturaData = formatFactura({
-          id: pedido.id,
-          nombrePedido: pedido.nombreCliente,
-          telefono: pedido.telefono,
-          direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
-          tipo: pedido.tipo,
-          total: pedido.total,
-          deliveryFee,
-          notas: pedido.notas,
-          montoDescuento: pedido.montoDescuento,
-          codigoDescuentoCodigo: pedido.codigoDescuentoCodigo ?? null,
-        },
-          pedido.items,
-          restaurante?.nombre || 'Restaurante'
-        )
-        printRaw(commandsToBytes(facturaData)).catch((err: Error) => console.error("Error printing DT factura:", err))
-      }
-
-      processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: currentItemIds, pagado: currentPagado })
-    })
-  }, [deliveryPedidos, takeawayPedidos, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw, token, restauranteStore?.cucuruConfigurado])
-
-  const fetchMesasREST = useCallback(async () => {
-    if (!token) return
-
-    try {
-      const response = await mesasApi.getAllWithPedidos(token) as { success: boolean; data: any[] }
-      if (response.success && response.data) {
-        const transformed = response.data.map(m => ({
-          ...m,
-          clientesConectados: [],
-          totalItems: m.items?.reduce((sum: number, item: any) => sum + (item.cantidad || 1), 0) || 0
-        }))
-        setMesas(transformed)
-      }
-    } catch (error) {
-      console.error('Error fetching mesas:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [token])
-
-  const fetchClosedPedidos = useCallback(async () => {
-    if (!token) return
-
-    try {
-      const response = await pedidosApi.getAll(token, 1, 50) as {
-        success: boolean
-        data: PedidoData[]
-      }
-
-      if (response.success && response.data) {
-        setClosedPedidosFromAPI(response.data)
-      }
-    } catch (error) {
-      console.error('Error fetching pedidos:', error)
-    }
-  }, [token])
-
-  useEffect(() => {
-    fetchMesasREST()
-    fetchClosedPedidos()
-  }, [fetchMesasREST, fetchClosedPedidos])
-
-  const fetchSubtotales = useCallback(async () => {
-    if (!displayedPedido) return
-    setLoadingSubtotales(true)
-    try {
-      const response = await mercadopagoApi.getSubtotales(displayedPedido.id) as {
-        success: boolean
-        subtotales: SubtotalInfo[]
-        mozoItems?: SubtotalInfo[]
-      }
-      if (response.success) {
-        let allSubtotales = response.subtotales || []
-        if (response.mozoItems && Array.isArray(response.mozoItems)) {
-          allSubtotales = [...allSubtotales, ...response.mozoItems]
-        }
-        setSubtotales(allSubtotales)
-      }
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setLoadingSubtotales(false)
-    }
-  }, [displayedPedido])
-
-  useEffect(() => {
-    if (displayedPedido?.estado === 'closed') {
-      fetchSubtotales()
-    } else {
-      setSubtotales([])
-    }
-  }, [displayedPedido?.estado, fetchSubtotales])
-
-  useEffect(() => {
-    const fetchKanbanSubtotales = async () => {
-      const closedFromWS = pedidos.filter(p => p.estado === 'closed')
-      const allClosedIds = new Set<number>()
-      const allClosedPedidos: PedidoData[] = []
-
-      closedFromWS.forEach(p => {
-        if (!allClosedIds.has(p.id)) {
-          allClosedIds.add(p.id)
-          allClosedPedidos.push(p)
-        }
-      })
-
-      closedPedidosFromAPI.filter(p => p.estado === 'closed').forEach(p => {
-        if (!allClosedIds.has(p.id)) {
-          allClosedIds.add(p.id)
-          allClosedPedidos.push(p)
-        }
-      })
-
-      if (allClosedPedidos.length === 0) return
-
-      await Promise.all(
-        allClosedPedidos.map(async (pedido) => {
-          if (pedidosSubtotales[pedido.id]) return
-
-          try {
-            const response = await mercadopagoApi.getSubtotales(pedido.id) as {
-              success: boolean
-              subtotales?: SubtotalInfo[]
-              mozoItems?: SubtotalInfo[]
-            }
-
-            if (response.success) {
-              let allSubtotales = response.subtotales || []
-              if (response.mozoItems && Array.isArray(response.mozoItems)) {
-                allSubtotales = [...allSubtotales, ...response.mozoItems.map(m => ({ ...m, isMozoItem: true }))]
-              }
-              setPedidosSubtotales(prev => ({
-                ...prev,
-                [pedido.id]: allSubtotales
-              }))
-            }
-          } catch (error) {
-            console.error(`Error fetching subtotales for pedido ${pedido.id}:`, error)
-          }
-        })
-      )
-    }
-
-    fetchKanbanSubtotales()
-  }, [pedidos, closedPedidosFromAPI, pedidosSubtotales])
-
-  // Change estado for delivery/takeaway orders (order-level, since they don't have per-item tracking)
-  const handleDeliveryTakeawayEstadoChange = async (tipo: 'delivery' | 'takeaway', id: number, nuevoEstado: string) => {
-    if (!token) return
-    try {
-      if (tipo === 'delivery') {
-        await deliveryApi.updateEstado(token, id, nuevoEstado)
-        setDeliveryPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: nuevoEstado as DeliveryPedido['estado'] } : p))
-      } else {
-        await takeawayApi.updateEstado(token, id, nuevoEstado)
-        setTakeawayPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: nuevoEstado as TakeawayPedido['estado'] } : p))
-      }
-    } catch (error) {
-      console.error('Error al actualizar estado:', error)
-    }
-  }
-
-  const handleConfirmarPedido = async (pedido: PedidoData) => {
-    if (!token) return
-    setUpdatingPedido(pedido.id)
-    try {
-      await pedidosApi.confirmar(token, pedido.id)
-      refresh()
-    } catch (error) {
-    } finally {
-      setUpdatingPedido(null)
-    }
-  }
-
-  const handleCerrarPedido = async (pedidoId: number) => {
-    if (!token) return
-    setUpdatingPedido(pedidoId)
-    try {
-      await pedidosApi.cerrar(token, pedidoId)
-      refresh()
-    } catch (error) {
-      console.error('Error cerrando pedido:', error)
-    } finally {
-      setUpdatingPedido(null)
-    }
-  }
-
-  const handleConfirmarPagoEfectivo = async (clienteNombre: string) => {
-    if (!token || !selectedMesa?.pedido) return
-    setMarcandoPagoEfectivo(clienteNombre)
-    try {
-      const response = await mercadopagoApi.confirmarEfectivo(token, selectedMesa.pedido.id, clienteNombre) as { success: boolean; error?: string }
-      if (response.success) {
-        await fetchSubtotales()
-        const subtotalesAux = subtotales.map(s => s.clienteNombre === clienteNombre ? { ...s, pagado: true, estado: 'paid', metodo: 'efectivo' } : s)
-        if (subtotalesAux.every(s => s.pagado)) {
-          handleTogglePagado({ id: selectedMesa.pedido.id, tipo: 'mesa', mesaNombre: displayedPedido?.mesaNombre || '', pagado: true } as UnifiedPedido)
-        }
-      } else {
-      }
-    } catch (error) {
-    } finally {
-      setMarcandoPagoEfectivo(null)
-    }
-  }
-
-  const handleConfirmarPagoTotal = async (pedidoId: number, subtotalesData: SubtotalInfo[], metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
-    if (!token) return
-    setUpdatingPago(`all-${pedidoId}-${metodoPago}`)
-
-    try {
-      const pendientes = subtotalesData.filter(s => !s.pagado && s.estado !== 'paid')
-
-      if (pendientes.length === 0) {
-        return
-      }
-
-      const regularClients: string[] = []
-      const mozoItemIds: number[] = []
-
-      pendientes.forEach(p => {
-        if (p.isMozoItem && p.itemId) {
-          mozoItemIds.push(p.itemId)
-        } else if (p.clienteNombre.startsWith('Mozo:item:')) {
-          const id = parseInt(p.clienteNombre.split('Mozo:item:')[1])
-          if (!isNaN(id)) mozoItemIds.push(id)
-        } else {
-          regularClients.push(p.clienteNombre)
-        }
-      })
-
-      const responsePagar = await mercadopagoApi.pagarEfectivo(pedidoId, regularClients, '', mozoItemIds, metodoPago) as { success: boolean; error?: string }
-
-      if (!responsePagar.success) {
-        return
-      }
-
-      const results = await Promise.allSettled(
-        pendientes.map(sub => mercadopagoApi.confirmarEfectivo(token, pedidoId, sub.clienteNombre, metodoPago))
-      )
-
-      const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length
-
-      if (successCount > 0) {
-
-        setPedidosSubtotales(prev => {
-          const subs = prev[pedidoId] || []
-          return {
-            ...prev,
-            [pedidoId]: subs.map(s => ({ ...s, pagado: true, estado: 'paid', metodo: metodoPago }))
-          }
-        })
-        handleTogglePagado({ id: pedidoId, tipo: 'mesa', mesaNombre: displayedPedido?.mesaNombre || '', pagado: true } as UnifiedPedido, metodoPago)
-      } else {
-      }
-
-    } catch (error) {
-      console.error('Error en pago total:', error)
-    } finally {
-      setUpdatingPago(null)
-    }
-  }
-
-
-  const metodoPagoParaAprobar = (pedido: UnifiedPedido): string => {
-    const m = pedido.metodoPago
-    if (m === 'efectivo') return 'cash'
-    if (m && m !== 'mercadopago' && m !== 'transferencia') return m
-    if (m === 'transferencia') return 'manual_transfer'
-    return 'manual_transfer'
-  }
-
-  const handleAprobarPagoDt = async (pedido: UnifiedPedido) => {
-    if (!token) return
-    setUpdatingPago(`approve-${pedido.id}`)
-    try {
-      const mp = metodoPagoParaAprobar(pedido)
-      let response: any
-      if (pedido.tipo === 'delivery') {
-        response = await deliveryApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
-      } else {
-        response = await takeawayApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
-      }
-      if (response.success) {
-        const newPagado = response.data?.pagado ?? true
-        if (pedido.tipo === 'delivery') {
-          setDeliveryPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
-        } else {
-          setTakeawayPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
-        }
-        toast.success('Pago verificado')
-      }
-    } catch (error) {
-      console.error('Error aprobando pago:', error)
-      toast.error('No se pudo verificar el pago')
-    } finally {
-      setUpdatingPago(null)
-    }
-  }
-
-  // Toggle pagado for any order type (mesa, delivery, takeaway)
-  const handleTogglePagado = async (pedido: UnifiedPedido, metodoPago: 'efectivo' | 'transferencia' = 'efectivo') => {
-    if (!token) return
-    try {
-      let response: any
-      if (pedido.tipo === 'delivery') {
-        response = await deliveryApi.marcarPagado(token, pedido.id, { metodoPago })
-      } else if (pedido.tipo === 'takeaway') {
-        response = await takeawayApi.marcarPagado(token, pedido.id, { metodoPago })
-      } else {
-        response = await pedidosApi.marcarPagado(token, pedido.id, metodoPago)
-      }
-
-      if (response.success) {
-        const newPagado = response.data?.pagado ?? !pedido.pagado
-        // Update delivery/takeaway local state
-        if (pedido.tipo === 'delivery') {
-          setDeliveryPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
-        } else if (pedido.tipo === 'takeaway') {
-          setTakeawayPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
-        } else {
-          // For mesa pedidos from API
-          setClosedPedidosFromAPI(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
-          // Also update active pedidos (from WS) optimistically
-          setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, pagado: newPagado } : p))
-        }
-      }
-    } catch (error) {
-      console.error('Error toggling pagado:', error)
-    }
-  }
-
-  const fetchProductos = useCallback(async () => {
-    if (!token) return
-    setLoadingProductos(true)
-    try {
-      const response = await productosApi.getAll(token) as { success: boolean; productos: Producto[] }
-      if (response.success && response.productos) {
-        setProductos(response.productos.filter(p => p.activo))
-      }
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setLoadingProductos(false)
-    }
-  }, [token])
-
-  useEffect(() => {
-    if (addProductSheet && productos.length === 0) fetchProductos()
-  }, [addProductSheet, fetchProductos, productos.length])
-
-  // Limpiar productos seleccionados al cerrar el sheet
-  useEffect(() => {
-    if (!addProductSheet) {
-      setProductosSeleccionados([])
-      setExpandedProductosSeleccionados([])
-      setSearchProducto('')
-      setAddProductMobileTab('productos')
-    }
-  }, [addProductSheet])
-
-
-
-  // Funciones para agregar múltiples productos a un pedido existente
-  const handleAddProductoToCart = (producto: Producto, exclusiones?: number[]) => {
-    const exclusionesToUse = exclusiones || []
-    const existingIndex = productosSeleccionados.findIndex(i =>
-      i.productoId === producto.id &&
-      JSON.stringify(i.ingredientesExcluidos || []) === JSON.stringify(exclusionesToUse)
-    )
-    if (existingIndex >= 0) {
-      setProductosSeleccionados(prev => prev.map((item, idx) =>
-        idx === existingIndex ? { ...item, cantidad: item.cantidad + 1 } : item
-      ))
-    } else {
-      setProductosSeleccionados(prev => [...prev, { productoId: producto.id, cantidad: 1, ingredientesExcluidos: exclusionesToUse }])
-    }
-  }
-
-  const handleAddProductoToCartWithConfig = (producto: Producto) => {
-    // Agregar directamente al carrito, sin abrir diálogo
-    // El usuario puede configurar ingredientes desde el carrito
-    handleAddProductoToCart(producto)
-  }
-
-  const handleRemoveProductoFromCart = (productoId: number, exclusiones?: number[]) => {
-    setProductosSeleccionados(prev => prev.filter(i =>
-      !(i.productoId === productoId && JSON.stringify(i.ingredientesExcluidos || []) === JSON.stringify(exclusiones || []))
-    ))
-  }
-
-  const handleUpdateProductoCantidad = (productoId: number, cantidad: number, exclusiones?: number[]) => {
-    if (cantidad <= 0) {
-      handleRemoveProductoFromCart(productoId, exclusiones)
-      return
-    }
-    setProductosSeleccionados(prev => prev.map(item =>
-      (item.productoId === productoId && JSON.stringify(item.ingredientesExcluidos || []) === JSON.stringify(exclusiones || []))
-        ? { ...item, cantidad }
-        : item
-    ))
-  }
-
-  const handleToggleProductoIngredient = (idx: number, ingredientId: number) => {
-    setProductosSeleccionados(prev => prev.map((item, index) => {
-      if (index === idx) {
-        const currentExclusions = item.ingredientesExcluidos || []
-        const newExclusions = currentExclusions.includes(ingredientId)
-          ? currentExclusions.filter(id => id !== ingredientId)
-          : [...currentExclusions, ingredientId]
-        return { ...item, ingredientesExcluidos: newExclusions }
-      }
-      return item
-    }))
-  }
-
-  const handleConfirmMultipleProducts = async () => {
-    if (!token || !selectedMesa?.pedido || productosSeleccionados.length === 0) return
-    setAddingMultipleProducts(true)
-    try {
-      for (const item of productosSeleccionados) {
-        await pedidosApi.addItem(token, selectedMesa.pedido.id, {
-          productoId: item.productoId,
-          cantidad: item.cantidad,
-          clienteNombre: 'Mozo',
-          ingredientesExcluidos: item.ingredientesExcluidos && item.ingredientesExcluidos.length > 0 ? item.ingredientesExcluidos : undefined
-        })
-      }
-      setProductosSeleccionados([])
-      setAddProductSheet(false)
-      refresh()
-    } catch (error: any) {
-      console.error('Error agregando productos:', error)
-    } finally {
-      setAddingMultipleProducts(false)
-    }
-  }
-
-  const handleDeletePedido = async () => {
-    if (!token || !selectedMesa?.pedido) return
-    try {
-      await pedidosApi.delete(token, selectedMesa.pedido.id)
-      setShowDeletePedidoDialog(false)
-      setSelectedMesaId(null)
-      refresh()
-    } catch (error) {
-    }
-  }
-
-  const handleDeleteItem = async () => {
-    if (!token || !selectedMesa?.pedido || !itemAEliminar) return
-    try {
-      await pedidosApi.deleteItem(token, selectedMesa.pedido.id, itemAEliminar.id)
-      setItemAEliminar(null)
-      refresh()
-    } catch (error) {
-    }
-  }
-
-  const handleUnifiedPedidoClick = (pedido: UnifiedPedido) => {
-    if (pedido.tipo === 'mesa') {
-      const mesa = mesas.find(m => m.nombre === pedido.mesaNombre)
-      if (mesa) {
-        setSelectedMesaId(mesa.id)
-        const pedidoData = pedidos.find(p => p.id === pedido.id)
-        if (pedidoData) {
-          setSelectedPedidoFromKanban(pedidoData)
-        }
-        setSelectedUnifiedPedido(null)
-        notifications
-          .filter(n => n.mesaId === mesa.id && !n.leida)
-          .forEach(n => markAsRead(n.id))
-      }
-    } else {
-      // For delivery/takeaway, show in center with dedicated view
-      setSelectedUnifiedPedido(pedido)
-      setSelectedMesaId(null)
-      setSelectedPedidoFromKanban(null)
-    }
-    // On mobile, switch to detail view
-    if (window.innerWidth < 1024) {
-      setMobileView('detail')
-    }
-  }
-
-  const productosFiltrados = productos.filter(p => {
-    const term = searchProducto.toLowerCase()
-    return p.nombre.toLowerCase().includes(term) ||
-      p.descripcion?.toLowerCase().includes(term) ||
-      (p.etiquetas && p.etiquetas.some(e => e.nombre.toLowerCase().includes(term)))
-  })
-
-  const itemsPorCliente = useMemo(() => {
-    if (!displayedPedido) return {} as Record<string, ItemPedidoConEstado[]>
-    const items = displayedPedido.items as ItemPedidoConEstado[]
-    return items.reduce((acc, item) => {
-      const cliente = item.clienteNombre || 'Sin nombre'
-      if (!acc[cliente]) acc[cliente] = []
-      acc[cliente].push(item)
-      return acc
-    }, {} as Record<string, ItemPedidoConEstado[]>)
-  }, [displayedPedido])
-
-  // Mobile back button handler
-  const handleBackToPedidos = () => {
-    setMobileView('orders')
-    setSelectedMesaId(null)
-    setSelectedPedidoFromKanban(null)
-    setSelectedUnifiedPedido(null)
-  }
-
-  // Calculate active orders count for badge (pedidos PAGADOS y NO ARCHIVADOS)
-  const activeOrdersCount = useMemo(() => {
-    const mesaIdsFromWS = new Set(pedidos.map(p => p.id))
-    let count = 0
-    count += pedidos.filter(p => p.estado !== 'archived' && p.pagado === true).length
-    count += closedPedidosFromAPI.filter(p => !mesaIdsFromWS.has(p.id) && p.estado !== 'archived' && p.pagado === true).length
-    count += deliveryPedidos.filter(p => p.estado !== 'archived' && p.pagado === true).length
-    count += takeawayPedidos.filter(p => p.estado !== 'archived' && p.pagado === true).length
-    return count
-  }, [pedidos, closedPedidosFromAPI, deliveryPedidos, takeawayPedidos])
-
-  // ==================== DELIVERY FUNCTIONS ====================
-
-  const handleAsignarRapiboy = async (pedidoId: number) => {
-    if (!token) return
-    setAssigningRapiboyId(pedidoId)
-    try {
-      const response = await deliveryApi.asignarRapiboy(token, pedidoId) as {
-        success: boolean;
-        message: string;
-      }
-      if (response.success) {
-        toast.success('Cadete Rapiboy asignado exitosamente')
-        await fetchDeliveryTakeawayPedidos() // Refresh pedidos
-      } else {
-        toast.error(response.message || 'Error al asignar cadete')
-      }
-    } catch (error) {
-      console.error('Error al asignar Rapiboy:', error)
-      toast.error('Ocurrió un error al contactar con la API de Rapiboy')
-    } finally {
-      setAssigningRapiboyId(null)
-    }
-  }
-
-  const fetchDeliveryTakeawayPedidos = useCallback(async () => {
-    if (!token) return
-    setLoadingDelivery(true)
-    try {
-      const allData: Array<DeliveryPedido | TakeawayPedido> = []
-      let page = 1
-      const limit = 100
-      let hasMore = true
-      while (hasMore) {
-        const response = await pedidoUnificadoApi.getAll(token, 'all', page, limit) as {
-          success: boolean
-          data: Array<DeliveryPedido | TakeawayPedido>
-          pagination?: { hasMore: boolean }
-        }
-        if (!response.success || !response.data) break
-        allData.push(...response.data)
-        hasMore = (response.pagination?.hasMore ?? false) && response.data.length === limit
-        if (hasMore) page++
-      }
-      const delivery = allData.filter((p: any) => p.tipo === 'delivery') as DeliveryPedido[]
-      const takeaway = allData.filter((p: any) => p.tipo === 'takeaway') as TakeawayPedido[]
-      setDeliveryPedidos(delivery)
-      setTakeawayPedidos(takeaway)
-    } catch (error) {
-      console.error('Error fetching pedidos:', error)
-    } finally {
-      setLoadingDelivery(false)
-    }
-  }, [token])
-
-  useEffect(() => {
-    fetchDeliveryTakeawayPedidos()
-  }, [fetchDeliveryTakeawayPedidos])
-
-  useEffect(() => {
-    if (lastUpdate && (lastUpdate.type === 'delivery' || lastUpdate.type === 'takeaway')) {
-      fetchDeliveryTakeawayPedidos()
-    }
-  }, [lastUpdate, fetchDeliveryTakeawayPedidos])
-
-  useEffect(() => {
-    if (dashboardMode === 'nuevoPedido' && productos.length === 0) fetchProductos()
-  }, [dashboardMode, fetchProductos, productos.length])
-
-  const handleAddDeliveryItem = (producto: Producto) => {
-    const existingIndex = newDeliveryItems.findIndex(i => i.productoId === producto.id)
-    if (existingIndex >= 0) {
-      setNewDeliveryItems(prev => prev.map((item, idx) =>
-        idx === existingIndex ? { ...item, cantidad: item.cantidad + 1 } : item
-      ))
-    } else {
-      setNewDeliveryItems(prev => [...prev, { productoId: producto.id, cantidad: 1 }])
-    }
-  }
-
-  const handleRemoveDeliveryItem = (productoId: number) => {
-    setNewDeliveryItems(prev => prev.filter(i => i.productoId !== productoId))
-  }
-
-  const handleUpdateDeliveryItemCantidad = (productoId: number, cantidad: number) => {
-    if (cantidad <= 0) {
-      handleRemoveDeliveryItem(productoId)
-      return
-    }
-    setNewDeliveryItems(prev => prev.map(item =>
-      item.productoId === productoId ? { ...item, cantidad } : item
-    ))
-  }
-
-  const handleCreatePedido = async () => {
-    if (!token || newDeliveryItems.length === 0) {
-      return
-    }
-    const isMesa = newPedidoMesaId !== null
-    const isDelivery = !isMesa && newDeliveryDireccion.trim().length > 0
-    setCreatingDelivery(true)
-    try {
-      let success = false
-
-      if (isMesa) {
-        // Create mesa pedido: first create the pedido, then add items
-        const createRes = await pedidosApi.createManual(token, newPedidoMesaId) as { success: boolean; data?: { pedidoId: number } }
-        if (createRes.success && createRes.data?.pedidoId) {
-          const pedidoId = createRes.data.pedidoId
-          // Add all items to the pedido
-          for (const item of newDeliveryItems) {
-            await pedidosApi.addItem(token, pedidoId, {
-              productoId: item.productoId,
-              cantidad: item.cantidad,
-              clienteNombre: newDeliveryNombre || 'Mozo',
-              ingredientesExcluidos: item.ingredientesExcluidos
-            })
-          }
-          success = true
-        }
-      } else if (isDelivery) {
-        const response = await deliveryApi.create(token, {
-          direccion: newDeliveryDireccion,
-          nombreCliente: newDeliveryNombre || undefined,
-          telefono: newDeliveryTelefono || undefined,
-          notas: newDeliveryNotas || undefined,
-          items: newDeliveryItems
-        }) as { success: boolean }
-        success = response.success
-      } else {
-        const response = await takeawayApi.create(token, {
-          nombreCliente: newDeliveryNombre || undefined,
-          telefono: newDeliveryTelefono || undefined,
-          notas: newDeliveryNotas || undefined,
-          items: newDeliveryItems
-        }) as { success: boolean }
-        success = response.success
-      }
-
-      if (success) {
-        // Print factura automatically (full invoice with all items including beverages)
-        if (selectedPrinter) {
-          const itemsForPrint = newDeliveryItems.map(item => {
-            const producto = productos.find(p => p.id === item.productoId)
-            return {
-              id: item.productoId,
-              nombreProducto: producto?.nombre || 'Producto',
-              cantidad: item.cantidad,
-              precioUnitario: producto?.precio || '0',
-              ingredientesExcluidosNombres: producto?.ingredientes
-                ?.filter(ing => item.ingredientesExcluidos?.includes(ing.id))
-                .map(ing => ing.nombre) || []
-            }
-          })
-
-          // Add delivery fee item for delivery orders
-          if (isDelivery) {
-            const fee = DELIVERY_FEE
-            itemsForPrint.push({
-              id: 0,
-              nombreProducto: fee === 0 ? 'Delivery GRATIS' : 'Delivery',
-              cantidad: 1,
-              precioUnitario: String(fee),
-              ingredientesExcluidosNombres: []
-            })
-          }
-
-          const total = itemsForPrint.reduce((sum, item) =>
-            sum + (parseFloat(item.precioUnitario) * item.cantidad), 0
-          ).toFixed(2)
-
-          const mesaNombre = isMesa
-            ? (mesas.find(m => m.id === newPedidoMesaId)?.nombre || 'Mesa')
-            : isDelivery ? `Delivery: ${newDeliveryDireccion}` : 'Take Away'
-
-          const facturaData = formatFactura(
-            {
-              id: Date.now(),
-              mesaNombre,
-              nombrePedido: newDeliveryNombre || (isMesa ? 'Mesa' : isDelivery ? 'Delivery' : 'Take Away'),
-              total
-            },
-            itemsForPrint,
-            restaurante?.nombre || 'Restaurante'
-          )
-
-          printRaw(commandsToBytes(facturaData))
-        }
-
-        exitNuevoPedidoMode()
-        setNewDeliveryItems([])
-        setNewDeliveryDireccion('')
-        setNewDeliveryNombre('')
-        setNewDeliveryTelefono('')
-        setNewDeliveryNotas('')
-        setNewPedidoMesaId(null)
-        if (isMesa) {
-          fetchMesasREST()
-        }
-        fetchDeliveryTakeawayPedidos()
-      }
-    } catch (error) {
-    } finally {
-      setCreatingDelivery(false)
-    }
-  }
-
-
-  const handleDeleteDelivery = async (pedidoId: number) => {
-    if (!token) return
-    try {
-      const response = await deliveryApi.delete(token, pedidoId) as { success: boolean }
-      if (response.success) {
-        setDeliveryPedidos(prev => prev.filter(p => p.id !== pedidoId))
-      }
-    } catch (error) {
-    }
-  }
-  const DELIVERY_FEE = restaurante?.deliveryFee ? parseFloat(restaurante.deliveryFee) : 0
-
-  const deliveryItemsTotal = useMemo(() => {
-    const itemsTotal = newDeliveryItems.reduce((total, item) => {
-      const producto = productos.find(p => p.id === item.productoId)
-      return total + (producto ? parseFloat(producto.precio) * item.cantidad : 0)
-    }, 0)
-    const deliveryFee = newDeliveryDireccion.trim() ? DELIVERY_FEE : 0
-    return itemsTotal + deliveryFee
-  }, [newDeliveryItems, productos, newDeliveryDireccion])
-
-  const productosSeleccionadosTotal = useMemo(() => {
-    return productosSeleccionados.reduce((total, item) => {
-      const producto = productos.find(p => p.id === item.productoId)
-      return total + (producto ? parseFloat(producto.precio) * item.cantidad : 0)
-    }, 0)
-  }, [productosSeleccionados, productos])
-
-
-  const handleDeleteTakeaway = async (pedidoId: number) => {
-    if (!token) return
-    try {
-      const response = await takeawayApi.delete(token, pedidoId) as { success: boolean }
-      if (response.success) {
-        setTakeawayPedidos(prev => prev.filter(p => p.id !== pedidoId))
-      }
-    } catch (error) {
-    }
-  }
-
-  // Helper function to get the date of the last item added for mesa pedidos
-  const getLastItemDate = (items: any[], pedidoCreatedAt: string): string => {
-    if (!items || items.length === 0) return pedidoCreatedAt
-
-    // Find the most recent item by createdAt
-    const itemsWithDates = items.filter(item => item.createdAt)
-    if (itemsWithDates.length === 0) return pedidoCreatedAt
-
-    const lastItem = itemsWithDates.reduce((latest, item) => {
-      const itemDate = parseDashboardDate(item.createdAt).getTime()
-      const latestDate = parseDashboardDate(latest.createdAt).getTime()
-      return itemDate > latestDate ? item : latest
-    })
-
-    return lastItem.createdAt
-  }
-
-  // Unified all-orders list
-  const { allUnifiedPedidos, archivedUnifiedPedidos } = useMemo(() => {
-    const unified: UnifiedPedido[] = []
-    const addedMesaPedidoIds = new Set<number>()
-
-    // Add mesa pedidos from WS (real-time, only those with at least 1 item)
-    pedidos.forEach(p => {
-      if (p.totalItems === 0) return
-      addedMesaPedidoIds.add(p.id)
-      // For mesa pedidos, use the date of the last item added
-      const lastItemDate = getLastItemDate(p.items, p.createdAt)
-      unified.push({
-        id: p.id,
-        tipo: 'mesa',
-        estado: p.estado,
-        total: p.total,
-        createdAt: lastItemDate,
-        nombreCliente: p.nombrePedido || null,
-        telefono: null,
-        mesaNombre: p.mesaNombre,
-        items: p.items,
-        totalItems: p.totalItems,
-        pagado: p.pagado,
-      })
-    })
-
-    // Add historical mesa pedidos from API (closed, archived, etc. not already in WS)
-    // The backend already returns createdAt as the last item date, but we'll recalculate
-    // in case items have createdAt and we want to be sure
-    closedPedidosFromAPI.forEach(p => {
-      if (addedMesaPedidoIds.has(p.id)) return
-      if (p.totalItems === 0) return
-      // For mesa pedidos, use the date of the last item added
-      const lastItemDate = getLastItemDate(p.items, p.createdAt)
-      unified.push({
-        id: p.id,
-        tipo: 'mesa',
-        estado: p.estado,
-        total: p.total,
-        createdAt: lastItemDate,
-        nombreCliente: p.nombrePedido || null,
-        telefono: null,
-        mesaNombre: p.mesaNombre,
-        items: p.items,
-        totalItems: p.totalItems,
-        pagado: p.pagado,
-      })
-    })
-
-    // Add delivery pedidos
-    deliveryPedidos.forEach(p => {
-      unified.push({
-        id: p.id,
-        tipo: 'delivery',
-        estado: p.estado,
-        total: p.total,
-        createdAt: p.createdAt,
-        nombreCliente: p.nombreCliente,
-        telefono: p.telefono,
-        direccion: p.direccion,
-        notas: p.notas,
-        items: p.items,
-        totalItems: p.totalItems,
-        pagado: p.pagado,
-        metodoPago: p.metodoPago,
-        rapiboyTrackingUrl: p.rapiboyTrackingUrl,
-        montoDescuento: p.montoDescuento,
-        codigoDescuentoId: p.codigoDescuentoId,
-        codigoDescuentoCodigo: p.codigoDescuentoCodigo,
-      })
-    })
-
-    // Add takeaway pedidos
-    takeawayPedidos.forEach(p => {
-      unified.push({
-        id: p.id,
-        tipo: 'takeaway',
-        estado: p.estado,
-        total: p.total,
-        createdAt: p.createdAt,
-        nombreCliente: p.nombreCliente,
-        telefono: p.telefono,
-        notas: p.notas,
-        items: p.items,
-        totalItems: p.totalItems,
-        pagado: p.pagado,
-        metodoPago: p.metodoPago,
-        montoDescuento: p.montoDescuento,
-        codigoDescuentoId: p.codigoDescuentoId,
-        codigoDescuentoCodigo: p.codigoDescuentoCodigo,
-      })
-    })
-
-    // Sort chronologically (newest first)
-    unified.sort(
-      (a, b) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime()
-    )
-
-    return {
-      allUnifiedPedidos: unified.filter(p => p.estado !== 'archived'),
-      archivedUnifiedPedidos: unified.filter(p => p.estado === 'archived'),
-    }
-  }, [pedidos, closedPedidosFromAPI, deliveryPedidos, takeawayPedidos])
-
-  const filteredUnifiedPedidos = useMemo(() => {
-    if (pedidoFilter === 'all') return allUnifiedPedidos
-    return allUnifiedPedidos.filter(p => p.tipo === pedidoFilter)
-  }, [allUnifiedPedidos, pedidoFilter])
-
-  const filteredArchivedPedidos = useMemo(() => {
-    if (pedidoFilter === 'all') return archivedUnifiedPedidos
-    return archivedUnifiedPedidos.filter(p => p.tipo === pedidoFilter)
-  }, [archivedUnifiedPedidos, pedidoFilter])
-
-  // Keep selectedUnifiedPedido in sync with latest data
-  const displayedUnifiedPedido = useMemo(() => {
-    if (!selectedUnifiedPedido) return null
-    const allPedidos = [...allUnifiedPedidos, ...archivedUnifiedPedidos]
-    return allPedidos.find(p => p.id === selectedUnifiedPedido.id && p.tipo === selectedUnifiedPedido.tipo) || selectedUnifiedPedido
-  }, [selectedUnifiedPedido, allUnifiedPedidos, archivedUnifiedPedidos])
-
-  const getTipoBadge = (tipo: 'mesa' | 'delivery' | 'takeaway') => {
-    switch (tipo) {
-      case 'mesa': return { label: '🍽️ Mesa', className: '' }
-      case 'delivery': return { label: '🚚 Delivery', className: '' }
-      case 'takeaway': return { label: '🛍️ Take Away', className: '' }
-    }
-  }
-
-  if (isLoading && mesas.length === 0) {
-    return (
-      <div className="w-full h-[calc(100vh-4rem)] flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+  // ─────────────────────────────────────────────
+  // RENDER DE LISTAS
+  // ─────────────────────────────────────────────
+  const activeOrders = unifiedPedidos.filter(p => p.estado !== 'archived')
+  const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
+
+  if (isLoading && unifiedPedidos.length === 0) {
+    return <div className="h-[calc(100vh-4rem)] flex items-center justify-center bg-background"><Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" /></div>
   }
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden bg-background">
-      {/* Header - Responsive */}
-      <div className="shrink-0 bg-background border-b px-3 py-2 lg:px-4 lg:py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 lg:gap-3">
-            {/* Mobile back button */}
-            {mobileView !== 'orders' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="lg:hidden h-8 w-8 -ml-2"
-                onClick={handleBackToPedidos}
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            )}
-            <h1 className="text-lg lg:text-xl font-bold tracking-tight truncate">
-              {mobileView === 'detail'
-                ? displayedUnifiedPedido
-                  ? `${displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : displayedUnifiedPedido.tipo === 'takeaway' ? 'Take Away' : 'Mesa'} · #${displayedUnifiedPedido.id}`
-                  : selectedMesa?.nombre || 'Detalle'
-                : restaurante?.nombre || 'Pedidos'}
-            </h1>
-            {isConnected ? (
-              <Badge variant="outline" className="gap-1 text-[10px] lg:text-xs bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 hidden sm:flex">
-                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                En vivo
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="gap-1 text-[10px] lg:text-xs bg-orange-50 dark:bg-orange-950/30 border-orange-300 hidden sm:flex">
-                Offline
-              </Badge>
-            )}
-          </div>
 
-          {/* Desktop Create Button and Mode Toggle */}
-          <div className="hidden lg:flex gap-2">
-            <>
-              {dashboardMode !== 'nuevoPedido' && (
-                <Button size="sm" onClick={enterNuevoPedidoMode}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nuevo Pedido
-                </Button>
-              )}
-              <Button size="sm" variant="outline" onClick={() => setShowCierreTurno(true)}>
-                <CalendarDays className="mr-2 h-4 w-4" />
-                Cerrar Turno
-              </Button>
-            </>
-          </div>
-
-          {/* Mobile Buttons (Icon only) */}
-          <div className="flex items-center gap-1 lg:hidden">
-            <Button
-              size="icon"
-              variant="outline"
-              className="h-8 w-8"
-              onClick={() => setShowCierreTurno(true)}
-            >
-              <CalendarDays className="h-4 w-4" />
+      {/* ── HEADER PRINCIPAL ── */}
+      <header className="shrink-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between z-10">
+        <div className="flex items-center gap-3">
+          {mobileView === 'detail' && (
+            <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => setMobileView('orders')}>
+              <ArrowLeft className="h-5 w-5" />
             </Button>
-            {dashboardMode === 'nuevoPedido' ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={exitNuevoPedidoMode}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                className="h-8 w-8"
-                onClick={enterNuevoPedidoMode}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          )}
+          <h1 className="text-xl font-bold tracking-tight text-foreground">
+            {mobileView === 'detail' && selectedUnifiedPedido ? `Pedido #${selectedUnifiedPedido.id}` : (restaurante?.nombre || 'Operaciones')}
+          </h1>
+          <Badge variant="outline" className={cn("hidden sm:flex items-center gap-1.5 text-xs font-medium border", isConnected ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20" : "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20")}>
+            <div className={cn("h-2 w-2 rounded-full", isConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} />
+            {isConnected ? 'En vivo' : 'Offline'}
+          </Badge>
         </div>
 
-        {/* Mobile Navigation Tabs */}
-        {dashboardMode === 'nuevoPedido' ? (
-          <div className="lg:hidden mt-2 -mx-3 px-3 border-t pt-2">
-            <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-              <Button
-                variant={nuevoPedidoMobileTab === 'info' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="flex-1 h-8 text-xs"
-                onClick={() => setNuevoPedidoMobileTab('info')}
-              >
-                <List className="h-3.5 w-3.5 mr-1.5" />
-                Pedido
-                {newDeliveryItems.length > 0 && (
-                  <Badge variant="secondary" className="ml-1.5 text-[10px] h-4 min-w-4 px-1">{newDeliveryItems.length}</Badge>
-                )}
-              </Button>
-              <Button
-                variant={nuevoPedidoMobileTab === 'productos' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="flex-1 h-8 text-xs"
-                onClick={() => setNuevoPedidoMobileTab('productos')}
-              >
-                <Package className="h-3.5 w-3.5 mr-1.5" />
-                Productos
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="lg:hidden mt-2 -mx-3 px-3 border-t pt-2">
-            <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-            
-            <Button
-                variant={mobileView === 'orders' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="flex-1 h-8 text-xs relative"
-                onClick={() => setMobileView('orders')}
-              >
-                <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
-                Pedidos
-                {activeOrdersCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
-                    {activeOrdersCount}
-                  </span>
-                )}
-              </Button>
-              <Button
-                variant={mobileView === 'detail' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="flex-1 h-8 text-xs relative"
-                onClick={() => (selectedMesaId || selectedUnifiedPedido) ? setMobileView('detail') : null}
-                disabled={!selectedMesaId && !selectedUnifiedPedido}
-              >
-                <List className="h-3.5 w-3.5 mr-1.5" />
-                Detalle
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
+            <CalendarDays className="mr-2 h-4 w-4" /> Caja
+          </Button>
+        </div>
+      </header>
 
-      {/* Main Content: lista de pedidos + detalle (desktop); móvil lista / detalle */}
+      {/* ── MAIN CONTENT ── */}
       <div className="flex-1 flex overflow-hidden">
 
-        {/* NUEVO PEDIDO MODE VIEW - Full screen 3-column layout */}
-        {dashboardMode === 'nuevoPedido' && (
-          <div className="flex-1 flex overflow-hidden">
-
-            {/* COLUMN 1 (Desktop only): Client Info */}
-            <div className="hidden lg:flex lg:w-[280px] xl:w-[300px] flex-col border-r overflow-hidden bg-background shrink-0">
-              <div className="p-3 border-b flex items-center gap-2 sticky top-0 bg-background/95 backdrop-blur z-10 shrink-0">
-                <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1" onClick={exitNuevoPedidoMode}>
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <h2 className="font-semibold text-sm">Nuevo Pedido</h2>
-              </div>
-              <div className="flex-1 overflow-auto p-4 space-y-5">
-                {/* Mesa selector */}
-                <div className="space-y-3">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Tipo de Pedido</h3>
-                  <div className="space-y-1.5">
-                    <Label className="flex items-center gap-2 text-sm">
-                      <Utensils className="h-3.5 w-3.5" />
-                      Mesa
-                      <span className="text-muted-foreground text-xs font-normal">(opcional)</span>
-                    </Label>
-                    <Select
-                      value={newPedidoMesaId ? String(newPedidoMesaId) : 'none'}
-                      onValueChange={(val) => {
-                        if (val === 'none') {
-                          setNewPedidoMesaId(null)
-                        } else {
-                          setNewPedidoMesaId(Number(val))
-                          setNewDeliveryDireccion('')
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-full h-10">
-                        <SelectValue placeholder="Sin mesa (Delivery / Take Away)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Sin mesa (Delivery / Take Away)</SelectItem>
-                        {mesas.map((mesa) => (
-                          <SelectItem key={mesa.id} value={String(mesa.id)}>
-                            {mesa.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Datos del Cliente */}
-                <div className="space-y-3">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Datos del Cliente</h3>
-                  <div className="space-y-3">
-                    {!newPedidoMesaId && (
-                      <div className="space-y-1.5">
-                        <Label htmlFor="dt-direccion" className="flex items-center gap-2 text-sm">
-                          <MapPin className="h-3.5 w-3.5" />
-                          Dirección
-                          <span className="text-muted-foreground text-xs font-normal">(vacío = Take Away)</span>
-                        </Label>
-                        <Input
-                          id="dt-direccion"
-                          placeholder="Ej: Av. Principal 123"
-                          value={newDeliveryDireccion}
-                          onChange={(e) => setNewDeliveryDireccion(e.target.value)}
-                          className="h-10"
-                        />
-                      </div>
-                    )}
-                    <div className="space-y-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="dt-nombre" className="text-sm">
-                          <User className="h-3.5 w-3.5 inline mr-1" />
-                          Nombre
-                        </Label>
-                        <Input
-                          id="dt-nombre"
-                          placeholder="Nombre del cliente"
-                          value={newDeliveryNombre}
-                          onChange={(e) => setNewDeliveryNombre(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="dt-telefono" className="text-sm">
-                          <Phone className="h-3.5 w-3.5 inline mr-1" />
-                          Teléfono
-                        </Label>
-                        <Input
-                          id="dt-telefono"
-                          placeholder="Ej: 11-1234-5678"
-                          value={newDeliveryTelefono}
-                          onChange={(e) => setNewDeliveryTelefono(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="dt-notas" className="text-sm">Notas</Label>
-                      <Input
-                        id="dt-notas"
-                        placeholder="Instrucciones especiales..."
-                        value={newDeliveryNotas}
-                        onChange={(e) => setNewDeliveryNotas(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tipo badge indicator */}
+        {dashboardMode === 'orders' ? (
+          <>
+            {/* ── PANEL IZQUIERDO: LISTA COMPACTA DE PEDIDOS ── */}
+            <div className={cn(
+              "w-full lg:w-[380px] xl:w-[420px] flex-col border-r border-border shrink-0 bg-muted/10",
+              mobileView === 'orders' ? 'flex' : 'hidden lg:flex'
+            )}>
+              <div className="p-3 border-b border-border flex items-center justify-between bg-background/95 backdrop-blur">
                 <div className="flex items-center gap-2">
-                  {newPedidoMesaId ? (
-                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 border">
-                      <Utensils className="h-3 w-3 mr-1" />
-                      Mesa {mesas.find(m => m.id === newPedidoMesaId)?.nombre || ''}
-                    </Badge>
-                  ) : newDeliveryDireccion.trim() ? (
-                    <Badge className="bg-sky-100 text-sky-700 border-sky-300 border">
-                      <Truck className="h-3 w-3 mr-1" />
-                      Delivery
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-amber-100 text-amber-700 border-amber-300 border">
-                      <ShoppingBag className="h-3 w-3 mr-1" />
-                      Take Away
-                    </Badge>
-                  )}
+                  <h2 className="font-bold text-base">Pedidos</h2>
+                  <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0">{activeOrders.length}</Badge>
                 </div>
-              </div>
-            </div>
-
-            {/* COLUMN 2: Cart + Submit (Mobile info tab includes client info) */}
-            <div className={`${nuevoPedidoMobileTab === 'info' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[350px] xl:w-[380px] flex-col border-r overflow-hidden bg-background`}>
-              <div className="flex-1 overflow-auto p-4 space-y-5">
-
-                {/* Mobile only: Client info */}
-                <div className="lg:hidden space-y-5">
-                  {/* Mesa selector */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Tipo de Pedido</h3>
-                    <div className="space-y-1.5">
-                      <Label className="flex items-center gap-2 text-sm">
-                        <Utensils className="h-3.5 w-3.5" />
-                        Mesa
-                        <span className="text-muted-foreground text-xs font-normal">(opcional)</span>
-                      </Label>
-                      <Select
-                        value={newPedidoMesaId ? String(newPedidoMesaId) : 'none'}
-                        onValueChange={(val) => {
-                          if (val === 'none') {
-                            setNewPedidoMesaId(null)
-                          } else {
-                            setNewPedidoMesaId(Number(val))
-                            setNewDeliveryDireccion('')
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="w-full h-10">
-                          <SelectValue placeholder="Sin mesa (Delivery / Take Away)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Sin mesa (Delivery / Take Away)</SelectItem>
-                          {mesas.map((mesa) => (
-                            <SelectItem key={mesa.id} value={String(mesa.id)}>
-                              {mesa.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Datos del Cliente */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Datos del Cliente</h3>
-                    <div className="space-y-3">
-                      {!newPedidoMesaId && (
-                        <div className="space-y-1.5">
-                          <Label htmlFor="np-direccion" className="flex items-center gap-2 text-sm">
-                            <MapPin className="h-3.5 w-3.5" />
-                            Dirección
-                            <span className="text-muted-foreground text-xs font-normal">(vacío = Take Away)</span>
-                          </Label>
-                          <Input
-                            id="np-direccion"
-                            placeholder="Ej: Av. Principal 123"
-                            value={newDeliveryDireccion}
-                            onChange={(e) => setNewDeliveryDireccion(e.target.value)}
-                            className="h-10"
-                          />
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="np-nombre" className="text-sm">
-                            <User className="h-3.5 w-3.5 inline mr-1" />
-                            Nombre
-                          </Label>
-                          <Input
-                            id="np-nombre"
-                            placeholder="Nombre del cliente"
-                            value={newDeliveryNombre}
-                            onChange={(e) => setNewDeliveryNombre(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="np-telefono" className="text-sm">
-                            <Phone className="h-3.5 w-3.5 inline mr-1" />
-                            Teléfono
-                          </Label>
-                          <Input
-                            id="np-telefono"
-                            placeholder="Ej: 11-1234-5678"
-                            value={newDeliveryTelefono}
-                            onChange={(e) => setNewDeliveryTelefono(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="np-notas" className="text-sm">Notas</Label>
-                        <Input
-                          id="np-notas"
-                          placeholder="Instrucciones especiales..."
-                          value={newDeliveryNotas}
-                          onChange={(e) => setNewDeliveryNotas(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Tipo badge indicator */}
-                  <div className="flex items-center gap-2">
-                    {newPedidoMesaId ? (
-                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 border">
-                        <Utensils className="h-3 w-3 mr-1" />
-                        Mesa {mesas.find(m => m.id === newPedidoMesaId)?.nombre || ''}
-                      </Badge>
-                    ) : newDeliveryDireccion.trim() ? (
-                      <Badge className="bg-sky-100 text-sky-700 border-sky-300 border">
-                        <Truck className="h-3 w-3 mr-1" />
-                        Delivery
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-amber-100 text-amber-700 border-amber-300 border">
-                        <ShoppingBag className="h-3 w-3 mr-1" />
-                        Take Away
-                      </Badge>
-                    )}
-                  </div>
-
-                  <Separator />
-                </div>
-
-                {/* Productos seleccionados */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Productos Seleccionados</h3>
-                    {newDeliveryItems.length > 0 && (
-                      <Badge variant="secondary" className="text-xs">{newDeliveryItems.length}</Badge>
-                    )}
-                  </div>
-                  {newDeliveryItems.length === 0 ? (
-                    <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-lg">
-                      <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">Seleccioná productos de la lista</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-3 lg:hidden"
-                        onClick={() => setNuevoPedidoMobileTab('productos')}
-                      >
-                        <Plus className="h-3.5 w-3.5 mr-1.5" />
-                        Agregar Productos
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        {newDeliveryItems.map((item, idx) => {
-                          const producto = productos.find(p => p.id === item.productoId)
-                          if (!producto) return null
-                          const isExpanded = !expandedDeliveryItems.includes(idx)
-                          return (
-                            <div key={`${item.productoId}-${idx}`} className="flex flex-col gap-2 p-3 rounded-lg border bg-card">
-                              <div className="flex items-center gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium truncate text-sm">{producto.nombre}</p>
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-xs text-muted-foreground">${parseFloat(producto.precio).toFixed(2)} c/u</p>
-                                    {producto.ingredientes && producto.ingredientes.length > 0 && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-5 text-[10px] px-1.5 text-muted-foreground hover:text-foreground"
-                                        onClick={() => setExpandedDeliveryItems(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
-                                      >
-                                        {isExpanded ? 'Ocultar' : 'Ingredientes'}
-                                      </Button>
-                                    )}
-                                  </div>
-                                  {item.ingredientesExcluidos && item.ingredientesExcluidos.length > 0 && !isExpanded && (
-                                    <p className="text-[10px] text-orange-600 mt-0.5">Sin: {producto.ingredientes?.filter(i => item.ingredientesExcluidos?.includes(i.id)).map(i => i.nombre).join(', ')}</p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <div className="flex items-center border rounded-lg bg-background h-7">
-                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateDeliveryItemCantidad(item.productoId, item.cantidad - 1)}>
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
-                                    <span className="w-5 text-center text-xs font-medium">{item.cantidad}</span>
-                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateDeliveryItemCantidad(item.productoId, item.cantidad + 1)}>
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleRemoveDeliveryItem(item.productoId)}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                              {isExpanded && producto.ingredientes && (
-                                <div className="space-y-1 pl-1 border-l-2 border-muted ml-1">
-                                  {producto.ingredientes.map(ing => {
-                                    const isExcluded = item.ingredientesExcluidos?.includes(ing.id)
-                                    return (
-                                      <div
-                                        key={ing.id}
-                                        className={`flex items-center gap-2 p-1 rounded cursor-pointer text-xs ${isExcluded ? 'text-muted-foreground line-through opacity-70' : ''}`}
-                                        onClick={() => handleToggleDeliveryIngredient(idx, ing.id)}
-                                      >
-                                        <Checkbox checked={!isExcluded} className="h-3 w-3" />
-                                        <span>{ing.nombre}</span>
-                                        {isExcluded && <span className="text-[10px] text-destructive ml-auto font-medium">Excluido</span>}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      {/* Delivery fee line item */}
-                      {newDeliveryDireccion.trim() && (
-                        <div className="flex items-center gap-3 p-3 rounded-lg border bg-sky-50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-800">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm flex items-center gap-1.5">
-                              <Truck className="h-3.5 w-3.5 text-sky-600" />
-                              Delivery
-                            </p>
-                            <p className="text-xs text-muted-foreground">Costo de envío</p>
-                          </div>
-                          <span className="font-bold text-sm">${DELIVERY_FEE.toFixed(2)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
-                        <span className="font-semibold">Total:</span>
-                        <span className="text-xl font-bold text-primary">${deliveryItemsTotal.toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Submit button fixed at bottom */}
-              <div className="p-4 border-t bg-background shrink-0">
-                <Button
-                  className="w-full h-11"
-                  onClick={handleCreatePedido}
-                  disabled={creatingDelivery || newDeliveryItems.length === 0}
-                >
-                  {creatingDelivery ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : newPedidoMesaId ? (
-                    <Utensils className="h-4 w-4 mr-2" />
-                  ) : newDeliveryDireccion.trim() ? (
-                    <Truck className="h-4 w-4 mr-2" />
-                  ) : (
-                    <ShoppingBag className="h-4 w-4 mr-2" />
-                  )}
-                  {newPedidoMesaId
-                    ? `Crear Pedido Mesa ${mesas.find(m => m.id === newPedidoMesaId)?.nombre || ''}`
-                    : newDeliveryDireccion.trim() ? 'Crear Pedido Delivery' : 'Crear Pedido Take Away'}
-                  {newDeliveryItems.length > 0 && ` \u2022 $${deliveryItemsTotal.toFixed(2)}`}
+                <Button variant="outline" size="sm" className="h-8 text-xs px-2 gap-1.5" onClick={openMetodosPagoModal}>
+                  <Settings className="h-3.5 w-3.5" /> Pagos
                 </Button>
               </div>
-            </div>
 
-            {/* COLUMN 3: Product catalog */}
-            <div className={`${nuevoPedidoMobileTab === 'productos' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col overflow-hidden bg-muted/10`}>
-              <div className="p-4 border-b bg-background/95 backdrop-blur shrink-0">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Agregar Productos</h3>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2" onClick={exitNuevoPedidoMode}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar producto o etiqueta... (Enter para agregar)"
-                    value={searchProducto}
-                    onChange={(e) => setSearchProducto(e.target.value)}
-                    className="pl-10 h-10"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && searchProducto.trim()) {
-                        e.preventDefault()
-                        const term = searchProducto.trim().toLowerCase()
-                        // Buscar por match exacto de etiqueta primero
-                        const matchByTag = productos.find(p =>
-                          p.etiquetas?.some(et => et.nombre.toLowerCase() === term)
-                        )
-                        // Si no hay match exacto por etiqueta, usar el primer resultado filtrado
-                        const matchProduct = matchByTag || productosFiltrados[0]
-                        if (matchProduct) {
-                          handleAddDeliveryItem(matchProduct)
-                          setSearchProducto('')
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="flex-1 overflow-auto p-4">
-                {loadingProductos ? (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <div className="flex-1 overflow-y-auto p-3">
+                {activeOrders.length === 0 ? (
+                  <div className="h-32 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-2xl">
+                    <Receipt className="h-6 w-6 mb-2 opacity-40" />
+                    <p className="text-sm font-medium">No hay pedidos activos</p>
                   </div>
                 ) : (
-                  <div className="space-y-6">
-                    {(() => {
-                      const porCategoria = productosFiltrados.reduce((acc, producto) => {
-                        const cat = producto.categoria || 'Sin categoría'
-                        if (!acc[cat]) acc[cat] = []
-                        acc[cat].push(producto)
-                        return acc
-                      }, {} as Record<string, Producto[]>)
+                  <div className="space-y-2">
+                    {activeOrders.map((pedido, index) => {
+                      const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo;
+                      const pagoBadge = metodoPagoListBadge(pedido.metodoPago);
+                      const dateLabel = getDateLabel(pedido.createdAt);
+                      const prevDateLabel = index > 0 ? getDateLabel(activeOrders[index - 1].createdAt) : null;
+                      const showDateSeparator = dateLabel !== prevDateLabel;
 
-                      const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
-                        if (a === 'Sin categoría') return 1
-                        if (b === 'Sin categoría') return -1
-                        return a.localeCompare(b)
-                      })
+                      return (
+                        <Fragment key={pedido.id}>
+                          {showDateSeparator && (
+                            <div className={`flex items-center gap-3 ${index === 0 ? 'pb-1' : 'pt-3 pb-1'}`}>
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase">{dateLabel}</span>
+                              <Separator className="flex-1 bg-border" />
+                            </div>
+                          )}
+                          <Card
+                            onClick={() => { setSelectedUnifiedPedido(pedido); setMobileView('detail'); }}
+                            className={cn(
+                              "p-3 rounded-xl cursor-pointer transition-all border flex flex-col gap-2",
+                              isSelected
+                                ? "border-[#FF7A00] bg-orange-500/10 dark:bg-orange-500/20"
+                                : "border-border bg-card hover:bg-accent/50 shadow-sm"
+                            )}
+                          >
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-sm flex items-center gap-1.5">
+                                  {pedido.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5 text-[#FF7A00]" /> : <ShoppingBag className="h-3.5 w-3.5 text-[#FF7A00]" />}
+                                  #{pedido.id}
+                                </span>
+                                {!pedido.pagado && (
+                                  <Badge className="bg-red-500/10 text-red-600 dark:text-red-400 text-[9px] px-1 border-none hover:bg-red-500/20">Pendiente</Badge>
+                                )}
+                                {pagoBadge && (
+                                  <Badge variant="outline" className={cn("text-[9px] px-1 py-0 h-4 border-none", pagoBadge.className)}>
+                                    {pagoBadge.icon && <span className="mr-1">{pagoBadge.icon}</span>}{pagoBadge.label}
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="font-black text-sm">${parseFloat(pedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
+                            </div>
 
-                      return categoriasOrdenadas.map((categoriaNombre) => (
-                        <div key={categoriaNombre} className="space-y-2">
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 sticky top-0 bg-muted/10 py-1 backdrop-blur-sm z-1">
-                            {categoriaNombre}
-                            <Badge variant="secondary" className="ml-2 text-[10px] font-normal">{porCategoria[categoriaNombre].length}</Badge>
-                          </h4>
-                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
-                            {porCategoria[categoriaNombre].map((producto) => {
-                              const existingItem = newDeliveryItems.find(i => i.productoId === producto.id)
-                              return (
-                                <div
-                                  key={producto.id}
-                                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${existingItem ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
-                                  onClick={() => handleAddDeliveryItem(producto)}
-                                >
-                                  <div className="shrink-0">
-                                    {producto.imagenUrl ? (
-                                      <img src={producto.imagenUrl} alt={producto.nombre} className="w-12 h-12 rounded-lg object-cover bg-muted" />
-                                    ) : (
-                                      <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                                        <Package className="h-5 w-5 text-muted-foreground/40" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <p className="font-medium truncate">{producto.nombre}</p>
-                                      {producto.etiquetas && producto.etiquetas.map(et => (
-                                        <Badge key={et.id} variant="outline" className="text-[10px] px-1 py-0 h-4 bg-violet-50 dark:bg-violet-950/30 border-violet-300 text-violet-700 dark:text-violet-400 font-mono">
-                                          {et.nombre}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                    <p className="font-bold text-primary text-sm">${parseFloat(producto.precio).toFixed(2)}</p>
-                                  </div>
-                                  {existingItem && (
-                                    <Badge variant="secondary" className="font-mono">{existingItem.cantidad}</Badge>
-                                  )}
-                                  <Plus className="h-5 w-5 text-muted-foreground shrink-0" />
+                            <div className="flex justify-between items-end">
+                              <div className="min-w-0">
+                                {pedido.nombreCliente && <p className="text-xs font-semibold text-foreground truncate max-w-[180px]">{pedido.nombreCliente}</p>}
+                                {pedido.tipo === 'delivery' && pedido.direccion && (
+                                  <p className="text-[11px] text-muted-foreground truncate max-w-[180px] flex items-center gap-1 mt-0.5">
+                                    <MapPin className="h-2.5 w-2.5 shrink-0" /> {pedido.direccion}
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-1 mt-1">
+                                  <span className="text-[10px] text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</span>
                                 </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      ))
-                    })()}
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {pedido.pagado && (
+                                  <button
+                                    className="h-7 px-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 text-[10px] font-bold"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleNotificarCliente(pedido);
+                                    }}
+                                    disabled={sendingNotification === pedido.id.toString()}
+                                  >
+                                    {sendingNotification === pedido.id.toString()
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : <MessageCircle className="h-3 w-3" />}
+                                    Notificar
+                                  </button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  className={cn("h-7 px-3 text-[10px] font-bold shrink-0", pedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00] text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white")}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (pedido.pagado) handleEstadoChange(pedido.tipo, pedido.id, 'archived');
+                                    else handleAprobarPago(pedido);
+                                  }}
+                                  disabled={updatingPago === pedido.id.toString()}
+                                >
+                                  {updatingPago === pedido.id.toString() ? <Loader2 className="h-3 w-3 animate-spin" /> : (pedido.pagado ? 'Despachar' : 'Cobrar')}
+                                </Button>
+                              </div>
+                            </div>
+                          </Card>
+                        </Fragment>
+                      )
+                    })}
                   </div>
                 )}
-              </div>
-              {/* Mobile floating cart summary */}
-              {newDeliveryItems.length > 0 && (
-                <div className="lg:hidden p-3 border-t bg-background shrink-0">
-                  <Button
-                    className="w-full h-11"
-                    onClick={() => setNuevoPedidoMobileTab('info')}
-                  >
-                    <ShoppingCart className="h-4 w-4 mr-2" />
-                    Ver Pedido • {newDeliveryItems.reduce((sum, i) => sum + i.cantidad, 0)} {newDeliveryItems.reduce((sum, i) => sum + i.cantidad, 0) === 1 ? 'item' : 'items'} • ${deliveryItemsTotal.toFixed(2)}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        {dashboardMode === 'orders' && (
-          <>
-            <div className="hidden lg:flex lg:w-[380px] xl:w-[420px] flex-col border-r bg-muted/20 overflow-hidden shrink-0">
-              <div className="p-3 border-b sticky top-0 bg-background/95 backdrop-blur z-10 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Pedidos</p>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={openMetodosPagoModal} title="Métodos de pago">
-                      <Settings className="h-3.5 w-3.5 mr-1" />
-                      Pagos
-                    </Button>
-                    <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                <div className="flex-1 overflow-auto p-3">
-                  {loadingDelivery ? (
-                    <div className="flex items-center justify-center h-full">
-                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                {/* Pedidos Archivados */}
+                {archivedOrders.length > 0 && (
+                  <div className="pt-6 pb-2">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-1">Historial</span>
+                      <Separator className="flex-1 bg-border" />
                     </div>
-                  ) : allUnifiedPedidos.length === 0 && archivedUnifiedPedidos.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                      <ShoppingCart className="h-12 w-12 text-muted-foreground/30" />
-                      <p className="text-sm font-medium">No hay pedidos</p>
-                      <Button size="sm" onClick={enterNuevoPedidoMode}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Crear primer pedido
-                      </Button>
-                    </div>
-                  ) : filteredUnifiedPedidos.length === 0 && filteredArchivedPedidos.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
-                      <ShoppingCart className="h-12 w-12 text-muted-foreground/30" />
-                      <p className="text-sm font-medium">No hay pedidos de este tipo</p>
-                      <Button variant="outline" size="sm" onClick={() => setPedidoFilter('all')}>
-                        Ver todos
-                      </Button>
-                    </div>
-                  ) : (
+
                     <div className="space-y-2">
-                      {filteredUnifiedPedidos.map((pedido, index) => {
-                        const tipoBadge = getTipoBadge(pedido.tipo)
-                        const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
-                        const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
-                          || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
-                        const dateLabel = getDateLabel(pedido.createdAt)
-                        const prevDateLabel = index > 0 ? getDateLabel(filteredUnifiedPedidos[index - 1].createdAt) : null
-                        const showDateSeparator = dateLabel !== prevDateLabel
+                      {archivedOrders.map((pedido, index) => {
+                        const dateLabel = getDateLabel(pedido.createdAt);
+                        const prevDateLabel = index > 0 ? getDateLabel(archivedOrders[index - 1].createdAt) : null;
+                        const showDateSeparator = dateLabel !== prevDateLabel;
+
                         return (
-                          <Fragment key={`${pedido.tipo}-${pedido.id}`}>
-                            {showDateSeparator && (
-                              <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-2'}`}>
-                                <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
-                                <Separator className="flex-1" />
+                          <Fragment key={pedido.id}>
+                            {showDateSeparator && index !== 0 && (
+                              <div className="flex items-center gap-3 pt-3 pb-1">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase">{dateLabel}</span>
                               </div>
                             )}
                             <div
-                              className={`p-3 rounded-lg border cursor-pointer transition-all hover:shadow-sm active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
-                              onClick={() => handleUnifiedPedidoClick(pedido)}
+                              onClick={() => { setSelectedUnifiedPedido(pedido); setMobileView('detail'); }}
+                              className="flex items-center justify-between p-3 rounded-xl bg-card border border-border opacity-60 hover:opacity-100 cursor-pointer active:scale-[0.99] transition-all"
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                                    <span className={`${tipoBadge.className} text-sm font-semibold`}>
-                                      {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
-                                        <span className="text-xs font-normal">{pedido.mesaNombre}</span>
-                                      )}
-                                    </span>
-                                    {pedido.pagado && (
-                                      <Badge variant="outline" className="text-[9px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 px-1 py-0 h-4">
-                                        💳 Pagado
-                                      </Badge>
-                                    )}
-                                    {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
-                                      <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[140px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
-                                        <Tag className="h-2.5 w-2.5 mr-0.5 inline shrink-0" />
-                                        {pedido.codigoDescuentoCodigo || 'Cupón'}
-                                      </Badge>
-                                    )}
-                                    {pagoBadge && (
-                                      <Badge variant="outline" className={pagoBadge.className}>
-                                        {pagoBadge.label}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  {pedido.tipo === 'delivery' && pedido.direccion && (
-                                    <div className="flex items-start gap-1 mb-0.5">
-                                      <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
-                                      <p className="text-xs text-muted-foreground truncate">{pedido.direccion}</p>
-                                    </div>
-                                  )}
-                                  {pedido.nombreCliente && (
-                                    <p className="text-xs text-muted-foreground truncate">{pedido.nombreCliente}</p>
-                                  )}
-                                  {pedido.telefono && (
-                                    <div className="flex items-center gap-1">
-                                      <Phone className="h-3 w-3 text-muted-foreground" />
-                                      <p className="text-xs text-muted-foreground">{pedido.telefono}</p>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <p className="font-bold text-sm">
-                                    ${parseFloat(pedido.total).toFixed(2)}
-                                  </p>
-                                  <p className="text-[10px] text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
-                                  {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
-                                    <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">
-                                      -${parseFloat(String(pedido.montoDescuento)).toFixed(0)} cupón
-                                    </p>
-                                  )}
-                                </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-xs text-muted-foreground">#{pedido.id}</span>
+                                <span className="text-xs text-muted-foreground truncate max-w-[120px]">{pedido.nombreCliente || 'Sin nombre'}</span>
                               </div>
-                              {pedido.tipo !== 'mesa' && pedido.estado !== 'archived' && (
-                                <Button
-                                  className={`w-full mt-2 h-9 text-sm font-bold text-white shadow-sm ${pedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDeliveryTakeawayEstadoChange(pedido.tipo as 'delivery' | 'takeaway', pedido.id, 'archived')
-                                  }}
-                                >
-                                  {pedido.estado === 'dispatched' ? <Archive className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
-                                  {pedido.estado === 'dispatched' ? 'Archivar' : 'Despachar'}
-                                </Button>
-                              )}
+                              <span className="text-xs font-bold text-muted-foreground">${parseFloat(pedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                             </div>
                           </Fragment>
                         )
                       })}
-
-                      {/* Archived orders section */}
-                      {filteredArchivedPedidos.length > 0 && (
-                        <>
-                          <Separator className="my-3" />
-                          <div className="flex items-center gap-2 mb-2">
-                            <Archive className="h-3.5 w-3.5 text-muted-foreground/60" />
-                            <h3 className="text-xs font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
-                          </div>
-                          {filteredArchivedPedidos.map((pedido, index) => {
-                            const tipoBadge = getTipoBadge(pedido.tipo)
-                            const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
-                            const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
-                              || (pedido.tipo === 'mesa' && selectedMesaId !== null && mesas.find(m => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
-                            const dateLabel = getDateLabel(pedido.createdAt)
-                            const prevDateLabel = index > 0 ? getDateLabel(filteredArchivedPedidos[index - 1].createdAt) : null
-                            const showDateSeparator = dateLabel !== prevDateLabel
-                            return (
-                              <Fragment key={`archived-${pedido.tipo}-${pedido.id}`}>
-                                {showDateSeparator && (
-                                  <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-2'}`}>
-                                    <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
-                                    <Separator className="flex-1" />
-                                  </div>
-                                )}
-                                <div
-                                  className={`p-2.5 rounded-lg border cursor-pointer transition-all opacity-50 hover:opacity-70 active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary opacity-70' : 'bg-card'}`}
-                                  onClick={() => handleUnifiedPedidoClick(pedido)}
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                                        <span className={`${tipoBadge.className} text-xs font-medium`}>
-                                          {tipoBadge.label} {pedido.tipo === 'mesa' && pedido.mesaNombre && (
-                                            <span className="text-[10px]">{pedido.mesaNombre}</span>
-                                          )}
-                                        </span>
-                                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 text-muted-foreground border-muted-foreground/30">
-                                          Archivado
-                                        </Badge>
-                                        {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
-                                          <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-3.5 max-w-[100px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
-                                            <Tag className="h-2 w-2 mr-0.5 inline" />
-                                            {pedido.codigoDescuentoCodigo || 'Cupón'}
-                                          </Badge>
-                                        )}
-                                        {pagoBadge && (
-                                          <Badge variant="outline" className={`${pagoBadge.className} h-3.5`}>
-                                            {pagoBadge.label}
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      {pedido.tipo === 'delivery' && pedido.direccion && (
-                                        <p className="text-[10px] text-muted-foreground truncate">{pedido.direccion}</p>
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground shrink-0">
-                                      ${parseFloat(pedido.total).toFixed(2)}
-                                    </p>
-                                  </div>
-                                </div>
-                              </Fragment>
-                            )
-                          })}
-                        </>
-                      )}
                     </div>
-                  )}
-                </div>
+
+                    {hasMore && (
+                      <Button
+                        variant="ghost"
+                        className="w-full mt-4 text-xs font-semibold text-muted-foreground border border-dashed border-border rounded-xl h-10"
+                        onClick={handleLoadMore}
+                        disabled={isLoadingMore}
+                      >
+                        {isLoadingMore ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
+                        Cargar más antiguos
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* RIGHT: Detail View - Desktop always visible, Mobile conditional */}
-            <div className={`
-              ${mobileView === 'detail' ? 'flex' : 'hidden'} 
-              lg:flex lg:flex-1 flex-col overflow-hidden
-              w-full
-            `}>
-              <div className="flex-1 overflow-auto p-3 lg:p-4">
-                {/* Delivery/Takeaway Detail View */}
-                {displayedUnifiedPedido && displayedUnifiedPedido.tipo !== 'mesa' ? (
-                  <div className="space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-20 lg:pb-0">
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h2 className="text-xl lg:text-2xl font-bold truncate">
-                            {displayedUnifiedPedido.tipo === 'delivery' ? '🚚 Delivery' : '🛍️ Take Away'}
-                          </h2>
-                          {displayedUnifiedPedido.estado === 'archived' && (
-                            <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">Archivado</Badge>
+            {/* ── PANEL DERECHO: DETALLE OPERATIVO ── */}
+            <div className={cn(
+              "flex-1 bg-background relative overflow-hidden",
+              mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+            )}>
+              {selectedUnifiedPedido ? (
+                <div className="flex flex-col h-full w-full relative">
+
+                  {/* --- DESKTOP LAYOUT (3 Secciones) --- */}
+                  <div className="hidden lg:flex flex-col h-full p-8 xl:p-10 w-full max-w-6xl mx-auto overflow-y-auto">
+                    {/* 1. Header Desktop (Ocupa todo el ancho superior) */}
+                    <div className="flex items-start justify-between border-b border-border pb-6 mb-8 shrink-0">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline" className="uppercase tracking-widest text-[10px] font-bold bg-muted/50">
+                            {selectedUnifiedPedido.tipo}
+                          </Badge>
+                          {selectedUnifiedPedido.estado === 'archived' && (
+                            <Badge variant="secondary" className="bg-muted text-muted-foreground text-[10px]">Archivado</Badge>
                           )}
-                          {(() => {
-                            const pb = metodoPagoListBadge(displayedUnifiedPedido.metodoPago)
-                            return pb ? (
-                              <Badge variant="outline" className={`${pb.className} text-xs h-5`}>
-                                {pb.label}
-                              </Badge>
-                            ) : null
-                          })()}
                         </div>
-                        <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap mt-1">
-                          <span>Pedido #{displayedUnifiedPedido.id}</span>
-                          <span>·</span>
-                          <span>{getDateLabel(displayedUnifiedPedido.createdAt)}, {formatOrderTime(displayedUnifiedPedido.createdAt)}</span>
-                          <span className="text-muted-foreground/60">({formatTimeAgo(displayedUnifiedPedido.createdAt)})</span>
+                        <h2 className="text-4xl font-black text-foreground tracking-tight">Pedido #{selectedUnifiedPedido.id}</h2>
+                        <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-2 font-medium">
+                          <Clock className="h-4 w-4" />
+                          {getDateLabel(selectedUnifiedPedido.createdAt)}, {parseDashboardDate(selectedUnifiedPedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                          <span className="opacity-50 font-normal ml-1">({formatTimeAgo(selectedUnifiedPedido.createdAt)})</span>
                         </p>
-                        {pedidoTieneCuponDescuento(displayedUnifiedPedido) && (
-                          <p className="text-xs font-medium text-violet-600 dark:text-violet-400 mt-1.5 flex items-center gap-1.5 flex-wrap">
-                            <Tag className="h-3.5 w-3.5 shrink-0" />
-                            <span>
-                              Cupón{displayedUnifiedPedido.codigoDescuentoCodigo ? ` ${displayedUnifiedPedido.codigoDescuentoCodigo}` : ''}
-                              {' · '}
-                              -${parseFloat(String(displayedUnifiedPedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                            </span>
-                          </p>
-                        )}
                       </div>
-                      <div className="flex gap-1 lg:gap-2 shrink-0">
-                        
-                        {/* Print */}
+
+                      <div className="flex gap-2">
                         {selectedPrinter && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="hidden lg:flex"
-                            onClick={() => {
-                              const facturaItems: any[] = displayedUnifiedPedido.items.map((item: any) => ({
-                                ...item,
-                                precioUnitario: item.precioUnitario || '0'
-                              }))
-                              if (displayedUnifiedPedido.tipo === 'delivery') {
-                                const fee = getOrderDeliveryFee(displayedUnifiedPedido)
-                                facturaItems.push({
-                                  id: 0,
-                                  nombreProducto: fee === 0 ? 'Delivery GRATIS' : 'Delivery',
-                                  cantidad: 1,
-                                  precioUnitario: String(fee),
-                                  ingredientesExcluidosNombres: []
-                                })
-                              }
-                              const total = displayedUnifiedPedido.total
-                              const deliveryFee = displayedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(displayedUnifiedPedido) : undefined
-                              const facturaData = formatFactura(
-                                {
-                                  id: displayedUnifiedPedido.id,
-                                  mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
-                                  nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
-                                  tipo: displayedUnifiedPedido.tipo,
-                                  telefono: displayedUnifiedPedido.telefono ?? undefined,
-                                  direccion: displayedUnifiedPedido.tipo === 'delivery' ? displayedUnifiedPedido.direccion ?? undefined : undefined,
-                                  total,
-                                  notas: displayedUnifiedPedido.notas,
-                                  deliveryFee,
-                                  montoDescuento: displayedUnifiedPedido.montoDescuento,
-                                  codigoDescuentoCodigo: displayedUnifiedPedido.codigoDescuentoCodigo ?? null,
-                                },
-                                facturaItems,
-                                restaurante?.nombre || 'Restaurante'
-                              )
-                              printRaw(commandsToBytes(facturaData))
-                            }}
-                          >
-                            <Printer className="mr-2 h-4 w-4" />
-                            Factura
+                          <Button variant="outline" className="h-10 hover:bg-accent" onClick={() => {
+                            const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => ({ ...item, precioUnitario: item.precioUnitario || '0' }))
+                            if (selectedUnifiedPedido.tipo === 'delivery') itemsToPrint.push({ id: 0, nombreProducto: 'Delivery', cantidad: 1, precioUnitario: String(getOrderDeliveryFee(selectedUnifiedPedido)), ingredientesExcluidosNombres: [] })
+                            const data = formatFactura({ id: selectedUnifiedPedido.id, mesaNombre: selectedUnifiedPedido.tipo === 'delivery' ? `Delivery` : 'Take Away', nombrePedido: selectedUnifiedPedido.nombreCliente || '', tipo: selectedUnifiedPedido.tipo, total: selectedUnifiedPedido.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                            printRaw(commandsToBytes(data))
+                          }}>
+                            <Printer className="h-4 w-4 mr-2" /> Imprimir
                           </Button>
                         )}
-                        {selectedPrinter && (
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="lg:hidden h-9 w-9 bg-white dark:bg-slate-950"
-                            onClick={() => {
-                              const facturaItems: any[] = displayedUnifiedPedido.items.map((item: any) => ({
-                                ...item,
-                                precioUnitario: item.precioUnitario || '0'
-                              }))
-                              if (displayedUnifiedPedido.tipo === 'delivery') {
-                                const fee = getOrderDeliveryFee(displayedUnifiedPedido)
-                                facturaItems.push({
-                                  id: 0,
-                                  nombreProducto: fee === 0 ? 'Delivery GRATIS' : 'Delivery',
-                                  cantidad: 1,
-                                  precioUnitario: String(fee),
-                                  ingredientesExcluidosNombres: []
-                                })
-                              }
-                              const total = displayedUnifiedPedido.total
-                              const deliveryFee = displayedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(displayedUnifiedPedido) : undefined
-                              const facturaData = formatFactura(
-                                {
-                                  id: displayedUnifiedPedido.id,
-                                  mesaNombre: displayedUnifiedPedido.tipo === 'delivery' ? `Delivery: ${displayedUnifiedPedido.direccion}` : 'Take Away',
-                                  nombrePedido: displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away'),
-                                  tipo: displayedUnifiedPedido.tipo,
-                                  telefono: displayedUnifiedPedido.telefono ?? undefined,
-                                  direccion: displayedUnifiedPedido.tipo === 'delivery' ? displayedUnifiedPedido.direccion ?? undefined : undefined,
-                                  total,
-                                  notas: displayedUnifiedPedido.notas,
-                                  deliveryFee,
-                                  montoDescuento: displayedUnifiedPedido.montoDescuento,
-                                  codigoDescuentoCodigo: displayedUnifiedPedido.codigoDescuentoCodigo ?? null,
-                                },
-                                facturaItems,
-                                restaurante?.nombre || 'Restaurante'
-                              )
-                              printRaw(commandsToBytes(facturaData))
-                            }}
-                          >
-                            <Printer className="h-4 w-4" />
-                          </Button>
-                        )}
-
-
-                        
-                        {/* Status Actions */}
-                        {displayedUnifiedPedido.tipo === 'delivery' && displayedUnifiedPedido.estado !== 'archived' && restauranteStore?.rapiboyToken && (
-                          <Button
-                            className="hidden lg:flex bg-orange-600 hover:bg-orange-700 text-white font-bold h-9"
-                            onClick={() => handleAsignarRapiboy(displayedUnifiedPedido.id)}
-                            disabled={assigningRapiboyId === displayedUnifiedPedido.id}
-                          >
-                            {assigningRapiboyId === displayedUnifiedPedido.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Truck className="mr-2 h-4 w-4" />
-                            )}
-                            Rapiboy
-                          </Button>
-                        )}
-                        {displayedUnifiedPedido.estado !== 'archived' && (
-                          <Button
-                            className="hidden lg:flex font-bold h-9 text-white bg-slate-600 hover:bg-slate-700"
-                            onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'archived')}
-                          >
-                            <Archive className="mr-2 h-4 w-4" />
-                            Archivar
-                          </Button>
-                        )}
-
-                        {/* Delete */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hidden lg:flex"
-                          onClick={() => {
-                            if (displayedUnifiedPedido.tipo === 'delivery') handleDeleteDelivery(displayedUnifiedPedido.id)
-                            else handleDeleteTakeaway(displayedUnifiedPedido.id)
-                            setSelectedUnifiedPedido(null)
-                          }}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Eliminar
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="text-destructive bg-white dark:bg-slate-950 lg:hidden h-9 w-9"
-                          onClick={() => {
-                            if (displayedUnifiedPedido.tipo === 'delivery') handleDeleteDelivery(displayedUnifiedPedido.id)
-                            else handleDeleteTakeaway(displayedUnifiedPedido.id)
-                            setSelectedUnifiedPedido(null)
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
+                        <Button variant="outline" className="h-10 text-red-600 hover:text-red-700 hover:bg-red-500/10 border-border" onClick={() => setShowDeleteDialog(true)}>
+                          <Trash2 className="h-4 w-4 mr-2" /> Eliminar
                         </Button>
                       </div>
                     </div>
 
-                    {/* Archived banner */}
-                    {displayedUnifiedPedido.estado === 'archived' && (
-                      <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4 flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-                          <Archive className="h-5 w-5 text-slate-500" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-slate-700 dark:text-slate-300">Pedido Archivado</p>
-                          <p className="text-sm text-slate-500">Este pedido ha sido archivado.</p>
-                        </div>
-                      </div>
-                    )}
+                    {/* Contenido Desktop: Dos columnas */}
+                    <div className="flex flex-col lg:flex-row gap-10 xl:gap-16 pb-10">
 
-                    {/* Client Info */}
-                    <Card className="lg:shadow-sm border-0 bg-transparent">
-                      <CardContent className="py-4 px-3 lg:px-6 space-y-2">
-                        {displayedUnifiedPedido.tipo === 'delivery' && displayedUnifiedPedido.direccion && (
-                          <div className="flex items-center gap-2 text-xl font-bold">
-                            <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span>{displayedUnifiedPedido.direccion}</span>
-                          </div>
-                        )}
-                        {displayedUnifiedPedido.nombreCliente && (
-                          <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span>{displayedUnifiedPedido.nombreCliente}</span>
-                          </div>
-                        )}
-                        {displayedUnifiedPedido.telefono && (
-                          <div className="flex items-center gap-2">
-                            <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span>{displayedUnifiedPedido.telefono}</span>
-                          </div>
-                        )}
-                        {displayedUnifiedPedido.notas && (
-                          <div className="flex items-start gap-2 text-muted-foreground">
-                            <span className="text-sm italic">📝 {displayedUnifiedPedido.notas}</span>
-                          </div>
-                        )}
-                        {!displayedUnifiedPedido.nombreCliente && !displayedUnifiedPedido.telefono && !displayedUnifiedPedido.direccion && !displayedUnifiedPedido.notas && (
-                          <p className="text-sm text-muted-foreground">Sin datos del cliente</p>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    {/* Removed duplicated buttons at the bottom for Desktop. Rendered dynamically via CSS header instead. */}
-                    {/* For Mobile, we keep them here because the header has no space */}
-                    {displayedUnifiedPedido.estado !== 'archived' && (
-                      <div className="w-full px-3 lg:hidden flex flex-col gap-2">
-                        {displayedUnifiedPedido.tipo === 'delivery' && restauranteStore?.rapiboyToken && (
-                          <Button
-                            className="w-full bg-orange-600 hover:bg-orange-700 font-bold shadow-sm h-12 text-md"
-                            onClick={() => handleAsignarRapiboy(displayedUnifiedPedido.id)}
-                            disabled={assigningRapiboyId === displayedUnifiedPedido.id}
-                          >
-                            {assigningRapiboyId === displayedUnifiedPedido.id ? (
-                              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                            ) : (
-                              <Truck className="mr-2 h-5 w-5" />
-                            )}
-                            Asignar Cadete Rapiboy
-                          </Button>
-                        )}
-                        <Button
-                          className="w-full font-bold shadow-sm h-12 text-md text-white bg-slate-600 hover:bg-slate-700"
-                          onClick={() => handleDeliveryTakeawayEstadoChange(displayedUnifiedPedido.tipo as 'delivery' | 'takeaway', displayedUnifiedPedido.id, 'archived')}
-                        >
-                          <Archive className="mr-2 h-5 w-5" />
-                          Archivar pedido
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* PEDIDO */}
-                    <div className="space-y-1">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">Pedido</h3>
-                      <div className="space-y-0">
-                        {displayedUnifiedPedido.items.map((item: any, idx: number) => (
-                          <div key={item.id} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
-                            <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                              <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">{item.cantidad}x</span>
-                              <div className="flex-1 min-w-0">
-                                <span className="text-sm">{item.nombreProducto}</span>
-                                {formatAgregados((item as any).agregados).length > 0 && (
-                                  <div className="text-[11px] text-blue-500 mt-1">
-                                    <span className="font-semibold">CON:</span>
-                                    <ul className="pl-2 mt-0.5 space-y-0.5">
-                                      {formatAgregados((item as any).agregados).map((a: any, i: number) => (
-                                        <li key={i}>- {a.nombre}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                                {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                  <div className="text-[11px] text-orange-500 mt-1">
-                                    <span className="font-semibold">SIN:</span>
-                                    <ul className="pl-2 mt-0.5 space-y-0.5">
-                                      {item.ingredientesExcluidosNombres.map((nombre: string, i: number) => (
-                                        <li key={i}>- {nombre}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
+                      {/* Columna Izquierda: Datos + Comanda */}
+                      <div className="flex-1 space-y-10">
+                        {/* Datos de Entrega */}
+                        <div className="space-y-4">
+                          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Datos de Entrega</h3>
+                          <div className="grid grid-cols-2 gap-4 text-sm font-medium">
+                            {selectedUnifiedPedido.nombreCliente && (
+                              <div className="flex gap-3 items-center">
+                                <User className="h-5 w-5 text-[#FF7A00] shrink-0" />
+                                <span className="text-base text-foreground">{selectedUnifiedPedido.nombreCliente}</span>
                               </div>
-                            </div>
-                            <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                              ${(() => {
-                                const basePrice = parseFloat(item.precioUnitario || '0')
-                                const agregadosArray = formatAgregados((item as any).agregados)
-                                const agregadosTotal = agregadosArray.reduce((acc: number, ag: any) => acc + parseFloat(ag.precio || '0'), 0)
-                                return ((basePrice + agregadosTotal) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })
-                              })()}
-                            </span>
-                          </div>
-                        ))}
-                        {displayedUnifiedPedido.tipo === 'delivery' && (
-                          <div className="flex items-baseline justify-between py-3 border-t border-border/40">
-                            <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                              <span className="text-muted-foreground text-sm font-mono w-6 shrink-0">1x</span>
-                              <span className="text-sm flex items-center gap-1.5">
-                                <Truck className="h-3.5 w-3.5 inline" />
-                                Delivery
-                              </span>
-                            </div>
-                            <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                              ${getOrderDeliveryFee(displayedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                            </span>
-                          </div>
-                        )}
-                        {pedidoTieneCuponDescuento(displayedUnifiedPedido) && (
-                          <div className="flex items-baseline justify-between py-3 border-t border-border/40">
-                            <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                              <span className="text-muted-foreground text-sm font-mono w-6 shrink-0"></span>
-                              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
-                                {displayedUnifiedPedido.codigoDescuentoCodigo
-                                  ? `Cupón ${displayedUnifiedPedido.codigoDescuentoCodigo}`
-                                  : 'Descuento por cupón'}
-                              </span>
-                            </div>
-                            <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium shrink-0 ml-4">
-                              -${parseFloat(String(displayedUnifiedPedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Total row */}
-                      <div className="flex items-center justify-between pt-4 mt-2 border-t border-border">
-                        <span className="text-base font-medium">Total</span>
-                        <span className="text-xl font-bold tabular-nums">
-                          ${parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* PAGO */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Pago</h3>
-                        {displayedUnifiedPedido.pagado && (
-                          <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                            <CheckCircle className="h-4 w-4" />
-                            <span className="text-sm font-medium">Pagado</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {displayedUnifiedPedido.pagado ? (
-                        <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-muted/30 border border-border/40">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                              <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium">{displayedUnifiedPedido.nombreCliente || (displayedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Take Away')}</p>
-                            </div>
-                          </div>
-                          <span className="text-sm font-bold tabular-nums">
-                            ${parseFloat(displayedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="rounded-lg border border-amber-300/60 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-                            Pendiente de acreditación: verificá el pago antes de preparar la comanda.
-                          </div>
-                          <Button
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-                            onClick={() => handleAprobarPagoDt(displayedUnifiedPedido)}
-                            disabled={updatingPago === `approve-${displayedUnifiedPedido.id}`}
-                          >
-                            {updatingPago === `approve-${displayedUnifiedPedido.id}` ? (
-                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                              <CheckCircle className="h-4 w-4 mr-2" />
                             )}
-                            Verificar y aprobar pago
-                          </Button>
+                            {selectedUnifiedPedido.telefono && (
+                              <div className="flex gap-3 items-center">
+                                <Phone className="h-5 w-5 text-[#FF7A00] shrink-0" />
+                                <span className="text-base text-foreground">{selectedUnifiedPedido.telefono}</span>
+                              </div>
+                            )}
+                            {selectedUnifiedPedido.tipo === 'delivery' && selectedUnifiedPedido.direccion && (
+                              <div className="flex gap-3 items-center col-span-2 mt-2">
+                                <MapPin className="h-5 w-5 text-[#FF7A00] shrink-0" />
+                                <span className="text-lg font-bold text-foreground">{selectedUnifiedPedido.direccion}</span>
+                              </div>
+                            )}
+                          </div>
+                          {selectedUnifiedPedido.notas && (
+                            <div className="mt-4">
+                              <p className="text-xs font-bold text-orange-500 mb-1 flex items-center gap-1.5"><Tag className="h-3.5 w-3.5" />NOTAS DEL CLIENTE:</p>
+                              <p className="italic text-sm text-foreground">{selectedUnifiedPedido.notas}</p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
 
-                  </div>
-                ) : selectedMesa ? (
-                  <div className={`space-y-3 lg:space-y-4 max-w-3xl mx-auto pb-10  ${(displayedPedido?.estado === 'closed' || displayedPedido?.estado === 'archived') ? 'relative' : ''}`}>
-                    {/* Banner de pedido archivado */}
-                    {displayedPedido?.estado === 'archived' && (
-                      <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4 flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-                          <Archive className="h-5 w-5 text-slate-500" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-slate-700 dark:text-slate-300">Pedido Archivado</p>
-                          <p className="text-sm text-slate-500">Este pedido ha sido archivado.</p>
-                        </div>
-                      </div>
-                    )}
-                    {/* Mobile: Compact Header */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h2 className="text-xl lg:text-2xl font-bold truncate">{selectedMesa?.nombre}</h2>
-                        <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
-                          {displayedPedido ? (
-                            <>
-                              <span className="truncate">Pedido #{displayedPedido.id}</span>
-                              {selectedPedidoFromKanban && selectedMesa?.pedido && selectedPedidoFromKanban.id !== selectedMesa.pedido.id && (
-                                <Badge variant="outline" className="text-[10px]">Historial</Badge>
-                              )}
-                            </>
-                          ) : 'Sin pedido activo'}
-                        </p>
-                        {displayedPedido && (
-                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                            <Clock className="h-3 w-3" />
-                            <span>{getDateLabel(displayedPedido.createdAt)}, {formatOrderTime(displayedPedido.createdAt)}</span>
-                            <span className="text-muted-foreground/60">({formatTimeAgo(displayedPedido.createdAt)})</span>
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex gap-1 lg:gap-2 shrink-0">
-                        <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setVerQR(true)}>
-                          <QrCode className="h-4 w-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" className="hidden lg:flex" onClick={() => setVerQR(true)}>
-                          <QrCode className="mr-2 h-4 w-4" />
-                          QR
-                        </Button>
+                        <Separator className="bg-border/60" />
 
-                        {displayedPedido && (
-                          <>
-                            <Button variant="outline" size="icon" className="lg:hidden h-9 w-9" onClick={() => setAddProductSheet(true)}>
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                            <Button variant="outline" size="sm" className="hidden lg:flex" onClick={() => setAddProductSheet(true)}>
-                              <Plus className="mr-2 h-4 w-4" />
-                              Agregar
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Banner de pedido cerrado */}
-                    {displayedPedido?.estado === 'closed' && (
-                      <div className=" p-4 flex items-center gap-3">
-                        <div>
-                          <p className="font-semibold ">Cuenta Pedida 📋</p>
-                          <p className="text-sm text-neutral-500">Para este pedido los clientes ya pidieron la cuenta</p>
-                        </div>
-                      </div>
-                    )}
-
-
-                    {/* Connected Clients - Compact on mobile */}
-                    {(selectedMesa?.clientesConectados?.length ?? 0) > 0 && (
-                      <Card className="bg-transparent border-0">
-                        <CardHeader className="lg:px-6">
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            <Users className="h-4 w-4" />
-                            <span className="hidden sm:inline">Clientes Conectados</span>
-                            <span className="sm:hidden">Conectados</span>
-                            <span className="text-muted-foreground">({selectedMesa?.clientesConectados?.length ?? 0})</span>
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="px-3 lg:px-6 mt-[-10px]">
-                          <div className="flex flex-wrap gap-1.5 lg:gap-2">
-                            {selectedMesa?.clientesConectados?.map((cliente) => (
-                              <div key={cliente.id} className="text-xs bg-muted p-2 rounded-sm">
-                                {cliente.nombre}
+                        {/* Comanda */}
+                        <div className="space-y-4">
+                          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Comanda ({selectedUnifiedPedido.totalItems} ítems)</h3>
+                          <div className="space-y-6 mt-4">
+                            {selectedUnifiedPedido.items.map((item, idx) => (
+                              <div key={idx} className="flex justify-between items-start gap-4">
+                                <div className="flex gap-4">
+                                  <span className="font-bold text-lg w-6 text-muted-foreground">{item.cantidad}x</span>
+                                  <div>
+                                    <p className="font-bold text-lg text-foreground">{item.nombreProducto}</p>
+                                    {formatAgregados(item.agregados).length > 0 && (
+                                      <div className="mt-1 space-y-0.5">
+                                        {formatAgregados(item.agregados).map((ag: any, i: number) => (
+                                          <p key={i} className="text-sm text-muted-foreground font-medium">
+                                            <span className="text-emerald-500 font-bold mr-1.5">+</span>{ag.nombre}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                      <div className="mt-1 space-y-0.5">
+                                        {item.ingredientesExcluidosNombres.map((nombre, i) => (
+                                          <p key={i} className="text-sm text-muted-foreground font-medium">
+                                            <span className="text-red-500 font-bold mr-1.5">-</span>Sin {nombre}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="font-bold text-lg whitespace-nowrap text-foreground">
+                                  ${(() => {
+                                    const base = parseFloat(item.precioUnitario || '0')
+                                    const extras = formatAgregados(item.agregados).reduce((sum, ag) => sum + parseFloat(ag.precio || '0'), 0)
+                                    return ((base + extras) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })
+                                  })()}
+                                </span>
                               </div>
                             ))}
+                            <div className="space-y-2 pt-4 border-t border-dashed border-border/60">
+                              {selectedUnifiedPedido.tipo === 'delivery' && (
+                                <div className="flex justify-between items-center text-muted-foreground text-sm font-medium">
+                                  <p className="flex items-center gap-2"><Truck className="h-4 w-4" />Costo de envío</p>
+                                  <span>${getOrderDeliveryFee(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
+                                </div>
+                              )}
+                              {pedidoTieneCuponDescuento(selectedUnifiedPedido) && (
+                                <div className="flex justify-between items-center text-violet-500 text-sm font-bold">
+                                  <p className="flex items-center gap-2"><Tag className="h-4 w-4" />{selectedUnifiedPedido.codigoDescuentoCodigo || 'Cupón de descuento'}</p>
+                                  <span>-${parseFloat(String(selectedUnifiedPedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </CardContent>
-                      </Card>
-                    )}
+                        </div>
+                      </div>
 
-                    {/* Mesa Actions Button (Confirm / Close) */}
-                    {displayedPedido && displayedPedido.estado !== 'closed' && displayedPedido.estado !== 'archived' && (
-                      <div className="w-full px-6 mb-4">
-                        {displayedPedido.estado === 'pending' ? (
-                          <Button
-                            className="w-full bg-blue-600 hover:bg-blue-700 font-bold shadow-sm h-12 text-md"
-                            onClick={() => handleConfirmarPedido({ id: displayedPedido.id } as any)}
-                            disabled={updatingPedido === displayedPedido.id}
-                          >
-                            {updatingPedido === displayedPedido.id ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
-                            Confirmar Pedido
-                          </Button>
-                        ) : (
-                          <Button
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold shadow-sm h-12 text-md"
-                            onClick={() => handleCerrarPedido(displayedPedido.id)}
-                            disabled={updatingPedido === displayedPedido.id}
-                          >
-                            {updatingPedido === displayedPedido.id ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CheckCircle className="mr-2 h-5 w-5" />}
-                            Cerrar Pedido
-                          </Button>
+                      {/* Columna Derecha: Total y Botones */}
+                      <div className="w-full lg:w-[320px] xl:w-[380px] shrink-0 space-y-6">
+                        <div className="flex justify-between items-end">
+                          <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Total</span>
+                          <span className="text-5xl font-black text-[#FF7A00]">
+                            ${parseFloat(selectedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                          </span>
+                        </div>
+
+                        <div className={cn(
+                          "w-full flex flex-col gap-2 p-4 rounded-xl border",
+                          selectedUnifiedPedido.pagado
+                            ? "bg-emerald-500/10 border-emerald-500/20"
+                            : "bg-red-500/10 border-red-500/20"
+                        )}>
+                          <div className="flex items-center gap-2">
+                            {selectedUnifiedPedido.pagado ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <AlertCircle className="h-5 w-5 text-red-500" />}
+                            <span className={cn("font-bold text-sm", selectedUnifiedPedido.pagado ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+                              {selectedUnifiedPedido.pagado ? 'PAGO VERIFICADO' : 'PAGO PENDIENTE'}
+                            </span>
+                          </div>
+                          {selectedUnifiedPedido.pagado && metodoPagoListBadge(selectedUnifiedPedido.metodoPago) && (
+                            <Badge variant="outline" className="self-start bg-background border-border/50 text-muted-foreground">
+                              {metodoPagoListBadge(selectedUnifiedPedido.metodoPago)?.label}
+                            </Badge>
+                          )}
+                        </div>
+
+                        {selectedUnifiedPedido.estado !== 'archived' && (
+                          selectedUnifiedPedido.pagado ? (
+                            <div className="flex gap-3">
+                              <Button
+                                variant="outline"
+                                className="h-14 rounded-xl border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold active:scale-[0.98] transition-transform"
+                                onClick={() => handleNotificarCliente(selectedUnifiedPedido)}
+                                disabled={sendingNotification === selectedUnifiedPedido.id.toString()}
+                              >
+                                {sendingNotification === selectedUnifiedPedido.id.toString()
+                                  ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                                  : <MessageCircle className="h-5 w-5 mr-2" />}
+                                Avisar Cliente
+                              </Button>
+                              <Button
+                                className="flex-1 h-14 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white text-lg font-bold shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-transform"
+                                onClick={() => handleEstadoChange(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id, 'archived')}
+                              >
+                                Despachar Pedido
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-3">
+                              <Button
+                                className="flex-1 h-[52px] rounded-xl bg-background border-border hover:bg-accent text-foreground text-sm font-bold active:scale-[0.98] transition-transform shadow-sm"
+                                onClick={() => handleAprobarPago(selectedUnifiedPedido, 'efectivo')}
+                                disabled={updatingPago === selectedUnifiedPedido.id.toString()}
+                              >
+                                {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="mr-1.5 text-lg">💵</span>}
+                                Efectivo
+                              </Button>
+                              <Button
+                                className="flex-1 h-[52px] rounded-xl bg-background border-border hover:bg-accent text-foreground text-sm font-bold active:scale-[0.98] transition-transform shadow-sm"
+                                onClick={() => handleAprobarPago(selectedUnifiedPedido, 'transferencia')}
+                                disabled={updatingPago === selectedUnifiedPedido.id.toString()}
+                              >
+                                {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-5 w-5 animate-spin" /> : <span className="mr-1.5 text-lg">🏦</span>}
+                                Transf.
+                              </Button>
+                            </div>
+                          )
                         )}
                       </div>
-                    )}
 
-                    {/* Order Items */}
-                    {displayedPedido ? (
-                      <>
-                        <Card className={`bg-transparent border-0`}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-xl flex items-center gap-2">
-                              <ShoppingCart className="h-8 w-8" />
-                              Productos ({displayedPedido.totalItems})
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-3 lg:space-y-4 px-3 lg:px-6 pb-3 lg:pb-6">
-                            {Object.keys(itemsPorCliente).length === 0 ? (
-                              <div className="text-center py-8 text-muted-foreground">
-                                <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                                <p>No hay productos</p>
-                              </div>
-                            ) : (
-                              Object.entries(itemsPorCliente).map(([cliente, items]) => (
-                                <div key={cliente}>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div key={cliente} className="text-sm bg-muted p-2 rounded-sm flex items-center">
-                                      <User className="h-4 w-4 mr-1" />
-                                      {cliente}
-                                    </div>
-                                    <span className="text-sm font-medium">
-                                      ${items.reduce((sum, i) => sum + (parseFloat(i.precioUnitario) * i.cantidad), 0).toFixed(2)}
-                                    </span>
-                                  </div>
-                                  <div className="space-y-2 ml-0 lg:ml-2">
-                                    {items.map((item) => {
-                                      return (
-                                        <div key={item.id} className={`flex items-start lg:items-center justify-between p-2 rounded-lg gap-2 ${item.postConfirmacion ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200' : 'bg-muted/50'}`}>
-                                          <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                              <span className="font-medium text-sm">{item.cantidad}x {item.nombreProducto}</span>
-
-                                              {item.postConfirmacion && <Badge variant="outline" className="h-5 text-[10px] border-amber-500 text-amber-600">Nuevo</Badge>}
-                                            </div>
-                                            {formatAgregados((item as any).agregados).length > 0 && (
-                                              <div className="text-xs text-blue-600 mt-1">
-                                                <span className="font-semibold">➕ CON:</span>
-                                                <ul className="pl-4 mt-0.5 space-y-0.5">
-                                                  {formatAgregados((item as any).agregados).map((a: any, i: number) => (
-                                                    <li key={i}>- {a.nombre}</li>
-                                                  ))}
-                                                </ul>
-                                              </div>
-                                            )}
-                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                              <div className="text-xs text-orange-600 mt-1">
-                                                <span className="font-semibold">⚠️ SIN:</span>
-                                                <ul className="pl-4 mt-0.5 space-y-0.5">
-                                                  {item.ingredientesExcluidosNombres.map((nombre: string, i: number) => (
-                                                    <li key={i}>- {nombre}</li>
-                                                  ))}
-                                                </ul>
-                                              </div>
-                                            )}
-                                          </div>
-                                          <div className="flex items-center gap-2 shrink-0">
-                                            <span className="font-bold text-sm">${(parseFloat(item.precioUnitario) * item.cantidad).toFixed(2)}</span>
-                                            <div className="flex gap-1">
-                                              {(displayedPedido?.estado !== 'closed' && displayedPedido?.estado !== 'archived') && (
-                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hidden lg:flex" onClick={() => setItemAEliminar(item)}>
-                                                  <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                  <Separator className="my-3" />
-                                </div>
-                              ))
-                            )}
-                          </CardContent>
-                        </Card>
-
-
-                        {/* Payments (when closed) */}
-                        {displayedPedido.estado === 'closed' && (
-                          <Card className="lg:shadow-sm border-0 bg-transparent">
-                            <CardHeader className="pb-2 px-3 lg:px-6">
-                              <CardTitle className="text-xl flex items-center gap-2">
-                                <Users className="h-6 w-6" />
-                                Pagos
-                                {subtotales.length > 0 && subtotales.every(s => s.pagado) ? (
-                                  <Badge className="text-lg rounded-sm bg-green-500">
-                                    💳 Pagado
-                                  </Badge>
-                                ) : (
-                                  <Badge className=" text-lg rounded-sm">
-                                    📋 Cuenta Pedida
-                                  </Badge>
-                                )}
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="px-3 lg:px-6 pb-3 lg:pb-6">
-                              {loadingSubtotales ? (
-                                <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                              ) : (
-                                <div className="space-y-3">
-                                  {splitPayment && Object.keys(itemsPorCliente).map((cliente) => {
-                                    if (cliente === 'Mozo') return null
-                                    const clienteItems = itemsPorCliente[cliente]
-                                    const clienteTotal = clienteItems.reduce((sum, item) => sum + (parseFloat(item.precioUnitario) * item.cantidad), 0)
-                                    const subtotalInfo = subtotales.find(s => s.clienteNombre === cliente)
-                                    const estaPagado = subtotalInfo?.pagado === true
-                                    const esperandoConfirmacion = subtotalInfo?.estado === 'pending_cash'
-
-                                    return (
-                                      <div
-                                        key={cliente}
-                                        className={`flex items-center justify-between p-3 rounded-lg border ${estaPagado
-                                          ? 'bg-green-50 border-green-200 dark:bg-green-900/20'
-                                          : esperandoConfirmacion
-                                            ? ' border-amber-200 '
-                                            : 'bg-card'
-                                          }`}
-                                      >
-                                        <div className="min-w-0">
-                                          <span className={`font-medium text-sm block `}>
-                                            {cliente}
-                                          </span>
-                                          {esperandoConfirmacion && <span className="">Paga en efectivo</span>}
-                                          {estaPagado && <span className="text-md text-green-500">✓ Pagado</span>}
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                          <span className={`font-semibold`}>
-                                            ${clienteTotal.toFixed(2)}
-                                          </span>
-                                          {esperandoConfirmacion && (
-                                            <Button
-                                              size="sm"
-                                              className="h-7 text-xs bg-green-600 hover:bg-green-700"
-                                              onClick={() => handleConfirmarPagoEfectivo(cliente)}
-                                              disabled={marcandoPagoEfectivo === cliente}
-                                            >
-                                              {marcandoPagoEfectivo === cliente ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar Pago'}
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-
-                                  <div className="p-3">
-                                    <div className="flex justify-between items-center mb-2">
-                                      <span className="font-medium">Total Mesa</span>
-                                      <span className="text-xl font-bold">
-                                        ${subtotales.reduce((acc, s) => acc + parseFloat(s.subtotal), 0).toLocaleString()}
-                                      </span>
-                                    </div>
-                                    {subtotales.every(s => s.pagado) ? (
-                                      <div className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md text-center font-medium flex items-center justify-center gap-2">
-                                        <CheckCircle className="h-4 w-4" />
-                                        Mesa Pagada
-                                      </div>
-                                    ) : (
-                                      <div className="flex gap-2 w-full">
-                                        <Button
-                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                          onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales, 'efectivo')}
-                                          disabled={updatingPago === `all-${displayedPedido.id}-efectivo` || updatingPago === `all-${displayedPedido.id}-transferencia`}
-                                        >
-                                          {updatingPago === `all-${displayedPedido.id}-efectivo` ? (
-                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                          ) : (
-                                            <span className="mr-2">💵</span>
-                                          )}
-                                          Efectivo
-                                        </Button>
-                                        <Button
-                                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                                          onClick={() => handleConfirmarPagoTotal(displayedPedido.id, subtotales, 'transferencia')}
-                                          disabled={updatingPago === `all-${displayedPedido.id}-transferencia` || updatingPago === `all-${displayedPedido.id}-efectivo`}
-                                        >
-                                          {updatingPago === `all-${displayedPedido.id}-transferencia` ? (
-                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                          ) : (
-                                            <span className="mr-2">🏦</span>
-                                          )}
-                                          Transf.
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Total & Payments */}
-                        <Card className={`border-0`}>
-                          <CardContent className="py-4 px-3 lg:px-6">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-xl font-medium">Total del Pedido</p>
-                                <p className="text-xs text-muted-foreground">{displayedPedido.totalItems} productos</p>
-                              </div>
-                              <p className={`text-2xl lg:text-3xl font-bold`}>
-                                ${parseFloat(displayedPedido.total).toFixed(2)}
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </>
-                    ) : (
-                      <Card className="lg:shadow-sm">
-                        <CardContent className="py-12 text-center text-muted-foreground">
-                          <Coffee className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                          <p className="text-lg font-medium">Sin pedido actual</p>
-                          <p className="text-sm">Esta mesa está disponible</p>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <ShoppingCart className="h-16 w-16 mx-auto mb-4 opacity-20" />
-                      <p className="text-lg">Seleccioná un pedido</p>
-                      <p className="text-sm">en la lista para ver el detalle</p>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
 
-            {/* Mobile: Orders Panel - visible only on mobile */}
-            <div className={`flex flex-col overflow-hidden ${mobileView == 'orders' ? 'w-full' : 'hidden'} lg:hidden`}>
-              <div className="shrink-0 border-b bg-background/95 backdrop-blur px-3 py-2 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Pedidos</p>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={openMetodosPagoModal} title="Métodos de pago">
-                      <Settings className="h-3.5 w-3.5" />
-                    </Button>
-                    <Badge variant="secondary" className="text-xs">{activeOrdersCount}</Badge>
-                  </div>
-                </div>
-              </div>
-              <div className="flex-1 overflow-auto p-4 min-h-0">
-                {loadingDelivery ? (
-                  <div className="flex items-center justify-center h-full">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : allUnifiedPedidos.length === 0 && archivedUnifiedPedidos.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                    <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
-                    <p className="text-lg font-medium">No hay pedidos</p>
-                  </div>
-                ) : filteredUnifiedPedidos.length === 0 && filteredArchivedPedidos.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                    <ShoppingCart className="h-16 w-16 text-muted-foreground/30" />
-                    <p className="text-lg font-medium">No hay pedidos de este tipo</p>
-                    <Button variant="outline" size="sm" onClick={() => setPedidoFilter('all')}>
-                      Ver todos
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredUnifiedPedidos.map((pedido) => {
-                      const tipoBadge = getTipoBadge(pedido.tipo)
-                      const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
-                      const isSelected =
-                        (selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo) ||
-                        (pedido.tipo === 'mesa' &&
-                          selectedMesaId !== null &&
-                          mesas.find((m) => m.id === selectedMesaId)?.nombre === pedido.mesaNombre)
-                      return (
-                        <Card
-                          key={`mob-${pedido.tipo}-${pedido.id}`}
-                          className={`overflow-hidden hover:shadow-md transition-all cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary shadow-md' : ''}`}
-                          onClick={() => handleUnifiedPedidoClick(pedido)}
-                        >
-                          <div className="p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className={`${tipoBadge.className} text-sm font-semibold`}>
-                                    {tipoBadge.label}
-                                    {pedido.tipo === 'mesa' && pedido.mesaNombre && (
-                                      <span className="text-xs font-normal"> {pedido.mesaNombre}</span>
-                                    )}
-                                  </span>
-                                  {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
-                                    <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-4 max-w-[120px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
-                                      <Tag className="h-2.5 w-2.5 mr-0.5 inline" />
-                                      {pedido.codigoDescuentoCodigo || 'Cupón'}
-                                    </Badge>
-                                  )}
-                                  {pagoBadge && (
-                                    <Badge variant="outline" className={pagoBadge.className}>
-                                      {pagoBadge.label}
-                                    </Badge>
-                                  )}
-                                </div>
-                                {pedido.tipo === 'delivery' && pedido.direccion && (
-                                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{pedido.direccion}</p>
-                                )}
-                                <p className="text-xs text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</p>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <p className="font-bold">
-                                  ${parseFloat(pedido.total).toFixed(2)}
-                                </p>
-                                {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
-                                  <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">
-                                    -${parseFloat(String(pedido.montoDescuento)).toFixed(0)}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            {pedido.tipo !== 'mesa' && pedido.estado !== 'archived' && (
-                              <Button
-                                className={`w-full mt-2 h-9 text-sm font-bold text-white shadow-sm ${pedido.estado === 'dispatched' ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleDeliveryTakeawayEstadoChange(pedido.tipo as 'delivery' | 'takeaway', pedido.id, 'archived')
-                                }}
-                              >
-                                {pedido.estado === 'dispatched' ? <Archive className="mr-2 h-4 w-4" /> : <Truck className="mr-2 h-4 w-4" />}
-                                {pedido.estado === 'dispatched' ? 'Archivar' : 'Despachar'}
-                              </Button>
-                            )}
-                          </div>
-                        </Card>
-                      )
-                    })}
-                    {/* Archived orders section - same as desktop */}
-                    {filteredArchivedPedidos.length > 0 && (
-                      <>
-                        <Separator className="my-3" />
-                        <div className="flex items-center gap-2 mb-2">
-                          <Archive className="h-3.5 w-3.5 text-muted-foreground/60" />
-                          <h3 className="text-xs font-medium text-muted-foreground">Archivados ({filteredArchivedPedidos.length})</h3>
+                  {/* --- MOBILE LAYOUT (Inspiración Phantom) --- */}
+                  <div className="flex lg:hidden flex-col h-full w-full relative">
+                    <div className="flex-1 overflow-y-auto px-5 pt-6 pb-36">
+                      {/* Top Badges */}
+                      <div className="flex items-center justify-end mb-6">
+                        <div className="flex items-center gap-2">
+                          {selectedUnifiedPedido.estado === 'archived' && (
+                            <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full">Archivado</span>
+                          )}
+                          {selectedUnifiedPedido.pagado ? (
+                            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full flex items-center gap-1">
+                              <CheckCircle className="h-3 w-3" /> Pagado
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full">
+                              Sin cobrar
+                            </span>
+                          )}
                         </div>
-                        {filteredArchivedPedidos.map((pedido, index) => {
-                          const tipoBadge = getTipoBadge(pedido.tipo)
-                          const pagoBadge = pedido.tipo !== 'mesa' ? metodoPagoListBadge(pedido.metodoPago) : null
-                          const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
-                          const dateLabel = getDateLabel(pedido.createdAt)
-                          const prevDateLabel = index > 0 ? getDateLabel(filteredArchivedPedidos[index - 1].createdAt) : null
-                          const showDateSeparator = dateLabel !== prevDateLabel
-                          return (
-                            <Fragment key={`mob-archived-${pedido.tipo}-${pedido.id}`}>
-                              {showDateSeparator && (
-                                <div className={`flex items-center gap-3 ${index === 0 ? '' : 'pt-2'}`}>
-                                  <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">{dateLabel}</span>
-                                  <Separator className="flex-1" />
-                                </div>
-                              )}
-                              <Card
-                                className={`overflow-hidden opacity-70 hover:opacity-90 transition-all cursor-pointer active:scale-[0.99] ${isSelected ? 'ring-2 ring-primary' : ''}`}
-                                onClick={() => handleUnifiedPedidoClick(pedido)}
-                              >
-                                <div className="p-3">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className={`${tipoBadge.className} text-sm font-semibold`}>
-                                          {tipoBadge.label}
-                                        </span>
-                                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 text-muted-foreground border-muted-foreground/30">
-                                          Archivado
-                                        </Badge>
-                                        {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
-                                          <Badge variant="outline" className="text-[9px] bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-400 border-violet-300 px-1 py-0 h-3.5 max-w-[90px] truncate" title={pedido.codigoDescuentoCodigo || 'Cupón'}>
-                                            <Tag className="h-2 w-2 mr-0.5 inline" />
-                                            {pedido.codigoDescuentoCodigo || 'Cupón'}
-                                          </Badge>
-                                        )}
-                                        {pagoBadge && (
-                                          <Badge variant="outline" className={`${pagoBadge.className} h-3.5`}>
-                                            {pagoBadge.label}
-                                          </Badge>
-                                        )}
+                      </div>
+
+                      {/* Hero Mobile */}
+                      <div className="text-center mb-8">
+                        <p className="text-sm text-muted-foreground mb-1 uppercase tracking-widest font-semibold">
+                          {selectedUnifiedPedido.tipo === 'delivery' ? '🚚 Delivery' : '🛍️ Take Away'}
+                        </p>
+                        <p className="text-5xl font-black tracking-tight mb-3 text-foreground">
+                          ${parseFloat(selectedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                        </p>
+                        <div className="flex flex-col items-center gap-1 text-sm text-muted-foreground">
+                          {selectedUnifiedPedido.tipo === 'delivery' && selectedUnifiedPedido.direccion && (
+                            <span className="font-bold text-foreground text-center leading-snug max-w-xs text-base">
+                              {selectedUnifiedPedido.direccion}
+                            </span>
+                          )}
+                          <span className="text-xs mt-0.5">
+                            {formatTimeAgo(selectedUnifiedPedido.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <Separator className="bg-border/60 mb-8" />
+
+                      {/* Acciones de cobro (solo si no está pagado) */}
+                      {!selectedUnifiedPedido.pagado && selectedUnifiedPedido.estado !== 'archived' && (
+                        <div className="mb-8">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Verificar y cobrar</p>
+                          <div className="flex gap-3">
+                            <Button
+                              variant="outline"
+                              className="flex-1 h-12 rounded-xl bg-transparent border-border hover:bg-muted text-sm font-semibold shadow-sm"
+                              onClick={() => handleAprobarPago(selectedUnifiedPedido, 'efectivo')}
+                              disabled={updatingPago === selectedUnifiedPedido.id.toString()}
+                            >
+                              {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <span className="mr-1.5 text-lg">💵</span>}
+                              Efectivo
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="flex-1 h-12 rounded-xl bg-transparent border-border hover:bg-muted text-sm font-semibold shadow-sm"
+                              onClick={() => handleAprobarPago(selectedUnifiedPedido, 'transferencia')}
+                              disabled={updatingPago === selectedUnifiedPedido.id.toString()}
+                            >
+                              {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <span className="mr-1.5 text-lg">🏦</span>}
+                              Transf.
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Notas Mobile */}
+                      {selectedUnifiedPedido.notas && (
+                        <div className="mb-8">
+                          <p className="text-sm text-muted-foreground italic leading-snug">
+                            📝 {selectedUnifiedPedido.notas}
+                          </p>
+                        </div>
+                      )}
+
+                      {(selectedUnifiedPedido.notas || !selectedUnifiedPedido.pagado) && (
+                        <Separator className="bg-border/60 mb-8" />
+                      )}
+
+                      {/* Comanda Clean List Mobile */}
+                      <div className="mb-6">
+                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Comanda</h3>
+                        <div className="space-y-0 px-2">
+                          {selectedUnifiedPedido.items.map((item, idx) => {
+                            const basePrice = parseFloat(item.precioUnitario || '0')
+                            const agregadosTotal = formatAgregados(item.agregados).reduce((a, ag) => a + parseFloat(ag.precio || '0'), 0)
+                            const lineTotal = (basePrice + agregadosTotal) * item.cantidad
+
+                            return (
+                              <div key={idx} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                                <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                                  <span className="font-mono text-sm text-muted-foreground w-6 shrink-0">{item.cantidad}x</span>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-sm font-medium text-foreground">{item.nombreProducto}</span>
+                                    {formatAgregados(item.agregados).length > 0 && (
+                                      <div className="mt-1 space-y-0.5">
+                                        {formatAgregados(item.agregados).map((ag: any, i: number) => (
+                                          <p key={i} className="text-xs text-muted-foreground">
+                                            <span className="text-emerald-500 font-bold mr-1">+</span>{ag.nombre}
+                                          </p>
+                                        ))}
                                       </div>
-                                      {pedido.tipo === 'delivery' && pedido.direccion && (
-                                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{pedido.direccion}</p>
-                                      )}
-                                      <p className="text-xs text-muted-foreground">{getDateLabel(pedido.createdAt)}</p>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                      <p className="font-bold">
-                                        ${parseFloat(pedido.total).toFixed(2)}
-                                      </p>
-                                      {pedido.tipo !== 'mesa' && pedidoTieneCuponDescuento(pedido) && (
-                                        <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">
-                                          -${parseFloat(String(pedido.montoDescuento)).toFixed(0)}
-                                        </p>
-                                      )}
-                                    </div>
+                                    )}
+                                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                      <div className="mt-1 space-y-0.5">
+                                        {item.ingredientesExcluidosNombres.map((nombre, i) => (
+                                          <p key={i} className="text-[11px] text-orange-500">Sin: {nombre}</p>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                              </Card>
-                            </Fragment>
-                          )
-                        })}
-                      </>
-                    )}
+                                <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                                  ${lineTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                </span>
+                              </div>
+                            )
+                          })}
+
+                          {selectedUnifiedPedido.tipo === 'delivery' && (
+                            <div className="flex items-baseline justify-between py-3 border-t border-border/40 text-muted-foreground">
+                              <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                                <span className="font-mono text-sm w-6 shrink-0">1x</span>
+                                <span className="text-sm flex items-center gap-1.5">
+                                  <Truck className="h-3.5 w-3.5 inline" /> Delivery
+                                </span>
+                              </div>
+                              <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                                ${getOrderDeliveryFee(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                              </span>
+                            </div>
+                          )}
+                          {pedidoTieneCuponDescuento(selectedUnifiedPedido) && (
+                            <div className="flex items-baseline justify-between py-3 border-t border-border/40 text-emerald-600 dark:text-emerald-400">
+                              <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                                <span className="w-6 shrink-0"></span>
+                                <span className="text-sm font-medium">Cupón</span>
+                              </div>
+                              <span className="text-sm font-medium shrink-0 ml-4">
+                                -${parseFloat(String(selectedUnifiedPedido.montoDescuento)).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Info Extra Abajo */}
+                      <div className="mt-8 mb-4 p-4 rounded-2xl bg-muted/30 border border-border/40 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-muted-foreground uppercase">ID Pedido</span>
+                          <span className="text-sm font-mono font-medium text-foreground">#{selectedUnifiedPedido.id}</span>
+                        </div>
+                        {selectedUnifiedPedido.nombreCliente && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-muted-foreground uppercase">Cliente</span>
+                            <span className="text-sm font-medium text-foreground">{selectedUnifiedPedido.nombreCliente}</span>
+                          </div>
+                        )}
+                        {selectedUnifiedPedido.telefono && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-muted-foreground uppercase">Teléfono</span>
+                            <a href={`tel:${selectedUnifiedPedido.telefono}`} className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-orange-500">
+                              <Phone className="h-3.5 w-3.5" />{selectedUnifiedPedido.telefono}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Print Button Mobile */}
+                      {selectedPrinter && (
+                        <div className="mt-4 flex justify-center mb-8">
+                          <Button variant="ghost" className="text-muted-foreground border border-border bg-background" onClick={() => {
+                            const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => ({ ...item, precioUnitario: item.precioUnitario || '0' }))
+                            if (selectedUnifiedPedido.tipo === 'delivery') itemsToPrint.push({ id: 0, nombreProducto: 'Delivery', cantidad: 1, precioUnitario: String(getOrderDeliveryFee(selectedUnifiedPedido)), ingredientesExcluidosNombres: [] })
+                            const data = formatFactura({ id: selectedUnifiedPedido.id, mesaNombre: selectedUnifiedPedido.tipo === 'delivery' ? `Delivery` : 'Take Away', nombrePedido: selectedUnifiedPedido.nombreCliente || '', tipo: selectedUnifiedPedido.tipo, total: selectedUnifiedPedido.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                            printRaw(commandsToBytes(data))
+                          }}>
+                            <Printer className="mr-2 h-4 w-4" /> Reimprimir Comprobante
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Bar Mobile Fixed */}
+                    <div className="fixed bottom-0 left-0 w-full z-40">
+                      <div className="bg-background/90 backdrop-blur-xl border-t border-border/50 p-4 pb-safe shadow-[0_-10px_40px_rgba(0,0,0,0.1)] dark:shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+                        <div className="max-w-xl mx-auto flex flex-col gap-3">
+
+                          <div className="flex items-end justify-between px-1 mb-1">
+                            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">
+                              {selectedUnifiedPedido.pagado ? 'Total cobrado' : 'Total a cobrar'}
+                            </span>
+                            <span className="text-3xl font-black tracking-tight text-foreground">
+                              ${parseFloat(selectedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-col gap-2">
+                            {selectedUnifiedPedido.estado !== 'archived' && (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setShowDeleteDialog(true)}
+                                  className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                                >
+                                  <Trash2 className="h-5 w-5" />
+                                </button>
+                                {selectedUnifiedPedido.pagado && (
+                                  <button
+                                    onClick={() => handleNotificarCliente(selectedUnifiedPedido)}
+                                    disabled={sendingNotification === selectedUnifiedPedido.id.toString()}
+                                    className="h-14 w-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors shrink-0 disabled:opacity-50"
+                                  >
+                                    {sendingNotification === selectedUnifiedPedido.id.toString()
+                                      ? <Loader2 className="h-5 w-5 animate-spin" />
+                                      : <MessageCircle className="h-5 w-5" />}
+                                  </button>
+                                )}
+                                <Button
+                                  className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#F97316] hover:bg-[#EA580C]" : "bg-emerald-600 hover:bg-emerald-700 shadow-[0_0_20px_rgba(5,150,105,0.15)]")}
+                                  onClick={() => {
+                                    if (selectedUnifiedPedido.pagado) handleEstadoChange(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id, 'archived')
+                                    else toast.error('Debes verificar el pago primero')
+                                  }}
+                                  disabled={updatingPago === selectedUnifiedPedido.id.toString() || !selectedUnifiedPedido.pagado}
+                                >
+                                  {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
+                                  {selectedUnifiedPedido.pagado ? 'Despachar Pedido' : 'Pendiente de Cobro'}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                </div>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+                  <div className="h-20 w-20 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+                    <CheckCircle2 className="h-8 w-8 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-lg font-bold text-foreground">Operaciones al día</p>
+                  <p className="text-sm mt-1">Seleccioná un pedido del panel izquierdo para ver el detalle.</p>
+                </div>
+              )}
             </div>
           </>
+        ) : (
+          /* ── PANTALLA NUEVO PEDIDO MANUAL ── */
+          <div className="flex-1 p-4 flex flex-col items-center justify-center bg-background">
+            <div className="max-w-md w-full bg-card p-8 rounded-[32px] border border-border shadow-sm text-center">
+              <Plus className="h-12 w-12 text-[#FF7A00] mx-auto mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Crear Pedido Manual</h2>
+              <p className="text-muted-foreground mb-8">Esta función es para cargar un pedido que tomaste por teléfono o mostrador rápidamente.</p>
+              <Button size="lg" className="w-full h-14 rounded-2xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20" onClick={() => toast.info('Abre el catálogo para agregar productos aquí')}>
+                Abrir Catálogo (Próximamente)
+              </Button>
+              <Button variant="ghost" className="w-full mt-2 h-14 rounded-2xl font-semibold" onClick={() => setDashboardMode('orders')}>
+                Volver a pedidos
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Dialogs */}
-      {
-        verQR && selectedMesa && (
-          <Dialog open={verQR} onOpenChange={(open) => setVerQR(open)}>
-            <DialogContent className="max-w-md mx-4">
-              <MesaQRCode qrToken={selectedMesa?.qrToken ?? ''} mesaNombre={selectedMesa?.nombre ?? ''} />
-            </DialogContent>
-          </Dialog>
-        )
-      }
+      {/* ── DIÁLOGO ELIMINAR ── */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-sm rounded-[32px] p-6 sm:p-8 border border-border bg-background text-center">
+          <div className="h-16 w-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Trash2 className="h-8 w-8 text-red-500" />
+          </div>
+          <DialogTitle className="text-2xl font-bold mb-2 text-center">¿Eliminar pedido?</DialogTitle>
+          <DialogDescription className="text-base text-center mb-8">
+            Esta acción es irreversible. El pedido desaparecerá del sistema.
+          </DialogDescription>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-border" onClick={() => setShowDeleteDialog(false)}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={handleDeletePedido}>Eliminar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
+      {/* ── MODAL MÉTODOS DE PAGO ── */}
       <Dialog open={metodosPagoModalOpen} onOpenChange={setMetodosPagoModalOpen}>
-        <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Métodos de pago (Delivery / Take away)</DialogTitle>
-            <DialogDescription>
-              Los pagos automáticos (Mercado Pago Checkout, tarjeta vía Bricks o transferencia Cucuru/Talo) no se combinan con efectivo ni transferencia manual en el checkout público.
+        <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto rounded-[32px] p-6 sm:p-8 bg-background border border-border">
+          <DialogHeader className="mb-6 text-left">
+            <div className="h-12 w-12 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-4">
+              <Settings className="h-6 w-6 text-[#FF7A00]" />
+            </div>
+            <DialogTitle className="text-2xl font-bold">Métodos de pago</DialogTitle>
+            <DialogDescription className="text-sm mt-1">
+              Configurá qué medios de pago ofreces en tu link en vivo.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+
+          <div className="space-y-6">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Automáticos</p>
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <Label htmlFor="cfg-mp-co" className="text-sm">Mercado Pago Checkout</Label>
-                    <p className="text-xs text-muted-foreground leading-snug">
-                      Redirige al sitio de Mercado Pago; el cliente paga con dinero en cuenta, tarjeta u otros medios que ofrezca MP. No es un formulario de tarjeta embebido.
-                    </p>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Automáticos (Mercado Pago)</p>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="cfg-mp-co" className="text-sm font-bold flex items-center gap-2"><CreditCard className="h-4 w-4 text-[#009EE3]" /> Mercado Pago Checkout</Label>
+                    <p className="text-xs text-muted-foreground">Redirige a la app de MP. Ideal para pagar con dinero en cuenta.</p>
                   </div>
-                  <Switch id="cfg-mp-co" className="shrink-0 mt-0.5" checked={cfgMpCheckout} onCheckedChange={setCfgMpCheckout} />
+                  <Switch id="cfg-mp-co" checked={cfgMpCheckout} onCheckedChange={setCfgMpCheckout} />
                 </div>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <Label htmlFor="cfg-mp-br" className="text-sm">Tarjeta — Mercado Pago Bricks</Label>
-                    <p className="text-xs text-muted-foreground leading-snug">Formulario de tarjeta embebido en la página de pago.</p>
+                <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="cfg-mp-br" className="text-sm font-bold flex items-center gap-2"><CreditCard className="h-4 w-4 text-[#009EE3]" /> Mercado Pago Tarjetas</Label>
+                    <p className="text-xs text-muted-foreground">Formulario embebido. El cliente paga con tarjeta sin salir de tu menú.</p>
                   </div>
-                  <Switch id="cfg-mp-br" className="shrink-0 mt-0.5" checked={cfgMpBricks} onCheckedChange={setCfgMpBricks} />
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <Label htmlFor="cfg-tf-au" className="text-sm">{metodosPagoAutoTransferCopy.title}</Label>
-                    {metodosPagoAutoTransferCopy.hint ? (
-                      <p className="text-xs text-muted-foreground leading-snug">{metodosPagoAutoTransferCopy.hint}</p>
-                    ) : null}
-                  </div>
-                  <Switch id="cfg-tf-au" className="shrink-0 mt-0.5" checked={cfgTfAuto} onCheckedChange={setCfgTfAuto} />
+                  <Switch id="cfg-mp-br" checked={cfgMpBricks} onCheckedChange={setCfgMpBricks} />
                 </div>
               </div>
             </div>
+
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Manuales</p>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="cfg-tf-man" className="text-sm flex-1">Transferencia manual (alias fijo)</Label>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Automáticos (Transferencias)</p>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="cfg-tf-au" className="text-sm font-bold flex items-center gap-2"><Zap className="h-4 w-4 text-amber-500" /> Transf. Automática</Label>
+                    <p className="text-xs text-muted-foreground">Vía Cucuru o Talo (si están configurados en Perfil).</p>
+                  </div>
+                  <Switch id="cfg-tf-au" checked={cfgTfAuto} onCheckedChange={setCfgTfAuto} />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Manuales</p>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="cfg-tf-man" className="text-sm font-bold flex items-center gap-2"><Wallet className="h-4 w-4 text-muted-foreground" /> Transf. Manual (Alias)</Label>
+                    <p className="text-xs text-muted-foreground">Mostrás tu CBU/Alias y verificás a mano.</p>
+                    {cfgTfManual && (
+                      <Input id="cfg-alias" value={cfgAlias} onChange={(e) => setCfgAlias(e.target.value)} placeholder="Tu alias..." className="h-10 mt-3 rounded-xl bg-background font-mono text-sm" />
+                    )}
+                  </div>
                   <Switch id="cfg-tf-man" checked={cfgTfManual} onCheckedChange={setCfgTfManual} />
                 </div>
-                {cfgTfManual && (
-                  <div className="space-y-1.5 pl-0">
-                    <Label htmlFor="cfg-alias" className="text-xs">Alias CBU / CVU</Label>
-                    <Input id="cfg-alias" value={cfgAlias} onChange={(e) => setCfgAlias(e.target.value)} placeholder="ej. mi.local.mp" className="h-9" />
+                <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="cfg-cash" className="text-sm font-bold">Efectivo</Label>
                   </div>
-                )}
-                <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="cfg-cash" className="text-sm flex-1">Efectivo</Label>
                   <Switch id="cfg-cash" checked={cfgEfectivo} onCheckedChange={setCfgEfectivo} />
                 </div>
               </div>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setMetodosPagoModalOpen(false)} disabled={savingMetodosPago}>
+
+          <DialogFooter className="mt-8 gap-3 sm:gap-0">
+            <Button type="button" variant="ghost" onClick={() => setMetodosPagoModalOpen(false)} disabled={savingMetodosPago} className="h-12 rounded-xl font-semibold border border-border">
               Cancelar
             </Button>
-            <Button type="button" onClick={() => void saveMetodosPago()} disabled={savingMetodosPago}>
+            <Button type="button" onClick={() => void saveMetodosPago()} disabled={savingMetodosPago} className="h-12 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white">
               {savingMetodosPago ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Guardar
+              Guardar Configuración
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showDeletePedidoDialog} onOpenChange={setShowDeletePedidoDialog}>
-        <DialogContent className="max-w-md mx-4">
-          <DialogHeader>
-            <DialogTitle>¿Eliminar Pedido?</DialogTitle>
-            <DialogDescription>Esta acción es irreversible.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowDeletePedidoDialog(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDeletePedido}>Eliminar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!itemAEliminar} onOpenChange={(open) => !open && setItemAEliminar(null)}>
-        <DialogContent className="max-w-md mx-4">
-          <DialogHeader>
-            <DialogTitle>¿Eliminar producto?</DialogTitle>
-            <DialogDescription>Se eliminará {itemAEliminar?.nombreProducto}.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex gap-2">
-            <Button variant="outline" onClick={() => setItemAEliminar(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDeleteItem}>Eliminar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!configuringProduct} onOpenChange={(open) => !open && setConfiguringProduct(null)}>
-        <DialogContent className="max-w-md max-h-[90vh] flex flex-col mx-4">
-          <DialogHeader>
-            <DialogTitle>Personalizar {configuringProduct?.nombre}</DialogTitle>
-            <DialogDescription>Selecciona los ingredientes para EXCLUIR.</DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto py-2">
-            {configuringProduct?.ingredientes?.length ? (
-              <div className="space-y-2">
-                {configuringProduct?.ingredientes?.map(ing => {
-                  const isExcluded = excludedIngredients.includes(ing.id)
-                  return (
-                    <div
-                      key={ing.id}
-                      className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${isExcluded ? 'bg-destructive/10 border-destructive/30' : 'bg-card border-border hover:bg-accent'}`}
-                      onClick={() => setExcludedIngredients(prev => prev.includes(ing.id) ? prev.filter(id => id !== ing.id) : [...prev, ing.id])}
-                    >
-                      <Checkbox checked={!isExcluded} />
-                      <span className={isExcluded ? 'line-through text-muted-foreground' : 'font-medium'}>{ing.nombre}</span>
-                      {isExcluded && <span className="text-xs text-destructive ml-auto font-semibold">Excluido</span>}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-center py-4">Sin ingredientes configurables.</p>
-            )}
-          </div>
-          <DialogFooter className="gap-2 mt-4">
-            <Button variant="outline" onClick={() => setConfiguringProduct(null)}>Cancelar</Button>
-            <Button onClick={() => {
-              if (configuringProduct) {
-                handleAddProductoToCart(configuringProduct, excludedIngredients)
-                setConfiguringProduct(null)
-                setExcludedIngredients([])
-              }
-            }}>
-              <Plus className="mr-2 h-4 w-4" />
-              Agregar al Carrito
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Product Sheet - Full screen on mobile */}
-      <Sheet open={addProductSheet} onOpenChange={setAddProductSheet}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl p-0">
-          <div className="flex flex-col h-full">
-            <SheetHeader className="text-left p-4 pb-2 border-b shrink-0">
-              <SheetTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Agregar Productos</SheetTitle>
-              <SheetDescription>Selecciona los productos para agregar al pedido.</SheetDescription>
-            </SheetHeader>
-
-            {/* Mobile Tabs */}
-            <div className="lg:hidden px-4 pt-2 border-b shrink-0">
-              <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-                <Button
-                  variant={addProductMobileTab === 'carrito' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="flex-1 h-8 text-xs"
-                  onClick={() => setAddProductMobileTab('carrito')}
-                >
-                  <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
-                  Carrito
-                  {productosSeleccionados.length > 0 && (
-                    <Badge variant="secondary" className="ml-1.5 text-[10px] h-4 min-w-4 px-1">{productosSeleccionados.length}</Badge>
-                  )}
-                </Button>
-                <Button
-                  variant={addProductMobileTab === 'productos' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="flex-1 h-8 text-xs"
-                  onClick={() => setAddProductMobileTab('productos')}
-                >
-                  <Package className="h-3.5 w-3.5 mr-1.5" />
-                  Productos
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex-1 flex overflow-hidden">
-              {/* COLUMN 1: Productos Seleccionados */}
-              <div className={`${addProductMobileTab === 'carrito' ? 'flex' : 'hidden'} lg:flex w-full sm:w-[350px] flex-col border-r overflow-hidden bg-background shrink-0`}>
-                <div className="flex-1 overflow-auto p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Productos Seleccionados</h3>
-                    {productosSeleccionados.length > 0 && (
-                      <Badge variant="secondary" className="text-xs">{productosSeleccionados.length}</Badge>
-                    )}
-                  </div>
-                  {productosSeleccionados.length === 0 ? (
-                    <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-lg">
-                      <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">Seleccioná productos de la lista</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        {productosSeleccionados.map((item, idx) => {
-                          const producto = productos.find(p => p.id === item.productoId)
-                          if (!producto) return null
-                          const isExpanded = !expandedProductosSeleccionados.includes(idx)
-                          return (
-                            <div key={`${item.productoId}-${idx}`} className="flex flex-col gap-2 p-3 rounded-lg border bg-card">
-                              <div className="flex items-center gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium truncate text-sm">{producto.nombre}</p>
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-xs text-muted-foreground">${parseFloat(producto.precio).toFixed(2)} c/u</p>
-                                    {producto.ingredientes && producto.ingredientes.length > 0 && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-5 text-[10px] px-1.5 text-muted-foreground hover:text-foreground"
-                                        onClick={() => setExpandedProductosSeleccionados(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
-                                      >
-                                        {isExpanded ? 'Ocultar' : 'Ingredientes'}
-                                      </Button>
-                                    )}
-                                  </div>
-                                  {item.ingredientesExcluidos && item.ingredientesExcluidos.length > 0 && !isExpanded && (
-                                    <p className="text-[10px] text-orange-600 mt-0.5">Sin: {producto.ingredientes?.filter(i => item.ingredientesExcluidos?.includes(i.id)).map(i => i.nombre).join(', ')}</p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <div className="flex items-center border rounded-lg bg-background h-7">
-                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateProductoCantidad(item.productoId, item.cantidad - 1, item.ingredientesExcluidos)}>
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
-                                    <span className="w-5 text-center text-xs font-medium">{item.cantidad}</span>
-                                    <Button type="button" variant="ghost" size="icon" className="h-full w-6 rounded-none" onClick={() => handleUpdateProductoCantidad(item.productoId, item.cantidad + 1, item.ingredientesExcluidos)}>
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleRemoveProductoFromCart(item.productoId, item.ingredientesExcluidos)}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                              {isExpanded && producto.ingredientes && (
-                                <div className="space-y-1 pl-1 border-l-2 border-muted ml-1">
-                                  {producto.ingredientes.map(ing => {
-                                    const isExcluded = item.ingredientesExcluidos?.includes(ing.id)
-                                    return (
-                                      <div
-                                        key={ing.id}
-                                        className={`flex items-center gap-2 p-1 rounded cursor-pointer text-xs ${isExcluded ? 'text-muted-foreground line-through opacity-70' : ''}`}
-                                        onClick={() => handleToggleProductoIngredient(idx, ing.id)}
-                                      >
-                                        <Checkbox checked={!isExcluded} className="h-3 w-3" />
-                                        <span>{ing.nombre}</span>
-                                        {isExcluded && <span className="text-[10px] text-destructive ml-auto font-medium">Excluido</span>}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
-                        <span className="font-semibold">Total:</span>
-                        <span className="text-xl font-bold text-primary">${productosSeleccionadosTotal.toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Submit button fixed at bottom */}
-                <div className="p-4 border-t bg-background shrink-0">
-                  <Button
-                    className="w-full h-11"
-                    onClick={handleConfirmMultipleProducts}
-                    disabled={addingMultipleProducts || productosSeleccionados.length === 0}
-                  >
-                    {addingMultipleProducts ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <Plus className="h-4 w-4 mr-2" />
-                    )}
-                    Agregar {productosSeleccionados.length > 0 && `${productosSeleccionados.length} producto${productosSeleccionados.length !== 1 ? 's' : ''}`}
-                    {productosSeleccionados.length > 0 && ` \u2022 $${productosSeleccionadosTotal.toFixed(2)}`}
-                  </Button>
-                </div>
-              </div>
-
-              {/* COLUMN 2: Catálogo de Productos */}
-              <div className={`${addProductMobileTab === 'productos' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col overflow-hidden bg-muted/10`}>
-                <div className="p-4 border-b bg-background/95 backdrop-blur shrink-0">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-3">Agregar Productos</h3>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar producto o etiqueta... (Enter para agregar)"
-                      value={searchProducto}
-                      onChange={(e) => setSearchProducto(e.target.value)}
-                      className="pl-10 h-10"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && searchProducto.trim()) {
-                          e.preventDefault()
-                          const term = searchProducto.trim().toLowerCase()
-                          const matchByTag = productos.find(p =>
-                            p.etiquetas?.some(et => et.nombre.toLowerCase() === term)
-                          )
-                          const matchProduct = matchByTag || productosFiltrados[0]
-                          if (matchProduct) {
-                            handleAddProductoToCartWithConfig(matchProduct)
-                            setSearchProducto('')
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="flex-1 overflow-auto p-4">
-                  {loadingProductos ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {(() => {
-                        const porCategoria = productosFiltrados.reduce((acc, producto) => {
-                          const cat = producto.categoria || 'Sin categoría'
-                          if (!acc[cat]) acc[cat] = []
-                          acc[cat].push(producto)
-                          return acc
-                        }, {} as Record<string, Producto[]>)
-
-                        const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
-                          if (a === 'Sin categoría') return 1
-                          if (b === 'Sin categoría') return -1
-                          return a.localeCompare(b)
-                        })
-
-                        return categoriasOrdenadas.map((categoriaNombre) => (
-                          <div key={categoriaNombre} className="space-y-2">
-                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 sticky top-0 bg-muted/10 py-1 backdrop-blur-sm z-1">
-                              {categoriaNombre}
-                              <Badge variant="secondary" className="ml-2 text-[10px] font-normal">{porCategoria[categoriaNombre].length}</Badge>
-                            </h4>
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
-                              {porCategoria[categoriaNombre].map((producto) => {
-                                // Solo mostrar badge si hay un item sin ingredientes excluidos
-                                const existingItem = productosSeleccionados.find(i =>
-                                  i.productoId === producto.id &&
-                                  (!i.ingredientesExcluidos || i.ingredientesExcluidos.length === 0)
-                                )
-                                return (
-                                  <div
-                                    key={producto.id}
-                                    className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${existingItem ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent/50'}`}
-                                    onClick={() => handleAddProductoToCartWithConfig(producto)}
-                                  >
-                                    <div className="shrink-0">
-                                      {producto.imagenUrl ? (
-                                        <img src={producto.imagenUrl} alt={producto.nombre} className="w-12 h-12 rounded-lg object-cover bg-muted" />
-                                      ) : (
-                                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                                          <Package className="h-5 w-5 text-muted-foreground/40" />
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <p className="font-medium truncate">{producto.nombre}</p>
-                                        {producto.etiquetas && producto.etiquetas.map(et => (
-                                          <Badge key={et.id} variant="outline" className="text-[10px] px-1 py-0 h-4 bg-violet-50 dark:bg-violet-950/30 border-violet-300 text-violet-700 dark:text-violet-400 font-mono">
-                                            {et.nombre}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                      <p className="font-bold text-primary text-sm">${parseFloat(producto.precio).toFixed(2)}</p>
-                                    </div>
-                                    {existingItem && (
-                                      <Badge variant="secondary" className="font-mono">{existingItem.cantidad}</Badge>
-                                    )}
-                                    <Plus className="h-5 w-5 text-muted-foreground shrink-0" />
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        ))
-                      })()}
-                    </div>
-                  )}
-                </div>
-                {/* Mobile floating cart summary */}
-                {productosSeleccionados.length > 0 && (
-                  <div className="lg:hidden p-3 border-t bg-background shrink-0">
-                    <Button
-                      className="w-full h-11"
-                      onClick={() => setAddProductMobileTab('carrito')}
-                    >
-                      <ShoppingCart className="h-4 w-4 mr-2" />
-                      Ver Carrito • {productosSeleccionados.reduce((sum, i) => sum + i.cantidad, 0)} {productosSeleccionados.reduce((sum, i) => sum + i.cantidad, 0) === 1 ? 'item' : 'items'} • ${productosSeleccionadosTotal.toFixed(2)}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* Cierre de Turno */}
       <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} />
-
-    </div >
+    </div>
   )
 }
 

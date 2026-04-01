@@ -7,7 +7,7 @@ import { pedidoUnificadoApi } from '@/lib/api'
 import { toast } from 'sonner'
 import {
   Loader2, ArrowLeft, Trash2, Truck,
-  Phone, XCircle, CheckCircle
+  Phone, XCircle, CheckCircle, MessageCircle
 } from 'lucide-react'
 
 const getMetodoPagoDisplay = (metodoPago: string | null | undefined) => {
@@ -115,6 +115,7 @@ export default function Pedido() {
   const [updatingPago, setUpdatingPago] = useState(false)
   const [assigningRapiboyId, setAssigningRapiboyId] = useState<number | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [sendingNotification, setSendingNotification] = useState(false)
 
   // Ajustar tema según el dispositivo del usuario
   useEffect(() => {
@@ -225,6 +226,23 @@ export default function Pedido() {
       navigate('/dashboard')
     } catch {
       toast.error('Error al eliminar')
+    }
+  }
+
+  const handleNotificarCliente = async () => {
+    if (!token || !pedido) return
+    setSendingNotification(true)
+    try {
+      const res: any = await pedidoUnificadoApi.notificarCliente(token, pedido.id)
+      if (res.success) {
+        toast.success('Mensaje de WhatsApp enviado al cliente')
+      } else {
+        toast.error(res.message || 'No se pudo enviar la notificación')
+      }
+    } catch {
+      toast.error('Error al enviar la notificación')
+    } finally {
+      setSendingNotification(false)
     }
   }
 
@@ -510,6 +528,18 @@ export default function Pedido() {
                       >
                         <Trash2 className="h-5 w-5" />
                       </button>
+                      {pedido.pagado && (
+                        <button
+                          onClick={handleNotificarCliente}
+                          disabled={sendingNotification}
+                          className="h-14 w-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors shrink-0 disabled:opacity-50"
+                          title="Notificar cliente por WhatsApp"
+                        >
+                          {sendingNotification
+                            ? <Loader2 className="h-5 w-5 animate-spin" />
+                            : <MessageCircle className="h-5 w-5" />}
+                        </button>
+                      )}
                       <Button
                         className="flex-1 h-14 rounded-2xl bg-[#F97316] hover:bg-[#EA580C] text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]"
                         onClick={() => handleUpdateEstado('archived')}
