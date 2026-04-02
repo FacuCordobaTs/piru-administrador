@@ -337,26 +337,30 @@ export default function Pedido() {
               Confirmar pago
             </p>
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 h-10 rounded-xl bg-transparent border-border/60 hover:bg-muted/50 text-sm"
-                onClick={() => handleTogglePagado('efectivo')}
-                disabled={updatingPago}
-              >
-                {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">💵</span>}
-                Efectivo
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 h-10 rounded-xl bg-transparent border-border/60 hover:bg-muted/50 text-sm"
-                onClick={() => handleTogglePagado('transferencia')}
-                disabled={updatingPago}
-              >
-                {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">🏦</span>}
-                Transferencia
-              </Button>
+              {(!pedido.metodoPago || pedido.metodoPago === 'cash' || pedido.metodoPago === 'efectivo') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-10 rounded-xl bg-transparent border-border/60 hover:bg-muted/50 text-sm"
+                  onClick={() => handleTogglePagado('efectivo')}
+                  disabled={updatingPago}
+                >
+                  {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">💵</span>}
+                  Confirmar Efectivo
+                </Button>
+              )}
+              {(!pedido.metodoPago || pedido.metodoPago === 'transferencia' || pedido.metodoPago === 'manual_transfer') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-10 rounded-xl bg-transparent border-border/60 hover:bg-muted/50 text-sm"
+                  onClick={() => handleTogglePagado('transferencia')}
+                  disabled={updatingPago}
+                >
+                  {updatingPago ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <span className="mr-1.5">🏦</span>}
+                  Confirmar Transferencia
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -529,16 +533,17 @@ export default function Pedido() {
                         <Trash2 className="h-5 w-5" />
                       </button>
                       {pedido.pagado && (
-                        <button
+                        <Button
+                          variant="outline"
                           onClick={handleNotificarCliente}
                           disabled={sendingNotification}
-                          className="h-14 w-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors shrink-0 disabled:opacity-50"
-                          title="Notificar cliente por WhatsApp"
+                          className="flex-1 h-14 rounded-2xl border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold active:scale-[0.98] transition-transform"
                         >
                           {sendingNotification
-                            ? <Loader2 className="h-5 w-5 animate-spin" />
-                            : <MessageCircle className="h-5 w-5" />}
-                        </button>
+                            ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                            : <MessageCircle className="h-5 w-5 mr-2" />}
+                          Avisar Cliente
+                        </Button>
                       )}
                       <Button
                         className="flex-1 h-14 rounded-2xl bg-[#F97316] hover:bg-[#EA580C] text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]"
