@@ -532,19 +532,17 @@ export default function Pedido() {
                       >
                         <Trash2 className="h-5 w-5" />
                       </button>
-                      {pedido.pagado && (
-                        <Button
-                          variant="outline"
-                          onClick={handleNotificarCliente}
-                          disabled={sendingNotification}
-                          className="flex-1 h-14 rounded-2xl border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold active:scale-[0.98] transition-transform"
-                        >
-                          {sendingNotification
-                            ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                            : <MessageCircle className="h-5 w-5 mr-2" />}
-                          Avisar Cliente
-                        </Button>
-                      )}
+                      <Button
+                        variant="outline"
+                        onClick={handleNotificarCliente}
+                        disabled={sendingNotification}
+                        className="flex-1 h-14 rounded-2xl border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold active:scale-[0.98] transition-transform"
+                      >
+                        {sendingNotification
+                          ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                          : <MessageCircle className="h-5 w-5 mr-2" />}
+                        Avisar Cliente
+                      </Button>
                       <Button
                         className="flex-1 h-14 rounded-2xl bg-[#F97316] hover:bg-[#EA580C] text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]"
                         onClick={() => handleUpdateEstado('archived')}
