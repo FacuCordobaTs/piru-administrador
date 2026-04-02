@@ -58,6 +58,7 @@ const Productos = () => {
   const [nuevoIngredienteNombre, setNuevoIngredienteNombre] = useState('')
   const [dialogIngredienteAbierto, setDialogIngredienteAbierto] = useState(false)
   const [isCreandoIngrediente, setIsCreandoIngrediente] = useState(false)
+  const [busquedaIngrediente, setBusquedaIngrediente] = useState('')
 
   // Estados para agregados
   const [agregados, setAgregados] = useState<Array<{ id: number; nombre: string; precio: string }>>([])
@@ -251,6 +252,7 @@ const Productos = () => {
     setAgregadosSeleccionados([])
     setEtiquetasProducto([])
     setNuevaEtiqueta('')
+    setBusquedaIngrediente('')
     setDialogAbierto(true)
   }
 
@@ -683,11 +685,41 @@ const Productos = () => {
                     </Button>
                   </div>
 
+                  {/* Buscador de ingredientes */}
+                  {ingredientes.length > 5 && (
+                    <div className="relative">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={busquedaIngrediente}
+                        onChange={(e) => setBusquedaIngrediente(e.target.value)}
+                        placeholder="Buscar ingrediente..."
+                        className="h-10 pl-10 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-sm"
+                      />
+                      {busquedaIngrediente && (
+                        <button type="button" onClick={() => setBusquedaIngrediente('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="max-h-52 overflow-y-auto space-y-1.5 pr-2">
                     {ingredientes.length === 0 ? (
                       <p className="text-sm text-muted-foreground italic py-4 text-center">No hay ingredientes creados.</p>
-                    ) : (
-                      ingredientes.map((ing) => {
+                    ) : (() => {
+                      const ingredientesFiltrados = ingredientes.filter(ing =>
+                        ing.nombre.toLowerCase().includes(busquedaIngrediente.toLowerCase())
+                      )
+                      // Show selected ingredients first, then unselected
+                      const ordenados = [...ingredientesFiltrados].sort((a, b) => {
+                        const aSelected = ingredientesSeleccionados.includes(a.id) ? 0 : 1
+                        const bSelected = ingredientesSeleccionados.includes(b.id) ? 0 : 1
+                        return aSelected - bSelected
+                      })
+                      if (ordenados.length === 0) {
+                        return <p className="text-sm text-muted-foreground italic py-4 text-center">No se encontraron ingredientes.</p>
+                      }
+                      return ordenados.map((ing) => {
                         const isSelected = ingredientesSeleccionados.includes(ing.id)
                         return (
                           <div
@@ -706,7 +738,7 @@ const Productos = () => {
                           </div>
                         )
                       })
-                    )}
+                    })()}
                   </div>
                 </div>
 

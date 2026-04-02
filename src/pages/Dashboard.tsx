@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { usePrinter } from '@/context/PrinterContext'
-import { formatComanda, formatFactura, commandsToBytes } from '@/utils/printerUtils'
+import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -614,8 +614,18 @@ const Dashboard = () => {
                         {selectedPrinter && (
                           <Button variant="outline" className="h-10 hover:bg-accent" onClick={() => {
                             const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => ({ ...item, precioUnitario: item.precioUnitario || '0' }))
-                            if (selectedUnifiedPedido.tipo === 'delivery') itemsToPrint.push({ id: 0, nombreProducto: 'Delivery', cantidad: 1, precioUnitario: String(getOrderDeliveryFee(selectedUnifiedPedido)), ingredientesExcluidosNombres: [] })
-                            const data = formatFactura({ id: selectedUnifiedPedido.id, mesaNombre: selectedUnifiedPedido.tipo === 'delivery' ? `Delivery` : 'Take Away', nombrePedido: selectedUnifiedPedido.nombreCliente || '', tipo: selectedUnifiedPedido.tipo, total: selectedUnifiedPedido.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                            const deliveryFee = selectedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(selectedUnifiedPedido) : 0
+                            const data = formatComanda({
+                              id: selectedUnifiedPedido.id,
+                              nombrePedido: selectedUnifiedPedido.nombreCliente || '',
+                              telefono: selectedUnifiedPedido.telefono,
+                              direccion: selectedUnifiedPedido.tipo === 'delivery' ? selectedUnifiedPedido.direccion : undefined,
+                              tipo: selectedUnifiedPedido.tipo,
+                              total: selectedUnifiedPedido.total,
+                              deliveryFee,
+                              notas: selectedUnifiedPedido.notas,
+                              montoDescuento: selectedUnifiedPedido.montoDescuento,
+                            }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                             printRaw(commandsToBytes(data))
                           }}>
                             <Printer className="h-4 w-4 mr-2" /> Imprimir
@@ -974,8 +984,18 @@ const Dashboard = () => {
                         <div className="mt-4 flex justify-center mb-8">
                           <Button variant="ghost" className="text-muted-foreground border border-border bg-background" onClick={() => {
                             const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => ({ ...item, precioUnitario: item.precioUnitario || '0' }))
-                            if (selectedUnifiedPedido.tipo === 'delivery') itemsToPrint.push({ id: 0, nombreProducto: 'Delivery', cantidad: 1, precioUnitario: String(getOrderDeliveryFee(selectedUnifiedPedido)), ingredientesExcluidosNombres: [] })
-                            const data = formatFactura({ id: selectedUnifiedPedido.id, mesaNombre: selectedUnifiedPedido.tipo === 'delivery' ? `Delivery` : 'Take Away', nombrePedido: selectedUnifiedPedido.nombreCliente || '', tipo: selectedUnifiedPedido.tipo, total: selectedUnifiedPedido.total }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                            const deliveryFee = selectedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(selectedUnifiedPedido) : 0
+                            const data = formatComanda({
+                              id: selectedUnifiedPedido.id,
+                              nombrePedido: selectedUnifiedPedido.nombreCliente || '',
+                              telefono: selectedUnifiedPedido.telefono,
+                              direccion: selectedUnifiedPedido.tipo === 'delivery' ? selectedUnifiedPedido.direccion : undefined,
+                              tipo: selectedUnifiedPedido.tipo,
+                              total: selectedUnifiedPedido.total,
+                              deliveryFee,
+                              notas: selectedUnifiedPedido.notas,
+                              montoDescuento: selectedUnifiedPedido.montoDescuento,
+                            }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                             printRaw(commandsToBytes(data))
                           }}>
                             <Printer className="mr-2 h-4 w-4" /> Reimprimir Comprobante
