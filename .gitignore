@@ -32,3 +32,5 @@ app.key
 *.key
 *.key.pub
 updater.json
+./latest.json
+latest.json

@@ -1598,6 +1598,14 @@ const Perfil = () => {
               {dialogTab === 'comunicacion' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
                   <div className="space-y-2">
+                    <Label htmlFor="whatsappNumber" className={phantomLabelClass}>WhatsApp para Notificaciones</Label>
+                    <Input id="whatsappNumber" value={formData.whatsappNumber} onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })} placeholder="Ej: 5491123456789" className={phantomInputClass} />
+                    <p className="text-sm text-muted-foreground mt-2 pl-2">El número que usa tu local para recibir los pedidos entrantes. Formato internacional sin '+'.</p>
+                  </div>
+
+                  <Separator className="my-6 border-zinc-100 dark:border-zinc-800" />
+
+                  <div className="space-y-2">
                     <Label htmlFor="transferenciaAlias" className={phantomLabelClass}>Alias / CBU para transferencias</Label>
                     <Input id="transferenciaAlias" value={formData.transferenciaAlias} onChange={(e) => setFormData({ ...formData, transferenciaAlias: e.target.value })} placeholder="Ej: minombre.mp" className={cn(phantomInputClass, "font-mono")} />
                     <p className="text-sm text-muted-foreground mt-2 pl-2">Se mostrará a tus clientes en el checkout si la transferencia manual está activa.</p>

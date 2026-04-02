@@ -140,6 +140,7 @@ const Dashboard = () => {
 
   const { printRaw, selectedPrinter } = usePrinter()
   const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
+  const initialLoadDoneRef = useRef(false)
   const { isConnected, lastUpdate } = useAdminContext()
 
   // Estados Principales
@@ -228,21 +229,47 @@ const Dashboard = () => {
 
     unifiedPedidos.forEach(pedido => {
       const pedidoKey = `${pedido.tipo}-${pedido.id}`
-      const currentStatus = pedido.estado
       const currentPagado = pedido.pagado
       const prevData = processedOrdersRef.current.get(pedidoKey)
       const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
 
-      if (pedido.impreso) {
-        if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
+      // Archivado → registrar y nunca imprimir
+      if (pedido.estado === 'archived') {
+        if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
         return
       }
 
-      let shouldPrintComanda = false
-      if (prevData && prevData.status === 'pending' && currentStatus === 'preparing' && !deferUntilPaid) shouldPrintComanda = true
-      if (deferUntilPaid && currentPagado && (!prevData || !prevData.pagado)) shouldPrintComanda = true
+      // Ya impreso en la DB → registrar y saltar
+      if (pedido.impreso) {
+        if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
+        return
+      }
 
-      if (shouldPrintComanda) {
+      let shouldPrint = false
+
+      if (!prevData) {
+        // Primera vez que vemos este pedido
+        if (!initialLoadDoneRef.current) {
+          // Carga inicial (F5, apertura): solo registrar, NO imprimir
+          processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
+          return
+        }
+        // Pedido NUEVO que llegó en vivo después de la carga inicial
+        if (deferUntilPaid) {
+          // Método deferred (MP, Cucuru, Talo): solo imprimir si ya está pagado
+          shouldPrint = !!currentPagado
+        } else {
+          // Método no-deferred (efectivo, transf manual): imprimir inmediatamente
+          shouldPrint = true
+        }
+      } else {
+        // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
+        if (deferUntilPaid && currentPagado && !prevData.pagado) {
+          shouldPrint = true
+        }
+      }
+
+      if (shouldPrint) {
         const itemsToPrint = pedido.items.map(item => {
           const producto = allProductos.find(p => p.id === item.productoId)
           return { ...item, producto }
@@ -263,8 +290,13 @@ const Dashboard = () => {
             .catch(console.error)
         }
       }
-      processedOrdersRef.current.set(pedidoKey, { status: currentStatus, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
+      processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
     })
+
+    // Después de procesar el primer batch, marcar carga inicial como completada
+    if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
+      initialLoadDoneRef.current = true
+    }
   }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore])
 
   // ─────────────────────────────────────────────
