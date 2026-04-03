@@ -30,7 +30,7 @@ interface DeliveryItem {
   id: number; productoId: number; cantidad: number; precioUnitario: string;
   nombreProducto: string; imagenUrl: string | null;
   ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
-  agregados?: any;
+  agregados?: any; varianteNombre?: string;
 }
 interface UnifiedPedido {
   id: number; tipo: 'delivery' | 'takeaway'; estado: string; total: string; createdAt: string;
@@ -716,7 +716,9 @@ const Dashboard = () => {
                                 <div className="flex gap-4">
                                   <span className="font-bold text-lg w-6 text-muted-foreground">{item.cantidad}x</span>
                                   <div>
-                                    <p className="font-bold text-lg text-foreground">{item.nombreProducto}</p>
+                                    <p className="font-bold text-lg text-foreground">
+                                      {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-sm font-semibold">({item.varianteNombre})</span>}
+                                    </p>
                                     {formatAgregados(item.agregados).length > 0 && (
                                       <div className="mt-1 space-y-0.5">
                                         {formatAgregados(item.agregados).map((ag: any, i: number) => (
@@ -936,7 +938,9 @@ const Dashboard = () => {
                                 <div className="flex items-baseline gap-3 flex-1 min-w-0">
                                   <span className="font-mono text-sm text-muted-foreground w-6 shrink-0">{item.cantidad}x</span>
                                   <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-medium text-foreground">{item.nombreProducto}</span>
+                                    <span className="text-sm font-medium text-foreground">
+                                      {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-[11px] font-bold">({item.varianteNombre})</span>}
+                                    </span>
                                     {formatAgregados(item.agregados).length > 0 && (
                                       <div className="mt-1 space-y-0.5">
                                         {formatAgregados(item.agregados).map((ag: any, i: number) => (

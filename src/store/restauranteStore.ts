@@ -29,8 +29,10 @@ interface Producto {
   createdAt: string
   categoria: string | null
   descuento?: number | null
+  tieneVariantes?: boolean | null
   etiquetas?: Array<{ id: number; nombre: string }>
   agregados?: Array<{ id: number; nombre: string; precio: string }>
+  variantes?: Array<{ id: number; nombre: string; precio: string }>
 }
 
 interface RestauranteData {

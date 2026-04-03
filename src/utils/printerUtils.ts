@@ -6,6 +6,7 @@ interface ItemPedidoLike {
     ingredientesExcluidosNombres?: string[]
     agregados?: any[]
     categoriaNombre?: string
+    varianteNombre?: string
 }
 
 // Interface for factura items - includes clienteNombre for grouping
@@ -140,7 +141,8 @@ export const formatComanda = (
     // ITEMS — Nombre del producto en DOBLE ALTO + NEGRITA para que la cocina lo lea rápido
     items.forEach(item => {
         // Nombre del producto: GRANDE (Doble alto + Negrita)
-        const nombre = (item.nombreProducto || 'Producto');
+        const sufijoVariante = item.varianteNombre ? ` (${item.varianteNombre})` : '';
+        const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
         commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
         commands.push(`${item.cantidad}x ${nombre}\n`);
         commands.push(ESC + '!' + '\x00'); // Normal
@@ -311,7 +313,8 @@ export const formatFactura = (
             subtotalCliente += subtotal;
 
             // Nombre del producto: DOBLE ALTO + NEGRITA
-            const nombre = (item.nombreProducto || 'Producto');
+            const sufijoVariante = item.varianteNombre ? ` (${item.varianteNombre})` : '';
+            const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
             commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
             commands.push(`  ${item.cantidad}x ${nombre}\n`);
             commands.push(ESC + '!' + '\x00'); // Normal

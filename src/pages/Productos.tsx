@@ -40,6 +40,7 @@ const Productos = () => {
     puntosGanados: string
     puntosNecesarios: string
     descuento: string
+    variantes: Array<{ id?: number, nombre: string, precio: string }>
   }>({
     nombre: '',
     descripcion: '',
@@ -47,7 +48,8 @@ const Productos = () => {
     categoriaId: '0',
     puntosGanados: '',
     puntosNecesarios: '',
-    descuento: ''
+    descuento: '',
+    variantes: []
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
@@ -246,7 +248,7 @@ const Productos = () => {
 
   const abrirDialogNuevo = () => {
     setProductoEditando(null)
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '' })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', variantes: [] })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
@@ -265,7 +267,12 @@ const Productos = () => {
       categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
       puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
       puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : '',
-      descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : ''
+      descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : '',
+      variantes: (producto as any).variantes ? (producto as any).variantes.map((v: any) => ({
+        id: v.id,
+        nombre: v.nombre,
+        precio: v.precio.toString()
+      })) : []
     })
     setImageBase64(producto.imagenUrl || null)
     setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
@@ -306,6 +313,7 @@ const Productos = () => {
         ingredienteIds: ingredientesSeleccionados,
         agregadoIds: agregadosSeleccionados,
         etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
+        variantes: formData.variantes.length > 0 ? formData.variantes.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
         puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
         puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
         descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0
@@ -672,6 +680,49 @@ const Productos = () => {
               {/* Personalización y Extras */}
               <div className="space-y-5 pt-4">
                 <h3 className="font-bold text-lg border-b border-zinc-100 dark:border-zinc-800 pb-2">Personalización</h3>
+
+                {/* Variantes */}
+                <div className="space-y-3 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base font-bold text-foreground">Variantes (Opcional)</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">Múltiples opciones con distinto precio (Ej: Simple, Doble, Triple).</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setFormData({ ...formData, variantes: [...formData.variantes, { nombre: '', precio: '' }] })} className="h-9 rounded-xl font-semibold border-zinc-300 dark:border-zinc-700">
+                      <Plus className="h-4 w-4 mr-1" /> Agregar Variante
+                    </Button>
+                  </div>
+
+                  {formData.variantes.length > 0 && (
+                    <div className="space-y-3 pt-2">
+                       {formData.variantes.map((variante, index) => (
+                          <div key={index} className="flex gap-3 items-start">
+                             <div className="flex-1 space-y-1">
+                                <Input placeholder="Nombre (ej: Doble)" value={variante.nombre} onChange={(e) => {
+                                  const nuevas = [...formData.variantes]
+                                  nuevas[index].nombre = e.target.value
+                                  setFormData({ ...formData, variantes: nuevas })
+                                }} className={phantomInputClass} />
+                             </div>
+                             <div className="flex-1 space-y-1 relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
+                                <Input placeholder="Precio" type="number" step="0.01" min="0" value={variante.precio} onChange={(e) => {
+                                  const nuevas = [...formData.variantes]
+                                  nuevas[index].precio = e.target.value
+                                  setFormData({ ...formData, variantes: nuevas })
+                                }} className={cn(phantomInputClass, "pl-8 font-bold")} />
+                             </div>
+                             <Button type="button" variant="ghost" size="icon" className="h-14 w-14 shrink-0 rounded-2xl bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/30 dark:hover:bg-red-900/50" onClick={() => {
+                                const nuevas = formData.variantes.filter((_, i) => i !== index)
+                                setFormData({ ...formData, variantes: nuevas })
+                             }}>
+                                <Trash2 className="h-5 w-5" />
+                             </Button>
+                          </div>
+                       ))}
+                    </div>
+                  )}
+                </div>
 
                 {/* Ingredientes */}
                 <div className="space-y-3 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
