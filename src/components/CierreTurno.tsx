@@ -477,6 +477,15 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
       // Usamos directamente p.total. Ya incluye ítems, agregados y envío de zona.
       const baseMonto = parseFloat(p.total);
 
+      const mapMetodo = (raw: string | null | undefined) => {
+        if (!raw) return null;
+        const low = raw.toLowerCase();
+        if (low === 'efectivo' || low === 'cash') return 'efectivo';
+        if (low.includes('mercadopago') || low === 'mercadopago') return 'mercadopago';
+        if (low.includes('transfer') || low === 'transferencia') return 'transferencia';
+        return null;
+      };
+
       if (p.tipo === 'mesa') {
         const mesaP = p as CierreTurnoPedidoMesa;
         const paidSub = mesaP.pagosSubtotal?.filter(ps => ps.estado === 'paid') || [];
@@ -484,30 +493,30 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
         if (paidSub.length > 0) {
           paidSub.forEach(ps => {
-            const mp = ps.metodo?.toLowerCase();
-            if (mp === 'efectivo') res.efectivo += parseFloat(ps.monto);
-            if (mp === 'mercadopago') res.mercadopago += parseFloat(ps.monto);
-            if (mp === 'transferencia') res.transferencia += parseFloat(ps.monto);
+            const mapped = mapMetodo(ps.metodo);
+            if (mapped === 'efectivo') res.efectivo += parseFloat(ps.monto);
+            if (mapped === 'mercadopago') res.mercadopago += parseFloat(ps.monto);
+            if (mapped === 'transferencia') res.transferencia += parseFloat(ps.monto);
           })
         } else if (paidBase.length > 0) {
           paidBase.forEach(pg => {
-            const mp = pg.metodo?.toLowerCase();
-            if (mp === 'efectivo') res.efectivo += parseFloat(pg.monto);
-            if (mp === 'mercadopago') res.mercadopago += parseFloat(pg.monto);
-            if (mp === 'transferencia') res.transferencia += parseFloat(pg.monto);
+            const mapped = mapMetodo(pg.metodo);
+            if (mapped === 'efectivo') res.efectivo += parseFloat(pg.monto);
+            if (mapped === 'mercadopago') res.mercadopago += parseFloat(pg.monto);
+            if (mapped === 'transferencia') res.transferencia += parseFloat(pg.monto);
           })
         } else if (mesaP.pagado && mesaP.metodoPago) {
-          const mp = mesaP.metodoPago.toLowerCase();
-          if (mp === 'efectivo') res.efectivo += baseMonto;
-          if (mp === 'mercadopago') res.mercadopago += baseMonto;
-          if (mp === 'transferencia') res.transferencia += baseMonto;
+          const mapped = mapMetodo(mesaP.metodoPago);
+          if (mapped === 'efectivo') res.efectivo += baseMonto;
+          if (mapped === 'mercadopago') res.mercadopago += baseMonto;
+          if (mapped === 'transferencia') res.transferencia += baseMonto;
         }
       } else {
         if (p.pagado && p.metodoPago) {
-          const mp = p.metodoPago.toLowerCase();
-          if (mp === 'efectivo') res.efectivo += baseMonto;
-          if (mp === 'mercadopago') res.mercadopago += baseMonto;
-          if (mp === 'transferencia') res.transferencia += baseMonto;
+          const mapped = mapMetodo(p.metodoPago);
+          if (mapped === 'efectivo') res.efectivo += baseMonto;
+          if (mapped === 'mercadopago') res.mercadopago += baseMonto;
+          if (mapped === 'transferencia') res.transferencia += baseMonto;
         }
       }
     })

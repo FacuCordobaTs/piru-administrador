@@ -1,11 +1,11 @@
 {
-    "version": "1.4.0",
-    "notes": "Arreglado que se imprimen todas las comandas al iniciar",
+    "version": "1.4.1",
+    "notes": "Metodos de pago en cerrar turno ahora muestran la cantidad facturada con cada uno",
     "pub_date": "2026-03-29T16:00:00Z",
     "platforms": {
         "windows-x86_64": {
-            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNXpTemJ1cWdPVU9GbUtiOHdTZnJRRGVXdnhhVnJXWFd2cmZ3ZktQMC9tZ1dNazltdXNlSjgxOGQ5Z1pORmY3MWxlcVFQRE9rcVdod3ZCOXlJVTFnMEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc1MTYwMTcwCWZpbGU6cGlydV8xLjQuMF94NjQtc2V0dXAuZXhlCmxWMnZpdERHei9TTTRBOElwQTIvOStlTkNtekVKWnRMcUlBblFXQkNiZU44M2ZZS1JpWU1rbUNUcmsvSzhkeUZPL0dVR2lTdHFqRnJKMDcrb2JKaENBPT0K",
-            "url": "https://api.piru.app/public/updates/piru_1.4.0_x64-setup.exe"
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNXdEQnNJNTczRjlLRGFpNU1JMzhNMUk4WFlyS1cvN3RMeHc2Tzc0L1BKZkdrcWRKa0tiZDd6b3pZalpvYUlIT0ZsenRZQVZyOFNFT1B1ditEUk43QVFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc1MjQ2MTU3CWZpbGU6cGlydV8xLjQuMV94NjQtc2V0dXAuZXhlCjZCOUVyeFcxSStGYmRDY0JocmhrZkRoQ1J0Y2Nva25zTVgzd0gwWGtFUUdnTzVVNnBRSGRJZ2pNenp6eVl4V0hZUnhRemdkWi8zYkpvZFBMUGZaUUJBPT0K",
+            "url": "https://api.piru.app/public/updates/piru_1.4.1_x64-setup.exe"
         }
     }
 }
