@@ -81,6 +81,8 @@ export interface SubtotalesUpdate {
 export interface AdminUpdateEvent {
   type: string
   timestamp: number
+  /** Present when server knows which sucursal the event belongs to (omit = refetch siempre) */
+  sucursalId?: number | null
 }
 
 export interface UseAdminWebSocketReturn {
@@ -315,7 +317,11 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
               case 'ADMIN_UPDATE':
                 setLastUpdate({
                   type: data.payload.updateType,
-                  timestamp: Date.now()
+                  timestamp: Date.now(),
+                  sucursalId:
+                    data.payload && 'sucursalId' in data.payload
+                      ? data.payload.sucursalId
+                      : undefined,
                 })
                 break
 

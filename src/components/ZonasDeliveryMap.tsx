@@ -31,7 +31,14 @@ interface ZonaDelivery {
     precio: string
     poligono: Coordenada[]
     color: string | null
+    sucursalId: number | null
     createdAt: string
+}
+
+interface Sucursal {
+    id: number
+    nombre: string
+    activo: boolean
 }
 
 const ZONE_COLORS = ['#FF7A00', '#3b82f6', '#ef4444', '#22c55e', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']
@@ -113,6 +120,7 @@ function FitBounds({ zonas }: { zonas: ZonaDelivery[] }) {
 export default function ZonasDeliveryMap() {
     const token = useAuthStore((state) => state.token)
     const [zonas, setZonas] = useState<ZonaDelivery[]>([])
+    const [sucursales, setSucursales] = useState<Sucursal[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
 
@@ -124,6 +132,7 @@ export default function ZonasDeliveryMap() {
     const [formNombre, setFormNombre] = useState('')
     const [formPrecio, setFormPrecio] = useState('')
     const [formColor, setFormColor] = useState('')
+    const [formSucursalId, setFormSucursalId] = useState<number | null>(null)
 
     const [editingZona, setEditingZona] = useState<ZonaDelivery | null>(null)
 
@@ -143,6 +152,21 @@ export default function ZonasDeliveryMap() {
 
     useEffect(() => { fetchZonas() }, [token])
 
+    useEffect(() => {
+        if (!token) return
+        const fetchSucursales = async () => {
+            try {
+                const url = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+                const res = await fetch(`${url}/sucursales/list`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                })
+                const data = await res.json()
+                if (data.success) setSucursales(data.data.filter((s: Sucursal) => s.activo))
+            } catch { /* ignore */ }
+        }
+        fetchSucursales()
+    }, [token])
+
     const handlePolygonCreated = (coords: Coordenada[]) => {
         const nextColor = getNextColor(zonas)
         setEditingZona(null) // Cerramos edición si estaba abierta
@@ -150,6 +174,7 @@ export default function ZonasDeliveryMap() {
         setFormNombre('')
         setFormPrecio('')
         setFormColor(nextColor)
+        setFormSucursalId(null)
     }
 
     const handleOpenEdit = (zona: ZonaDelivery) => {
@@ -158,11 +183,13 @@ export default function ZonasDeliveryMap() {
         setFormNombre(zona.nombre)
         setFormPrecio(zona.precio)
         setFormColor(zona.color || '')
+        setFormSucursalId(zona.sucursalId ?? null)
     }
 
     const closeOverlay = () => {
         setPendingPolygon(null)
         setEditingZona(null)
+        setFormSucursalId(null)
     }
 
     const handleSaveZona = async () => {
@@ -178,6 +205,7 @@ export default function ZonasDeliveryMap() {
                     nombre: formNombre,
                     precio: formPrecio,
                     color: formColor || undefined,
+                    sucursalId: formSucursalId,
                 }) as { success: boolean; data: ZonaDelivery }
 
                 if (res.success) {
@@ -192,6 +220,7 @@ export default function ZonasDeliveryMap() {
                     precio: formPrecio,
                     poligono: pendingPolygon,
                     color: formColor || undefined,
+                    sucursalId: formSucursalId,
                 }) as { success: boolean; data: ZonaDelivery }
 
                 if (res.success) {
@@ -262,6 +291,11 @@ export default function ZonasDeliveryMap() {
                                         />
                                         <h4 className="font-bold text-base truncate">{zona.nombre}</h4>
                                     </div>
+                                    {zona.sucursalId != null && sucursales.length > 0 && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            {sucursales.find(s => s.id === zona.sucursalId)?.nombre || ''}
+                                        </p>
+                                    )}
                                     <div className="flex items-center justify-between mt-auto pt-3 border-t border-zinc-200/50 dark:border-zinc-800/50">
                                         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Costo</span>
                                         <span className="font-black text-lg text-foreground">${parseFloat(zona.precio).toFixed(0)}</span>
@@ -391,6 +425,40 @@ export default function ZonasDeliveryMap() {
                                             />
                                         </div>
                                     </div>
+                                    {sucursales.length > 1 && (
+                                        <div className="space-y-1">
+                                            <Label className={phantomLabelClass}>Sucursal asignada</Label>
+                                            <div className="flex flex-col gap-2">
+                                                <div
+                                                    onClick={() => setFormSucursalId(null)}
+                                                    className={cn(
+                                                        "flex items-center gap-3 px-4 py-3 rounded-2xl border-2 cursor-pointer transition-colors",
+                                                        formSucursalId === null
+                                                            ? "border-[#FF7A00] bg-orange-50/50 dark:bg-orange-950/20"
+                                                            : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-300"
+                                                    )}
+                                                >
+                                                    <div className={cn("h-2 w-2 rounded-full shrink-0", formSucursalId === null ? "bg-[#FF7A00]" : "bg-zinc-300")} />
+                                                    <span className="text-sm font-medium text-muted-foreground">Sin asignar (todas las sucursales)</span>
+                                                </div>
+                                                {sucursales.map(s => (
+                                                    <div
+                                                        key={s.id}
+                                                        onClick={() => setFormSucursalId(s.id)}
+                                                        className={cn(
+                                                            "flex items-center gap-3 px-4 py-3 rounded-2xl border-2 cursor-pointer transition-colors",
+                                                            formSucursalId === s.id
+                                                                ? "border-[#FF7A00] bg-orange-50/50 dark:bg-orange-950/20"
+                                                                : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-300"
+                                                        )}
+                                                    >
+                                                        <div className={cn("h-2 w-2 rounded-full shrink-0", formSucursalId === s.id ? "bg-[#FF7A00]" : "bg-zinc-300")} />
+                                                        <span className="text-sm font-semibold text-foreground">{s.nombre}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="flex gap-2 mt-6">

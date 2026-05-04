@@ -72,6 +72,16 @@ const phantomCardClass = "bg-white dark:bg-zinc-950 rounded-[32px] shadow-xl sha
 const phantomInputClass = "h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
 const phantomLabelClass = "text-sm font-medium text-foreground ml-1 mb-1.5 block"
 
+interface Sucursal {
+  id: number
+  nombre: string
+  direccion: string | null
+  whatsappEnabled: boolean
+  whatsappNumber: string | null
+  rapiboyToken: string | null
+  activo: boolean
+}
+
 // ─────────────────────────────────────────────
 // Small helper: row toggle for feature switches
 // ─────────────────────────────────────────────
@@ -162,6 +172,20 @@ const Perfil = () => {
   const [imageLightBase64, setImageLightBase64] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('general')
 
+  const [sucursales, setSucursales] = useState<Sucursal[]>([])
+  const [sucursalesLoaded, setSucursalesLoaded] = useState(false)
+  const [sucursalDialogOpen, setSucursalDialogOpen] = useState(false)
+  const [editingSucursal, setEditingSucursal] = useState<Sucursal | null>(null)
+  const [isSavingSucursal, setIsSavingSucursal] = useState(false)
+  const [sucursalForm, setSucursalForm] = useState({
+    nombre: '',
+    direccion: '',
+    whatsappEnabled: false,
+    whatsappNumber: '',
+    rapiboyToken: '',
+    activo: true,
+  })
+
   // Estados de carga
   const [isDisconnectingMP, setIsDisconnectingMP] = useState(false)
   const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
@@ -232,6 +256,25 @@ const Perfil = () => {
     }
     cargarHorarios()
   }, [token])
+
+  useEffect(() => {
+    if (activeTab !== 'sucursales' || sucursalesLoaded) return
+    const fetchSucursales = async () => {
+      if (!token) return
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/sucursales/list`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (data.success && Array.isArray(data.data)) setSucursales(data.data)
+      } catch {
+        toast.error('Error al cargar sucursales')
+      } finally {
+        setSucursalesLoaded(true)
+      }
+    }
+    void fetchSucursales()
+  }, [activeTab, sucursalesLoaded, token])
 
   const agregarTurno = (dia: number) => {
     setHorarios((prev) => ({
@@ -742,6 +785,98 @@ const Perfil = () => {
     }
   }
 
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+
+  const abrirCrearSucursal = () => {
+    setEditingSucursal(null)
+    setSucursalForm({
+      nombre: '',
+      direccion: '',
+      whatsappEnabled: false,
+      whatsappNumber: '',
+      rapiboyToken: '',
+      activo: true,
+    })
+    setSucursalDialogOpen(true)
+  }
+
+  const abrirEditarSucursal = (s: Sucursal) => {
+    setEditingSucursal(s)
+    setSucursalForm({
+      nombre: s.nombre,
+      direccion: s.direccion || '',
+      whatsappEnabled: s.whatsappEnabled,
+      whatsappNumber: s.whatsappNumber || '',
+      rapiboyToken: s.rapiboyToken || '',
+      activo: s.activo,
+    })
+    setSucursalDialogOpen(true)
+  }
+
+  const handleGuardarSucursal = async () => {
+    if (!token || !sucursalForm.nombre.trim()) {
+      toast.error('El nombre es requerido')
+      return
+    }
+    setIsSavingSucursal(true)
+    try {
+      const body = {
+        ...sucursalForm,
+        direccion: sucursalForm.direccion || null,
+        whatsappNumber: sucursalForm.whatsappNumber || null,
+        rapiboyToken: sucursalForm.rapiboyToken || null,
+      }
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      }
+      const url = editingSucursal
+        ? `${apiBase}/sucursales/${editingSucursal.id}`
+        : `${apiBase}/sucursales/create`
+      const res = await fetch(url, {
+        method: editingSucursal ? 'PUT' : 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(editingSucursal ? 'Sucursal actualizada' : 'Sucursal creada')
+        setSucursalesLoaded(false)
+        setSucursalDialogOpen(false)
+      } else {
+        toast.error(data.message || 'Error al guardar')
+      }
+    } catch {
+      toast.error('Error de conexión')
+    } finally {
+      setIsSavingSucursal(false)
+    }
+  }
+
+  const handleEliminarSucursal = async (id: number) => {
+    if (!token) return
+    try {
+      const res = await fetch(`${apiBase}/sucursales/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success('Sucursal desactivada')
+        setSucursales((prev) => prev.filter((s) => s.id !== id))
+        setSucursalDialogOpen(false)
+        setEditingSucursal(null)
+      } else {
+        toast.error(data.message || 'Error al eliminar')
+      }
+    } catch {
+      toast.error('Error al eliminar')
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
@@ -758,6 +893,7 @@ const Perfil = () => {
     { value: 'pagos', icon: CreditCard, label: 'Pagos' },
     { value: 'delivery', icon: Truck, label: 'Delivery' },
     { value: 'experiencia', icon: Palette, label: 'Experiencia' },
+    { value: 'sucursales', label: 'Sucursales', icon: Store },
     { value: 'hardware', icon: Printer, label: 'Hardware' },
   ]
 
@@ -1398,6 +1534,95 @@ const Perfil = () => {
           </TabsContent>
 
           {/* ─────────────────────────────────────────────
+              TAB: SUCURSALES
+          ───────────────────────────────────────────── */}
+          <TabsContent value="sucursales" className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
+            <div className={phantomCardClass}>
+              <div className="p-6 sm:p-8">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+                  <div>
+                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
+                      <Store className="h-6 w-6 text-[#FF7A00]" />
+                      Sucursales
+                    </h2>
+                    <p className="text-muted-foreground max-w-xl">
+                      Cada sucursal tiene su propia comandera y WhatsApp. Los pedidos se enrutan automáticamente según la zona de delivery.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={abrirCrearSucursal}
+                    className="shrink-0 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold gap-2 shadow-md shadow-orange-500/20"
+                  >
+                    <Plus className="h-4 w-4" /> Nueva
+                  </Button>
+                </div>
+
+                {!sucursalesLoaded ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
+                  </div>
+                ) : sucursales.length === 0 ? (
+                  <div className="text-center py-16 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-[24px]">
+                    <div className="h-16 w-16 bg-orange-50 dark:bg-orange-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Store className="h-8 w-8 text-[#FF7A00]" />
+                    </div>
+                    <h3 className="text-lg font-bold mb-2">Sin sucursales configuradas</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                      Agregá tu primera sucursal para habilitar el ruteo automático de pedidos.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {sucursales.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between p-5 rounded-[20px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 hover:border-[#FF7A00]/40 transition-colors gap-3"
+                      >
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div
+                            className={cn(
+                              'h-10 w-10 rounded-xl flex items-center justify-center shrink-0',
+                              s.activo ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-zinc-200 dark:bg-zinc-800',
+                            )}
+                          >
+                            <Store className={cn('h-5 w-5', s.activo ? 'text-[#FF7A00]' : 'text-muted-foreground')} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-bold text-base truncate">{s.nombre}</p>
+                              {!s.activo && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  Inactiva
+                                </Badge>
+                              )}
+                              {s.whatsappEnabled && s.whatsappNumber && (
+                                <Badge className="bg-green-500/10 text-green-700 dark:text-green-400 border-none text-[10px]">
+                                  WA
+                                </Badge>
+                              )}
+                            </div>
+                            {s.direccion && (
+                              <p className="text-sm text-muted-foreground truncate mt-0.5">{s.direccion}</p>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 rounded-xl shrink-0"
+                          onClick={() => abrirEditarSucursal(s)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ─────────────────────────────────────────────
               TAB: HARDWARE
           ───────────────────────────────────────────── */}
           <TabsContent value="hardware" className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
@@ -1633,6 +1858,126 @@ const Perfil = () => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sucursalDialogOpen} onOpenChange={setSucursalDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 p-0 gap-0">
+          <div className="px-6 pt-7 pb-5 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                  <Store className="h-4 w-4 text-[#FF7A00]" />
+                </div>
+                {editingSucursal ? 'Editar Sucursal' : 'Nueva Sucursal'}
+              </DialogTitle>
+            </DialogHeader>
+          </div>
+          <div className="p-6 sm:p-8 space-y-5 bg-white dark:bg-zinc-950">
+            <div className="space-y-1">
+              <Label className={phantomLabelClass}>Nombre *</Label>
+              <Input
+                value={sucursalForm.nombre}
+                onChange={(e) => setSucursalForm((p) => ({ ...p, nombre: e.target.value }))}
+                placeholder="Ej: Sucursal Centro"
+                className={phantomInputClass}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className={phantomLabelClass}>Dirección</Label>
+              <Input
+                value={sucursalForm.direccion}
+                onChange={(e) => setSucursalForm((p) => ({ ...p, direccion: e.target.value }))}
+                placeholder="Ej: San Martín 123"
+                className={phantomInputClass}
+              />
+            </div>
+            <Separator className="border-zinc-100 dark:border-zinc-800" />
+            <div className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+              <div>
+                <p className="font-semibold text-sm">WhatsApp de Notificaciones</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Esta sucursal recibe los pedidos por WhatsApp propio.</p>
+              </div>
+              <Switch
+                checked={sucursalForm.whatsappEnabled}
+                onCheckedChange={(v) => setSucursalForm((p) => ({ ...p, whatsappEnabled: v }))}
+              />
+            </div>
+            {sucursalForm.whatsappEnabled && (
+              <div className="space-y-1 animate-in fade-in slide-in-from-top-2">
+                <Label className={phantomLabelClass}>Número de WhatsApp</Label>
+                <Input
+                  value={sucursalForm.whatsappNumber}
+                  onChange={(e) => setSucursalForm((p) => ({ ...p, whatsappNumber: e.target.value }))}
+                  placeholder="5491123456789"
+                  className={phantomInputClass}
+                />
+                <p className="text-xs text-muted-foreground pl-1">
+                  Formato internacional sin &apos;+&apos;. Ej: 5493425001122
+                </p>
+              </div>
+            )}
+            <Separator className="border-zinc-100 dark:border-zinc-800" />
+            <div className="space-y-1">
+              <Label className={phantomLabelClass}>
+                Token Rapiboy <span className="font-normal text-muted-foreground">(opcional)</span>
+              </Label>
+              <Input
+                type="password"
+                value={sucursalForm.rapiboyToken}
+                onChange={(e) => setSucursalForm((p) => ({ ...p, rapiboyToken: e.target.value }))}
+                placeholder="Si esta sucursal usa Rapiboy propio"
+                className={phantomInputClass}
+              />
+            </div>
+            {editingSucursal && (
+              <div className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                <div>
+                  <p className="font-semibold text-sm">Sucursal activa</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Las sucursales inactivas no reciben pedidos.</p>
+                </div>
+                <Switch
+                  checked={sucursalForm.activo}
+                  onCheckedChange={(v) => setSucursalForm((p) => ({ ...p, activo: v }))}
+                />
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-5 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
+            {editingSucursal ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 h-12 rounded-xl font-semibold justify-start sm:justify-center"
+                onClick={() => void handleEliminarSucursal(editingSucursal.id)}
+                disabled={isSavingSucursal}
+              >
+                <Trash2 className="h-4 w-4 mr-2" /> Desactivar
+              </Button>
+            ) : (
+              <span className="hidden sm:block sm:w-24" aria-hidden />
+            )}
+            <div className="flex gap-3 sm:ml-auto w-full sm:w-auto justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setSucursalDialogOpen(false)}
+                disabled={isSavingSucursal}
+                className="h-12 px-6 rounded-xl font-medium flex-1 sm:flex-none"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleGuardarSucursal()}
+                disabled={isSavingSucursal}
+                className="h-12 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20 flex-1 sm:flex-none"
+              >
+                {isSavingSucursal ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+                Guardar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

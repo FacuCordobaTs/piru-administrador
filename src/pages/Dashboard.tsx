@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,14 +8,16 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi } from '@/lib/api'
+import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi } from '@/lib/api'
+import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
 import {
   Loader2, Plus, Clock, Trash2, AlertCircle,
   User, ArrowLeft, Printer, Truck, MapPin,
   Phone, ShoppingBag, CalendarDays, Tag, Settings, CheckCircle2,
-  Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle, MessageCircle
+  Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle,
+  MessageCircle, Store,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { usePrinter } from '@/context/PrinterContext'
@@ -37,6 +39,20 @@ interface UnifiedPedido {
   nombreCliente: string | null; telefono: string | null; direccion?: string | null; notas?: string | null;
   items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
   montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
+  sucursalId?: number | null;
+}
+
+const STORAGE_SUCURSAL = 'sucursal_activa_id'
+
+function readStoredSucursalId(): number | null {
+  try {
+    const saved = localStorage.getItem(STORAGE_SUCURSAL)
+    if (saved == null || saved === '' || saved === 'all') return null
+    const n = parseInt(saved, 10)
+    return Number.isNaN(n) ? null : n
+  } catch {
+    return null
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -160,6 +176,21 @@ const Dashboard = () => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [sendingNotification, setSendingNotification] = useState<string | null>(null)
 
+  const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
+  const [sucursalNombre, setSucursalNombre] = useState<string>('')
+  const [showSucursalSelector, setShowSucursalSelector] = useState(false)
+  const [sucursalesList, setSucursalesList] = useState<SucursalListRow[]>([])
+  const [sucursalesLoaded, setSucursalesLoaded] = useState(false)
+  const [prefsReady, setPrefsReady] = useState(false)
+
+  const sucursalNombrePorId = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const s of sucursalesList) {
+      m.set(s.id, s.nombre)
+    }
+    return m
+  }, [sucursalesList])
+
   // Estados Modal Pagos
   const [metodosPagoModalOpen, setMetodosPagoModalOpen] = useState(false)
   const [cfgMpCheckout, setCfgMpCheckout] = useState(true)
@@ -171,6 +202,81 @@ const Dashboard = () => {
   const [savingMetodosPago, setSavingMetodosPago] = useState(false)
 
   // ─────────────────────────────────────────────
+  // SUCURSALES + PREFS
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!token) {
+      setPrefsReady(true)
+      setSucursalesLoaded(true)
+      return
+    }
+    setSucursalesLoaded(false)
+    setPrefsReady(false)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res: any = await sucursalesApi.list(token)
+        if (!cancelled && res.success && Array.isArray(res.data)) {
+          setSucursalesList(res.data as SucursalListRow[])
+        }
+      } catch (e) {
+        console.error('Error cargando sucursales:', e)
+      } finally {
+        if (!cancelled) setSucursalesLoaded(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token || !sucursalesLoaded) return
+    const activas = sucursalesList.filter((s) => s.activo)
+    if (activas.length === 0) {
+      setSucursalNombre('')
+      setPrefsReady(true)
+      setShowSucursalSelector(false)
+      return
+    }
+    const raw = localStorage.getItem(STORAGE_SUCURSAL)
+    if (raw == null || raw === '') {
+      setShowSucursalSelector(true)
+      return
+    }
+    if (raw === 'all') {
+      setSucursalActivaId(null)
+      setSucursalNombre('')
+      setPrefsReady(true)
+      setShowSucursalSelector(false)
+      return
+    }
+    const id = parseInt(raw, 10)
+    if (Number.isNaN(id) || !activas.some((s) => s.id === id)) {
+      setShowSucursalSelector(true)
+      return
+    }
+    setSucursalActivaId(id)
+    setSucursalNombre(activas.find((s) => s.id === id)?.nombre ?? '')
+    setPrefsReady(true)
+    setShowSucursalSelector(false)
+  }, [token, sucursalesLoaded, sucursalesList])
+
+  const applySucursalChoice = useCallback((id: number | null, nombreVisual: string) => {
+    setSucursalActivaId(id)
+    setSucursalNombre(nombreVisual)
+    if (id == null) localStorage.setItem(STORAGE_SUCURSAL, 'all')
+    else localStorage.setItem(STORAGE_SUCURSAL, String(id))
+    setShowSucursalSelector(false)
+    setPrefsReady(true)
+  }, [])
+
+  useEffect(() => {
+    setPage(1)
+    setHasMore(true)
+  }, [sucursalActivaId])
+
+  // ─────────────────────────────────────────────
   // FETCH Y WEBSOCKETS
   // ─────────────────────────────────────────────
   const fetchPedidos = useCallback(async (pageNum = 1, append = false) => {
@@ -179,7 +285,14 @@ const Dashboard = () => {
     else setIsLoadingMore(true)
 
     try {
-      const response = await pedidoUnificadoApi.getAll(token, 'all', pageNum, 50) as any
+      const response = await pedidoUnificadoApi.getAll(
+        token,
+        'all',
+        pageNum,
+        50,
+        undefined,
+        sucursalActivaId,
+      ) as any
       if (response.success && response.data) {
         const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway') as UnifiedPedido[]
 
@@ -207,12 +320,25 @@ const Dashboard = () => {
       setIsLoading(false)
       setIsLoadingMore(false)
     }
-  }, [token])
+  }, [token, sucursalActivaId])
 
-  useEffect(() => { fetchPedidos(1, false) }, [fetchPedidos])
   useEffect(() => {
-    if (lastUpdate && (lastUpdate.type === 'delivery' || lastUpdate.type === 'takeaway')) fetchPedidos(1, false)
-  }, [lastUpdate, fetchPedidos])
+    if (!token || !prefsReady) return
+    fetchPedidos(1, false)
+  }, [token, prefsReady, fetchPedidos])
+
+  useEffect(() => {
+    if (!prefsReady || !lastUpdate) return
+    if (lastUpdate.type !== 'delivery' && lastUpdate.type !== 'takeaway') return
+    if (
+      sucursalActivaId != null &&
+      lastUpdate.sucursalId !== undefined &&
+      lastUpdate.sucursalId !== sucursalActivaId
+    ) {
+      return
+    }
+    fetchPedidos(1, false)
+  }, [lastUpdate, fetchPedidos, sucursalActivaId, prefsReady])
 
   const handleLoadMore = () => {
     if (!hasMore || isLoadingMore) return
@@ -410,6 +536,22 @@ const Dashboard = () => {
   const activeOrders = unifiedPedidos.filter(p => p.estado !== 'archived')
   const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
 
+  if (!prefsReady) {
+    const activasParaModal = sucursalesList.filter((s) => s.activo)
+    return (
+      <div className="relative h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
+        <SucursalSelector
+          open={showSucursalSelector && activasParaModal.length > 0}
+          onOpenChange={setShowSucursalSelector}
+          sucursalesActivas={activasParaModal}
+          onSelect={(id, nombreEtiqueta) => applySucursalChoice(id, nombreEtiqueta)}
+          requireChoice
+        />
+      </div>
+    )
+  }
+
   if (isLoading && unifiedPedidos.length === 0) {
     return <div className="h-[calc(100vh-4rem)] flex items-center justify-center bg-background"><Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" /></div>
   }
@@ -432,6 +574,21 @@ const Dashboard = () => {
             <div className={cn("h-2 w-2 rounded-full", isConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} />
             {isConnected ? 'En vivo' : 'Offline'}
           </Badge>
+          {sucursalNombre ? (
+            <Badge variant="outline" className="hidden sm:flex text-xs border-[#FF7A00]/25 text-foreground">
+              <Store className="h-3 w-3 mr-1 text-[#FF7A00]" />
+              {sucursalNombre}
+            </Badge>
+          ) : null}
+          {sucursalesList.some((s) => s.activo) ? (
+            <button
+              type="button"
+              className="hidden sm:inline text-[11px] font-semibold text-muted-foreground underline-offset-4 hover:text-[#FF7A00] hover:underline"
+              onClick={() => setShowSucursalSelector(true)}
+            >
+              Cambiar sucursal
+            </button>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
@@ -505,6 +662,15 @@ const Dashboard = () => {
                                 {pagoBadge && (
                                   <Badge variant="outline" className={cn("text-[9px] px-1 py-0 h-4 border-none", pagoBadge.className)}>
                                     {pagoBadge.icon && <span className="mr-1">{pagoBadge.icon}</span>}{pagoBadge.label}
+                                  </Badge>
+                                )}
+                                {sucursalActivaId === null && pedido.sucursalId != null && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[9px] px-1 py-0 h-4 max-w-[120px] truncate border-[#FF7A00]/20 text-[#FF7A00]"
+                                  >
+                                    <Store className="h-2.5 w-2.5 mr-0.5 shrink-0" />
+                                    {sucursalNombrePorId.get(pedido.sucursalId) ?? `Suc. #${pedido.sucursalId}`}
                                   </Badge>
                                 )}
                               </div>
@@ -1203,6 +1369,9 @@ const Dashboard = () => {
                 <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
                   <div className="flex-1 space-y-1">
                     <Label htmlFor="cfg-cash" className="text-sm font-bold">Efectivo</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Podés ofrecerlo junto a Mercado Pago y transferencias automáticas. El cliente elige al pagar; el pedido entra en el panel para cobrar en caja.
+                    </p>
                   </div>
                   <Switch id="cfg-cash" checked={cfgEfectivo} onCheckedChange={setCfgEfectivo} />
                 </div>
@@ -1223,6 +1392,13 @@ const Dashboard = () => {
       </Dialog>
 
       <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} />
+
+      <SucursalSelector
+        open={showSucursalSelector && sucursalesList.filter((s) => s.activo).length > 0 && prefsReady}
+        onOpenChange={setShowSucursalSelector}
+        sucursalesActivas={sucursalesList.filter((s) => s.activo)}
+        onSelect={(id, nombreEtiqueta) => applySucursalChoice(id, nombreEtiqueta)}
+      />
     </div>
   )
 }

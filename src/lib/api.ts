@@ -990,13 +990,21 @@ export const notificacionesApi = {
 
 // Pedido Unificado API (delivery + takeaway) - backend único
 export const pedidoUnificadoApi = {
-  getAll: async (token: string, tipo: 'delivery' | 'takeaway' | 'all' = 'all', page = 1, limit = 20, estado?: string) => {
+  getAll: async (
+    token: string,
+    tipo: 'delivery' | 'takeaway' | 'all' = 'all',
+    page = 1,
+    limit = 20,
+    estado?: string,
+    sucursalId?: number | null,
+  ) => {
     const params = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
       tipo,
     })
     if (estado) params.append('estado', estado)
+    if (sucursalId != null) params.append('sucursalId', String(sucursalId))
     return fetchApi(`/pedido-unificado/list?${params}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
@@ -1099,6 +1107,15 @@ export const takeawayApi = {
   ) => pedidoUnificadoApi.marcarPagado(token, id, metodoPagoOrOpts),
 }
 
+export const sucursalesApi = {
+  list: async (token: string) => {
+    return fetchApi('/sucursales/list', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+}
+
 // Códigos de Descuento API
 export const codigosDescuentoApi = {
   getAll: async (token: string) => {
@@ -1191,6 +1208,7 @@ export const zonasDeliveryApi = {
       precio: string
       poligono: Array<{ lat: number; lng: number }>
       color?: string
+      sucursalId?: number | null
     }
   ) => {
     return fetchApi('/zona-delivery/create', {
@@ -1210,6 +1228,7 @@ export const zonasDeliveryApi = {
       precio?: string
       poligono?: Array<{ lat: number; lng: number }>
       color?: string
+      sucursalId?: number | null
     }
   ) => {
     return fetchApi(`/zona-delivery/${id}`, {
