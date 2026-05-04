@@ -1,0 +1,11 @@
+{
+    "identifier": "default",
+    "description": "Permisos base de la app",
+    "windows": ["main"],
+    "permissions": [
+      "core:default",
+      "log:default",
+      "process:allow-restart",
+      "process:allow-exit"
+    ]
+  }
