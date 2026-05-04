@@ -1,10 +1,10 @@
 {
-    "identifier": "desktop",
-    "description": "Permisos desktop (actualizaciones)",
-    "windows": ["main"],
-    "platforms": ["windows", "linux", "macos"],
-    "permissions": [
-      "updater:allow-check",
-      "updater:allow-download-and-install"
-    ]
-  }
+  "identifier": "desktop",
+  "description": "Permisos desktop (actualizaciones)",
+  "windows": ["main"],
+  "platforms": ["windows", "linux", "macOS"],
+  "permissions": [
+    "updater:allow-check",
+    "updater:allow-download-and-install"
+  ]
+}
