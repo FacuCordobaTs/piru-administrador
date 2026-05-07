@@ -24,10 +24,21 @@ interface PedidoLike {
     telefono?: string | null
     deliveryFee?: number
     notas?: string | null // <-- AGREGA ESTA LÍNEA
+    metodoPago?: string | null
     /** Monto descontado por cupón (ya reflejado en total del pedido) */
     montoDescuento?: string | number | null
     /** Texto del cupón aplicado (ej. ALFAJOR10) */
     codigoDescuentoCodigo?: string | null
+}
+
+const formatMetodoPagoPrinter = (metodoPago: string | null | undefined): string => {
+    const m = String(metodoPago || '').trim()
+    if (m.includes('mercadopago')) return 'MercadoPago'
+    if (m.includes('transferencia_automatica_talo')) return 'Transf. Talo'
+    if (m.includes('transferencia_automatica_cucuru')) return 'Transf. Cucuru'
+    if (m.includes('manual_transfer') || m === 'transferencia') return 'Transf. Manual'
+    if (m === 'cash' || m === 'efectivo') return 'Efectivo'
+    return m ? m.toUpperCase() : 'NO ESPECIFICADO'
 }
 
 const getMontoDescuentoPedido = (pedido: PedidoLike): number => {
@@ -134,6 +145,14 @@ export const formatComanda = (
     if (pedido.notas) {
         commands.push(ESC + '!' + '\x08');
         commands.push(`NOTAS: ${pedido.notas}\n`);
+        commands.push(ESC + '!' + '\x00');
+        commands.push('--------------------------------\n');
+    }
+
+    if (pedido.metodoPago) {
+        const metodoFormateado = formatMetodoPagoPrinter(pedido.metodoPago);
+        commands.push(ESC + '!' + '\x08');
+        commands.push(`PAGO: ${metodoFormateado}\n`);
         commands.push(ESC + '!' + '\x00');
         commands.push('--------------------------------\n');
     }
@@ -293,6 +312,14 @@ export const formatFactura = (
     if (pedido.notas) {
         commands.push(ESC + '!' + '\x08');
         commands.push(`NOTAS: ${pedido.notas}\n`);
+        commands.push(ESC + '!' + '\x00');
+        commands.push('--------------------------------\n');
+    }
+
+    if (pedido.metodoPago) {
+        const metodoFormateado = formatMetodoPagoPrinter(pedido.metodoPago);
+        commands.push(ESC + '!' + '\x08');
+        commands.push(`PAGO: ${metodoFormateado}\n`);
         commands.push(ESC + '!' + '\x00');
         commands.push('--------------------------------\n');
     }

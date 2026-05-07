@@ -407,6 +407,7 @@ const Dashboard = () => {
             id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
             direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
             tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
+            metodoPago: pedido.metodoPago,
           }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
           printRaw(commandsToBytes(comandaData))
