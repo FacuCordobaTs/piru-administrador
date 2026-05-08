@@ -143,6 +143,27 @@ const metodoPagoListBadge = (metodoPago: string | null | undefined) => {
     return null
 }
 
+/** Cliente ya eligió efectivo o transferencia manual en el checkout: el panel solo confirma el cobro, no el método. */
+const pedidoCobroManualYaElegido = (metodoPago: string | null | undefined): boolean => {
+    const m = String(metodoPago || '').trim()
+    if (m === 'cash' || m === 'efectivo') return true
+    if (m.includes('manual_transfer') || m === 'transferencia') return true
+    return false
+}
+
+const resolveMetodoMarcarPagado = (
+    metodoPago: string | null | undefined,
+    override?: 'efectivo' | 'transferencia'
+): 'cash' | 'manual_transfer' => {
+    if (override) {
+        return override === 'efectivo' ? 'cash' : 'manual_transfer'
+    }
+    const m = String(metodoPago || '').trim()
+    if (m === 'cash' || m === 'efectivo') return 'cash'
+    if (m.includes('manual_transfer') || m === 'transferencia') return 'manual_transfer'
+    return 'manual_transfer'
+}
+
 const pedidoTieneCuponDescuento = (p: { montoDescuento?: string | number | null }) =>
     p.montoDescuento != null && parseFloat(String(p.montoDescuento)) > 0
 
@@ -447,7 +468,7 @@ const Dashboard = () => {
         if (!token) return
         setUpdatingPago(pedido.id.toString())
         try {
-            const mp = metodoOverrides ? (metodoOverrides === 'efectivo' ? 'cash' : 'manual_transfer') : (pedido.metodoPago === 'efectivo' ? 'cash' : 'manual_transfer')
+            const mp = resolveMetodoMarcarPagado(pedido.metodoPago, metodoOverrides)
             const res: any = (pedido.tipo === 'delivery'
                 ? await deliveryApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
                 : await takeawayApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp }))
@@ -954,11 +975,16 @@ const Dashboard = () => {
                                                             {selectedUnifiedPedido.pagado ? 'PAGO VERIFICADO' : 'PAGO PENDIENTE'}
                                                         </span>
                                                     </div>
-                                                    {selectedUnifiedPedido.pagado && metodoPagoListBadge(selectedUnifiedPedido.metodoPago) && (
-                                                        <Badge variant="outline" className="self-start bg-background border-border/50 text-muted-foreground">
-                                                            {metodoPagoListBadge(selectedUnifiedPedido.metodoPago)?.label}
-                                                        </Badge>
-                                                    )}
+                                                    {(() => {
+                                                        const b = metodoPagoListBadge(selectedUnifiedPedido.metodoPago)
+                                                        if (!b) return null
+                                                        return (
+                                                            <Badge variant="outline" className={cn('self-start text-xs border-none', b.className)}>
+                                                                {b.icon && <span className="mr-1">{b.icon}</span>}
+                                                                {b.label}
+                                                            </Badge>
+                                                        )
+                                                    })()}
                                                 </div>
 
                                                 {selectedUnifiedPedido.estado !== 'archived' && (
@@ -982,6 +1008,15 @@ const Dashboard = () => {
                                                                 Despachar Pedido
                                                             </Button>
                                                         </div>
+                                                    ) : pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago) ? (
+                                                        <Button
+                                                            className="w-full h-14 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-lg font-bold active:scale-[0.98] transition-transform shadow-sm"
+                                                            onClick={() => handleAprobarPago(selectedUnifiedPedido)}
+                                                            disabled={updatingPago === selectedUnifiedPedido.id.toString()}
+                                                        >
+                                                            {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+                                                            Cobrar
+                                                        </Button>
                                                     ) : (
                                                         <div className="flex gap-3">
                                                             <Button
@@ -1054,27 +1089,40 @@ const Dashboard = () => {
                                             {/* Acciones de cobro (solo si no está pagado) */}
                                             {!selectedUnifiedPedido.pagado && selectedUnifiedPedido.estado !== 'archived' && (
                                                 <div className="mb-8">
-                                                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Verificar y cobrar</p>
-                                                    <div className="flex gap-3">
+                                                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">
+                                                        {pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago) ? 'Confirmar cobro' : 'Verificar y cobrar'}
+                                                    </p>
+                                                    {pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago) ? (
                                                         <Button
-                                                            variant="outline"
-                                                            className="flex-1 h-12 rounded-xl bg-transparent border-border hover:bg-muted text-sm font-semibold shadow-sm"
-                                                            onClick={() => handleAprobarPago(selectedUnifiedPedido, 'efectivo')}
+                                                            className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-sm"
+                                                            onClick={() => handleAprobarPago(selectedUnifiedPedido)}
                                                             disabled={updatingPago === selectedUnifiedPedido.id.toString()}
                                                         >
-                                                            {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <span className="mr-1.5 text-lg">💵</span>}
-                                                            Efectivo
+                                                            {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                                            Cobrar
                                                         </Button>
-                                                        <Button
-                                                            variant="outline"
-                                                            className="flex-1 h-12 rounded-xl bg-transparent border-border hover:bg-muted text-sm font-semibold shadow-sm"
-                                                            onClick={() => handleAprobarPago(selectedUnifiedPedido, 'transferencia')}
-                                                            disabled={updatingPago === selectedUnifiedPedido.id.toString()}
-                                                        >
-                                                            {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <span className="mr-1.5 text-lg">🏦</span>}
-                                                            Transf.
-                                                        </Button>
-                                                    </div>
+                                                    ) : (
+                                                        <div className="flex gap-3">
+                                                            <Button
+                                                                variant="outline"
+                                                                className="flex-1 h-12 rounded-xl bg-transparent border-border hover:bg-muted text-sm font-semibold shadow-sm"
+                                                                onClick={() => handleAprobarPago(selectedUnifiedPedido, 'efectivo')}
+                                                                disabled={updatingPago === selectedUnifiedPedido.id.toString()}
+                                                            >
+                                                                {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <span className="mr-1.5 text-lg">💵</span>}
+                                                                Efectivo
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                className="flex-1 h-12 rounded-xl bg-transparent border-border hover:bg-muted text-sm font-semibold shadow-sm"
+                                                                onClick={() => handleAprobarPago(selectedUnifiedPedido, 'transferencia')}
+                                                                disabled={updatingPago === selectedUnifiedPedido.id.toString()}
+                                                            >
+                                                                {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <span className="mr-1.5 text-lg">🏦</span>}
+                                                                Transf.
+                                                            </Button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -1245,12 +1293,20 @@ const Dashboard = () => {
                                                                     className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#F97316] hover:bg-[#EA580C]" : "bg-emerald-600 hover:bg-emerald-700 shadow-[0_0_20px_rgba(5,150,105,0.15)]")}
                                                                     onClick={() => {
                                                                         if (selectedUnifiedPedido.pagado) handleEstadoChange(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id, 'archived')
+                                                                        else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
                                                                         else toast.error('Debes verificar el pago primero')
                                                                     }}
-                                                                    disabled={updatingPago === selectedUnifiedPedido.id.toString() || !selectedUnifiedPedido.pagado}
+                                                                    disabled={
+                                                                        updatingPago === selectedUnifiedPedido.id.toString()
+                                                                        || (!selectedUnifiedPedido.pagado && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago))
+                                                                    }
                                                                 >
                                                                     {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
-                                                                    {selectedUnifiedPedido.pagado ? 'Despachar Pedido' : 'Pendiente de Cobro'}
+                                                                    {selectedUnifiedPedido.pagado
+                                                                        ? 'Despachar Pedido'
+                                                                        : pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)
+                                                                            ? 'Cobrar'
+                                                                            : 'Pendiente de Cobro'}
                                                                 </Button>
                                                             </div>
                                                         )}
