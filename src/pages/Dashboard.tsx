@@ -20,6 +20,7 @@ import {
     MessageCircle, Store,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { Slider } from '@/components/ui/slider'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
@@ -433,6 +434,7 @@ const Dashboard = () => {
                         direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
                         tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                         metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
+                        horarioProgramado: pedido.horarioProgramado,
                     }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
                     printRaw(commandsToBytes(comandaData))
@@ -518,7 +520,7 @@ const Dashboard = () => {
     const handleConfirmarConDemora = async (pedido: UnifiedPedido) => {
         if (!token) return
         const key = pedido.id.toString()
-        const minutos = parseInt(demoraInputs[key] || '0', 10)
+        const minutos = parseInt(demoraInputs[key] ?? '30', 10)
         if (isNaN(minutos) || minutos < 0) {
             toast.error('Ingresá una demora válida en minutos')
             return
@@ -785,40 +787,13 @@ const Dashboard = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* Confirmación con demora (modo confirmación manual) */}
-                                                        {restauranteStore?.modoConfirmacionManual && pedido.notificarWhatsapp && pedido.telefono && (
-                                                            <div className="mt-2 pt-2 border-t border-border" onClick={e => e.stopPropagation()}>
-                                                                {pedido.demoraMinutos != null ? (
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                                                                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                                                                            Confirmado · {pedido.demoraMinutos} min
-                                                                        </span>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <input
-                                                                            type="number"
-                                                                            min="0"
-                                                                            max="999"
-                                                                            placeholder="min"
-                                                                            value={demoraInputs[pedido.id.toString()] ?? ''}
-                                                                            onChange={e => setDemoraInputs(prev => ({ ...prev, [pedido.id.toString()]: e.target.value }))}
-                                                                            className="w-14 h-7 rounded-md border border-border bg-background text-xs text-center px-1 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]"
-                                                                        />
-                                                                        <span className="text-[10px] text-muted-foreground">min</span>
-                                                                        <button
-                                                                            className="h-7 px-2 rounded-md bg-[#FF7A00] text-white flex items-center gap-1 hover:bg-[#E66E00] transition-colors disabled:opacity-50 text-[10px] font-bold"
-                                                                            onClick={() => handleConfirmarConDemora(pedido)}
-                                                                            disabled={confirmandoDemora === pedido.id.toString()}
-                                                                        >
-                                                                            {confirmandoDemora === pedido.id.toString()
-                                                                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                                                                : <MessageCircle className="h-3 w-3" />}
-                                                                            Confirmar
-                                                                        </button>
-                                                                    </div>
-                                                                )}
+                                                        {/* Indicador de confirmación en la tarjeta */}
+                                                        {restauranteStore?.modoConfirmacionManual && pedido.notificarWhatsapp && pedido.telefono && pedido.demoraMinutos != null && (
+                                                            <div className="mt-2 pt-2 border-t border-border flex items-center gap-1.5">
+                                                                <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                                                    Confirmado · {pedido.demoraMinutos} min
+                                                                </span>
                                                             </div>
                                                         )}
                                                     </Card>
@@ -934,6 +909,7 @@ const Dashboard = () => {
                                                             notas: selectedUnifiedPedido.notas,
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
                                                             sucursalNombre: selectedUnifiedPedido.sucursalNombre,
+                                                            horarioProgramado: selectedUnifiedPedido.horarioProgramado,
                                                         }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                                                         printRaw(commandsToBytes(data))
                                                     }}>
@@ -1127,6 +1103,63 @@ const Dashboard = () => {
                                                         </div>
                                                     )
                                                 )}
+
+                                                {/* Confirmar con demora — slider */}
+                                                {restauranteStore?.modoConfirmacionManual && selectedUnifiedPedido.notificarWhatsapp && selectedUnifiedPedido.telefono && selectedUnifiedPedido.estado !== 'archived' && (
+                                                    <div className="space-y-3 p-4 rounded-2xl bg-muted/30 border border-border">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="h-7 w-7 rounded-lg bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
+                                                                    <MessageCircle className="h-3.5 w-3.5 text-[#FF7A00]" />
+                                                                </div>
+                                                                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Confirmar al cliente</span>
+                                                            </div>
+                                                            {selectedUnifiedPedido.demoraMinutos != null && (
+                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0">
+                                                                    <CheckCircle className="h-3 w-3" /> {selectedUnifiedPedido.demoraMinutos} min
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="flex items-baseline justify-between px-1 py-1">
+                                                            <span className="text-xs text-muted-foreground">Demora estimada</span>
+                                                            {(() => {
+                                                                const val = parseInt(demoraInputs[selectedUnifiedPedido.id.toString()] ?? '30', 10)
+                                                                return val === 0
+                                                                    ? <span className="text-sm font-bold text-muted-foreground">Lo antes posible</span>
+                                                                    : <span className="text-3xl font-black text-[#FF7A00] leading-none">{val}<span className="text-sm font-semibold ml-1 text-muted-foreground">min</span></span>
+                                                            })()}
+                                                        </div>
+
+                                                        <Slider
+                                                            min={0}
+                                                            max={120}
+                                                            step={5}
+                                                            value={[parseInt(demoraInputs[selectedUnifiedPedido.id.toString()] ?? '30', 10)]}
+                                                            onValueChange={([val]) => setDemoraInputs(prev => ({ ...prev, [selectedUnifiedPedido.id.toString()]: String(val) }))}
+                                                            className="[&_[data-slot=slider-range]]:bg-[#FF7A00] [&_[data-slot=slider-thumb]]:border-[#FF7A00] [&_[data-slot=slider-thumb]]:size-5"
+                                                        />
+
+                                                        <div className="flex justify-between text-[10px] text-muted-foreground px-0.5 -mt-1">
+                                                            <span>0</span>
+                                                            <span>30 min</span>
+                                                            <span>60 min</span>
+                                                            <span>90 min</span>
+                                                            <span>120 min</span>
+                                                        </div>
+
+                                                        <Button
+                                                            className="w-full h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold"
+                                                            onClick={() => handleConfirmarConDemora(selectedUnifiedPedido)}
+                                                            disabled={confirmandoDemora === selectedUnifiedPedido.id.toString()}
+                                                        >
+                                                            {confirmandoDemora === selectedUnifiedPedido.id.toString()
+                                                                ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                                : <MessageCircle className="h-4 w-4 mr-2" />}
+                                                            {selectedUnifiedPedido.demoraMinutos != null ? 'Reenviar confirmación' : 'Confirmar y avisar por WhatsApp'}
+                                                        </Button>
+                                                    </div>
+                                                )}
                                             </div>
 
                                         </div>
@@ -1221,6 +1254,54 @@ const Dashboard = () => {
                                                             </Button>
                                                         </div>
                                                     )}
+                                                </div>
+                                            )}
+
+                                            {/* Confirmar con demora — slider mobile */}
+                                            {restauranteStore?.modoConfirmacionManual && selectedUnifiedPedido.notificarWhatsapp && selectedUnifiedPedido.telefono && selectedUnifiedPedido.estado !== 'archived' && (
+                                                <div className="mb-8 space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Confirmar al cliente</p>
+                                                        {selectedUnifiedPedido.demoraMinutos != null && (
+                                                            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                                                <CheckCircle className="h-3 w-3" /> {selectedUnifiedPedido.demoraMinutos} min
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-3">
+                                                        <div className="flex items-baseline justify-between">
+                                                            <span className="text-xs text-muted-foreground">Demora</span>
+                                                            {(() => {
+                                                                const val = parseInt(demoraInputs[selectedUnifiedPedido.id.toString()] ?? '30', 10)
+                                                                return val === 0
+                                                                    ? <span className="text-sm font-bold text-muted-foreground">Lo antes posible</span>
+                                                                    : <span className="text-2xl font-black text-[#FF7A00] leading-none">{val}<span className="text-xs font-semibold ml-1 text-muted-foreground">min</span></span>
+                                                            })()}
+                                                        </div>
+                                                        <Slider
+                                                            min={0}
+                                                            max={120}
+                                                            step={5}
+                                                            value={[parseInt(demoraInputs[selectedUnifiedPedido.id.toString()] ?? '30', 10)]}
+                                                            onValueChange={([val]) => setDemoraInputs(prev => ({ ...prev, [selectedUnifiedPedido.id.toString()]: String(val) }))}
+                                                            className="[&_[data-slot=slider-range]]:bg-[#FF7A00] [&_[data-slot=slider-thumb]]:border-[#FF7A00] [&_[data-slot=slider-thumb]]:size-5"
+                                                        />
+                                                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                                                            <span>0</span>
+                                                            <span>60 min</span>
+                                                            <span>120 min</span>
+                                                        </div>
+                                                    </div>
+                                                    <Button
+                                                        className="w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold"
+                                                        onClick={() => handleConfirmarConDemora(selectedUnifiedPedido)}
+                                                        disabled={confirmandoDemora === selectedUnifiedPedido.id.toString()}
+                                                    >
+                                                        {confirmandoDemora === selectedUnifiedPedido.id.toString()
+                                                            ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                            : <MessageCircle className="h-4 w-4 mr-2" />}
+                                                        {selectedUnifiedPedido.demoraMinutos != null ? 'Reenviar' : 'Confirmar y avisar por WhatsApp'}
+                                                    </Button>
                                                 </div>
                                             )}
 
@@ -1345,6 +1426,7 @@ const Dashboard = () => {
                                                             notas: selectedUnifiedPedido.notas,
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
                                                             sucursalNombre: selectedUnifiedPedido.sucursalNombre,
+                                                            horarioProgramado: selectedUnifiedPedido.horarioProgramado,
                                                         }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                                                         printRaw(commandsToBytes(data))
                                                     }}>

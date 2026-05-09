@@ -30,6 +30,7 @@ interface PedidoLike {
     /** Texto del cupón aplicado (ej. ALFAJOR10) */
     codigoDescuentoCodigo?: string | null
     sucursalNombre?: string | null
+    horarioProgramado?: string | null
 }
 
 const formatMetodoPagoPrinter = (metodoPago: string | null | undefined): string => {
@@ -149,6 +150,13 @@ export const formatComanda = (
     if (pedido.notas) {
         commands.push(ESC + '!' + '\x08');
         commands.push(`NOTAS: ${pedido.notas}\n`);
+        commands.push(ESC + '!' + '\x00');
+        commands.push('--------------------------------\n');
+    }
+
+    if (pedido.horarioProgramado) {
+        commands.push(ESC + '!' + '\x08');
+        commands.push(`PROGRAMADO: ${pedido.horarioProgramado}\n`);
         commands.push(ESC + '!' + '\x00');
         commands.push('--------------------------------\n');
     }
