@@ -260,6 +260,15 @@ export const restauranteApi = {
     })
   },
 
+  toggleModoConfirmacionManual: async (token: string) => {
+    return fetchApi('/restaurante/toggle-modo-confirmacion-manual', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
   toggleCodigoDescuentoEnabled: async (token: string) => {
     return fetchApi('/restaurante/toggle-codigo-descuento-enabled', {
       method: 'PUT',
@@ -1070,6 +1079,13 @@ export const pedidoUnificadoApi = {
     return fetchApi(`/pedido-unificado/${pedidoId}/notificar-cliente`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  confirmarConDemora: async (token: string, pedidoId: number, demoraMinutos: number) => {
+    return fetchApi(`/pedido-unificado/${pedidoId}/confirmar-con-demora`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ demoraMinutos }),
     })
   },
 }

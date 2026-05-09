@@ -39,7 +39,9 @@ interface UnifiedPedido {
     nombreCliente: string | null; telefono: string | null; direccion?: string | null; notas?: string | null;
     items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
-    sucursalId?: number | null;
+    sucursalId?: number | null; sucursalNombre?: string | null;
+    demoraMinutos?: number | null; notificarWhatsapp?: boolean | null;
+    horarioProgramado?: string | null;
 }
 
 const STORAGE_SUCURSAL = 'sucursal_activa_id'
@@ -196,6 +198,8 @@ const Dashboard = () => {
     const [showCierreTurno, setShowCierreTurno] = useState(false)
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
+    const [demoraInputs, setDemoraInputs] = useState<Record<string, string>>({})
+    const [confirmandoDemora, setConfirmandoDemora] = useState<string | null>(null)
 
     const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
     const [sucursalNombre, setSucursalNombre] = useState<string>('')
@@ -428,7 +432,7 @@ const Dashboard = () => {
                         id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
                         direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
                         tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
-                        metodoPago: pedido.metodoPago,
+                        metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
                     }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
                     printRaw(commandsToBytes(comandaData))
@@ -508,6 +512,39 @@ const Dashboard = () => {
             toast.error('Error al enviar la notificación')
         } finally {
             setSendingNotification(null)
+        }
+    }
+
+    const handleConfirmarConDemora = async (pedido: UnifiedPedido) => {
+        if (!token) return
+        const key = pedido.id.toString()
+        const minutos = parseInt(demoraInputs[key] || '0', 10)
+        if (isNaN(minutos) || minutos < 0) {
+            toast.error('Ingresá una demora válida en minutos')
+            return
+        }
+        setConfirmandoDemora(key)
+        try {
+            const res: any = await pedidoUnificadoApi.confirmarConDemora(token, pedido.id, minutos)
+            if (res.success) {
+                toast.success(pedido.telefono ? `Confirmación enviada (${minutos} min)` : `Demora guardada (${minutos} min)`)
+                setUnifiedPedidos(prev => prev.map(p =>
+                    p.id === pedido.id && p.tipo === pedido.tipo
+                        ? { ...p, demoraMinutos: minutos }
+                        : p
+                ))
+                setSelectedUnifiedPedido(prev =>
+                    prev?.id === pedido.id && prev?.tipo === pedido.tipo
+                        ? { ...prev, demoraMinutos: minutos }
+                        : prev
+                )
+            } else {
+                toast.error(res.message || 'No se pudo confirmar')
+            }
+        } catch (error) {
+            toast.error('Error al confirmar con demora')
+        } finally {
+            setConfirmandoDemora(null)
         }
     }
 
@@ -695,6 +732,11 @@ const Dashboard = () => {
                                                                         {sucursalNombrePorId.get(pedido.sucursalId) ?? `Suc. #${pedido.sucursalId}`}
                                                                     </Badge>
                                                                 )}
+                                                                {pedido.horarioProgramado && (
+                                                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-0.5 font-bold">
+                                                                        <Clock className="h-2.5 w-2.5 shrink-0" />{pedido.horarioProgramado}
+                                                                    </Badge>
+                                                                )}
                                                             </div>
                                                             <span className="font-black text-sm">${parseFloat(pedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                                                         </div>
@@ -742,6 +784,43 @@ const Dashboard = () => {
                                                                 </Button>
                                                             </div>
                                                         </div>
+
+                                                        {/* Confirmación con demora (modo confirmación manual) */}
+                                                        {restauranteStore?.modoConfirmacionManual && pedido.notificarWhatsapp && pedido.telefono && (
+                                                            <div className="mt-2 pt-2 border-t border-border" onClick={e => e.stopPropagation()}>
+                                                                {pedido.demoraMinutos != null ? (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                                                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                                                            Confirmado · {pedido.demoraMinutos} min
+                                                                        </span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            max="999"
+                                                                            placeholder="min"
+                                                                            value={demoraInputs[pedido.id.toString()] ?? ''}
+                                                                            onChange={e => setDemoraInputs(prev => ({ ...prev, [pedido.id.toString()]: e.target.value }))}
+                                                                            className="w-14 h-7 rounded-md border border-border bg-background text-xs text-center px-1 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]"
+                                                                        />
+                                                                        <span className="text-[10px] text-muted-foreground">min</span>
+                                                                        <button
+                                                                            className="h-7 px-2 rounded-md bg-[#FF7A00] text-white flex items-center gap-1 hover:bg-[#E66E00] transition-colors disabled:opacity-50 text-[10px] font-bold"
+                                                                            onClick={() => handleConfirmarConDemora(pedido)}
+                                                                            disabled={confirmandoDemora === pedido.id.toString()}
+                                                                        >
+                                                                            {confirmandoDemora === pedido.id.toString()
+                                                                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                                                                : <MessageCircle className="h-3 w-3" />}
+                                                                            Confirmar
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </Card>
                                                 </Fragment>
                                             )
@@ -828,6 +907,15 @@ const Dashboard = () => {
                                                     {getDateLabel(selectedUnifiedPedido.createdAt)}, {parseDashboardDate(selectedUnifiedPedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                                                     <span className="opacity-50 font-normal ml-1">({formatTimeAgo(selectedUnifiedPedido.createdAt)})</span>
                                                 </p>
+                                                {selectedUnifiedPedido.horarioProgramado && (
+                                                    <div className="flex items-center gap-3 mt-4 px-5 py-3 bg-amber-500/10 rounded-2xl border-2 border-amber-500/40">
+                                                        <Clock className="h-6 w-6 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                        <div>
+                                                            <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pedido programado para las</p>
+                                                            <p className="text-3xl font-black text-amber-700 dark:text-amber-300 leading-none mt-0.5">{selectedUnifiedPedido.horarioProgramado}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <div className="flex gap-2">
@@ -845,6 +933,7 @@ const Dashboard = () => {
                                                             deliveryFee,
                                                             notas: selectedUnifiedPedido.notas,
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
+                                                            sucursalNombre: selectedUnifiedPedido.sucursalNombre,
                                                         }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                                                         printRaw(commandsToBytes(data))
                                                     }}>
@@ -1082,6 +1171,15 @@ const Dashboard = () => {
                                                         {formatTimeAgo(selectedUnifiedPedido.createdAt)}
                                                     </span>
                                                 </div>
+                                                {selectedUnifiedPedido.horarioProgramado && (
+                                                    <div className="flex items-center justify-center gap-2 mt-3 px-4 py-3 bg-amber-500/10 rounded-2xl border-2 border-amber-500/40 max-w-xs mx-auto">
+                                                        <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                        <div className="text-left">
+                                                            <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide">Programado para las</p>
+                                                            <p className="text-2xl font-black text-amber-700 dark:text-amber-300 leading-none">{selectedUnifiedPedido.horarioProgramado}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <Separator className="bg-border/60 mb-8" />
@@ -1246,6 +1344,7 @@ const Dashboard = () => {
                                                             deliveryFee,
                                                             notas: selectedUnifiedPedido.notas,
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
+                                                            sucursalNombre: selectedUnifiedPedido.sucursalNombre,
                                                         }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                                                         printRaw(commandsToBytes(data))
                                                     }}>

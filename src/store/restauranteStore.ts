@@ -76,6 +76,8 @@ interface RestauranteData {
   taloClientSecret: string | null
   taloUserId: string | null
   codigoDescuentoEnabled: boolean | null
+  notificarClientesWhatsapp: boolean | null
+  modoConfirmacionManual: boolean | null
   metodosPagoConfig?: {
     mercadopagoCheckout?: boolean
     mercadopagoBricks?: boolean

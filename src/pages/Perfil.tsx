@@ -194,6 +194,7 @@ const Perfil = () => {
   const [isTogglingCardsPaymentsEnabled, setIsTogglingCardsPaymentsEnabled] = useState(false)
   const [isTogglingCucuruCheckoutEnabled, setIsTogglingCucuruCheckoutEnabled] = useState(false)
   const [isTogglingNotificarClientesWhatsapp, setIsTogglingNotificarClientesWhatsapp] = useState(false)
+  const [isTogglingModoConfirmacionManual, setIsTogglingModoConfirmacionManual] = useState(false)
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
@@ -608,6 +609,29 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingNotificarClientesWhatsapp(false)
+    }
+  }
+
+  const handleToggleModoConfirmacionManual = async () => {
+    if (!token) return
+    setIsTogglingModoConfirmacionManual(true)
+    try {
+      const response = (await restauranteApi.toggleModoConfirmacionManual(token)) as {
+        success: boolean
+        modoConfirmacionManual: boolean
+      }
+      if (response.success) {
+        toast.success(
+          response.modoConfirmacionManual
+            ? 'Confirmación manual activada'
+            : 'Confirmación manual desactivada'
+        )
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingModoConfirmacionManual(false)
     }
   }
 
@@ -1087,6 +1111,21 @@ const Perfil = () => {
                       </div>
                       <Switch checked={(restaurante as any)?.notificarClientesWhatsapp !== false} onCheckedChange={handleToggleNotificarClientesWhatsapp} disabled={isTogglingNotificarClientesWhatsapp} />
                     </div>
+
+                    {(restaurante as any)?.notificarClientesWhatsapp && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                        <div className="flex items-start gap-4">
+                          <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+                            <Smartphone className="h-5 w-5 text-[#FF7A00]" />
+                          </div>
+                          <div>
+                            <p className="text-base font-semibold">Confirmación manual con demora</p>
+                            <p className="text-sm text-muted-foreground mt-0.5">En lugar del aviso automático, el admin ingresa la demora y lo envía manualmente desde el panel.</p>
+                          </div>
+                        </div>
+                        <Switch checked={(restaurante as any)?.modoConfirmacionManual === true} onCheckedChange={handleToggleModoConfirmacionManual} disabled={isTogglingModoConfirmacionManual} />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

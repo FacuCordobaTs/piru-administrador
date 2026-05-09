@@ -29,6 +29,7 @@ interface PedidoLike {
     montoDescuento?: string | number | null
     /** Texto del cupón aplicado (ej. ALFAJOR10) */
     codigoDescuentoCodigo?: string | null
+    sucursalNombre?: string | null
 }
 
 const formatMetodoPagoPrinter = (metodoPago: string | null | undefined): string => {
@@ -111,6 +112,9 @@ export const formatComanda = (
     const dateStr = now.toLocaleDateString('es-AR');
     const timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
+    if (pedido.sucursalNombre) {
+        commands.push(`Sucursal: ${pedido.sucursalNombre}\n`);
+    }
     commands.push('--------------------------------\n');
 
     // --- Encabezado tipo pedido: Bold compacto (la cocina no necesita esto gigante) ---
