@@ -15,7 +15,7 @@ import ImageUpload from '@/components/ImageUpload'
 import { cn } from '@/lib/utils'
 import {
   Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
-  X, Power, AlertTriangle, Tag, Percent, Image as ImageIcon
+  X, Power, AlertTriangle, Tag, Percent, Image as ImageIcon, SlidersHorizontal
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
@@ -69,6 +69,17 @@ const Productos = () => {
   const [nuevoAgregadoPrecio, setNuevoAgregadoPrecio] = useState('')
   const [dialogAgregadoAbierto, setDialogAgregadoAbierto] = useState(false)
   const [isCreandoAgregado, setIsCreandoAgregado] = useState(false)
+
+  // Estados para gestión global de extras
+  const [dialogGestionExtrasAbierto, setDialogGestionExtrasAbierto] = useState(false)
+  const [dialogEditarAgregadoAbierto, setDialogEditarAgregadoAbierto] = useState(false)
+  const [agregadoEditando, setAgregadoEditando] = useState<{ id: number; nombre: string; precio: string } | null>(null)
+  const [editarAgregadoNombre, setEditarAgregadoNombre] = useState('')
+  const [editarAgregadoPrecio, setEditarAgregadoPrecio] = useState('')
+  const [isEditandoAgregado, setIsEditandoAgregado] = useState(false)
+  const [dialogEliminarAgregadoAbierto, setDialogEliminarAgregadoAbierto] = useState(false)
+  const [agregadoAEliminar, setAgregadoAEliminar] = useState<{ id: number; nombre: string } | null>(null)
+  const [isEliminandoAgregado, setIsEliminandoAgregado] = useState(false)
 
   const [dialogEliminarAbierto, setDialogEliminarAbierto] = useState(false)
   const [productoAEliminar, setProductoAEliminar] = useState<typeof productos[0] | null>(null)
@@ -173,6 +184,60 @@ const Productos = () => {
       toast.error('Error al crear agregado', { description: error.message || 'Error de conexión' })
     } finally {
       setIsCreandoAgregado(false)
+    }
+  }
+
+  const abrirEditarAgregado = (ag: { id: number; nombre: string; precio: string }) => {
+    setAgregadoEditando(ag)
+    setEditarAgregadoNombre(ag.nombre)
+    setEditarAgregadoPrecio(ag.precio)
+    setDialogEditarAgregadoAbierto(true)
+  }
+
+  const editarAgregado = async () => {
+    if (!token || !agregadoEditando) return
+    if (!editarAgregadoNombre.trim()) { toast.error('El nombre es requerido'); return }
+    const precio = parseFloat(editarAgregadoPrecio)
+    if (isNaN(precio) || precio < 0) { toast.error('El precio debe ser un número válido'); return }
+    setIsEditandoAgregado(true)
+    try {
+      const response = await agregadosApi.update(token, agregadoEditando.id, { nombre: editarAgregadoNombre.trim(), precio }) as { success: boolean }
+      if (response.success) {
+        toast.success('Extra actualizado')
+        setDialogEditarAgregadoAbierto(false)
+        setAgregadoEditando(null)
+        const res = await agregadosApi.getAll(token) as any
+        if (res.success && res.agregados) setAgregados(res.agregados)
+      }
+    } catch (error: any) {
+      toast.error('Error al actualizar extra', { description: error.message || 'Error de conexión' })
+    } finally {
+      setIsEditandoAgregado(false)
+    }
+  }
+
+  const confirmarEliminarAgregado = (ag: { id: number; nombre: string }) => {
+    setAgregadoAEliminar(ag)
+    setDialogEliminarAgregadoAbierto(true)
+  }
+
+  const eliminarAgregadoGlobal = async () => {
+    if (!token || !agregadoAEliminar) return
+    setIsEliminandoAgregado(true)
+    try {
+      const response = await agregadosApi.delete(token, agregadoAEliminar.id) as { success: boolean }
+      if (response.success) {
+        toast.success('Extra eliminado')
+        setDialogEliminarAgregadoAbierto(false)
+        setAgregadoAEliminar(null)
+        const res = await agregadosApi.getAll(token) as any
+        if (res.success && res.agregados) setAgregados(res.agregados)
+        setAgregadosSeleccionados(prev => prev.filter(id => id !== agregadoAEliminar.id))
+      }
+    } catch (error: any) {
+      toast.error('Error al eliminar extra', { description: error.message || 'Error de conexión' })
+    } finally {
+      setIsEliminandoAgregado(false)
     }
   }
 
@@ -422,6 +487,11 @@ const Productos = () => {
                   Autocompletar ({productosSinEtiqueta})
                 </Button>
               )}
+
+              <Button variant="outline" onClick={() => setDialogGestionExtrasAbierto(true)} className="hidden sm:flex h-12 rounded-xl px-4 border-zinc-200 dark:border-zinc-800 font-semibold">
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Extras
+              </Button>
 
               <Button onClick={abrirDialogNuevo} className="hidden sm:flex h-12 rounded-xl px-6 bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20">
                 <Plus className="mr-2 h-5 w-5" />
@@ -1019,6 +1089,94 @@ const Productos = () => {
             <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold" onClick={() => setDialogEliminarCategoriaAbierto(false)}>Cancelar</Button>
             <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={eliminarCategoria} disabled={isEliminandoCategoria}>
               {isEliminandoCategoria ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─────────────────────────────────────────────
+          MODAL: GESTIONAR EXTRAS / AGREGADOS
+      ───────────────────────────────────────────── */}
+      <Dialog open={dialogGestionExtrasAbierto} onOpenChange={setDialogGestionExtrasAbierto}>
+        <DialogContent className="max-w-md max-h-[80dvh] overflow-hidden flex flex-col rounded-[32px] p-0 border-zinc-200 dark:border-zinc-800">
+          <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-zinc-50/50 dark:bg-zinc-950">
+            <DialogTitle className="text-xl font-bold">Gestión de Extras</DialogTitle>
+            <DialogDescription className="mt-1 text-sm">Los cambios se aplican a todos los productos que usen cada extra.</DialogDescription>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-2">
+            {agregados.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">No hay extras creados.</p>
+            ) : (
+              agregados.map((ag) => (
+                <div key={ag.id} className="flex items-center justify-between p-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121212] gap-3">
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-foreground truncate block">{ag.nombre}</span>
+                    <span className="text-xs text-muted-foreground">+${ag.precio}</span>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-zinc-500 hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => { setDialogGestionExtrasAbierto(false); abrirEditarAgregado(ag) }}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30" onClick={() => { setDialogGestionExtrasAbierto(false); confirmarEliminarAgregado(ag) }}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
+            <Button className="w-full h-12 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDialogGestionExtrasAbierto(false); setDialogAgregadoAbierto(true) }}>
+              <Plus className="h-5 w-5 mr-2" /> Nuevo Extra
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Editar Extra */}
+      <Dialog open={dialogEditarAgregadoAbierto} onOpenChange={setDialogEditarAgregadoAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-zinc-200 dark:border-zinc-800">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-xl font-bold text-emerald-600 dark:text-emerald-500">Editar Extra</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label className={phantomLabelClass}>Nombre</Label>
+              <Input value={editarAgregadoNombre} onChange={(e) => setEditarAgregadoNombre(e.target.value)} placeholder="Nombre del extra" disabled={isEditandoAgregado} className={phantomInputClass} />
+            </div>
+            <div className="space-y-1">
+              <Label className={phantomLabelClass}>Precio ($)</Label>
+              <div className="relative">
+                <span className="absolute left-5 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
+                <Input type="number" step="0.01" min="0" value={editarAgregadoPrecio} onChange={(e) => setEditarAgregadoPrecio(e.target.value)} placeholder="0.00" disabled={isEditandoAgregado} className={cn(phantomInputClass, "pl-9 font-bold")} onKeyDown={(e) => { if (e.key === 'Enter') editarAgregado() }} />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1 h-12 rounded-xl font-semibold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEditarAgregadoAbierto(false)} disabled={isEditandoAgregado}>
+                Cancelar
+              </Button>
+              <Button className="flex-1 h-12 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white" onClick={editarAgregado} disabled={isEditandoAgregado || !editarAgregadoNombre.trim()}>
+                {isEditandoAgregado ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Guardar'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Confirmar Eliminar Extra */}
+      <Dialog open={dialogEliminarAgregadoAbierto} onOpenChange={setDialogEliminarAgregadoAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
+          <div className="h-16 w-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Trash2 className="h-8 w-8 text-red-600 dark:text-red-500" />
+          </div>
+          <DialogTitle className="text-xl font-bold mb-2">Eliminar Extra</DialogTitle>
+          <DialogDescription className="text-sm mb-8">
+            ¿Eliminar <strong>{agregadoAEliminar?.nombre}</strong>? Se quitará de todos los productos que lo tengan asignado.
+          </DialogDescription>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEliminarAgregadoAbierto(false)}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={eliminarAgregadoGlobal} disabled={isEliminandoAgregado}>
+              {isEliminandoAgregado ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
             </Button>
           </div>
         </DialogContent>

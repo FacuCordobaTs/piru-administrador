@@ -613,6 +613,16 @@ export const agregadosApi = {
     })
   },
 
+  update: async (token: string, id: number, data: { nombre?: string; precio?: number }) => {
+    return fetchApi(`/agregado/${id}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+  },
+
   delete: async (token: string, id: number) => {
     return fetchApi(`/agregado/${id}`, {
       method: 'DELETE',
