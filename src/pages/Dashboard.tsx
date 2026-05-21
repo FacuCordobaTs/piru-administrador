@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi } from '@/lib/api'
+import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi } from '@/lib/api'
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
@@ -17,8 +17,11 @@ import {
     User, ArrowLeft, Printer, Truck, MapPin,
     Phone, ShoppingBag, CalendarDays, Tag, Settings, CheckCircle2,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle,
-    MessageCircle, Store,
+    MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX,
 } from 'lucide-react'
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { usePrinter } from '@/context/PrinterContext'
@@ -42,8 +45,10 @@ interface UnifiedPedido {
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
     sucursalId?: number | null; sucursalNombre?: string | null;
     demoraMinutos?: number | null; notificarWhatsapp?: boolean | null;
-    horarioProgramado?: string | null;
+    horarioProgramado?: string | null; latitud?: string | null; longitud?: string | null;
+    deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null;
 }
+interface Repartidor { id: number; nombre: string; estado: 'activo' | 'inactivo'; restauranteId: number }
 
 const STORAGE_SUCURSAL = 'sucursal_activa_id'
 
@@ -119,14 +124,26 @@ const formatAgregados = (agregadosData: any): any[] => {
     return []
 }
 
-const getOrderDeliveryFee = (pedido: { total: string; items: any[] }) => {
+const getOrderDeliveryFee = (pedido: { total: string; items: any[]; montoDescuento?: string | number | null; deliveryFee?: string | null }) => {
+    if (pedido.deliveryFee != null) {
+        const stored = parseFloat(String(pedido.deliveryFee))
+        if (!isNaN(stored)) return stored
+    }
     const total = parseFloat(pedido.total)
+    const montoDescuento = parseFloat(String(pedido.montoDescuento ?? 0)) || 0
     const itemsSubtotal = pedido.items.reduce((sum, item) => {
-        const basePrice = parseFloat(item.precioUnitario || '0')
-        const agregadosTotal = formatAgregados(item.agregados).reduce((a, ag) => a + parseFloat(ag.precio || '0'), 0)
-        return sum + ((basePrice + agregadosTotal) * item.cantidad)
+        return sum + (parseFloat(item.precioUnitario || '0') * item.cantidad)
     }, 0)
-    return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
+    return Math.max(0, Math.round((total + montoDescuento - itemsSubtotal) * 100) / 100)
+}
+
+const computeOrderTotal = (pedido: { total: string; tipo: string; items: any[]; montoDescuento?: string | number | null }) => {
+    const montoDescuento = parseFloat(String(pedido.montoDescuento ?? 0)) || 0
+    const itemsSubtotal = pedido.items.reduce((sum, item) => {
+        return sum + (parseFloat(item.precioUnitario || '0') * item.cantidad)
+    }, 0)
+    const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0
+    return itemsSubtotal + deliveryFee - montoDescuento
 }
 
 const deferComandaHastaPagado = (metodoPago: string | null | undefined, cucuruConfigurado: boolean | null | undefined): boolean => {
@@ -171,6 +188,149 @@ const pedidoTieneCuponDescuento = (p: { montoDescuento?: string | number | null 
     p.montoDescuento != null && parseFloat(String(p.montoDescuento)) > 0
 
 // ─────────────────────────────────────────────
+// MAPA DE PEDIDOS
+// ─────────────────────────────────────────────
+function MapBoundsController({ positions }: { positions: [number, number][] }) {
+    const map = useMap()
+    useEffect(() => {
+        if (positions.length > 1) {
+            map.fitBounds(positions as any, { padding: [60, 60] })
+        } else if (positions.length === 1) {
+            map.setView(positions[0], 15)
+        }
+    }, [])
+    return null
+}
+
+const OrderMapView = ({ orders, onClose }: { orders: UnifiedPedido[]; onClose: () => void }) => {
+    const [selected, setSelected] = useState<UnifiedPedido | null>(null)
+    const parseCoord = (v: string | null | undefined) => parseFloat(String(v || '').replace(',', '.'))
+
+    const ordersWithCoords = orders.filter(p => {
+        if (p.tipo !== 'delivery' || !p.latitud || !p.longitud) return false
+        const lat = parseCoord(p.latitud)
+        const lng = parseCoord(p.longitud)
+        return !isNaN(lat) && !isNaN(lng) && !(lat === 0 && lng === 0)
+    })
+
+    const positions = ordersWithCoords.map(p => [parseCoord(p.latitud), parseCoord(p.longitud)] as [number, number])
+
+    const center: [number, number] = positions.length > 0
+        ? [positions.reduce((s, [lat]) => s + lat, 0) / positions.length, positions.reduce((s, [, lng]) => s + lng, 0) / positions.length]
+        : [-34.6037, -58.3816]
+
+    return (
+        <div className="flex-1 flex flex-col overflow-hidden bg-background">
+            <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-background">
+                <div className="flex items-center gap-2">
+                    <MapIcon className="h-4 w-4 text-[#FF7A00]" />
+                    <span className="font-bold text-sm">Mapa de pedidos</span>
+                    {ordersWithCoords.length > 0 && (
+                        <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0 text-[10px]">
+                            {ordersWithCoords.length}
+                        </Badge>
+                    )}
+                </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+                    <X className="h-4 w-4" />
+                </Button>
+            </div>
+
+            {ordersWithCoords.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground p-8">
+                    <MapPin className="h-12 w-12 opacity-20" />
+                    <p className="text-sm font-medium text-center">Ningún pedido activo de delivery tiene ubicación guardada.</p>
+                    <p className="text-xs text-center opacity-60">Las coordenadas se guardan cuando el cliente ingresa su dirección.</p>
+                </div>
+            ) : (
+                <div className="flex-1 relative overflow-hidden">
+                    <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} attributionControl={false}>
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        <MapBoundsController positions={positions} />
+                        {ordersWithCoords.map(pedido => {
+                            const lat = parseCoord(pedido.latitud)
+                            const lng = parseCoord(pedido.longitud)
+                            const isSelected = selected?.id === pedido.id
+                            const bg = isSelected ? '#E66E00' : '#FF7A00'
+                            const icon = L.divIcon({
+                                className: '',
+                                iconSize: [56, 38],
+                                iconAnchor: [28, 38],
+                                html: `<div style="background:${bg};color:white;width:52px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.35);border:2px solid white;position:relative;margin:2px 2px 0"><span>#${pedido.id}</span><div style="position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid ${bg}"></div></div>`,
+                            })
+                            return (
+                                <Marker
+                                    key={`${pedido.tipo}-${pedido.id}`}
+                                    position={[lat, lng]}
+                                    icon={icon}
+                                    eventHandlers={{ click: () => setSelected(prev => prev?.id === pedido.id ? null : pedido) }}
+                                />
+                            )
+                        })}
+                    </MapContainer>
+
+                    {selected && (
+                        <div className="absolute bottom-4 left-4 right-4 z-[1001] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+                            <div className="flex items-start justify-between p-4 pb-3 border-b border-border">
+                                <div>
+                                    <p className="font-black text-base text-foreground">Pedido #{selected.id}</p>
+                                    {selected.nombreCliente && (
+                                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                                            <User className="h-3.5 w-3.5 shrink-0" />{selected.nombreCliente}
+                                        </p>
+                                    )}
+                                    {selected.direccion && (
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                            <MapPin className="h-3 w-3 shrink-0" />{selected.direccion}
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className="font-black text-2xl text-[#FF7A00]">
+                                        ${computeOrderTotal(selected).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                    </span>
+                                    <button
+                                        className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground"
+                                        onClick={() => setSelected(null)}
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="overflow-y-auto max-h-48 p-4 space-y-2">
+                                {selected.items.map((item, idx) => (
+                                    <div key={idx} className="flex justify-between gap-2">
+                                        <div className="flex gap-2 flex-1 min-w-0">
+                                            <span className="text-sm font-bold text-muted-foreground shrink-0">{item.cantidad}x</span>
+                                            <span className="text-sm font-medium text-foreground truncate">
+                                                {item.nombreProducto}{item.varianteNombre ? ` (${item.varianteNombre})` : ''}
+                                            </span>
+                                        </div>
+                                        <span className="text-sm tabular-nums font-semibold text-foreground shrink-0">
+                                            ${(parseFloat(item.precioUnitario || '0') * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                        </span>
+                                    </div>
+                                ))}
+                                {selected.tipo === 'delivery' && getOrderDeliveryFee(selected) > 0 && (
+                                    <div className="flex justify-between pt-2 border-t border-dashed border-border">
+                                        <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                                            <Truck className="h-3.5 w-3.5" />Envío
+                                        </span>
+                                        <span className="text-sm font-semibold text-muted-foreground">
+                                            ${getOrderDeliveryFee(selected).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────
 const Dashboard = () => {
@@ -195,6 +355,7 @@ const Dashboard = () => {
 
     const [updatingPago, setUpdatingPago] = useState<string | null>(null)
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
+    const [showOrderMap, setShowOrderMap] = useState(false)
     const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
     const [showCierreTurno, setShowCierreTurno] = useState(false)
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -216,6 +377,16 @@ const Dashboard = () => {
         }
         return m
     }, [sucursalesList])
+
+    // Estados Repartidores
+    const [repartidoresModalOpen, setRepartidoresModalOpen] = useState(false)
+    const [repartidoresList, setRepartidoresList] = useState<Repartidor[]>([])
+    const [loadingRepartidores, setLoadingRepartidores] = useState(false)
+    const [nuevoRepartidorNombre, setNuevoRepartidorNombre] = useState('')
+    const [creandoRepartidor, setCreandoRepartidor] = useState(false)
+    const [pendingDispatchPedido, setPendingDispatchPedido] = useState<{ tipo: 'delivery' | 'takeaway'; id: number } | null>(null)
+    const [repartidorSelectorOpen, setRepartidorSelectorOpen] = useState(false)
+    const [asignandoRepartidor, setAsignandoRepartidor] = useState(false)
 
     // Estados Modal Pagos
     const [metodosPagoModalOpen, setMetodosPagoModalOpen] = useState(false)
@@ -470,6 +641,57 @@ const Dashboard = () => {
         } catch (error) { toast.error('Error al actualizar estado') }
     }
 
+    const loadRepartidores = useCallback(async () => {
+        if (!token) return
+        setLoadingRepartidores(true)
+        try {
+            const res: any = await repartidoresApi.list(token)
+            if (res.success) setRepartidoresList(res.data)
+        } catch { } finally { setLoadingRepartidores(false) }
+    }, [token])
+
+    useEffect(() => {
+        if (repartidoresModalOpen) loadRepartidores()
+    }, [repartidoresModalOpen, loadRepartidores])
+
+    useEffect(() => {
+        if (token) loadRepartidores()
+    }, [token, loadRepartidores])
+
+    const handleDespachar = async (tipo: 'delivery' | 'takeaway', id: number) => {
+        if (tipo === 'delivery') {
+            const activos = repartidoresList.filter(r => r.estado === 'activo')
+            if (activos.length >= 2) {
+                setPendingDispatchPedido({ tipo, id })
+                setRepartidorSelectorOpen(true)
+                return
+            }
+        }
+        await handleEstadoChange(tipo, id, 'archived')
+    }
+
+    const handleRepartidorSelected = async (tipo: 'delivery' | 'takeaway', id: number, repartidorId: number | null) => {
+        if (!token) return
+        setAsignandoRepartidor(true)
+        try {
+            if (repartidorId !== null) {
+                try {
+                    await pedidoUnificadoApi.asignarRepartidor(token, id, repartidorId)
+                    setUnifiedPedidos(prev => prev.map(p =>
+                        p.id === id && p.tipo === tipo
+                            ? { ...p, repartidorId, repartidorNombre: repartidoresList.find(r => r.id === repartidorId)?.nombre ?? null }
+                            : p
+                    ))
+                } catch {}
+            }
+            await handleEstadoChange(tipo, id, 'archived')
+        } finally {
+            setAsignandoRepartidor(false)
+            setPendingDispatchPedido(null)
+            setRepartidorSelectorOpen(false)
+        }
+    }
+
     const handleAprobarPago = async (pedido: UnifiedPedido, metodoOverrides?: 'efectivo' | 'transferencia') => {
         if (!token) return
         setUpdatingPago(pedido.id.toString())
@@ -624,12 +846,16 @@ const Dashboard = () => {
             <header className="shrink-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between z-10">
                 <div className="flex items-center gap-3">
                     {mobileView === 'detail' && (
-                        <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => setMobileView('orders')}>
+                        <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => { setMobileView('orders'); setShowOrderMap(false) }}>
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                     )}
                     <h1 className="text-xl font-bold tracking-tight text-foreground">
-                        {mobileView === 'detail' && selectedUnifiedPedido ? `Pedido #${selectedUnifiedPedido.id}` : (restaurante?.nombre || 'Operaciones')}
+                        {mobileView === 'detail' && showOrderMap
+                            ? 'Mapa de pedidos'
+                            : mobileView === 'detail' && selectedUnifiedPedido
+                                ? `Pedido #${selectedUnifiedPedido.id}`
+                                : (restaurante?.nombre || 'Operaciones')}
                     </h1>
                     <Badge variant="outline" className={cn("hidden sm:flex items-center gap-1.5 text-xs font-medium border", isConnected ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20" : "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20")}>
                         <div className={cn("h-2 w-2 rounded-full", isConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} />
@@ -674,9 +900,22 @@ const Dashboard = () => {
                                     <h2 className="font-bold text-base">Pedidos</h2>
                                     <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0">{activeOrders.length}</Badge>
                                 </div>
-                                <Button variant="outline" size="sm" className="h-8 text-xs px-2 gap-1.5" onClick={openMetodosPagoModal}>
-                                    <Settings className="h-3.5 w-3.5" /> Pagos
-                                </Button>
+                                <div className="flex items-center gap-1.5">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 text-xs px-2 gap-1.5"
+                                        onClick={() => { setShowOrderMap(true); setMobileView('detail') }}
+                                    >
+                                        <MapIcon className="h-3.5 w-3.5" /> Mapa
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="h-8 text-xs px-2 gap-1.5" onClick={openMetodosPagoModal}>
+                                        <Settings className="h-3.5 w-3.5" /> Pagos
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="h-8 text-xs px-2 gap-1.5" onClick={() => setRepartidoresModalOpen(true)}>
+                                        <UserRound className="h-3.5 w-3.5" /> Repartidores
+                                    </Button>
+                                </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-3">
@@ -740,7 +979,7 @@ const Dashboard = () => {
                                                                     </Badge>
                                                                 )}
                                                             </div>
-                                                            <span className="font-black text-sm">${parseFloat(pedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
+                                                            <span className="font-black text-sm">${computeOrderTotal(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                                                         </div>
 
                                                         <div className="flex justify-between items-end">
@@ -777,7 +1016,7 @@ const Dashboard = () => {
                                                                     className={cn("h-7 px-3 text-[10px] font-bold shrink-0", pedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00] text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white")}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (pedido.pagado) handleEstadoChange(pedido.tipo, pedido.id, 'archived');
+                                                                        if (pedido.pagado) void handleDespachar(pedido.tipo, pedido.id);
                                                                         else handleAprobarPago(pedido);
                                                                     }}
                                                                     disabled={updatingPago === pedido.id.toString()}
@@ -832,7 +1071,7 @@ const Dashboard = () => {
                                                                 <span className="font-semibold text-xs text-muted-foreground">#{pedido.id}</span>
                                                                 <span className="text-xs text-muted-foreground truncate max-w-[120px]">{pedido.nombreCliente || 'Sin nombre'}</span>
                                                             </div>
-                                                            <span className="text-xs font-bold text-muted-foreground">${parseFloat(pedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
+                                                            <span className="text-xs font-bold text-muted-foreground">${computeOrderTotal(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                                                         </div>
                                                     </Fragment>
                                                 )
@@ -860,7 +1099,12 @@ const Dashboard = () => {
                             "flex-1 bg-background relative overflow-hidden",
                             mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
                         )}>
-                            {selectedUnifiedPedido ? (
+                            {showOrderMap ? (
+                                <OrderMapView
+                                    orders={activeOrders}
+                                    onClose={() => { setShowOrderMap(false); setMobileView('orders') }}
+                                />
+                            ) : selectedUnifiedPedido ? (
                                 <div className="flex flex-col h-full w-full relative">
 
                                     {/* --- DESKTOP LAYOUT (3 Secciones) --- */}
@@ -993,11 +1237,7 @@ const Dashboard = () => {
                                                                     </div>
                                                                 </div>
                                                                 <span className="font-bold text-lg whitespace-nowrap text-foreground">
-                                                                    ${(() => {
-                                                                        const base = parseFloat(item.precioUnitario || '0')
-                                                                        const extras = formatAgregados(item.agregados).reduce((sum, ag) => sum + parseFloat(ag.precio || '0'), 0)
-                                                                        return ((base + extras) * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })
-                                                                    })()}
+                                                                    ${(parseFloat(item.precioUnitario || '0') * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                                 </span>
                                                             </div>
                                                         ))}
@@ -1024,7 +1264,7 @@ const Dashboard = () => {
                                                 <div className="flex justify-between items-end">
                                                     <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Total</span>
                                                     <span className="text-5xl font-black text-[#FF7A00]">
-                                                        ${parseFloat(selectedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                        ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                     </span>
                                                 </div>
 
@@ -1068,7 +1308,7 @@ const Dashboard = () => {
                                                             </Button>
                                                             <Button
                                                                 className="flex-1 h-14 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white text-lg font-bold shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-transform"
-                                                                onClick={() => handleEstadoChange(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id, 'archived')}
+                                                                onClick={() => void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)}
                                                             >
                                                                 Despachar Pedido
                                                             </Button>
@@ -1192,7 +1432,7 @@ const Dashboard = () => {
                                                     {selectedUnifiedPedido.tipo === 'delivery' ? '🚚 Delivery' : '🛍️ Take Away'}
                                                 </p>
                                                 <p className="text-5xl font-black tracking-tight mb-3 text-foreground">
-                                                    ${parseFloat(selectedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                    ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                 </p>
                                                 <div className="flex flex-col items-center gap-1 text-sm text-muted-foreground">
                                                     {selectedUnifiedPedido.tipo === 'delivery' && selectedUnifiedPedido.direccion && (
@@ -1324,8 +1564,7 @@ const Dashboard = () => {
                                                 <div className="space-y-0 px-2">
                                                     {selectedUnifiedPedido.items.map((item, idx) => {
                                                         const basePrice = parseFloat(item.precioUnitario || '0')
-                                                        const agregadosTotal = formatAgregados(item.agregados).reduce((a, ag) => a + parseFloat(ag.precio || '0'), 0)
-                                                        const lineTotal = (basePrice + agregadosTotal) * item.cantidad
+                                                        const lineTotal = basePrice * item.cantidad
 
                                                         return (
                                                             <div key={idx} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
@@ -1446,7 +1685,7 @@ const Dashboard = () => {
                                                             {selectedUnifiedPedido.pagado ? 'Total cobrado' : 'Total a cobrar'}
                                                         </span>
                                                         <span className="text-3xl font-black tracking-tight text-foreground">
-                                                            ${parseFloat(selectedUnifiedPedido.total).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                            ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                         </span>
                                                     </div>
 
@@ -1473,7 +1712,7 @@ const Dashboard = () => {
                                                                 <Button
                                                                     className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#F97316] hover:bg-[#EA580C]" : "bg-emerald-600 hover:bg-emerald-700 shadow-[0_0_20px_rgba(5,150,105,0.15)]")}
                                                                     onClick={() => {
-                                                                        if (selectedUnifiedPedido.pagado) handleEstadoChange(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id, 'archived')
+                                                                        if (selectedUnifiedPedido.pagado) void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)
                                                                         else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
                                                                         else toast.error('Debes verificar el pago primero')
                                                                     }}
@@ -1626,6 +1865,186 @@ const Dashboard = () => {
                             Guardar Configuración
                         </Button>
                     </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── MODAL REPARTIDORES ── */}
+            <Dialog open={repartidoresModalOpen} onOpenChange={setRepartidoresModalOpen}>
+                <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto rounded-[32px] p-6 sm:p-8 bg-background border border-border">
+                    <DialogHeader className="mb-6 text-left">
+                        <div className="h-12 w-12 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-4">
+                            <UserRound className="h-6 w-6 text-[#FF7A00]" />
+                        </div>
+                        <DialogTitle className="text-2xl font-bold">Repartidores</DialogTitle>
+                        <DialogDescription className="text-sm mt-1">
+                            Gestioná los repartidores de tu negocio.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-5">
+                        {/* Crear nuevo */}
+                        <div className="flex gap-2">
+                            <Input
+                                placeholder="Nombre del repartidor..."
+                                value={nuevoRepartidorNombre}
+                                onChange={e => setNuevoRepartidorNombre(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && nuevoRepartidorNombre.trim()) {
+                                        void (async () => {
+                                            if (!token || creandoRepartidor) return
+                                            setCreandoRepartidor(true)
+                                            try {
+                                                const res: any = await repartidoresApi.create(token, nuevoRepartidorNombre.trim())
+                                                if (res.success) {
+                                                    setRepartidoresList(prev => [...prev, res.data])
+                                                    setNuevoRepartidorNombre('')
+                                                }
+                                            } catch { toast.error('Error al crear repartidor') }
+                                            finally { setCreandoRepartidor(false) }
+                                        })()
+                                    }
+                                }}
+                                className="flex-1 h-10 rounded-xl"
+                            />
+                            <Button
+                                className="h-10 px-4 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold"
+                                disabled={creandoRepartidor || !nuevoRepartidorNombre.trim()}
+                                onClick={async () => {
+                                    if (!token || creandoRepartidor) return
+                                    setCreandoRepartidor(true)
+                                    try {
+                                        const res: any = await repartidoresApi.create(token, nuevoRepartidorNombre.trim())
+                                        if (res.success) {
+                                            setRepartidoresList(prev => [...prev, res.data])
+                                            setNuevoRepartidorNombre('')
+                                        }
+                                    } catch { toast.error('Error al crear repartidor') }
+                                    finally { setCreandoRepartidor(false) }
+                                }}
+                            >
+                                {creandoRepartidor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                            </Button>
+                        </div>
+
+                        {loadingRepartidores ? (
+                            <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                        ) : (
+                            <>
+                                {/* Activos */}
+                                {repartidoresList.filter(r => r.estado === 'activo').length > 0 && (
+                                    <div>
+                                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                            <UserCheck className="h-3.5 w-3.5 text-emerald-500" /> Activos
+                                        </p>
+                                        <div className="space-y-2">
+                                            {repartidoresList.filter(r => r.estado === 'activo').map(r => (
+                                                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                                                    <span className="font-semibold text-sm">{r.nombre}</span>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-7 text-xs text-muted-foreground hover:text-red-500"
+                                                        onClick={async () => {
+                                                            if (!token) return
+                                                            try {
+                                                                await repartidoresApi.toggleEstado(token, r.id, 'inactivo')
+                                                                setRepartidoresList(prev => prev.map(x => x.id === r.id ? { ...x, estado: 'inactivo' } : x))
+                                                            } catch { toast.error('Error al actualizar') }
+                                                        }}
+                                                    >
+                                                        Desactivar
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Inactivos */}
+                                {repartidoresList.filter(r => r.estado === 'inactivo').length > 0 && (
+                                    <div>
+                                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                            <UserX className="h-3.5 w-3.5 text-muted-foreground" /> Inactivos
+                                        </p>
+                                        <div className="space-y-2">
+                                            {repartidoresList.filter(r => r.estado === 'inactivo').map(r => (
+                                                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20 opacity-60">
+                                                    <span className="text-sm">{r.nombre}</span>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-7 text-xs text-emerald-600 hover:text-emerald-700"
+                                                        onClick={async () => {
+                                                            if (!token) return
+                                                            try {
+                                                                await repartidoresApi.toggleEstado(token, r.id, 'activo')
+                                                                setRepartidoresList(prev => prev.map(x => x.id === r.id ? { ...x, estado: 'activo' } : x))
+                                                            } catch { toast.error('Error al actualizar') }
+                                                        }}
+                                                    >
+                                                        Activar
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {repartidoresList.length === 0 && (
+                                    <div className="text-center py-8 text-muted-foreground text-sm">
+                                        No hay repartidores. Agregá el primero.
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── SELECTOR DE REPARTIDOR AL DESPACHAR ── */}
+            <Dialog open={repartidorSelectorOpen} onOpenChange={(open) => {
+                if (!open) { setPendingDispatchPedido(null); setRepartidorSelectorOpen(false) }
+            }}>
+                <DialogContent className="max-w-sm mx-4 rounded-[32px] p-6 bg-background border border-border">
+                    <DialogHeader className="mb-4 text-left">
+                        <div className="h-12 w-12 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-3">
+                            <Truck className="h-6 w-6 text-[#FF7A00]" />
+                        </div>
+                        <DialogTitle className="text-xl font-bold">¿Quién hace el envío?</DialogTitle>
+                        <DialogDescription className="text-sm mt-1">
+                            Seleccioná el repartidor o despachá sin asignar.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                        {repartidoresList.filter(r => r.estado === 'activo').map(r => (
+                            <button
+                                key={r.id}
+                                disabled={asignandoRepartidor}
+                                onClick={() => {
+                                    if (!pendingDispatchPedido) return
+                                    const { tipo, id } = pendingDispatchPedido
+                                    void handleRepartidorSelected(tipo, id, r.id)
+                                }}
+                                className="w-full flex items-center gap-3 p-4 rounded-2xl border border-border bg-card hover:bg-accent hover:border-[#FF7A00]/40 transition-all text-left font-semibold disabled:opacity-50"
+                            >
+                                <div className="h-9 w-9 rounded-full bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
+                                    <UserRound className="h-5 w-5 text-[#FF7A00]" />
+                                </div>
+                                {r.nombre}
+                            </button>
+                        ))}
+                        <button
+                            disabled={asignandoRepartidor}
+                            onClick={() => {
+                                if (!pendingDispatchPedido) return
+                                const { tipo, id } = pendingDispatchPedido
+                                void handleRepartidorSelected(tipo, id, null)
+                            }}
+                            className="w-full p-3 rounded-2xl border border-dashed border-border text-muted-foreground hover:bg-muted/40 transition-all text-sm font-medium disabled:opacity-50"
+                        >
+                            {asignandoRepartidor ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Despachar sin asignar repartidor'}
+                        </button>
+                    </div>
                 </DialogContent>
             </Dialog>
 

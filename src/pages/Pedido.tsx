@@ -96,17 +96,11 @@ export default function Pedido() {
 
   const getOrderDeliveryFee = (p: UnifiedPedido) => {
     const total = parseFloat(p.total)
+    const montoDescuento = parseFloat(String(p.montoDescuento ?? 0)) || 0
     const itemsSubtotal = p.items.reduce((sum, item) => {
-      const basePrice = parseFloat(item.precioUnitario || '0')
-      let agregadosTotal = 0
-      if (item.agregados && Array.isArray(item.agregados)) {
-        item.agregados.forEach((ag: any) => {
-          agregadosTotal += parseFloat(ag.precio || '0')
-        })
-      }
-      return sum + ((basePrice + agregadosTotal) * item.cantidad)
+      return sum + (parseFloat(item.precioUnitario || '0') * item.cantidad)
     }, 0)
-    return Math.max(0, Math.round((total - itemsSubtotal) * 100) / 100)
+    return Math.max(0, Math.round((total + montoDescuento - itemsSubtotal) * 100) / 100)
   }
 
   const [pedido, setPedido] = useState<UnifiedPedido | null>(null)
@@ -269,8 +263,13 @@ export default function Pedido() {
 
   const isDelivery = pedido.tipo === 'delivery'
   const isTakeaway = pedido.tipo === 'takeaway'
-  const finalTotal = parseFloat(pedido.total)
   const isArchived = pedido.estado === 'archived'
+  const finalTotal = (() => {
+    const montoDescuento = parseFloat(String(pedido.montoDescuento ?? 0)) || 0
+    const itemsSubtotal = pedido.items.reduce((sum, item) => sum + (parseFloat(item.precioUnitario || '0') * item.cantidad), 0)
+    const deliveryFee = isDelivery ? getOrderDeliveryFee(pedido) : 0
+    return itemsSubtotal + deliveryFee - montoDescuento
+  })()
 
   const tipoLabel = isDelivery ? 'Delivery' : isTakeaway ? 'Take Away' : `Mesa ${pedido.mesaNombre || ''}`
   const tipoEmoji = isDelivery ? '🚚' : isTakeaway ? '🛍️' : '🍽️'
@@ -383,13 +382,7 @@ export default function Pedido() {
         <div className="rounded-xl p-2 md:p-4">
           {pedido.items.map((item: any, idx: number) => {
             const basePrice = parseFloat(item.precioUnitario || '0')
-            let agregadosTotal = 0
-            if (item.agregados && Array.isArray(item.agregados)) {
-              item.agregados.forEach((ag: any) => {
-                agregadosTotal += parseFloat(ag.precio || '0')
-              })
-            }
-            const lineTotal = (basePrice + agregadosTotal) * item.cantidad
+            const lineTotal = basePrice * item.cantidad
 
             return (
               <div key={item.id} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>

@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/authStore'
 import { pedidosApi } from '@/lib/api'
 import {
   X, Loader2, FileText, Printer, Search, ChevronDown, ChevronRight,
-  Wallet, Smartphone, Building2, CheckCircle2, AlertCircle, TrendingUp
+  Wallet, Smartphone, Building2, CheckCircle2, AlertCircle, TrendingUp, Truck, UserRound
 } from 'lucide-react'
 
 /* ==========================================================================
@@ -15,8 +15,8 @@ import {
    ========================================================================== */
 interface CierreTurnoItem { id: number; productoId: number; nombreProducto: string; cantidad: number; precioUnitario: string; clienteNombre?: string; estado?: string; agregados?: any }
 interface CierreTurnoPedidoMesa { id: number; mesaId: number | null; nombrePedido: string | null; estado: string; total: string; createdAt: string; closedAt: string | null; mesaNombre: string | null; tipo: 'mesa'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; pagos?: any[]; pagosSubtotal?: any[] }
-interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'delivery'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null }
-interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null }
+interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'delivery'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null }
+interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null }
 type CierreTurnoPedido = CierreTurnoPedidoMesa | CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway
 
 interface ProductoVendido { nombre: string; cantidad: number; totalVendido: number }
@@ -209,25 +209,18 @@ interface PedidoCardProps {
 function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
   const key = `${pedido.tipo}-${pedido.id}`
 
-  // 1. Calcular subtotal de cada ítem (Precio Base + Agregados) * Cantidad
+  // 1. precioUnitario ya incluye agregados (los suma el backend al crear el pedido)
   const itemSubtotal = (it: CierreTurnoItem) => {
     const unit = parseFloat(it.precioUnitario || '0')
-    let extras = 0
-    if (it.agregados) {
-      let arr: any[] = []
-      if (typeof it.agregados === 'string') {
-        try { arr = JSON.parse(it.agregados) } catch(e){}
-      } else if (Array.isArray(it.agregados)) {
-        arr = it.agregados
-      }
-      arr.forEach((ag: any) => { extras += parseFloat(ag.precio || '0') })
-    }
-    return ((unit + extras) * (it.cantidad || 1))
+    return unit * (it.cantidad || 1)
   }
 
-  // 2. Deducir costo dinámico de envío (Total - Suma de todos los ítems)
+  // 2. Deducir costo dinámico de envío: total + descuento - ítems
   const sumItems = pedido.items.reduce((acc, it) => acc + itemSubtotal(it), 0)
-  const dynamicDeliveryFee = pedido.tipo === 'delivery' ? Math.max(0, parseFloat(pedido.total) - sumItems) : 0
+  const montoDescuento = (pedido.tipo === 'delivery' || pedido.tipo === 'takeaway')
+    ? parseFloat(String((pedido as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).montoDescuento ?? 0)) || 0
+    : 0
+  const dynamicDeliveryFee = pedido.tipo === 'delivery' ? Math.max(0, parseFloat(pedido.total) + montoDescuento - sumItems) : 0
 
   // 3. Agrupar ítems (pedido_unificado: delivery/takeaway no tienen clienteNombre por ítem)
   const groups: { cliente: string; items: CierreTurnoItem[] }[] = (() => {
@@ -267,8 +260,9 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
     return arr
   })()
 
-  // El total real ya viene del backend, no le sumamos más nada
-  const totalConEnvio = parseFloat(pedido.total)
+  const totalConEnvio = pedido.tipo === 'delivery'
+    ? sumItems + dynamicDeliveryFee - montoDescuento
+    : parseFloat(pedido.total)
 
   // Helper para renderizar la lista de agregados visualmente
   const renderAgregadosUI = (agregadosRaw: any) => {
@@ -528,6 +522,34 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
     return data.productosVendidos.filter(p => !p.nombre.startsWith('[Extra]'))
   }, [data])
 
+  const repartidorStats = useMemo(() => {
+    if (!data) return { totalDeliveryFee: 0, porRepartidor: [] as { nombre: string; cantidad: number; totalFee: number }[], sinAsignar: 0 }
+    const map = new Map<string, { nombre: string; cantidad: number; totalFee: number }>()
+    let sinAsignar = 0
+    let totalDeliveryFee = 0
+    data.pedidosDelivery.forEach(p => {
+      const fee = parseFloat(String(p.deliveryFee ?? 0)) || 0
+      totalDeliveryFee += fee
+      if (p.repartidorNombre) {
+        const key = p.repartidorNombre
+        const existing = map.get(key)
+        if (existing) {
+          existing.cantidad++
+          existing.totalFee += fee
+        } else {
+          map.set(key, { nombre: p.repartidorNombre, cantidad: 1, totalFee: fee })
+        }
+      } else {
+        sinAsignar++
+      }
+    })
+    return {
+      totalDeliveryFee,
+      porRepartidor: Array.from(map.values()).sort((a, b) => b.cantidad - a.cantidad),
+      sinAsignar,
+    }
+  }, [data])
+
   const exportCSV = () => {
     if (!data) return
     const rows = [['tipo', 'id', 'label', 'estado', 'total', 'items', 'hora'].join(',')]
@@ -591,6 +613,49 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
               pedidosPagados={allPedidos.filter(p => p.pagado).length}
               fechaLabel={formatDateLabel(data.fecha)}
             />
+
+            {/* Sección Repartidores */}
+            {data.pedidosDelivery.length > 0 && (
+              <div className="rounded-xl border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Truck className="h-4 w-4 text-[#FF7A00]" />
+                    Envíos del día
+                  </div>
+                  <span className="text-sm font-bold text-[#FF7A00]">
+                    ${repartidorStats.totalDeliveryFee.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {repartidorStats.porRepartidor.length > 0 && (
+                  <div className="space-y-2">
+                    {repartidorStats.porRepartidor.map(r => (
+                      <div key={r.nombre} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 border border-border">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-full bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
+                            <UserRound className="h-3.5 w-3.5 text-[#FF7A00]" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold">{r.nombre}</p>
+                            <p className="text-[10px] text-muted-foreground">{r.cantidad} {r.cantidad === 1 ? 'envío' : 'envíos'}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold tabular-nums">
+                          ${r.totalFee.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    ))}
+                    {repartidorStats.sinAsignar > 0 && (
+                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/20 border border-dashed border-border text-muted-foreground">
+                        <span className="text-xs">{repartidorStats.sinAsignar} {repartidorStats.sinAsignar === 1 ? 'envío' : 'envíos'} sin repartidor</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {repartidorStats.porRepartidor.length === 0 && repartidorStats.sinAsignar > 0 && (
+                  <p className="text-xs text-muted-foreground">{repartidorStats.sinAsignar} {repartidorStats.sinAsignar === 1 ? 'envío' : 'envíos'} sin repartidor asignado</p>
+                )}
+              </div>
+            )}
 
             {/* Buscador & Lista */}
             <div className="space-y-4">

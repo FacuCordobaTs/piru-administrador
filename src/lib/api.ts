@@ -1098,6 +1098,33 @@ export const pedidoUnificadoApi = {
       body: JSON.stringify({ demoraMinutos }),
     })
   },
+  asignarRepartidor: async (token: string, pedidoId: number, repartidorId: number | null) => {
+    return fetchApi(`/pedido-unificado/${pedidoId}/repartidor`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ repartidorId }),
+    })
+  },
+}
+
+export const repartidoresApi = {
+  list: async (token: string) =>
+    fetchApi('/repartidores/list', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  create: async (token: string, nombre: string) =>
+    fetchApi('/repartidores/create', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ nombre }),
+    }),
+  toggleEstado: async (token: string, id: number, estado: 'activo' | 'inactivo') =>
+    fetchApi(`/repartidores/${id}/estado`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ estado }),
+    }),
 }
 
 // Delivery API - usa pedidoUnificado por detrás (compatibilidad)

@@ -50,33 +50,32 @@ const getMontoDescuentoPedido = (pedido: PedidoLike): number => {
     return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-// Helper para obtener el precio unitario de un item (INCLUYENDO AGREGADOS)
+// Helper para obtener el precio unitario de un item.
+// Para pedidos unificados (precioUnitario), el precio ya incluye los agregados.
+// Para el flujo legacy de mesa (precio), se suman los agregados porque el campo
+// precio es solo el precio base del producto.
 const getItemPrice = (item: ItemPedidoLike): number => {
-    let basePrice = 0;
     if (item.precio !== undefined) {
-        basePrice = item.precio;
-    } else if (item.precioUnitario !== undefined) {
-        basePrice = typeof item.precioUnitario === 'string'
+        let basePrice = item.precio;
+        let agregadosTotal = 0;
+        if (item.agregados) {
+            let arr: any[] = [];
+            if (typeof item.agregados === 'string') {
+                try { arr = JSON.parse(item.agregados) } catch (e) { }
+            } else if (Array.isArray(item.agregados)) {
+                arr = item.agregados;
+            }
+            arr.forEach((ag: any) => { agregadosTotal += parseFloat(ag.precio || '0') })
+        }
+        return basePrice + agregadosTotal;
+    }
+    if (item.precioUnitario !== undefined) {
+        // precioUnitario ya incluye el precio de los agregados (sumado al crearse el pedido)
+        return typeof item.precioUnitario === 'string'
             ? parseFloat(item.precioUnitario) || 0
             : item.precioUnitario;
     }
-
-    let agregadosTotal = 0;
-    if (item.agregados) {
-        let arr: any[] = [];
-        // Intentamos parsear por si viene como JSON string o directamente Array
-        if (typeof item.agregados === 'string') {
-            try { arr = JSON.parse(item.agregados) } catch (e) { }
-        } else if (Array.isArray(item.agregados)) {
-            arr = item.agregados;
-        }
-
-        arr.forEach((ag: any) => {
-            agregadosTotal += parseFloat(ag.precio || '0');
-        });
-    }
-
-    return basePrice + agregadosTotal;
+    return 0;
 }
 
 export const formatComanda = (
@@ -88,9 +87,9 @@ export const formatComanda = (
     const GS = '\x1D';
     const LINE_WIDTH = 32;
 
-    // Calculamos el total (usamos el total del pedido si está disponible, sino calculamos)
-    const calculatedTotal = items.reduce((acc, item) => acc + (item.cantidad * getItemPrice(item)), 0);
-    const totalGeneral = pedido.total ? parseFloat(pedido.total) : calculatedTotal;
+    // Total consistente con la vista: itemsSubtotal + deliveryFee - descuento
+    const itemsSubtotal = items.reduce((acc, item) => acc + (item.cantidad * getItemPrice(item)), 0)
+    const totalGeneral = itemsSubtotal + (pedido.deliveryFee || 0) - getMontoDescuentoPedido(pedido)
 
     const commands = [
         ESC + '@', // Initialize
@@ -253,9 +252,9 @@ export const formatFactura = (
     const GS = '\x1D';
     const LINE_WIDTH = 32;
 
-    // Calculamos el total
-    const calculatedTotal = items.reduce((acc, item) => acc + (item.cantidad * getItemPrice(item)), 0);
-    const totalGeneral = pedido.total ? parseFloat(pedido.total) : calculatedTotal;
+    // Total consistente con la vista: itemsSubtotal + deliveryFee - descuento
+    const itemsSubtotalFactura = items.reduce((acc, item) => acc + (item.cantidad * getItemPrice(item)), 0)
+    const totalGeneral = itemsSubtotalFactura + (pedido.deliveryFee || 0) - getMontoDescuentoPedido(pedido)
 
     // Agrupar items por cliente
     const itemsPorCliente = items.reduce((acc, item) => {
