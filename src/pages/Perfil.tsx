@@ -195,6 +195,8 @@ const Perfil = () => {
   const [isTogglingCucuruCheckoutEnabled, setIsTogglingCucuruCheckoutEnabled] = useState(false)
   const [isTogglingNotificarClientesWhatsapp, setIsTogglingNotificarClientesWhatsapp] = useState(false)
   const [isTogglingModoConfirmacionManual, setIsTogglingModoConfirmacionManual] = useState(false)
+  const [isTogglingDeliveryEnabled, setIsTogglingDeliveryEnabled] = useState(false)
+  const [isTogglingTakeawayEnabled, setIsTogglingTakeawayEnabled] = useState(false)
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
@@ -632,6 +634,44 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingModoConfirmacionManual(false)
+    }
+  }
+
+  const handleToggleDeliveryEnabled = async () => {
+    if (!token) return
+    setIsTogglingDeliveryEnabled(true)
+    try {
+      const response = (await restauranteApi.toggleDeliveryEnabled(token)) as {
+        success: boolean
+        deliveryEnabled: boolean
+      }
+      if (response.success) {
+        toast.success(response.deliveryEnabled ? 'Delivery activado' : 'Delivery desactivado')
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingDeliveryEnabled(false)
+    }
+  }
+
+  const handleToggleTakeawayEnabled = async () => {
+    if (!token) return
+    setIsTogglingTakeawayEnabled(true)
+    try {
+      const response = (await restauranteApi.toggleTakeawayEnabled(token)) as {
+        success: boolean
+        takeawayEnabled: boolean
+      }
+      if (response.success) {
+        toast.success(response.takeawayEnabled ? 'Take Away activado' : 'Take Away desactivado')
+        restauranteStore.fetchData()
+      }
+    } catch (error) {
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingTakeawayEnabled(false)
     }
   }
 
@@ -1358,6 +1398,39 @@ const Perfil = () => {
           ───────────────────────────────────────────── */}
           <TabsContent value="delivery" className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
             <div className="flex flex-col gap-6">
+
+              {/* Tipos de pedido activos */}
+              <div className={phantomCardClass}>
+                <div className="p-6 sm:p-8">
+                  <div className="max-w-xl mb-6">
+                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
+                      <UtensilsCrossed className="h-6 w-6 text-[#FF7A00]" />
+                      Tipos de Pedido
+                    </h2>
+                    <p className="text-muted-foreground">Activá o desactivá los modos de pedido disponibles para tus clientes. Podés apagar el delivery o el take away cuando no los quieras ofrecer.</p>
+                  </div>
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
+                    <ToggleRow
+                      icon={<Truck className="h-6 w-6 text-blue-600 dark:text-blue-400" />}
+                      iconBg="bg-blue-100 dark:bg-blue-900/30"
+                      title="Delivery"
+                      description="Los clientes pueden pedir con envío a domicilio"
+                      checked={(restaurante as any)?.deliveryEnabled !== false}
+                      onCheckedChange={handleToggleDeliveryEnabled}
+                      disabled={isTogglingDeliveryEnabled}
+                    />
+                    <ToggleRow
+                      icon={<Package className="h-6 w-6 text-violet-600 dark:text-violet-400" />}
+                      iconBg="bg-violet-100 dark:bg-violet-900/30"
+                      title="Take Away"
+                      description="Los clientes pueden pedir para retirar en el local"
+                      checked={(restaurante as any)?.takeawayEnabled !== false}
+                      onCheckedChange={handleToggleTakeawayEnabled}
+                      disabled={isTogglingTakeawayEnabled}
+                    />
+                  </div>
+                </div>
+              </div>
 
               {/* Horarios */}
               <div className={phantomCardClass}>

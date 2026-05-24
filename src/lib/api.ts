@@ -296,6 +296,24 @@ export const restauranteApi = {
     })
   },
 
+  toggleDeliveryEnabled: async (token: string) => {
+    return fetchApi('/restaurante/toggle-delivery-enabled', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
+  toggleTakeawayEnabled: async (token: string) => {
+    return fetchApi('/restaurante/toggle-takeaway-enabled', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
   getHorarios: async (token: string) => {
     return fetchApi('/restaurante/horarios', {
       method: 'GET',
