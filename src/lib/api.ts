@@ -557,6 +557,15 @@ export const productosApi = {
       },
     })
   },
+
+  bulkDescuento: (token: string, data: { productoIds: number[], descuento: number, descuentoFechaInicio?: string | null, descuentoFechaFin?: string | null }) =>
+    fetchApi('/producto/bulk-descuento', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    }),
 }
 
 // Ingredientes API

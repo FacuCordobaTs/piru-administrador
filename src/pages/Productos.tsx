@@ -15,8 +15,24 @@ import ImageUpload from '@/components/ImageUpload'
 import { cn } from '@/lib/utils'
 import {
   Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
-  X, Power, AlertTriangle, Tag, Percent, Image as ImageIcon, SlidersHorizontal
+  X, Power, AlertTriangle, Tag, Percent, Image as ImageIcon, SlidersHorizontal, Zap
 } from 'lucide-react'
+
+// ─────────────────────────────────────────────
+// Helper: tiempo restante del descuento
+// ─────────────────────────────────────────────
+function formatTimeLeft(fechaFin: string | Date | null): string | null {
+  if (!fechaFin) return null
+  const now = Date.now()
+  const end = new Date(fechaFin).getTime()
+  const diff = end - now
+  if (diff <= 0) return null
+  const hours = Math.floor(diff / 3600000)
+  if (hours < 1) return 'menos de 1h'
+  if (hours < 24) return `${hours}h restantes`
+  const days = Math.floor(hours / 24)
+  return `Vence ${new Date(fechaFin).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}`
+}
 
 // ─────────────────────────────────────────────
 // Estilos base "Phantom"
@@ -40,6 +56,8 @@ const Productos = () => {
     puntosGanados: string
     puntosNecesarios: string
     descuento: string
+    descuentoFechaInicio: string
+    descuentoFechaFin: string
     variantes: Array<{ id?: number, nombre: string, precio: string }>
   }>({
     nombre: '',
@@ -49,8 +67,19 @@ const Productos = () => {
     puntosGanados: '',
     puntosNecesarios: '',
     descuento: '',
+    descuentoFechaInicio: '',
+    descuentoFechaFin: '',
     variantes: []
   })
+
+  // Estados para descuentos masivos
+  const [dialogDescuentoMasivoAbierto, setDialogDescuentoMasivoAbierto] = useState(false)
+  const [descuentoMasivoPct, setDescuentoMasivoPct] = useState('')
+  const [descuentoMasivoInicio, setDescuentoMasivoInicio] = useState('')
+  const [descuentoMasivoFin, setDescuentoMasivoFin] = useState('')
+  const [productosDescuentoSeleccionados, setProductosDescuentoSeleccionados] = useState<number[]>([])
+  const [busquedaDescuento, setBusquedaDescuento] = useState('')
+  const [aplicandoDescuento, setIsAplicandoDescuento] = useState(false)
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState('')
@@ -313,7 +342,7 @@ const Productos = () => {
 
   const abrirDialogNuevo = () => {
     setProductoEditando(null)
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', variantes: [] })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [] })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
@@ -333,6 +362,8 @@ const Productos = () => {
       puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
       puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : '',
       descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : '',
+      descuentoFechaInicio: (producto as any).descuentoFechaInicio ? new Date((producto as any).descuentoFechaInicio).toISOString().slice(0, 16) : '',
+      descuentoFechaFin: (producto as any).descuentoFechaFin ? new Date((producto as any).descuentoFechaFin).toISOString().slice(0, 16) : '',
       variantes: (producto as any).variantes ? (producto as any).variantes.map((v: any) => ({
         id: v.id,
         nombre: v.nombre,
@@ -381,7 +412,9 @@ const Productos = () => {
         variantes: formData.variantes.length > 0 ? formData.variantes.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
         puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
         puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
-        descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0
+        descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,
+        descuentoFechaInicio: formData.descuentoFechaInicio || null,
+        descuentoFechaFin: formData.descuentoFechaFin || null,
       }
 
       if (productoEditando) {
@@ -493,6 +526,11 @@ const Productos = () => {
                 Extras
               </Button>
 
+              <Button variant="outline" onClick={() => setDialogDescuentoMasivoAbierto(true)} className="hidden sm:flex h-12 rounded-xl px-4 border-zinc-200 dark:border-zinc-800 font-semibold">
+                <Percent className="mr-2 h-4 w-4" />
+                Descuentos
+              </Button>
+
               <Button onClick={abrirDialogNuevo} className="hidden sm:flex h-12 rounded-xl px-6 bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20">
                 <Plus className="mr-2 h-5 w-5" />
                 Nuevo Plato
@@ -569,11 +607,18 @@ const Productos = () => {
 
                           {/* Badges Flotantes sobre la imagen (en Desktop) */}
                           <div className="absolute top-3 left-3 right-3 hidden sm:flex justify-between items-start">
-                            {producto.descuento && producto.descuento > 0 ? (
-                              <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm">
-                                <Percent className="h-3 w-3 mr-1" /> {producto.descuento}% OFF
-                              </Badge>
-                            ) : <div />}
+                            <div className="flex flex-col gap-1">
+                              {producto.descuento && producto.descuento > 0 ? (
+                                <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm">
+                                  <Percent className="h-3 w-3 mr-1" /> {producto.descuento}% OFF
+                                </Badge>
+                              ) : null}
+                              {producto.descuento && producto.descuento > 0 && (producto as any).descuentoFechaFin && formatTimeLeft((producto as any).descuentoFechaFin) && (
+                                <Badge className="bg-amber-500/90 text-white font-bold border-none shadow-sm text-[10px]">
+                                  ⏱ {formatTimeLeft((producto as any).descuentoFechaFin)}
+                                </Badge>
+                              )}
+                            </div>
                             {!producto.activo && (
                               <Badge variant="secondary" className="bg-zinc-900/80 text-white border-none backdrop-blur-md">
                                 Inactivo
@@ -720,6 +765,19 @@ const Productos = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Fechas del descuento */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-1">
+                    <Label htmlFor="descuentoFechaInicio" className={phantomLabelClass}>Inicio del descuento (opcional)</Label>
+                    <Input id="descuentoFechaInicio" type="datetime-local" value={formData.descuentoFechaInicio} onChange={(e) => setFormData({ ...formData, descuentoFechaInicio: e.target.value })} disabled={isSubmitting} className={phantomInputClass} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="descuentoFechaFin" className={phantomLabelClass}>Fin del descuento (opcional)</Label>
+                    <Input id="descuentoFechaFin" type="datetime-local" value={formData.descuentoFechaFin} onChange={(e) => setFormData({ ...formData, descuentoFechaFin: e.target.value })} disabled={isSubmitting} className={phantomInputClass} />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground -mt-2 ml-1">Si no defines fechas, el descuento es permanente.</p>
 
                 <div className="space-y-1">
                   <div className="flex items-center justify-between mb-2">
@@ -1197,6 +1255,147 @@ const Productos = () => {
             <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogDesactivarAbierto(false)}>Cancelar</Button>
             <Button className={cn("flex-1 h-12 rounded-xl font-bold text-white shadow-sm", productoADesactivar?.activo ? "bg-orange-500 hover:bg-orange-600" : "bg-green-500 hover:bg-green-600")} onClick={toggleActivoProducto} disabled={isDesactivando}>
               {isDesactivando ? <Loader2 className="h-5 w-5 animate-spin" /> : (productoADesactivar?.activo ? 'Ocultar' : 'Activar')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─────────────────────────────────────────────
+          MODAL: DESCUENTOS MASIVOS
+      ───────────────────────────────────────────── */}
+      <Dialog open={dialogDescuentoMasivoAbierto} onOpenChange={(open) => { setDialogDescuentoMasivoAbierto(open); if (!open) { setBusquedaDescuento(''); setProductosDescuentoSeleccionados([]) } }}>
+        <DialogContent className="max-w-lg p-0 gap-0 sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden max-h-[90dvh] flex flex-col">
+          <div className="px-6 sm:px-8 pt-8 pb-4 shrink-0 bg-white dark:bg-zinc-950 z-10 border-b border-zinc-100 dark:border-zinc-800">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center">
+                  <Zap className="h-5 w-5 text-amber-500" />
+                </div>
+                Descuentos Masivos
+              </DialogTitle>
+              <DialogDescription className="text-base text-muted-foreground mt-2">
+                Aplica descuentos por tiempo limitado a varios productos a la vez.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
+            {/* Sección 1: Configurar descuento */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-base border-b border-zinc-100 dark:border-zinc-800 pb-2">Configurar descuento</h3>
+              <div className="space-y-1">
+                <Label className={phantomLabelClass}>Porcentaje de descuento (%) <span className="font-normal text-muted-foreground">— 0 = quitar descuento</span></Label>
+                <div className="relative">
+                  <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input type="number" min="0" max="100" step="1" value={descuentoMasivoPct} onChange={(e) => setDescuentoMasivoPct(e.target.value)} placeholder="0" className={cn(phantomInputClass, "pl-10")} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label className={phantomLabelClass}>Inicio (opcional)</Label>
+                  <Input type="datetime-local" value={descuentoMasivoInicio} onChange={(e) => setDescuentoMasivoInicio(e.target.value)} className={phantomInputClass} />
+                </div>
+                <div className="space-y-1">
+                  <Label className={phantomLabelClass}>Fin (opcional)</Label>
+                  <Input type="datetime-local" value={descuentoMasivoFin} onChange={(e) => setDescuentoMasivoFin(e.target.value)} className={phantomInputClass} />
+                </div>
+              </div>
+              {/* Presets rápidos */}
+              <div className="flex gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground self-center font-medium">Presets fin:</span>
+                {[{ label: '1h', ms: 3600000 }, { label: '8h', ms: 28800000 }, { label: '24h', ms: 86400000 }, { label: '7 días', ms: 604800000 }].map(({ label, ms }) => (
+                  <Button key={label} type="button" variant="outline" size="sm" className="h-8 px-3 rounded-lg text-xs font-semibold border-zinc-200 dark:border-zinc-700" onClick={() => {
+                    const fin = new Date(Date.now() + ms)
+                    setDescuentoMasivoFin(fin.toISOString().slice(0, 16))
+                  }}>
+                    {label}
+                  </Button>
+                ))}
+                {descuentoMasivoFin && (
+                  <Button type="button" variant="ghost" size="sm" className="h-8 px-2 rounded-lg text-xs text-muted-foreground" onClick={() => setDescuentoMasivoFin('')}>
+                    <X className="h-3 w-3 mr-1" /> Quitar
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Sección 2: Seleccionar productos */}
+            <div className="space-y-3">
+              <h3 className="font-bold text-base border-b border-zinc-100 dark:border-zinc-800 pb-2">Seleccionar productos</h3>
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Buscar producto..." value={busquedaDescuento} onChange={(e) => setBusquedaDescuento(e.target.value)} className="h-11 pl-11 rounded-xl bg-zinc-50 dark:bg-zinc-900 border-transparent focus:border-[#FF7A00]" />
+              </div>
+              <div className="flex gap-3 text-xs font-semibold">
+                <button type="button" className="text-[#FF7A00] hover:underline" onClick={() => setProductosDescuentoSeleccionados(productos.map(p => p.id))}>Seleccionar todos</button>
+                <span className="text-muted-foreground">·</span>
+                <button type="button" className="text-muted-foreground hover:underline" onClick={() => setProductosDescuentoSeleccionados([])}>Deseleccionar todos</button>
+                <span className="ml-auto text-muted-foreground">{productosDescuentoSeleccionados.length} seleccionados</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+                {productos.filter(p => p.nombre.toLowerCase().includes(busquedaDescuento.toLowerCase())).map((p) => {
+                  const isSelected = productosDescuentoSeleccionados.includes(p.id)
+                  return (
+                    <div
+                      key={p.id}
+                      className={cn("flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all", isSelected ? "bg-orange-50/50 dark:bg-orange-950/20 border-[#FF7A00]" : "bg-white dark:bg-zinc-950 border-transparent hover:border-zinc-200 dark:hover:border-zinc-800")}
+                      onClick={() => setProductosDescuentoSeleccionados(prev => isSelected ? prev.filter(id => id !== p.id) : [...prev, p.id])}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={cn("h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0", isSelected ? "bg-[#FF7A00] border-[#FF7A00]" : "border-zinc-300 dark:border-zinc-600")}>
+                          {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                        </div>
+                        <span className={cn("text-sm font-semibold truncate", isSelected ? "text-[#FF7A00]" : "text-foreground")}>{p.nombre}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        {(p as any).descuento && (p as any).descuento > 0 && (
+                          <Badge className="bg-emerald-500 text-white text-[10px] font-bold border-none px-1.5">-{(p as any).descuento}%</Badge>
+                        )}
+                        {(p as any).descuentoFechaFin && formatTimeLeft((p as any).descuentoFechaFin) && (
+                          <span className="text-[10px] text-amber-600 font-semibold">⏱ {formatTimeLeft((p as any).descuentoFechaFin)}</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 sm:px-8 py-5 shrink-0 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-end gap-3 z-10">
+            <Button type="button" variant="ghost" onClick={() => setDialogDescuentoMasivoAbierto(false)} disabled={aplicandoDescuento} className="h-12 px-6 rounded-xl font-semibold text-muted-foreground hover:text-foreground">
+              Cancelar
+            </Button>
+            <Button
+              disabled={productosDescuentoSeleccionados.length === 0 || descuentoMasivoPct === '' || aplicandoDescuento}
+              onClick={async () => {
+                if (!token) return
+                setIsAplicandoDescuento(true)
+                try {
+                  await productosApi.bulkDescuento(token, {
+                    productoIds: productosDescuentoSeleccionados,
+                    descuento: parseInt(descuentoMasivoPct, 10),
+                    descuentoFechaInicio: descuentoMasivoInicio || null,
+                    descuentoFechaFin: descuentoMasivoFin || null,
+                  })
+                  toast.success(`Descuento aplicado a ${productosDescuentoSeleccionados.length} producto(s)`)
+                  await fetchData()
+                  setDialogDescuentoMasivoAbierto(false)
+                  setProductosDescuentoSeleccionados([])
+                  setDescuentoMasivoPct('')
+                  setDescuentoMasivoInicio('')
+                  setDescuentoMasivoFin('')
+                } catch (error: any) {
+                  toast.error('Error al aplicar descuento', { description: error.message || 'Error de conexión' })
+                } finally {
+                  setIsAplicandoDescuento(false)
+                }
+              }}
+              className="h-12 px-8 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-transform"
+            >
+              {aplicandoDescuento ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Zap className="mr-2 h-5 w-5" />}
+              Aplicar a {productosDescuentoSeleccionados.length} producto{productosDescuentoSeleccionados.length !== 1 ? 's' : ''}
             </Button>
           </div>
         </DialogContent>
