@@ -30,7 +30,6 @@ function formatTimeLeft(fechaFin: string | Date | null): string | null {
   const hours = Math.floor(diff / 3600000)
   if (hours < 1) return 'menos de 1h'
   if (hours < 24) return `${hours}h restantes`
-  const days = Math.floor(hours / 24)
   return `Vence ${new Date(fechaFin).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}`
 }
 
