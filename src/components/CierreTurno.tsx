@@ -3,7 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuthStore } from '@/store/authStore'
 import { pedidosApi, facturacionApi } from '@/lib/api'
 import {
-  X, Loader2, FileText, Search, ChevronDown, ChevronRight, ArrowLeft,
+  X, Loader2, FileText, Search, ChevronDown, ArrowLeft,
   Truck, TrendingUp, Banknote, Smartphone, Landmark, Receipt, ShoppingBag, UtensilsCrossed
 } from 'lucide-react'
 import FacturacionBatchCierre from '@/components/FacturacionBatchCierre'

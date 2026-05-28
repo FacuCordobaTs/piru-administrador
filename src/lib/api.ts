@@ -402,6 +402,50 @@ export const restauranteApi = {
       body: JSON.stringify(data),
     })
   },
+
+  togglePermitirPedidosProgramados: async (token: string) => {
+    return fetchApi('/restaurante/toggle-permitir-pedidos-programados', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  toggleUsarFranjasHorario: async (token: string) => {
+    return fetchApi('/restaurante/toggle-usar-franjas-horario', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  getFranjasHorario: async (token: string) => {
+    return fetchApi('/restaurante/franjas-horario', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  createFranjaHorario: async (token: string, data: { nombre: string; horaInicio: string; horaFin: string; activo?: boolean }) => {
+    return fetchApi('/restaurante/franjas-horario', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+  },
+
+  updateFranjaHorario: async (token: string, id: number, data: { nombre?: string; horaInicio?: string; horaFin?: string; activo?: boolean }) => {
+    return fetchApi(`/restaurante/franjas-horario/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+  },
+
+  deleteFranjaHorario: async (token: string, id: number) => {
+    return fetchApi(`/restaurante/franjas-horario/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }
 
 // Cucuru API

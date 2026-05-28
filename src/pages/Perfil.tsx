@@ -199,6 +199,16 @@ const Perfil = () => {
   const [isTogglingModoConfirmacionManual, setIsTogglingModoConfirmacionManual] = useState(false)
   const [isTogglingDeliveryEnabled, setIsTogglingDeliveryEnabled] = useState(false)
   const [isTogglingTakeawayEnabled, setIsTogglingTakeawayEnabled] = useState(false)
+  const [isTogglingPermitirPedidosProgramados, setIsTogglingPermitirPedidosProgramados] = useState(false)
+  const [isTogglingUsarFranjasHorario, setIsTogglingUsarFranjasHorario] = useState(false)
+
+  type FranjaHorario = { id: number; nombre: string; horaInicio: string; horaFin: string; activo: boolean }
+  const [franjas, setFranjas] = useState<FranjaHorario[]>([])
+  const [franjasLoaded, setFranjasLoaded] = useState(false)
+  const [franjaDialogOpen, setFranjaDialogOpen] = useState(false)
+  const [editingFranja, setEditingFranja] = useState<FranjaHorario | null>(null)
+  const [franjaForm, setFranjaForm] = useState({ nombre: '', horaInicio: '09:00', horaFin: '18:00', activo: true })
+  const [isSavingFranja, setIsSavingFranja] = useState(false)
   const [isConfiguringCucuru, setIsConfiguringCucuru] = useState(false)
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
@@ -674,6 +684,96 @@ const Perfil = () => {
       toast.error('Error al cambiar la configuración')
     } finally {
       setIsTogglingTakeawayEnabled(false)
+    }
+  }
+
+  const handleTogglePermitirPedidosProgramados = async () => {
+    if (!token) return
+    setIsTogglingPermitirPedidosProgramados(true)
+    try {
+      const response = (await restauranteApi.togglePermitirPedidosProgramados(token)) as {
+        success: boolean
+        permitirPedidosProgramados: boolean
+      }
+      if (response.success) {
+        toast.success(response.permitirPedidosProgramados ? 'Pedidos programados activados' : 'Pedidos programados desactivados')
+        restauranteStore.fetchData()
+      }
+    } catch {
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingPermitirPedidosProgramados(false)
+    }
+  }
+
+  const handleToggleUsarFranjasHorario = async () => {
+    if (!token) return
+    setIsTogglingUsarFranjasHorario(true)
+    try {
+      const response = (await restauranteApi.toggleUsarFranjasHorario(token)) as {
+        success: boolean
+        usarFranjasHorario: boolean
+      }
+      if (response.success) {
+        toast.success(response.usarFranjasHorario ? 'Franjas de horario activadas' : 'Franjas de horario desactivadas')
+        restauranteStore.fetchData()
+      }
+    } catch {
+      toast.error('Error al cambiar la configuración')
+    } finally {
+      setIsTogglingUsarFranjasHorario(false)
+    }
+  }
+
+  const cargarFranjas = async () => {
+    if (!token) return
+    try {
+      const response = (await restauranteApi.getFranjasHorario(token)) as { success: boolean; franjas: FranjaHorario[] }
+      if (response.success) setFranjas(response.franjas)
+    } catch {
+      toast.error('Error al cargar franjas')
+    } finally {
+      setFranjasLoaded(true)
+    }
+  }
+
+  const handleSaveFranja = async () => {
+    if (!token) return
+    if (!franjaForm.nombre.trim()) return toast.error('Ingresa un nombre para la franja')
+    setIsSavingFranja(true)
+    try {
+      if (editingFranja) {
+        const response = (await restauranteApi.updateFranjaHorario(token, editingFranja.id, franjaForm)) as { success: boolean }
+        if (response.success) {
+          toast.success('Franja actualizada')
+          setFranjaDialogOpen(false)
+          cargarFranjas()
+        }
+      } else {
+        const response = (await restauranteApi.createFranjaHorario(token, franjaForm)) as { success: boolean }
+        if (response.success) {
+          toast.success('Franja creada')
+          setFranjaDialogOpen(false)
+          cargarFranjas()
+        }
+      }
+    } catch {
+      toast.error('Error al guardar franja')
+    } finally {
+      setIsSavingFranja(false)
+    }
+  }
+
+  const handleDeleteFranja = async (id: number) => {
+    if (!token) return
+    try {
+      const response = (await restauranteApi.deleteFranjaHorario(token, id)) as { success: boolean }
+      if (response.success) {
+        toast.success('Franja eliminada')
+        cargarFranjas()
+      }
+    } catch {
+      toast.error('Error al eliminar franja')
     }
   }
 
@@ -1534,6 +1634,96 @@ const Perfil = () => {
                 </div>
               </div>
 
+              {/* Pedidos Programados */}
+              <div className={phantomCardClass}>
+                <div className="p-6 sm:p-8">
+                  <div className="max-w-xl mb-6">
+                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
+                      <Clock className="h-6 w-6 text-[#FF7A00]" />
+                      Pedidos Programados
+                    </h2>
+                    <p className="text-muted-foreground">Permitís que los clientes hagan pedidos fuera de horario para recibirlos después. Podés configurar franjas horarias predefinidas o dejar que elijan la hora libremente.</p>
+                  </div>
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
+                    <ToggleRow
+                      icon={<Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />}
+                      iconBg="bg-amber-100 dark:bg-amber-900/30"
+                      title="Permitir pedidos programados"
+                      description="Los clientes pueden hacer pedidos fuera del horario de atención eligiendo cuándo recibirlos"
+                      checked={(restaurante as any)?.permitirPedidosProgramados === true}
+                      onCheckedChange={handleTogglePermitirPedidosProgramados}
+                      disabled={isTogglingPermitirPedidosProgramados}
+                    />
+                    <ToggleRow
+                      icon={<List className="h-6 w-6 text-teal-600 dark:text-teal-400" />}
+                      iconBg="bg-teal-100 dark:bg-teal-900/30"
+                      title="Usar franjas de horario"
+                      description="Mostrar opciones predefinidas en lugar de permitir que el cliente ingrese cualquier hora"
+                      checked={(restaurante as any)?.usarFranjasHorario === true}
+                      onCheckedChange={handleToggleUsarFranjasHorario}
+                      disabled={isTogglingUsarFranjasHorario || !(restaurante as any)?.permitirPedidosProgramados}
+                    />
+                  </div>
+
+                  {(restaurante as any)?.usarFranjasHorario && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-base font-bold">Franjas de horario</h3>
+                        <Button
+                          size="sm"
+                          className="h-9 rounded-xl px-4 bg-[#FF7A00] hover:bg-[#E66E00] text-white"
+                          onClick={() => {
+                            if (!franjasLoaded) cargarFranjas()
+                            setEditingFranja(null)
+                            setFranjaForm({ nombre: '', horaInicio: '09:00', horaFin: '18:00', activo: true })
+                            setFranjaDialogOpen(true)
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> Nueva franja
+                        </Button>
+                      </div>
+                      {!franjasLoaded ? (
+                        <Button variant="outline" className="rounded-xl" onClick={cargarFranjas}>
+                          <RefreshCw className="h-4 w-4 mr-2" /> Cargar franjas
+                        </Button>
+                      ) : franjas.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic">No hay franjas configuradas. Agregá una para que tus clientes puedan elegir.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {franjas.map(f => (
+                            <div key={f.id} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                              <div className="flex items-center gap-3">
+                                <div className={cn("h-2.5 w-2.5 rounded-full", f.activo ? "bg-green-500" : "bg-zinc-300")} />
+                                <div>
+                                  <p className="font-semibold text-sm">{f.nombre}</p>
+                                  <p className="text-xs text-muted-foreground">{f.horaInicio} – {f.horaFin}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"
+                                  onClick={() => {
+                                    setEditingFranja(f)
+                                    setFranjaForm({ nombre: f.nombre, horaInicio: f.horaInicio, horaFin: f.horaFin, activo: f.activo })
+                                    setFranjaDialogOpen(true)
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-muted-foreground hover:text-red-500"
+                                  onClick={() => handleDeleteFranja(f.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Mapa Zonas */}
               <div>
                 <Suspense
@@ -2096,6 +2286,65 @@ const Perfil = () => {
                 className="h-12 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20 flex-1 sm:flex-none"
               >
                 {isSavingSucursal ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+                Guardar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Franja de Horario */}
+      <Dialog open={franjaDialogOpen} onOpenChange={setFranjaDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-[32px] p-0 overflow-hidden">
+          <div className="p-6 sm:p-8">
+            <DialogHeader className="mb-6">
+              <DialogTitle className="text-2xl font-bold">{editingFranja ? 'Editar franja' : 'Nueva franja'}</DialogTitle>
+              <DialogDescription>Configurá el nombre y el rango de horas para esta franja.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className={phantomLabelClass}>Nombre</Label>
+                <Input
+                  placeholder="Ej: Almuerzo, Cena, Mañana..."
+                  className={phantomInputClass}
+                  value={franjaForm.nombre}
+                  onChange={e => setFranjaForm(f => ({ ...f, nombre: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className={phantomLabelClass}>Hora inicio</Label>
+                  <Input
+                    type="time"
+                    className={phantomInputClass}
+                    value={franjaForm.horaInicio}
+                    onChange={e => setFranjaForm(f => ({ ...f, horaInicio: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className={phantomLabelClass}>Hora fin</Label>
+                  <Input
+                    type="time"
+                    className={phantomInputClass}
+                    value={franjaForm.horaFin}
+                    onChange={e => setFranjaForm(f => ({ ...f, horaFin: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <Switch
+                  checked={franjaForm.activo}
+                  onCheckedChange={v => setFranjaForm(f => ({ ...f, activo: v }))}
+                />
+                <Label>Franja activa</Label>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end mt-6">
+              <Button variant="ghost" onClick={() => setFranjaDialogOpen(false)} disabled={isSavingFranja} className="h-12 px-6 rounded-xl font-medium">
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveFranja} disabled={isSavingFranja} className="h-12 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20">
+                {isSavingFranja ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
                 Guardar
               </Button>
             </div>
