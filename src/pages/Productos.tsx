@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -7,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, agregadosApi } from '@/lib/api'
@@ -14,8 +14,9 @@ import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
 import { cn } from '@/lib/utils'
 import {
-  Package, Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
-  X, Power, AlertTriangle, Tag, Percent, Image as ImageIcon, SlidersHorizontal, Zap
+  Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
+  X, AlertTriangle, Percent, Image as ImageIcon,
+  ChevronDown
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
@@ -34,19 +35,33 @@ function formatTimeLeft(fechaFin: string | Date | null): string | null {
 }
 
 // ─────────────────────────────────────────────
-// Estilos base "Phantom"
+// Estilos base
 // ─────────────────────────────────────────────
-const phantomCardClass = "bg-white dark:bg-[#121212] rounded-[32px] shadow-sm border border-zinc-100 dark:border-zinc-800 overflow-hidden"
+const panelInputClass = "h-12 rounded-lg bg-zinc-800 border-transparent focus:border-white/20 focus:ring-2 focus:ring-white/10 transition-all text-base px-4 w-full"
+const panelLabelClass = "text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-1.5 block"
 const phantomInputClass = "h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
-const phantomLabelClass = "text-sm font-bold text-foreground ml-1 mb-2 block"
 
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
   const token = useAuthStore((state) => state.token)
   const [busqueda, setBusqueda] = useState('')
-  const [dialogAbierto, setDialogAbierto] = useState(false)
-  const [productoEditando, setProductoEditando] = useState<typeof productos[0] | null>(null)
+
+  // ─── Panel states ───
+  const [panelProductoId, setPanelProductoId] = useState<number | null>(null)
+  const [activePanelType, setActivePanelType] = useState<'product' | 'discounts' | 'extras' | null>(null)
+  const [panelModo, setPanelModo] = useState<'vista' | 'edicion'>('vista')
+  const [panelNuevo, setPanelNuevo] = useState(false)
+  const [confirmandoEliminar, setConfirmandoEliminar] = useState(false)
+  const [seccionesAbiertas, setSeccionesAbiertas] = useState<Set<string>>(new Set(['info']))
+  const [isDirty, setIsDirty] = useState(false)
+  const [isTogglingActivo, setIsTogglingActivo] = useState(false)
+  const [isEliminando, setIsEliminando] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Derived
+  const panelProducto = panelProductoId !== null ? productos.find(p => p.id === panelProductoId) ?? null : null
+
+  // ─── Form state ───
   const [formData, setFormData] = useState<{
     nombre: string
     descripcion: string
@@ -70,19 +85,27 @@ const Productos = () => {
     descuentoFechaFin: '',
     variantes: []
   })
+  const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [etiquetasProducto, setEtiquetasProducto] = useState<string[]>([])
 
-  // Estados para descuentos masivos
-  const [dialogDescuentoMasivoAbierto, setDialogDescuentoMasivoAbierto] = useState(false)
+  // ─── Descuentos masivos ───
   const [descuentoMasivoPct, setDescuentoMasivoPct] = useState('')
   const [descuentoMasivoInicio, setDescuentoMasivoInicio] = useState('')
   const [descuentoMasivoFin, setDescuentoMasivoFin] = useState('')
   const [productosDescuentoSeleccionados, setProductosDescuentoSeleccionados] = useState<number[]>([])
   const [busquedaDescuento, setBusquedaDescuento] = useState('')
   const [aplicandoDescuento, setIsAplicandoDescuento] = useState(false)
-  const [imageBase64, setImageBase64] = useState<string | null>(null)
+
+  // ─── Categorias ───
   const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState('')
   const [isCreandoCategoria, setIsCreandoCategoria] = useState(false)
+  const [dialogGestionCategoriasAbierto, setDialogGestionCategoriasAbierto] = useState(false)
+  const [dialogEliminarCategoriaAbierto, setDialogEliminarCategoriaAbierto] = useState(false)
+  const [categoriaAEliminar, setCategoriaAEliminar] = useState<typeof categorias[0] | null>(null)
+  const [isEliminandoCategoria, setIsEliminandoCategoria] = useState(false)
+
+  // ─── Ingredientes ───
   const [ingredientes, setIngredientes] = useState<Array<{ id: number; nombre: string }>>([])
   const [ingredientesSeleccionados, setIngredientesSeleccionados] = useState<number[]>([])
   const [nuevoIngredienteNombre, setNuevoIngredienteNombre] = useState('')
@@ -90,51 +113,28 @@ const Productos = () => {
   const [isCreandoIngrediente, setIsCreandoIngrediente] = useState(false)
   const [busquedaIngrediente, setBusquedaIngrediente] = useState('')
 
-  // Estados para agregados
+  // ─── Agregados ───
   const [agregados, setAgregados] = useState<Array<{ id: number; nombre: string; precio: string }>>([])
   const [agregadosSeleccionados, setAgregadosSeleccionados] = useState<number[]>([])
   const [nuevoAgregadoNombre, setNuevoAgregadoNombre] = useState('')
   const [nuevoAgregadoPrecio, setNuevoAgregadoPrecio] = useState('')
   const [dialogAgregadoAbierto, setDialogAgregadoAbierto] = useState(false)
   const [isCreandoAgregado, setIsCreandoAgregado] = useState(false)
-
-  // Estados para gestión global de extras
-  const [dialogGestionExtrasAbierto, setDialogGestionExtrasAbierto] = useState(false)
-  const [dialogEditarAgregadoAbierto, setDialogEditarAgregadoAbierto] = useState(false)
-  const [agregadoEditando, setAgregadoEditando] = useState<{ id: number; nombre: string; precio: string } | null>(null)
-  const [editarAgregadoNombre, setEditarAgregadoNombre] = useState('')
-  const [editarAgregadoPrecio, setEditarAgregadoPrecio] = useState('')
-  const [isEditandoAgregado, setIsEditandoAgregado] = useState(false)
   const [dialogEliminarAgregadoAbierto, setDialogEliminarAgregadoAbierto] = useState(false)
   const [agregadoAEliminar, setAgregadoAEliminar] = useState<{ id: number; nombre: string } | null>(null)
   const [isEliminandoAgregado, setIsEliminandoAgregado] = useState(false)
+  const [extrasEditandoId, setExtrasEditandoId] = useState<number | null>(null)
+  const [extrasEditNombre, setExtrasEditNombre] = useState('')
+  const [extrasEditPrecio, setExtrasEditPrecio] = useState('')
+  const [isGuardandoExtraInline, setIsGuardandoExtraInline] = useState(false)
 
-  const [dialogEliminarAbierto, setDialogEliminarAbierto] = useState(false)
-  const [productoAEliminar, setProductoAEliminar] = useState<typeof productos[0] | null>(null)
-  const [isEliminando, setIsEliminando] = useState(false)
-
-  const [dialogDesactivarAbierto, setDialogDesactivarAbierto] = useState(false)
-  const [productoADesactivar, setProductoADesactivar] = useState<typeof productos[0] | null>(null)
-  const [isDesactivando, setIsDesactivando] = useState(false)
-
-  // Estados para gestión de categorías
-  const [dialogGestionCategoriasAbierto, setDialogGestionCategoriasAbierto] = useState(false)
-  const [dialogEliminarCategoriaAbierto, setDialogEliminarCategoriaAbierto] = useState(false)
-  const [categoriaAEliminar, setCategoriaAEliminar] = useState<typeof categorias[0] | null>(null)
-  const [isEliminandoCategoria, setIsEliminandoCategoria] = useState(false)
-
-  // Estados para etiquetas
-  const [etiquetasProducto, setEtiquetasProducto] = useState<string[]>([])
-  const [nuevaEtiqueta, setNuevaEtiqueta] = useState('')
+  // ─── Backfill etiquetas ───
   const [isBackfillingEtiquetas, setIsBackfillingEtiquetas] = useState(false)
 
   useEffect(() => {
-    if (!restaurante) {
-      fetchData()
-    }
+    if (!restaurante) fetchData()
   }, [])
 
-  // Cargar ingredientes y agregados
   useEffect(() => {
     const cargarIngredientes = async () => {
       if (!token) return
@@ -165,6 +165,181 @@ const Productos = () => {
     cargarAgregados()
   }, [token])
 
+  // ─────────────────────────────────────────────
+  // Panel actions
+  // ─────────────────────────────────────────────
+  const abrirPanel = (producto: typeof productos[0]) => {
+    setPanelProductoId(producto.id)
+    setActivePanelType('product')
+    setPanelModo('vista')
+    setPanelNuevo(false)
+    setConfirmandoEliminar(false)
+  }
+
+  const cerrarPanel = () => {
+    setActivePanelType(null)
+    setConfirmandoEliminar(false)
+    setPanelNuevo(false)
+    setExtrasEditandoId(null)
+  }
+
+  const abrirPanelNuevo = () => {
+    setPanelProductoId(null)
+    setPanelNuevo(true)
+    setActivePanelType('product')
+    setPanelModo('edicion')
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [] })
+    setImageBase64(null)
+    setIngredientesSeleccionados([])
+    setAgregadosSeleccionados([])
+    setEtiquetasProducto([])
+    setBusquedaIngrediente('')
+    setSeccionesAbiertas(new Set(['info']))
+    setIsDirty(false)
+  }
+
+  const entrarEdicion = async (producto: typeof productos[0]) => {
+    setFormData({
+      nombre: producto.nombre,
+      descripcion: producto.descripcion || '',
+      precio: producto.precio.toString(),
+      categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
+      puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
+      puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : '',
+      descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : '',
+      descuentoFechaInicio: (producto as any).descuentoFechaInicio ? new Date((producto as any).descuentoFechaInicio).toISOString().slice(0, 16) : '',
+      descuentoFechaFin: (producto as any).descuentoFechaFin ? new Date((producto as any).descuentoFechaFin).toISOString().slice(0, 16) : '',
+      variantes: (producto as any).variantes ? (producto as any).variantes.map((v: any) => ({ id: v.id, nombre: v.nombre, precio: v.precio.toString() })) : []
+    })
+    setImageBase64(producto.imagenUrl || null)
+    setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
+    setBusquedaIngrediente('')
+
+    if (token) {
+      try {
+        const response = await ingredientesApi.getByProducto(token, producto.id) as any
+        setIngredientesSeleccionados(response.success && response.ingredientes ? response.ingredientes.map((ing: any) => ing.id) : [])
+      } catch { setIngredientesSeleccionados([]) }
+
+      try {
+        const response2 = await agregadosApi.getByProducto(token, producto.id) as any
+        setAgregadosSeleccionados(response2.success && response2.agregados ? response2.agregados.map((ag: any) => ag.id) : [])
+      } catch { setAgregadosSeleccionados([]) }
+    }
+
+    setPanelModo('edicion')
+    setIsDirty(false)
+    setSeccionesAbiertas(new Set(['info']))
+  }
+
+  const toggleSeccion = (id: string) => {
+    setSeccionesAbiertas(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const markDirty = () => { if (!isDirty) setIsDirty(true) }
+
+  // ─────────────────────────────────────────────
+  // Toggle activo directo (sin dialog)
+  // ─────────────────────────────────────────────
+  const toggleActivoDirecto = async (producto: typeof productos[0]) => {
+    if (!token) return
+    const nuevoEstado = !producto.activo
+    setIsTogglingActivo(true)
+    try {
+      await productosApi.update(token, { id: producto.id, activo: nuevoEstado })
+      toast.success(nuevoEstado ? 'Producto activado' : 'Producto desactivado')
+      await fetchData()
+    } catch (error: any) {
+      toast.error('Error al cambiar estado', { description: error.message || 'Error de conexión' })
+    } finally {
+      setIsTogglingActivo(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Eliminar directo (inline confirm)
+  // ─────────────────────────────────────────────
+  const eliminarProductoDirecto = async () => {
+    if (!token || !panelProducto) return
+    setIsEliminando(true)
+    try {
+      await productosApi.delete(token, panelProducto.id)
+      toast.success('Producto eliminado correctamente')
+      cerrarPanel()
+      await fetchData()
+    } catch (error: any) {
+      const errorMessage = error.message || error.response?.message || ''
+      if (errorMessage.includes('pedidos asociados') || errorMessage.includes('pedido')) {
+        toast.error('No se puede eliminar el producto', {
+          description: 'Este producto tiene pedidos asociados. Desactívalo en su lugar para ocultarlo del menú sin perder el historial.'
+        })
+      } else {
+        toast.error('Error al eliminar producto', { description: errorMessage })
+      }
+    } finally {
+      setIsEliminando(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Guardar producto (crear / actualizar)
+  // ─────────────────────────────────────────────
+  const handleSalvar = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!token) { toast.error('No hay sesión activa'); return }
+    if (!formData.nombre.trim()) { toast.error('El nombre es requerido'); return }
+    if (!formData.descripcion.trim()) { toast.error('La descripción es requerida'); return }
+    const precio = parseFloat(formData.precio)
+    if (isNaN(precio) || precio <= 0) { toast.error('El precio debe ser mayor a 0'); return }
+
+    setIsSubmitting(true)
+    try {
+      const parsedCategoriaId = parseInt(formData.categoriaId)
+      const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0) ? parsedCategoriaId : undefined
+      const payload = {
+        nombre: formData.nombre,
+        descripcion: formData.descripcion,
+        precio: precio,
+        image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
+        categoriaId: categoriaId !== undefined ? categoriaId : null,
+        ingredienteIds: ingredientesSeleccionados,
+        agregadoIds: agregadosSeleccionados,
+        etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
+        variantes: formData.variantes.length > 0 ? formData.variantes.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
+        puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
+        puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
+        descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,
+        descuentoFechaInicio: formData.descuentoFechaInicio || null,
+        descuentoFechaFin: formData.descuentoFechaFin || null,
+      }
+
+      if (!panelNuevo && panelProductoId !== null) {
+        await productosApi.update(token, { id: panelProductoId, ...payload } as any)
+        toast.success('Producto actualizado')
+        await fetchData()
+        setIsDirty(false)
+        setPanelModo('vista')
+      } else {
+        await productosApi.create(token, payload as any)
+        toast.success('Producto creado')
+        await fetchData()
+        cerrarPanel()
+      }
+    } catch (error: any) {
+      toast.error('Error al guardar', { description: error.message || 'Error de conexión' })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Ingredientes
+  // ─────────────────────────────────────────────
   const crearIngrediente = async () => {
     if (!token || !nuevoIngredienteNombre.trim()) {
       toast.error('El nombre del ingrediente es requerido')
@@ -177,8 +352,8 @@ const Productos = () => {
         toast.success('Ingrediente creado')
         setNuevoIngredienteNombre('')
         setDialogIngredienteAbierto(false)
-        const ingredientesResponse = await ingredientesApi.getAll(token) as any
-        if (ingredientesResponse.success && ingredientesResponse.ingredientes) setIngredientes(ingredientesResponse.ingredientes)
+        const r = await ingredientesApi.getAll(token) as any
+        if (r.success && r.ingredientes) setIngredientes(r.ingredientes)
       }
     } catch (error: any) {
       toast.error('Error al crear ingrediente', { description: error.message || 'Error de conexión' })
@@ -187,6 +362,9 @@ const Productos = () => {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // Agregados
+  // ─────────────────────────────────────────────
   const crearAgregado = async () => {
     if (!token || !nuevoAgregadoNombre.trim() || !nuevoAgregadoPrecio) {
       toast.error('Nombre y precio del agregado son requeridos')
@@ -205,8 +383,8 @@ const Productos = () => {
         setNuevoAgregadoNombre('')
         setNuevoAgregadoPrecio('')
         setDialogAgregadoAbierto(false)
-        const agregadosResponse = await agregadosApi.getAll(token) as any
-        if (agregadosResponse.success && agregadosResponse.agregados) setAgregados(agregadosResponse.agregados)
+        const r = await agregadosApi.getAll(token) as any
+        if (r.success && r.agregados) setAgregados(r.agregados)
       }
     } catch (error: any) {
       toast.error('Error al crear agregado', { description: error.message || 'Error de conexión' })
@@ -215,32 +393,30 @@ const Productos = () => {
     }
   }
 
-  const abrirEditarAgregado = (ag: { id: number; nombre: string; precio: string }) => {
-    setAgregadoEditando(ag)
-    setEditarAgregadoNombre(ag.nombre)
-    setEditarAgregadoPrecio(ag.precio)
-    setDialogEditarAgregadoAbierto(true)
+  const iniciarEditInlineExtra = (ag: { id: number; nombre: string; precio: string }) => {
+    setExtrasEditandoId(ag.id)
+    setExtrasEditNombre(ag.nombre)
+    setExtrasEditPrecio(ag.precio)
   }
 
-  const editarAgregado = async () => {
-    if (!token || !agregadoEditando) return
-    if (!editarAgregadoNombre.trim()) { toast.error('El nombre es requerido'); return }
-    const precio = parseFloat(editarAgregadoPrecio)
+  const guardarEditInlineExtra = async () => {
+    if (!token || extrasEditandoId === null) return
+    if (!extrasEditNombre.trim()) { toast.error('El nombre es requerido'); return }
+    const precio = parseFloat(extrasEditPrecio)
     if (isNaN(precio) || precio < 0) { toast.error('El precio debe ser un número válido'); return }
-    setIsEditandoAgregado(true)
+    setIsGuardandoExtraInline(true)
     try {
-      const response = await agregadosApi.update(token, agregadoEditando.id, { nombre: editarAgregadoNombre.trim(), precio }) as { success: boolean }
+      const response = await agregadosApi.update(token, extrasEditandoId, { nombre: extrasEditNombre.trim(), precio }) as { success: boolean }
       if (response.success) {
         toast.success('Extra actualizado')
-        setDialogEditarAgregadoAbierto(false)
-        setAgregadoEditando(null)
+        setExtrasEditandoId(null)
         const res = await agregadosApi.getAll(token) as any
         if (res.success && res.agregados) setAgregados(res.agregados)
       }
     } catch (error: any) {
       toast.error('Error al actualizar extra', { description: error.message || 'Error de conexión' })
     } finally {
-      setIsEditandoAgregado(false)
+      setIsGuardandoExtraInline(false)
     }
   }
 
@@ -269,6 +445,9 @@ const Productos = () => {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // Categorías
+  // ─────────────────────────────────────────────
   const crearCategoria = async () => {
     if (!token || !nuevaCategoriaNombre.trim()) {
       toast.error('El nombre de la categoría es requerido')
@@ -281,8 +460,8 @@ const Productos = () => {
         toast.success('Categoría creada')
         setNuevaCategoriaNombre('')
         setDialogCategoriaAbierto(false)
-        const categoriasResponse = await categoriasApi.getAll(token) as any
-        if (categoriasResponse.success && categoriasResponse.categorias) setCategorias(categoriasResponse.categorias)
+        const r = await categoriasApi.getAll(token) as any
+        if (r.success && r.categorias) setCategorias(r.categorias)
       }
     } catch (error: any) {
       toast.error('Error al crear categoría', { description: error.message || 'Error de conexión' })
@@ -314,15 +493,9 @@ const Productos = () => {
 
   const contarProductosPorCategoria = (categoriaId: number) => productos.filter(p => p.categoriaId === categoriaId).length
 
-  const productosFiltrados = productos.filter(p => {
-    const term = busqueda.toLowerCase()
-    return p.nombre.toLowerCase().includes(term) ||
-      (p.descripcion && p.descripcion.toLowerCase().includes(term)) ||
-      (p.etiquetas && p.etiquetas.some(e => e.nombre.toLowerCase().includes(term)))
-  })
-
-  const productosSinEtiqueta = productos.filter(p => !p.etiquetas || p.etiquetas.length === 0).length
-
+  // ─────────────────────────────────────────────
+  // Etiquetas backfill
+  // ─────────────────────────────────────────────
   const backfillEtiquetas = async () => {
     if (!token) return
     setIsBackfillingEtiquetas(true)
@@ -339,602 +512,617 @@ const Productos = () => {
     }
   }
 
-  const abrirDialogNuevo = () => {
-    setProductoEditando(null)
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [] })
-    setImageBase64(null)
-    setIngredientesSeleccionados([])
-    setAgregadosSeleccionados([])
-    setEtiquetasProducto([])
-    setNuevaEtiqueta('')
-    setBusquedaIngrediente('')
-    setDialogAbierto(true)
-  }
+  // ─────────────────────────────────────────────
+  // Filtered
+  // ─────────────────────────────────────────────
+  const productosFiltrados = productos.filter(p => {
+    const term = busqueda.toLowerCase()
+    return p.nombre.toLowerCase().includes(term) ||
+      (p.descripcion && p.descripcion.toLowerCase().includes(term)) ||
+      (p.etiquetas && p.etiquetas.some(e => e.nombre.toLowerCase().includes(term)))
+  })
 
-  const abrirDialogEditar = async (producto: typeof productos[0]) => {
-    setProductoEditando(producto)
-    setFormData({
-      nombre: producto.nombre,
-      descripcion: producto.descripcion || '',
-      precio: producto.precio.toString(),
-      categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
-      puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
-      puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : '',
-      descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : '',
-      descuentoFechaInicio: (producto as any).descuentoFechaInicio ? new Date((producto as any).descuentoFechaInicio).toISOString().slice(0, 16) : '',
-      descuentoFechaFin: (producto as any).descuentoFechaFin ? new Date((producto as any).descuentoFechaFin).toISOString().slice(0, 16) : '',
-      variantes: (producto as any).variantes ? (producto as any).variantes.map((v: any) => ({
-        id: v.id,
-        nombre: v.nombre,
-        precio: v.precio.toString()
-      })) : []
-    })
-    setImageBase64(producto.imagenUrl || null)
-    setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
-    setNuevaEtiqueta('')
+  const productosSinEtiqueta = productos.filter(p => !p.etiquetas || p.etiquetas.length === 0).length
 
-    if (token) {
-      try {
-        const response = await ingredientesApi.getByProducto(token, producto.id) as any
-        setIngredientesSeleccionados(response.success && response.ingredientes ? response.ingredientes.map((ing: any) => ing.id) : [])
-      } catch (error) { setIngredientesSeleccionados([]) }
-
-      try {
-        const response2 = await agregadosApi.getByProducto(token, producto.id) as any
-        setAgregadosSeleccionados(response2.success && response2.agregados ? response2.agregados.map((ag: any) => ag.id) : [])
-      } catch (error) { setAgregadosSeleccionados([]) }
-    }
-    setDialogAbierto(true)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!token) { toast.error('No hay sesión activa'); return }
-    if (!formData.nombre.trim()) { toast.error('El nombre es requerido'); return }
-    if (!formData.descripcion.trim()) { toast.error('La descripción es requerida'); return }
-    const precio = parseFloat(formData.precio)
-    if (isNaN(precio) || precio <= 0) { toast.error('El precio debe ser mayor a 0'); return }
-
-    setIsSubmitting(true)
-    try {
-      const parsedCategoriaId = parseInt(formData.categoriaId)
-      const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0) ? parsedCategoriaId : undefined
-      const payload = {
-        nombre: formData.nombre,
-        descripcion: formData.descripcion,
-        precio: precio,
-        image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
-        categoriaId: categoriaId !== undefined ? categoriaId : null,
-        ingredienteIds: ingredientesSeleccionados,
-        agregadoIds: agregadosSeleccionados,
-        etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
-        variantes: formData.variantes.length > 0 ? formData.variantes.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
-        puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
-        puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
-        descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,
-        descuentoFechaInicio: formData.descuentoFechaInicio || null,
-        descuentoFechaFin: formData.descuentoFechaFin || null,
-      }
-
-      if (productoEditando) {
-        await productosApi.update(token, { id: productoEditando.id, ...payload } as any)
-        toast.success('Producto actualizado')
-      } else {
-        await productosApi.create(token, payload as any)
-        toast.success('Producto creado')
-      }
-      await fetchData()
-      setDialogAbierto(false)
-    } catch (error: any) {
-      toast.error('Error al guardar', { description: error.message || 'Error de conexión' })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const abrirDialogEliminar = (producto: typeof productos[0]) => {
-    setProductoAEliminar(producto)
-    setDialogEliminarAbierto(true)
-  }
-
-  const eliminarProducto = async () => {
-    if (!token || !productoAEliminar) return
-    setIsEliminando(true)
-    try {
-      await productosApi.delete(token, productoAEliminar.id)
-      toast.success('Producto eliminado correctamente')
-      setDialogEliminarAbierto(false)
-      setProductoAEliminar(null)
-      await fetchData()
-    } catch (error: any) {
-      const errorMessage = error.message || error.response?.message || ''
-      if (errorMessage.includes('pedidos asociados') || errorMessage.includes('pedido')) {
-        toast.error('No se puede eliminar el producto', {
-          description: 'Este producto tiene pedidos asociados. Desactívalo en su lugar para ocultarlo del menú sin perder el historial.'
-        })
-      } else {
-        toast.error('Error al eliminar producto', { description: errorMessage })
-      }
-    } finally {
-      setIsEliminando(false)
-    }
-  }
-
-  const abrirDialogToggleActivo = (producto: typeof productos[0]) => {
-    setProductoADesactivar(producto)
-    setDialogDesactivarAbierto(true)
-  }
-
-  const toggleActivoProducto = async () => {
-    if (!token || !productoADesactivar) return
-    const nuevoEstado = !productoADesactivar.activo
-    setIsDesactivando(true)
-    try {
-      await productosApi.update(token, { id: productoADesactivar.id, activo: nuevoEstado })
-      toast.success(nuevoEstado ? 'Producto activado correctamente' : 'Producto desactivado correctamente')
-      setDialogDesactivarAbierto(false)
-      setProductoADesactivar(null)
-      await fetchData()
-    } catch (error: any) {
-      toast.error('Error al cambiar estado', { description: error.message || 'Error de conexión' })
-    } finally {
-      setIsDesactivando(false)
-    }
-  }
+  // ─────────────────────────────────────────────
+  // Sección summaries
+  // ─────────────────────────────────────────────
+  const summaryDescuento = formData.descuento && parseInt(formData.descuento) > 0 ? `${formData.descuento}% activo` : 'Sin descuento'
+  const summaryVariantes = formData.variantes.length > 0 ? `${formData.variantes.length} variante${formData.variantes.length !== 1 ? 's' : ''}` : 'Sin variantes'
+  const summaryIngredientes = ingredientesSeleccionados.length > 0 ? `${ingredientesSeleccionados.length} ingrediente${ingredientesSeleccionados.length !== 1 ? 's' : ''}` : 'Sin ingredientes'
+  const summaryExtras = agregadosSeleccionados.length > 0 ? `${agregadosSeleccionados.length} extra${agregadosSeleccionados.length !== 1 ? 's' : ''}` : 'Sin extras'
+  const summaryImagen = (imageBase64 && imageBase64.length > 10) ? 'Con imagen' : 'Sin imagen'
 
   if (isLoading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-zinc-50 dark:bg-[#0A0A0A]">
+      <div className="min-h-dvh flex items-center justify-center bg-[#0A0A0A]">
         <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-dvh bg-zinc-50 dark:bg-[#0A0A0A] pb-24 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
+    <div className="bg-[#0A0A0A] selection:bg-[#FF7A00]/20 selection:text-[#FF7A00] flex">
 
-      {/* ── Header Flotante ── */}
-      <div className="sticky top-0 z-20 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">Catálogo</h1>
-              <p className="text-sm font-medium text-muted-foreground mt-0.5">Gestiona el menú de tu restaurante</p>
+      {/* ── Left: content area (shrinks when panel opens) ── */}
+      <div className={cn(
+        "transition-all duration-300 ease-out overflow-y-auto",
+        activePanelType ? "w-full md:w-[60%]" : "w-full"
+      )}>
+
+        {/* ── Header (not sticky — flows with document) ── */}
+        <div>
+          <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-10 pb-8">
+            {/* Line 1: title */}
+            <div className="text-center">
+              <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-white">Catálogo</h1>
+              <p className="text-sm text-zinc-500 mt-1">Gestiona el menú de tu restaurante</p>
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-72">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+            {/* Line 2: search + secondary actions */}
+            <div className="flex flex-col items-center gap-3 mt-4">
+              <div className="relative w-full sm:w-1/2">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
                 <Input
                   placeholder="Buscar productos..."
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
-                  className="pl-11 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-transparent focus:bg-background focus:border-[#FF7A00] transition-colors"
+                  className="pl-10 h-10 rounded-lg bg-zinc-900 border-transparent focus:border-white/20 transition-colors text-white placeholder:text-zinc-500 text-sm"
                 />
               </div>
-
-              {productosSinEtiqueta > 0 && (
-                <Button variant="outline" onClick={backfillEtiquetas} disabled={isBackfillingEtiquetas} className="hidden lg:flex h-12 rounded-xl px-4 border-zinc-200 dark:border-zinc-800">
-                  {isBackfillingEtiquetas ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Tag className="mr-2 h-4 w-4" />}
-                  Autocompletar ({productosSinEtiqueta})
-                </Button>
-              )}
-
-              <Button variant="outline" onClick={() => setDialogGestionExtrasAbierto(true)} className="hidden sm:flex h-12 rounded-xl px-4 border-zinc-200 dark:border-zinc-800 font-semibold">
-                <SlidersHorizontal className="mr-2 h-4 w-4" />
-                Extras
-              </Button>
-
-              <Button variant="outline" onClick={() => setDialogDescuentoMasivoAbierto(true)} className="hidden sm:flex h-12 rounded-xl px-4 border-zinc-200 dark:border-zinc-800 font-semibold">
-                <Percent className="mr-2 h-4 w-4" />
-                Descuentos
-              </Button>
-
-              <Button onClick={abrirDialogNuevo} className="hidden sm:flex h-12 rounded-xl px-6 bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20">
-                <Plus className="mr-2 h-5 w-5" />
-                Nuevo Plato
-              </Button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={abrirPanelNuevo}
+                  className="h-9 px-4 rounded-lg text-sm font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white transition-colors flex items-center gap-1.5 shadow-md shadow-orange-500/20"
+                >
+                  <Plus className="h-4 w-4" />
+                  Nuevo Plato
+                </button>
+                <button
+                  onClick={() => setActivePanelType(activePanelType === 'extras' ? null : 'extras')}
+                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'extras' ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white")}
+                >
+                  Extras
+                </button>
+                <button
+                  onClick={() => setActivePanelType(activePanelType === 'discounts' ? null : 'discounts')}
+                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'discounts' ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white")}
+                >
+                  Descuentos
+                </button>
+                {productosSinEtiqueta > 0 && (
+                  <button
+                    onClick={backfillEtiquetas}
+                    disabled={isBackfillingEtiquetas}
+                    className="h-9 px-4 rounded-lg text-sm font-medium bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isBackfillingEtiquetas && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Autocompletar ({productosSinEtiqueta})
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {productosFiltrados.length === 0 ? (
-          <div className={cn(phantomCardClass, "flex flex-col items-center justify-center py-20 text-center")}>
-            <div className="h-20 w-20 rounded-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center mb-6">
-              <UtensilsCrossed className="h-10 w-10 text-muted-foreground/50" />
+        {/* ── Grid ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 pb-24">
+          {productosFiltrados.length === 0 ? (
+            <div className="bg-zinc-900 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
+              <div className="h-20 w-20 rounded-full bg-zinc-800 flex items-center justify-center mb-6">
+                <UtensilsCrossed className="h-10 w-10 text-zinc-600" />
+              </div>
+              <h3 className="text-xl font-bold mb-2 text-white">{busqueda ? 'No hay resultados' : 'Tu menú está vacío'}</h3>
+              <p className="text-zinc-500 mb-8 max-w-sm">
+                {busqueda ? 'Intenta buscar con otros términos.' : 'Comienza a agregar los deliciosos platos que ofreces a tus clientes.'}
+              </p>
+              {!busqueda && (
+                <Button onClick={abrirPanelNuevo} className="h-12 rounded-lg px-8 bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20">
+                  <Plus className="mr-2 h-5 w-5" /> Crear Primer Producto
+                </Button>
+              )}
             </div>
-            <h3 className="text-xl font-bold mb-2">{busqueda ? 'No hay resultados' : 'Tu menú está vacío'}</h3>
-            <p className="text-muted-foreground mb-8 max-w-sm">
-              {busqueda ? 'Intenta buscar con otros términos.' : 'Comienza a agregar los deliciosos platos que ofreces a tus clientes.'}
-            </p>
-            {!busqueda && (
-              <Button onClick={abrirDialogNuevo} className="h-12 rounded-xl px-8 bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20">
-                <Plus className="mr-2 h-5 w-5" /> Crear Primer Producto
-              </Button>
-            )}
-          </div>
-        ) : (
-          /* PRODUCTOS AGRUPADOS POR CATEGORÍA */
-          <div className="space-y-12">
-            {(() => {
-              const porCategoria = productosFiltrados.reduce((acc, producto) => {
-                const cat = producto.categoria || 'Sin categoría'
-                if (!acc[cat]) acc[cat] = []
-                acc[cat].push(producto)
-                return acc
-              }, {} as Record<string, typeof productosFiltrados>)
+          ) : (
+            <div>
+              {(() => {
+                const porCategoria = productosFiltrados.reduce((acc, producto) => {
+                  const cat = producto.categoria || 'Sin categoría'
+                  if (!acc[cat]) acc[cat] = []
+                  acc[cat].push(producto)
+                  return acc
+                }, {} as Record<string, typeof productosFiltrados>)
 
-              const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
-                if (a === 'Sin categoría') return 1
-                if (b === 'Sin categoría') return -1
-                return a.localeCompare(b)
-              })
+                const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
+                  if (a === 'Sin categoría') return 1
+                  if (b === 'Sin categoría') return -1
+                  return a.localeCompare(b)
+                })
 
-              return categoriasOrdenadas.map((categoriaNombre) => (
-                <div key={categoriaNombre} className="space-y-4">
-                  <div className="flex items-center gap-3 px-2">
-                    <h2 className="text-lg font-black tracking-tight text-foreground uppercase">{categoriaNombre}</h2>
-                    <Badge variant="secondary" className="bg-zinc-200 dark:bg-zinc-800 text-foreground font-bold px-2.5 py-0.5 rounded-full">
-                      {porCategoria[categoriaNombre].length}
-                    </Badge>
-                  </div>
+                return categoriasOrdenadas.map((categoriaNombre) => (
+                  <div key={categoriaNombre}>
+                    <h2 className="text-[11px] mb-3 font-semibold tracking-[0.12em] uppercase text-zinc-500 pt-10 ">
+                      {categoriaNombre} {porCategoria[categoriaNombre].length}
+                    </h2>
 
-                  <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {porCategoria[categoriaNombre].map((producto) => (
-                      <Card
-                        key={producto.id}
-                        className={cn(
-                          "group rounded-3xl border-2 transition-all hover:shadow-lg dark:hover:shadow-none hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-[#121212] overflow-hidden flex flex-row sm:flex-col min-h-[130px] sm:min-h-0 sm:h-auto",
-                          !producto.activo ? "opacity-60 grayscale-[0.3]" : "border-zinc-100 dark:border-zinc-800"
-                        )}
-                      >
-                        {/* Imagen del Producto */}
-                        <div className="w-[110px] sm:w-full sm:h-48 shrink-0 bg-zinc-100 dark:bg-zinc-900 relative overflow-hidden">
-                          {producto.imagenUrl ? (
-                            <img
-                              src={producto.imagenUrl}
-                              alt={producto.nombre}
-                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                            />
-                          ) : (
-                            <div className="absolute inset-0 w-full h-full flex items-center justify-center">
-                              <ImageIcon className="h-8 w-8 sm:h-10 sm:w-10 text-zinc-300 dark:text-zinc-700" />
-                            </div>
-                          )}
-
-                          {/* Badges Flotantes sobre la imagen (en Desktop) */}
-                          <div className="absolute top-3 left-3 right-3 hidden sm:flex justify-between items-start">
-                            <div className="flex flex-col gap-1">
-                              {producto.descuento && producto.descuento > 0 ? (
-                                <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm">
-                                  <Percent className="h-3 w-3 mr-1" /> {producto.descuento}% OFF
-                                </Badge>
-                              ) : null}
-                              {producto.descuento && producto.descuento > 0 && (producto as any).descuentoFechaFin && formatTimeLeft((producto as any).descuentoFechaFin) && (
-                                <Badge className="bg-amber-500/90 text-white font-bold border-none shadow-sm text-[10px]">
-                                  ⏱ {formatTimeLeft((producto as any).descuentoFechaFin)}
-                                </Badge>
+                    <div className={cn(
+                      "grid gap-3 grid-cols-2 sm:grid-cols-3",
+                      activePanelType ? "lg:grid-cols-4" : "lg:grid-cols-4 xl:grid-cols-5"
+                    )}>
+                      {porCategoria[categoriaNombre].map((producto) => {
+                        const isSelected = activePanelType === 'product' && panelProductoId === producto.id
+                        return (
+                          <div
+                            key={producto.id}
+                            onClick={() => abrirPanel(producto)}
+                            className={cn(
+                              "bg-zinc-900 rounded-4xl overflow-hidden cursor-pointer transition-all hover:bg-zinc-800",
+                              isSelected && "border-l-2 border-orange-500",
+                              !producto.activo && "opacity-50"
+                            )}
+                          >
+                            {/* Imagen */}
+                            <div className="aspect-[3/2] w-full bg-zinc-800 relative overflow-hidden">
+                              {producto.imagenUrl ? (
+                                <img
+                                  src={producto.imagenUrl}
+                                  alt={producto.nombre}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <ImageIcon className="h-8 w-8 text-zinc-700" />
+                                </div>
+                              )}
+                              {producto.descuento && producto.descuento > 0 && (
+                                <div className="absolute top-2 left-2">
+                                  <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm text-[10px] px-1.5 py-0.5">
+                                    -{producto.descuento}%
+                                  </Badge>
+                                </div>
                               )}
                             </div>
-                            {!producto.activo && (
-                              <Badge variant="secondary" className="bg-zinc-900/80 text-white border-none backdrop-blur-md">
-                                Inactivo
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
 
-                        {/* Contenido de la Tarjeta */}
-                        <div className="flex-1 flex flex-col p-3 sm:p-5 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <h3 className="font-bold text-base sm:text-lg leading-tight line-clamp-2">{producto.nombre}</h3>
-
-                            {/* Precio en Mobile (arriba a la derecha) */}
-                            <div className="sm:hidden shrink-0 mt-0.5">
-                              <span className="text-sm font-black text-foreground">
+                            {/* Contenido */}
+                            <div className="px-3 pt-2 pb-3">
+                              <h3 className="text-xs font-semibold leading-tight pt-2 text-white truncate pl-2">{producto.nombre}</h3>
+                              <p className="text-sm font-bold text-white mt-1 pl-2 pb-2">
                                 ${producto.descuento && producto.descuento > 0
                                   ? (parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)
                                   : parseFloat(producto.precio).toFixed(0)}
-                              </span>
+                              </p>
                             </div>
                           </div>
-
-                          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
-                            {producto.descripcion || 'Sin descripción'}
-                          </p>
-
-                          {/* Spacer para empujar los botones hacia el fondo en mobile */}
-                          <div className="flex-1" />
-
-                          <div className="flex items-center justify-between mt-3 sm:mt-4">
-                            {/* Precio en Desktop (abajo a la izquierda) */}
-                            <div className="hidden sm:flex flex-col">
-                              {producto.descuento && producto.descuento > 0 ? (
-                                <>
-                                  <span className="text-xs text-muted-foreground line-through font-medium">
-                                    ${parseFloat(producto.precio).toFixed(0)}
-                                  </span>
-                                  <span className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 leading-none">
-                                    ${(parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)}
-                                  </span>
-                                </>
-                              ) : (
-                                <span className="text-lg sm:text-xl font-black text-foreground leading-none">
-                                  ${parseFloat(producto.precio).toFixed(0)}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Badges Mobile */}
-                            <div className="flex sm:hidden items-center gap-1">
-                              {!producto.activo && <Badge variant="secondary" className="text-[9px] px-1 h-4">Inactivo</Badge>}
-                              {producto.descuento && producto.descuento > 0 && <Badge className="bg-emerald-500 text-white text-[9px] px-1 h-4 border-none">-{producto.descuento}%</Badge>}
-                            </div>
-
-                            {/* Acciones */}
-                            <div className="flex gap-1.5 ml-auto">
-                              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800" onClick={() => abrirDialogToggleActivo(producto)} title={producto.activo ? 'Desactivar' : 'Activar'}>
-                                <Power className={cn("h-4 w-4", producto.activo ? "text-green-600" : "text-zinc-400")} />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-500" onClick={() => abrirDialogEditar(producto)} title="Editar">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/30 dark:hover:bg-red-900/50 flex" onClick={() => producto.activo ? abrirDialogEliminar(producto) : null} disabled={!producto.activo} title="Eliminar">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))
-            })()}
-          </div>
-        )}
+                ))
+              })()}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* FAB (Mobile Only) */}
       <Button
-        className="sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50 animate-in zoom-in"
-        onClick={abrirDialogNuevo}
+        className="sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50"
+        onClick={abrirPanelNuevo}
       >
         <Plus className="h-6 w-6" />
       </Button>
 
       {/* ─────────────────────────────────────────────
-          MODAL: CREAR / EDITAR PRODUCTO
+          SIDE PANEL (shared container)
       ───────────────────────────────────────────── */}
-      <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
-        <DialogContent className="max-w-2xl p-0 gap-0 sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden max-h-[90dvh] flex flex-col">
+      <div
+        className={cn(
+          "fixed top-14 right-0 bottom-0 w-full md:w-[40%] z-30 bg-zinc-950 border-l border-white/5",
+          "transition-transform duration-300 ease-out",
+          activePanelType ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        {/* X button */}
+        <button
+          onClick={cerrarPanel}
+          className="absolute top-4 right-4 z-10 h-8 w-8 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors"
+        >
+          <X className="h-4 w-4 text-zinc-400" />
+        </button>
 
-          <div className="px-6 sm:px-8 pt-8 pb-4 shrink-0 bg-white dark:bg-zinc-950 z-10 border-b border-zinc-100 dark:border-zinc-800">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center">
-                  <Package className="h-5 w-5 text-[#FF7A00]" />
+        {/* ── PANEL: PRODUCT VISTA ── */}
+        {activePanelType === 'product' && panelModo === 'vista' && panelProducto && (
+          <div className="h-full flex flex-col overflow-y-auto">
+            {/* Image */}
+            <div className="h-48 w-full bg-zinc-800 shrink-0 overflow-hidden relative">
+              {panelProducto.imagenUrl ? (
+                <img src={panelProducto.imagenUrl} alt={panelProducto.nombre} className="w-full h-full object-cover" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
+                  <ImageIcon className="h-12 w-12 text-zinc-600" />
                 </div>
-                {productoEditando ? 'Editar Producto' : 'Nuevo Producto'}
-              </DialogTitle>
-              <DialogDescription className="text-base text-muted-foreground mt-2">
-                Completa la información para que tus clientes vean este plato en tu menú.
-              </DialogDescription>
-            </DialogHeader>
-          </div>
+              )}
+            </div>
 
-          <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-8">
-            <form id="productForm" onSubmit={handleSubmit} className="space-y-8">
-
-              {/* Información Principal */}
-              <div className="space-y-5">
-                <h3 className="font-bold text-lg border-b border-zinc-100 dark:border-zinc-800 pb-2">Información Principal</h3>
-
-                <div className="space-y-1">
-                  <Label htmlFor="nombre" className={phantomLabelClass}>Nombre del Plato <span className="text-red-500">*</span></Label>
-                  <Input id="nombre" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} placeholder="Ej: Burger Triple Cheddar" required disabled={isSubmitting} className={phantomInputClass} />
-                </div>
-
-                <div className="space-y-1">
-                  <Label htmlFor="descripcion" className={phantomLabelClass}>Descripción <span className="text-red-500">*</span></Label>
-                  <Textarea id="descripcion" value={formData.descripcion} onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} placeholder="Doble medallón de carne, extra cheddar, panceta crispy..." rows={3} required disabled={isSubmitting} className="min-h-[100px] rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 py-4 w-full resize-none" />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div className="space-y-1">
-                    <Label htmlFor="precio" className={phantomLabelClass}>Precio ($) <span className="text-red-500">*</span></Label>
-                    <div className="relative">
-                      <span className="absolute left-5 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
-                      <Input id="precio" type="number" step="0.01" min="0" value={formData.precio} onChange={(e) => setFormData({ ...formData, precio: e.target.value })} placeholder="0.00" required disabled={isSubmitting} className={cn(phantomInputClass, "pl-9 font-bold")} />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="descuento" className={phantomLabelClass}>Descuento (%)</Label>
-                      {formData.descuento && parseInt(formData.descuento) > 0 && formData.precio && (
-                        <span className="text-xs font-bold text-emerald-600 mb-2">Queda en: ${(parseFloat(formData.precio) * (1 - parseInt(formData.descuento) / 100)).toFixed(0)}</span>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input id="descuento" type="number" min="0" max="100" step="1" value={formData.descuento} onChange={(e) => setFormData({ ...formData, descuento: e.target.value })} placeholder="0" disabled={isSubmitting} className={cn(phantomInputClass, "pl-10")} />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Fechas del descuento */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div className="space-y-1">
-                    <Label htmlFor="descuentoFechaInicio" className={phantomLabelClass}>Inicio del descuento (opcional)</Label>
-                    <Input id="descuentoFechaInicio" type="datetime-local" value={formData.descuentoFechaInicio} onChange={(e) => setFormData({ ...formData, descuentoFechaInicio: e.target.value })} disabled={isSubmitting} className={phantomInputClass} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="descuentoFechaFin" className={phantomLabelClass}>Fin del descuento (opcional)</Label>
-                    <Input id="descuentoFechaFin" type="datetime-local" value={formData.descuentoFechaFin} onChange={(e) => setFormData({ ...formData, descuentoFechaFin: e.target.value })} disabled={isSubmitting} className={phantomInputClass} />
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground -mt-2 ml-1">Si no defines fechas, el descuento es permanente.</p>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <Label htmlFor="categoria" className="text-sm font-bold text-foreground ml-1 block">Categoría</Label>
-                    <Button type="button" variant="link" className="h-auto p-0 text-[#FF7A00] text-sm font-semibold" onClick={() => setDialogGestionCategoriasAbierto(true)}>Gestionar categorías</Button>
-                  </div>
-                  <Select value={formData.categoriaId} onValueChange={(value) => setFormData({ ...formData, categoriaId: value })} disabled={isSubmitting}>
-                    <SelectTrigger className="h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:ring-2 focus:ring-[#FF7A00]/20 text-base font-medium px-5">
-                      <SelectValue placeholder="Seleccionar categoría (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-2xl border-zinc-200 dark:border-zinc-800">
-                      <SelectItem value="0" className="py-3">Sin categoría</SelectItem>
-                      {categorias.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id.toString()} className="py-3">{cat.nombre}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className={phantomLabelClass}>Foto del Plato</Label>
-                  <div className="bg-zinc-50 dark:bg-zinc-900/30 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl p-2 hover:border-[#FF7A00]/50 transition-colors">
-                    <ImageUpload onImageChange={setImageBase64} currentImage={imageBase64} maxSize={5} />
-                  </div>
-                </div>
+            <div className="p-6 flex flex-col gap-4 flex-1">
+              <div>
+                <span className="text-xs text-zinc-500">{panelProducto.categoria || 'Sin categoría'}</span>
+                <h2 className="text-xl font-bold text-white mt-1">{panelProducto.nombre}</h2>
+                {panelProducto.descripcion && (
+                  <p className="text-sm text-zinc-400 mt-1">{panelProducto.descripcion}</p>
+                )}
+                <p className="text-2xl font-bold text-white mt-3">
+                  ${parseFloat(panelProducto.precio).toFixed(0)}
+                </p>
               </div>
 
-              {/* Personalización y Extras */}
-              <div className="space-y-5 pt-4">
-                <h3 className="font-bold text-lg border-b border-zinc-100 dark:border-zinc-800 pb-2">Personalización</h3>
+              <div className="border-t border-white/5" />
 
-                {/* Variantes */}
-                <div className="space-y-3 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-base font-bold text-foreground">Variantes (Opcional)</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">Múltiples opciones con distinto precio (Ej: Simple, Doble, Triple).</p>
-                    </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setFormData({ ...formData, variantes: [...formData.variantes, { nombre: '', precio: '' }] })} className="h-9 rounded-xl font-semibold border-zinc-300 dark:border-zinc-700">
-                      <Plus className="h-4 w-4 mr-1" /> Agregar Variante
-                    </Button>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-zinc-300">
+                  {panelProducto.activo ? 'Activo' : 'Inactivo'}
+                </span>
+                <Switch
+                  checked={panelProducto.activo}
+                  onCheckedChange={() => toggleActivoDirecto(panelProducto)}
+                  disabled={isTogglingActivo}
+                />
+              </div>
+
+              <Button
+                onClick={() => entrarEdicion(panelProducto)}
+                className="w-full h-12 rounded-lg bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold"
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Editar producto
+              </Button>
+
+              <div className="flex justify-center">
+                {!confirmandoEliminar ? (
+                  <button
+                    onClick={() => setConfirmandoEliminar(true)}
+                    className="text-sm text-red-500 hover:text-red-400 transition-colors"
+                  >
+                    Eliminar
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-zinc-300">¿Confirmar eliminación?</span>
+                    <button
+                      onClick={eliminarProductoDirecto}
+                      disabled={isEliminando}
+                      className="text-sm font-semibold text-red-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                    >
+                      {isEliminando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sí, eliminar'}
+                    </button>
+                    <button
+                      onClick={() => setConfirmandoEliminar(false)}
+                      className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      Cancelar
+                    </button>
                   </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
-                  {formData.variantes.length > 0 && (
-                    <div className="space-y-3 pt-2">
-                       {formData.variantes.map((variante, index) => (
-                          <div key={index} className="flex gap-3 items-start">
-                             <div className="flex-1 space-y-1">
-                                <Input placeholder="Nombre (ej: Doble)" value={variante.nombre} onChange={(e) => {
-                                  const nuevas = [...formData.variantes]
-                                  nuevas[index].nombre = e.target.value
-                                  setFormData({ ...formData, variantes: nuevas })
-                                }} className={phantomInputClass} />
-                             </div>
-                             <div className="flex-1 space-y-1 relative">
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
-                                <Input placeholder="Precio" type="number" step="0.01" min="0" value={variante.precio} onChange={(e) => {
-                                  const nuevas = [...formData.variantes]
-                                  nuevas[index].precio = e.target.value
-                                  setFormData({ ...formData, variantes: nuevas })
-                                }} className={cn(phantomInputClass, "pl-8 font-bold")} />
-                             </div>
-                             <Button type="button" variant="ghost" size="icon" className="h-14 w-14 shrink-0 rounded-2xl bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/30 dark:hover:bg-red-900/50" onClick={() => {
-                                const nuevas = formData.variantes.filter((_, i) => i !== index)
-                                setFormData({ ...formData, variantes: nuevas })
-                             }}>
-                                <Trash2 className="h-5 w-5" />
-                             </Button>
-                          </div>
-                       ))}
-                    </div>
-                  )}
+        {/* ── PANEL: PRODUCT EDICION ── */}
+        {activePanelType === 'product' && panelModo === 'edicion' && (
+          <div className="h-full flex flex-col">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-white/5">
+              {!panelNuevo && (
+                <button
+                  onClick={() => setPanelModo('vista')}
+                  className="flex items-center gap-1 text-sm text-zinc-400 hover:text-white transition-colors mb-3"
+                >
+                  <ChevronDown className="h-4 w-4 rotate-90" />
+                  Volver
+                </button>
+              )}
+              <h2 className="text-lg font-bold text-white pr-8">
+                {panelNuevo ? 'Nuevo producto' : 'Editar producto'}
+              </h2>
+            </div>
+
+            {/* Scrollable form */}
+            <form id="panelForm" onSubmit={handleSalvar} className="flex-1 overflow-y-auto pb-24">
+
+              {/* ── SECCIÓN: INFO ── */}
+              <div
+                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                onClick={() => toggleSeccion('info')}
+              >
+                <span className="text-sm font-semibold text-white">Información</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">
+                    {formData.nombre || 'Sin nombre'}
+                  </span>
+                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('info') && "rotate-180")} />
                 </div>
-
-                {/* Ingredientes */}
-                <div className="space-y-3 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-base font-bold text-foreground">Ingredientes</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">El cliente podrá quitarlos (Ej: Sin Cebolla).</p>
-                    </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setDialogIngredienteAbierto(true)} className="h-9 rounded-xl font-semibold border-zinc-300 dark:border-zinc-700">
-                      <Plus className="h-4 w-4 mr-1" /> Nuevo
-                    </Button>
+              </div>
+              {seccionesAbiertas.has('info') && (
+                <div className="px-6 py-4 space-y-4 border-b border-white/5">
+                  <div>
+                    <Label className={panelLabelClass}>Nombre <span className="text-red-500">*</span></Label>
+                    <Input
+                      value={formData.nombre}
+                      onChange={(e) => { setFormData({ ...formData, nombre: e.target.value }); markDirty() }}
+                      placeholder="Ej: Burger Triple Cheddar"
+                      className={panelInputClass}
+                    />
                   </div>
+                  <div>
+                    <Label className={panelLabelClass}>Descripción <span className="text-red-500">*</span></Label>
+                    <Textarea
+                      value={formData.descripcion}
+                      onChange={(e) => { setFormData({ ...formData, descripcion: e.target.value }); markDirty() }}
+                      placeholder="Describe el plato..."
+                      rows={3}
+                      className="rounded-lg bg-zinc-800 border-transparent focus:border-white/20 transition-all text-sm px-4 py-3 w-full resize-none"
+                    />
+                  </div>
+                  <div>
+                    <Label className={panelLabelClass}>Precio ($) <span className="text-red-500">*</span></Label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-zinc-400 text-sm">$</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formData.precio}
+                        onChange={(e) => { setFormData({ ...formData, precio: e.target.value }); markDirty() }}
+                        placeholder="0.00"
+                        className={cn(panelInputClass, "pl-8 font-bold")}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <Label className={cn(panelLabelClass, "mb-0")}>Categoría</Label>
+                      <button
+                        type="button"
+                        onClick={() => setDialogGestionCategoriasAbierto(true)}
+                        className="text-xs text-orange-500 hover:text-orange-400 transition-colors"
+                      >
+                        Gestionar categorías
+                      </button>
+                    </div>
+                    <Select
+                      value={formData.categoriaId}
+                      onValueChange={(value) => { setFormData({ ...formData, categoriaId: value }); markDirty() }}
+                    >
+                      <SelectTrigger className="h-12 rounded-lg bg-zinc-800 border-transparent focus:ring-2 focus:ring-white/10 text-sm px-4">
+                        <SelectValue placeholder="Sin categoría" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-lg border-zinc-700 bg-zinc-900">
+                        <SelectItem value="0">Sin categoría</SelectItem>
+                        {categorias.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id.toString()}>{cat.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
 
-                  {/* Buscador de ingredientes */}
+              {/* ── SECCIÓN: DESCUENTO ── */}
+              <div
+                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                onClick={() => toggleSeccion('descuento')}
+              >
+                <span className="text-sm font-semibold text-white">Descuento</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">{summaryDescuento}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('descuento') && "rotate-180")} />
+                </div>
+              </div>
+              {seccionesAbiertas.has('descuento') && (
+                <div className="px-6 py-4 space-y-4 border-b border-white/5">
+                  <div>
+                    <Label className={panelLabelClass}>Porcentaje (%)</Label>
+                    <div className="relative">
+                      <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={formData.descuento}
+                        onChange={(e) => { setFormData({ ...formData, descuento: e.target.value }); markDirty() }}
+                        placeholder="0"
+                        className={cn(panelInputClass, "pl-10")}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className={panelLabelClass}>Fecha inicio (opcional)</Label>
+                    <Input
+                      type="datetime-local"
+                      value={formData.descuentoFechaInicio}
+                      onChange={(e) => { setFormData({ ...formData, descuentoFechaInicio: e.target.value }); markDirty() }}
+                      className={panelInputClass}
+                    />
+                  </div>
+                  <div>
+                    <Label className={panelLabelClass}>Fecha fin (opcional)</Label>
+                    <Input
+                      type="datetime-local"
+                      value={formData.descuentoFechaFin}
+                      onChange={(e) => { setFormData({ ...formData, descuentoFechaFin: e.target.value }); markDirty() }}
+                      className={panelInputClass}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-600">Si no defines fechas, el descuento es permanente.</p>
+                </div>
+              )}
+
+              {/* ── SECCIÓN: VARIANTES ── */}
+              <div
+                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                onClick={() => toggleSeccion('variantes')}
+              >
+                <span className="text-sm font-semibold text-white">Variantes</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">{summaryVariantes}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('variantes') && "rotate-180")} />
+                </div>
+              </div>
+              {seccionesAbiertas.has('variantes') && (
+                <div className="px-6 py-4 space-y-3 border-b border-white/5">
+                  <p className="text-xs text-zinc-500">Múltiples opciones con distinto precio (Ej: Simple, Doble).</p>
+                  {formData.variantes.map((variante, index) => (
+                    <div key={index} className="flex gap-2 items-center">
+                      <Input
+                        placeholder="Nombre"
+                        value={variante.nombre}
+                        onChange={(e) => {
+                          const nuevas = [...formData.variantes]
+                          nuevas[index].nombre = e.target.value
+                          setFormData({ ...formData, variantes: nuevas })
+                          markDirty()
+                        }}
+                        className={cn(panelInputClass, "flex-1")}
+                      />
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-zinc-400 text-sm">$</span>
+                        <Input
+                          placeholder="Precio"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={variante.precio}
+                          onChange={(e) => {
+                            const nuevas = [...formData.variantes]
+                            nuevas[index].precio = e.target.value
+                            setFormData({ ...formData, variantes: nuevas })
+                            markDirty()
+                          }}
+                          className={cn(panelInputClass, "pl-7 font-bold")}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nuevas = formData.variantes.filter((_, i) => i !== index)
+                          setFormData({ ...formData, variantes: nuevas })
+                          markDirty()
+                        }}
+                        className="h-10 w-10 shrink-0 rounded-lg bg-red-950/30 hover:bg-red-900/50 text-red-500 flex items-center justify-center transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setFormData({ ...formData, variantes: [...formData.variantes, { nombre: '', precio: '' }] }); markDirty() }}
+                    className="flex items-center gap-1 text-sm text-orange-500 hover:text-orange-400 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" /> Agregar variante
+                  </button>
+                </div>
+              )}
+
+              {/* ── SECCIÓN: INGREDIENTES ── */}
+              <div
+                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                onClick={() => toggleSeccion('ingredientes')}
+              >
+                <span className="text-sm font-semibold text-white">Ingredientes</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">{summaryIngredientes}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('ingredientes') && "rotate-180")} />
+                </div>
+              </div>
+              {seccionesAbiertas.has('ingredientes') && (
+                <div className="px-6 py-4 space-y-3 border-b border-white/5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-zinc-500">El cliente podrá quitarlos (Ej: Sin Cebolla).</p>
+                    <button
+                      type="button"
+                      onClick={() => setDialogIngredienteAbierto(true)}
+                      className="text-xs text-orange-500 hover:text-orange-400 transition-colors"
+                    >
+                      + Nuevo
+                    </button>
+                  </div>
                   {ingredientes.length > 5 && (
                     <div className="relative">
-                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
                       <Input
                         value={busquedaIngrediente}
                         onChange={(e) => setBusquedaIngrediente(e.target.value)}
                         placeholder="Buscar ingrediente..."
-                        className="h-10 pl-10 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-sm"
+                        className="h-10 pl-9 rounded-lg bg-zinc-800 border-transparent text-sm"
                       />
-                      {busquedaIngrediente && (
-                        <button type="button" onClick={() => setBusquedaIngrediente('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
                     </div>
                   )}
-
-                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-2">
+                  <div className="max-h-48 overflow-y-auto space-y-1">
                     {ingredientes.length === 0 ? (
-                      <p className="text-sm text-muted-foreground italic py-4 text-center">No hay ingredientes creados.</p>
+                      <p className="text-sm text-zinc-600 italic py-2 text-center">No hay ingredientes creados.</p>
                     ) : (() => {
-                      const ingredientesFiltrados = ingredientes.filter(ing =>
+                      const filtrados = ingredientes.filter(ing =>
                         ing.nombre.toLowerCase().includes(busquedaIngrediente.toLowerCase())
                       )
-                      // Show selected ingredients first, then unselected
-                      const ordenados = [...ingredientesFiltrados].sort((a, b) => {
-                        const aSelected = ingredientesSeleccionados.includes(a.id) ? 0 : 1
-                        const bSelected = ingredientesSeleccionados.includes(b.id) ? 0 : 1
-                        return aSelected - bSelected
+                      const ordenados = [...filtrados].sort((a, b) => {
+                        const aS = ingredientesSeleccionados.includes(a.id) ? 0 : 1
+                        const bS = ingredientesSeleccionados.includes(b.id) ? 0 : 1
+                        return aS - bS
                       })
-                      if (ordenados.length === 0) {
-                        return <p className="text-sm text-muted-foreground italic py-4 text-center">No se encontraron ingredientes.</p>
-                      }
+                      if (ordenados.length === 0) return <p className="text-sm text-zinc-600 italic py-2 text-center">Sin resultados.</p>
                       return ordenados.map((ing) => {
                         const isSelected = ingredientesSeleccionados.includes(ing.id)
                         return (
                           <div
                             key={ing.id}
                             className={cn(
-                              "flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all",
-                              isSelected ? "bg-orange-50/50 dark:bg-orange-950/20 border-[#FF7A00] shadow-sm shadow-orange-500/10" : "bg-white dark:bg-zinc-950 border-transparent hover:border-zinc-200 dark:hover:border-zinc-800"
+                              "flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-all",
+                              isSelected ? "bg-orange-950/20 border-orange-500/50" : "bg-zinc-800/50 border-transparent hover:border-white/10"
                             )}
                             onClick={() => {
                               if (isSelected) setIngredientesSeleccionados(prev => prev.filter(id => id !== ing.id))
                               else setIngredientesSeleccionados(prev => [...prev, ing.id])
+                              markDirty()
                             }}
                           >
-                            <span className={cn("text-sm font-semibold", isSelected ? "text-[#FF7A00]" : "text-foreground")}>{ing.nombre}</span>
-                            {isSelected && <CheckCircle2 className="h-5 w-5 text-[#FF7A00]" />}
+                            <span className={cn("text-sm font-medium", isSelected ? "text-orange-400" : "text-zinc-300")}>{ing.nombre}</span>
+                            {isSelected && <CheckCircle2 className="h-4 w-4 text-orange-500" />}
                           </div>
                         )
                       })
                     })()}
                   </div>
                 </div>
+              )}
 
-                {/* Agregados */}
-                <div className="space-y-3 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
+              {/* ── SECCIÓN: EXTRAS ── */}
+              <div
+                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                onClick={() => toggleSeccion('extras')}
+              >
+                <span className="text-sm font-semibold text-white">Extras / Agregados</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">{summaryExtras}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('extras') && "rotate-180")} />
+                </div>
+              </div>
+              {seccionesAbiertas.has('extras') && (
+                <div className="px-6 py-4 space-y-3 border-b border-white/5">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-base font-bold text-foreground">Extras / Agregados</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">Opciones con costo adicional (Ej: Extra Cheddar).</p>
-                    </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setDialogAgregadoAbierto(true)} className="h-9 rounded-xl font-semibold border-zinc-300 dark:border-zinc-700">
-                      <Plus className="h-4 w-4 mr-1" /> Nuevo
-                    </Button>
+                    <p className="text-xs text-zinc-500">Opciones con costo adicional (Ej: Extra Cheddar).</p>
+                    <button
+                      type="button"
+                      onClick={() => setDialogAgregadoAbierto(true)}
+                      className="text-xs text-orange-500 hover:text-orange-400 transition-colors"
+                    >
+                      + Nuevo
+                    </button>
                   </div>
-
-                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-2">
+                  <div className="max-h-48 overflow-y-auto space-y-1">
                     {agregados.length === 0 ? (
-                      <p className="text-sm text-muted-foreground italic py-4 text-center">No hay agregados creados.</p>
+                      <p className="text-sm text-zinc-600 italic py-2 text-center">No hay extras creados.</p>
                     ) : (
                       agregados.map((ag) => {
                         const isSelected = agregadosSeleccionados.includes(ag.id)
@@ -942,91 +1130,331 @@ const Productos = () => {
                           <div
                             key={ag.id}
                             className={cn(
-                              "flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all",
-                              isSelected ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 shadow-sm shadow-emerald-500/10" : "bg-white dark:bg-zinc-950 border-transparent hover:border-zinc-200 dark:hover:border-zinc-800"
+                              "flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-all",
+                              isSelected ? "bg-emerald-950/20 border-emerald-500/50" : "bg-zinc-800/50 border-transparent hover:border-white/10"
                             )}
                             onClick={() => {
                               if (isSelected) setAgregadosSeleccionados(prev => prev.filter(id => id !== ag.id))
                               else setAgregadosSeleccionados(prev => [...prev, ag.id])
+                              markDirty()
                             }}
                           >
-                            <span className={cn("text-sm font-semibold", isSelected ? "text-emerald-700 dark:text-emerald-400" : "text-foreground")}>
-                              {ag.nombre} <span className="opacity-60 ml-1">+${ag.precio}</span>
+                            <span className={cn("text-sm font-medium", isSelected ? "text-emerald-400" : "text-zinc-300")}>
+                              {ag.nombre} <span className="opacity-60 ml-1 text-xs">+${ag.precio}</span>
                             </span>
-                            {isSelected && <CheckCircle2 className="h-5 w-5 text-emerald-500" />}
+                            {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
                           </div>
                         )
                       })
                     )}
                   </div>
                 </div>
+              )}
 
-                {/* Etiquetas */}
-                <div className="space-y-3 pt-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-bold text-foreground">Etiquetas visuales</Label>
-                    <span className="text-xs text-muted-foreground font-medium bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded-md">
-                      {etiquetasProducto.length} seleccionadas
-                    </span>
+              {/* ── SECCIÓN: IMAGEN ── */}
+              <div
+                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                onClick={() => toggleSeccion('imagen')}
+              >
+                <span className="text-sm font-semibold text-white">Imagen</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">{summaryImagen}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('imagen') && "rotate-180")} />
+                </div>
+              </div>
+              {seccionesAbiertas.has('imagen') && (
+                <div className="px-6 py-4 border-b border-white/5">
+                  <ImageUpload
+                    onImageChange={(img) => { setImageBase64(img); markDirty() }}
+                    currentImage={imageBase64}
+                    maxSize={5}
+                  />
+                </div>
+              )}
+
+              {/* ── SISTEMA DE PUNTOS (si aplica) ── */}
+              {restaurante?.sistemaPuntos && (
+                <>
+                  <div
+                    className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                    onClick={() => toggleSeccion('puntos')}
+                  >
+                    <span className="text-sm font-semibold text-white">Sistema de Puntos</span>
+                    <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('puntos') && "rotate-180")} />
                   </div>
-                  <div className="flex gap-2">
-                    <Input id="nuevaEtiqueta" value={nuevaEtiqueta} onChange={(e) => setNuevaEtiqueta(e.target.value)} placeholder="Ej: Vegano, Sin TACC..." disabled={isSubmitting} className="h-12 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:border-[#FF7A00]" onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        const tag = nuevaEtiqueta.trim().toLowerCase()
-                        if (tag && !etiquetasProducto.includes(tag)) { setEtiquetasProducto([...etiquetasProducto, tag]); setNuevaEtiqueta('') }
-                      }
-                    }} />
-                    <Button type="button" variant="secondary" className="h-12 px-6 rounded-xl font-bold bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700" disabled={!nuevaEtiqueta.trim() || etiquetasProducto.includes(nuevaEtiqueta.trim().toLowerCase())} onClick={() => {
-                      const tag = nuevaEtiqueta.trim().toLowerCase()
-                      if (tag && !etiquetasProducto.includes(tag)) { setEtiquetasProducto([...etiquetasProducto, tag]); setNuevaEtiqueta('') }
-                    }}>
-                      Agregar
-                    </Button>
-                  </div>
-                  {etiquetasProducto.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      {etiquetasProducto.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="h-8 px-3 gap-2 text-xs font-semibold cursor-pointer hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-950/30 transition-colors bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800" onClick={() => setEtiquetasProducto(etiquetasProducto.filter(t => t !== tag))}>
-                          <Tag className="h-3 w-3" /> {tag} <X className="h-3 w-3 opacity-50" />
-                        </Badge>
-                      ))}
+                  {seccionesAbiertas.has('puntos') && (
+                    <div className="px-6 py-4 space-y-4 border-b border-white/5">
+                      <div>
+                        <Label className={panelLabelClass}>Puntos que otorga</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={formData.puntosGanados}
+                          onChange={(e) => { setFormData({ ...formData, puntosGanados: e.target.value }); markDirty() }}
+                          placeholder="0"
+                          className={panelInputClass}
+                        />
+                      </div>
+                      <div>
+                        <Label className={panelLabelClass}>Costo en puntos</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={formData.puntosNecesarios}
+                          onChange={(e) => { setFormData({ ...formData, puntosNecesarios: e.target.value }); markDirty() }}
+                          placeholder="0"
+                          className={panelInputClass}
+                        />
+                      </div>
                     </div>
+                  )}
+                </>
+              )}
+
+            </form>
+
+            {/* Sticky footer — only when dirty */}
+            {isDirty && (
+              <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-zinc-950 border-t border-white/5 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setIsDirty(false); if (panelNuevo) cerrarPanel(); else setPanelModo('vista') }}
+                  className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <Button
+                  type="submit"
+                  form="panelForm"
+                  disabled={isSubmitting}
+                  className="h-10 px-6 rounded-lg bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold"
+                >
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Guardar cambios
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── PANEL: DESCUENTOS MASIVOS ── */}
+        {activePanelType === 'discounts' && (
+          <div className="h-full flex flex-col">
+            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-white/5">
+              <h2 className="text-lg font-bold text-white pr-8">Descuentos masivos</h2>
+              <p className="text-xs text-zinc-500 mt-1">Aplicá un descuento a varios productos a la vez.</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-32">
+              {/* Configurar */}
+              <div className="space-y-4">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Configurar</p>
+                <div>
+                  <Label className={panelLabelClass}>Porcentaje (%) <span className="normal-case font-normal text-zinc-600">— 0 = quitar descuento</span></Label>
+                  <div className="relative">
+                    <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                    <Input type="number" min="0" max="100" step="1" value={descuentoMasivoPct} onChange={(e) => setDescuentoMasivoPct(e.target.value)} placeholder="0" className={cn(panelInputClass, "pl-10")} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={panelLabelClass}>Inicio (opcional)</Label>
+                    <Input type="datetime-local" value={descuentoMasivoInicio} onChange={(e) => setDescuentoMasivoInicio(e.target.value)} className={panelInputClass} />
+                  </div>
+                  <div>
+                    <Label className={panelLabelClass}>Fin (opcional)</Label>
+                    <Input type="datetime-local" value={descuentoMasivoFin} onChange={(e) => setDescuentoMasivoFin(e.target.value)} className={panelInputClass} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-wrap text-sm">
+                  <span className="text-zinc-600 text-xs mr-1">Presets:</span>
+                  {[{ label: '1h', ms: 3600000 }, { label: '8h', ms: 28800000 }, { label: '24h', ms: 86400000 }, { label: '7 días', ms: 604800000 }].map(({ label, ms }, i, arr) => (
+                    <span key={label}>
+                      <button type="button" className="text-zinc-400 hover:text-white transition-colors" onClick={() => setDescuentoMasivoFin(new Date(Date.now() + ms).toISOString().slice(0, 16))}>
+                        {label}
+                      </button>
+                      {i < arr.length - 1 && <span className="mx-1.5 text-zinc-700">·</span>}
+                    </span>
+                  ))}
+                  {descuentoMasivoFin && (
+                    <>
+                      <span className="mx-1.5 text-zinc-700">·</span>
+                      <button type="button" className="text-zinc-500 hover:text-white transition-colors" onClick={() => setDescuentoMasivoFin('')}>quitar</button>
+                    </>
                   )}
                 </div>
               </div>
 
-              {/* Sistema de puntos (Si está activo) */}
-              {restaurante?.sistemaPuntos && (
-                <div className="space-y-4 pt-4">
-                  <h3 className="font-bold text-lg border-b border-zinc-100 dark:border-zinc-800 pb-2">Sistema de Puntos</h3>
-                  <div className="grid grid-cols-2 gap-5">
-                    <div className="space-y-1">
-                      <Label htmlFor="puntosGanados" className={phantomLabelClass}>Puntos que otorga</Label>
-                      <Input id="puntosGanados" type="number" min="0" step="1" value={formData.puntosGanados} onChange={(e) => setFormData({ ...formData, puntosGanados: e.target.value })} placeholder="0" disabled={isSubmitting} className={phantomInputClass} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor="puntosNecesarios" className={phantomLabelClass}>Costo en puntos</Label>
-                      <Input id="puntosNecesarios" type="number" min="0" step="1" value={formData.puntosNecesarios} onChange={(e) => setFormData({ ...formData, puntosNecesarios: e.target.value })} placeholder="0" disabled={isSubmitting} className={phantomInputClass} />
-                    </div>
-                  </div>
+              {/* Productos */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Productos</p>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                  <Input placeholder="Buscar producto..." value={busquedaDescuento} onChange={(e) => setBusquedaDescuento(e.target.value)} className="h-10 pl-9 rounded-lg bg-zinc-800 border-transparent text-sm" />
                 </div>
-              )}
-            </form>
-          </div>
+                <div className="flex items-center gap-1 text-xs">
+                  <button type="button" className="text-[#FF7A00] hover:text-orange-400 transition-colors" onClick={() => setProductosDescuentoSeleccionados(productos.map(p => p.id))}>Seleccionar todos</button>
+                  <span className="mx-1.5 text-zinc-700">·</span>
+                  <button type="button" className="text-zinc-500 hover:text-white transition-colors" onClick={() => setProductosDescuentoSeleccionados([])}>Deseleccionar todos</button>
+                  <span className="ml-auto text-zinc-500">{productosDescuentoSeleccionados.length} seleccionados</span>
+                </div>
+                <div className="space-y-1.5">
+                  {productos.filter(p => p.nombre.toLowerCase().includes(busquedaDescuento.toLowerCase())).map((p) => {
+                    const isSelected = productosDescuentoSeleccionados.includes(p.id)
+                    return (
+                      <div
+                        key={p.id}
+                        className={cn("flex items-center justify-between px-3 py-2.5 rounded-lg border cursor-pointer transition-all", isSelected ? "bg-orange-950/20 border-orange-500/50" : "bg-zinc-800/50 border-transparent hover:border-white/10")}
+                        onClick={() => setProductosDescuentoSeleccionados(prev => isSelected ? prev.filter(id => id !== p.id) : [...prev, p.id])}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={cn("h-4 w-4 rounded border flex items-center justify-center shrink-0", isSelected ? "bg-[#FF7A00] border-[#FF7A00]" : "border-zinc-600")}>
+                            {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
+                          </div>
+                          <span className={cn("text-sm font-medium truncate", isSelected ? "text-orange-400" : "text-zinc-300")}>{p.nombre}</span>
+                        </div>
+                        <div className="shrink-0 ml-2 flex items-center gap-1">
+                          {(p as any).descuento > 0 && <Badge className="bg-emerald-500 text-white text-[10px] border-none px-1.5">-{(p as any).descuento}%</Badge>}
+                          {(p as any).descuentoFechaFin && formatTimeLeft((p as any).descuentoFechaFin) && (
+                            <span className="text-[10px] text-amber-500">⏱ {formatTimeLeft((p as any).descuentoFechaFin)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
 
-          {/* Footer Sticky */}
-          <div className="px-6 sm:px-8 py-5 shrink-0 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-end gap-3 z-10">
-            <Button type="button" variant="ghost" onClick={() => setDialogAbierto(false)} disabled={isSubmitting} className="h-12 px-6 rounded-xl font-semibold text-muted-foreground hover:text-foreground">
-              Cancelar
-            </Button>
-            <Button type="submit" form="productForm" disabled={isSubmitting} className="h-12 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-transform">
-              {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-              {productoEditando ? 'Guardar Cambios' : 'Crear Producto'}
-            </Button>
+            {/* Sticky footer */}
+            <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-zinc-950 border-t border-white/5 space-y-2">
+              <Button
+                disabled={productosDescuentoSeleccionados.length === 0 || descuentoMasivoPct === '' || aplicandoDescuento}
+                onClick={async () => {
+                  if (!token) return
+                  setIsAplicandoDescuento(true)
+                  try {
+                    await productosApi.bulkDescuento(token, {
+                      productoIds: productosDescuentoSeleccionados,
+                      descuento: parseInt(descuentoMasivoPct, 10),
+                      descuentoFechaInicio: descuentoMasivoInicio || null,
+                      descuentoFechaFin: descuentoMasivoFin || null,
+                    })
+                    toast.success(`Descuento aplicado a ${productosDescuentoSeleccionados.length} producto(s)`)
+                    await fetchData()
+                    cerrarPanel()
+                    setProductosDescuentoSeleccionados([])
+                    setDescuentoMasivoPct('')
+                    setDescuentoMasivoInicio('')
+                    setDescuentoMasivoFin('')
+                  } catch (error: any) {
+                    toast.error('Error al aplicar descuento', { description: error.message || 'Error de conexión' })
+                  } finally {
+                    setIsAplicandoDescuento(false)
+                  }
+                }}
+                className="w-full h-11 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white"
+              >
+                {aplicandoDescuento ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Aplicar a {productosDescuentoSeleccionados.length} producto{productosDescuentoSeleccionados.length !== 1 ? 's' : ''}
+              </Button>
+              <button type="button" onClick={cerrarPanel} className="w-full text-sm text-zinc-500 hover:text-zinc-300 transition-colors text-center">
+                Cancelar
+              </button>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        )}
+
+        {/* ── PANEL: EXTRAS ── */}
+        {activePanelType === 'extras' && (
+          <div className="h-full flex flex-col">
+            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-white/5">
+              <h2 className="text-lg font-bold text-white pr-8">Gestión de Extras</h2>
+              <p className="text-xs text-zinc-500 mt-1">Los cambios se aplican a todos los productos que usen cada extra.</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-2 pb-28">
+              {agregados.length === 0 ? (
+                <p className="text-center text-zinc-600 py-8">No hay extras creados.</p>
+              ) : (
+                agregados.map((ag) => (
+                  <div key={ag.id} className="rounded-lg border border-white/5 bg-zinc-900 overflow-hidden">
+                    {extrasEditandoId === ag.id ? (
+                      /* Inline edit form */
+                      <div className="p-4 space-y-3">
+                        <Input
+                          value={extrasEditNombre}
+                          onChange={(e) => setExtrasEditNombre(e.target.value)}
+                          placeholder="Nombre del extra"
+                          className={panelInputClass}
+                          disabled={isGuardandoExtraInline}
+                        />
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-zinc-400 text-sm">$</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={extrasEditPrecio}
+                            onChange={(e) => setExtrasEditPrecio(e.target.value)}
+                            placeholder="0.00"
+                            className={cn(panelInputClass, "pl-8 font-bold")}
+                            disabled={isGuardandoExtraInline}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button onClick={guardarEditInlineExtra} disabled={isGuardandoExtraInline || !extrasEditNombre.trim()} className="flex-1 h-9 rounded-lg bg-[#FF7A00] hover:bg-[#E66E00] text-white text-sm font-bold">
+                            {isGuardandoExtraInline ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar'}
+                          </Button>
+                          <button type="button" onClick={() => setExtrasEditandoId(null)} className="flex-1 h-9 rounded-lg text-sm text-zinc-500 hover:text-white transition-colors">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Normal row */
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{ag.nombre}</p>
+                          <p className="text-xs text-zinc-500">+${ag.precio}</p>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => iniciarEditInlineExtra(ag)}
+                            className="text-zinc-400 hover:text-white transition-colors"
+                          >
+                            editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => confirmarEliminarAgregado(ag)}
+                            className="text-red-500 hover:text-red-400 transition-colors"
+                          >
+                            eliminar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Sticky footer */}
+            <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-zinc-950 border-t border-white/5">
+              <Button
+                onClick={() => setDialogAgregadoAbierto(true)}
+                className="w-full h-11 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white"
+              >
+                <Plus className="mr-2 h-4 w-4" /> Nuevo Extra
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ─────────────────────────────────────────────
           MODAL: NUEVO INGREDIENTE
@@ -1059,7 +1487,7 @@ const Productos = () => {
               <span className="absolute left-5 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
               <Input type="number" step="0.01" value={nuevoAgregadoPrecio} onChange={(e) => setNuevoAgregadoPrecio(e.target.value)} placeholder="Precio" disabled={isCreandoAgregado} className={cn(phantomInputClass, "pl-9 font-bold")} onKeyDown={(e) => { if (e.key === 'Enter') crearAgregado() }} />
             </div>
-            <Button className="w-full h-14 rounded-2xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white" onClick={crearAgregado} disabled={isCreandoAgregado || !nuevoAgregadoNombre.trim() || !nuevoAgregadoPrecio}>
+            <Button className="w-full h-14 rounded-2xl font-bold bg-zinc-700 hover:bg-zinc-600 text-white" onClick={crearAgregado} disabled={isCreandoAgregado || !nuevoAgregadoNombre.trim() || !nuevoAgregadoPrecio}>
               {isCreandoAgregado ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Crear Extra'}
             </Button>
           </div>
@@ -1067,7 +1495,7 @@ const Productos = () => {
       </Dialog>
 
       {/* ─────────────────────────────────────────────
-          MODAL: GESTIONAR Y CREAR CATEGORÍAS
+          MODAL: GESTIONAR CATEGORÍAS
       ───────────────────────────────────────────── */}
       <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={setDialogGestionCategoriasAbierto}>
         <DialogContent className="max-w-md max-h-[80dvh] overflow-hidden flex flex-col rounded-[32px] p-0 border-zinc-200 dark:border-zinc-800">
@@ -1090,7 +1518,7 @@ const Productos = () => {
             )}
           </div>
           <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
-            <Button className="w-full h-12 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={() => { setDialogGestionCategoriasAbierto(false); setDialogCategoriaAbierto(true) }}>
+            <Button className="w-full h-12 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={() => { setDialogGestionCategoriasAbierto(false); setDialogCategoriaAbierto(true) }}>
               <Plus className="h-5 w-5 mr-2" /> Nueva Categoría
             </Button>
           </div>
@@ -1113,26 +1541,8 @@ const Productos = () => {
       </Dialog>
 
       {/* ─────────────────────────────────────────────
-          MODALES DE CONFIRMACIÓN (ELIMINAR / TOGGLE)
+          MODAL: ELIMINAR CATEGORÍA
       ───────────────────────────────────────────── */}
-      <Dialog open={dialogEliminarAbierto} onOpenChange={setDialogEliminarAbierto}>
-        <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
-          <div className="h-16 w-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Trash2 className="h-8 w-8 text-red-600 dark:text-red-500" />
-          </div>
-          <DialogTitle className="text-2xl font-bold mb-2">Eliminar Producto</DialogTitle>
-          <DialogDescription className="text-base mb-8">
-            ¿Eliminar <strong>{productoAEliminar?.nombre}</strong> permanentemente? Esta acción no se puede deshacer.
-          </DialogDescription>
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEliminarAbierto(false)}>Cancelar</Button>
-            <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={eliminarProducto} disabled={isEliminando}>
-              {isEliminando ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={dialogEliminarCategoriaAbierto} onOpenChange={setDialogEliminarCategoriaAbierto}>
         <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
           <div className="h-16 w-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1143,84 +1553,16 @@ const Productos = () => {
             Los {categoriaAEliminar && contarProductosPorCategoria(categoriaAEliminar.id)} productos en <strong>{categoriaAEliminar?.nombre}</strong> quedarán "Sin categoría".
           </DialogDescription>
           <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold" onClick={() => setDialogEliminarCategoriaAbierto(false)}>Cancelar</Button>
-            <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={eliminarCategoria} disabled={isEliminandoCategoria}>
+            <Button variant="outline" className="flex-1 h-12 rounded-lg font-bold" onClick={() => setDialogEliminarCategoriaAbierto(false)}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1 h-12 rounded-lg font-bold" onClick={eliminarCategoria} disabled={isEliminandoCategoria}>
               {isEliminandoCategoria ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* ─────────────────────────────────────────────
-          MODAL: GESTIONAR EXTRAS / AGREGADOS
-      ───────────────────────────────────────────── */}
-      <Dialog open={dialogGestionExtrasAbierto} onOpenChange={setDialogGestionExtrasAbierto}>
-        <DialogContent className="max-w-md max-h-[80dvh] overflow-hidden flex flex-col rounded-[32px] p-0 border-zinc-200 dark:border-zinc-800">
-          <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-zinc-50/50 dark:bg-zinc-950">
-            <DialogTitle className="text-xl font-bold">Gestión de Extras</DialogTitle>
-            <DialogDescription className="mt-1 text-sm">Los cambios se aplican a todos los productos que usen cada extra.</DialogDescription>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-2">
-            {agregados.length === 0 ? (
-              <p className="text-center text-muted-foreground py-4">No hay extras creados.</p>
-            ) : (
-              agregados.map((ag) => (
-                <div key={ag.id} className="flex items-center justify-between p-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121212] gap-3">
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-foreground truncate block">{ag.nombre}</span>
-                    <span className="text-xs text-muted-foreground">+${ag.precio}</span>
-                  </div>
-                  <div className="flex gap-1.5 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-zinc-500 hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => { setDialogGestionExtrasAbierto(false); abrirEditarAgregado(ag) }}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30" onClick={() => { setDialogGestionExtrasAbierto(false); confirmarEliminarAgregado(ag) }}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-          <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
-            <Button className="w-full h-12 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDialogGestionExtrasAbierto(false); setDialogAgregadoAbierto(true) }}>
-              <Plus className="h-5 w-5 mr-2" /> Nuevo Extra
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      {/* Modal: Editar Extra */}
-      <Dialog open={dialogEditarAgregadoAbierto} onOpenChange={setDialogEditarAgregadoAbierto}>
-        <DialogContent className="max-w-sm rounded-[32px] p-8 border-zinc-200 dark:border-zinc-800">
-          <DialogHeader className="mb-4">
-            <DialogTitle className="text-xl font-bold text-emerald-600 dark:text-emerald-500">Editar Extra</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label className={phantomLabelClass}>Nombre</Label>
-              <Input value={editarAgregadoNombre} onChange={(e) => setEditarAgregadoNombre(e.target.value)} placeholder="Nombre del extra" disabled={isEditandoAgregado} className={phantomInputClass} />
-            </div>
-            <div className="space-y-1">
-              <Label className={phantomLabelClass}>Precio ($)</Label>
-              <div className="relative">
-                <span className="absolute left-5 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">$</span>
-                <Input type="number" step="0.01" min="0" value={editarAgregadoPrecio} onChange={(e) => setEditarAgregadoPrecio(e.target.value)} placeholder="0.00" disabled={isEditandoAgregado} className={cn(phantomInputClass, "pl-9 font-bold")} onKeyDown={(e) => { if (e.key === 'Enter') editarAgregado() }} />
-              </div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <Button variant="outline" className="flex-1 h-12 rounded-xl font-semibold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEditarAgregadoAbierto(false)} disabled={isEditandoAgregado}>
-                Cancelar
-              </Button>
-              <Button className="flex-1 h-12 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white" onClick={editarAgregado} disabled={isEditandoAgregado || !editarAgregadoNombre.trim()}>
-                {isEditandoAgregado ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Guardar'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal: Confirmar Eliminar Extra */}
+{/* Modal: Confirmar Eliminar Extra */}
       <Dialog open={dialogEliminarAgregadoAbierto} onOpenChange={setDialogEliminarAgregadoAbierto}>
         <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
           <div className="h-16 w-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1231,174 +1573,15 @@ const Productos = () => {
             ¿Eliminar <strong>{agregadoAEliminar?.nombre}</strong>? Se quitará de todos los productos que lo tengan asignado.
           </DialogDescription>
           <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEliminarAgregadoAbierto(false)}>Cancelar</Button>
-            <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={eliminarAgregadoGlobal} disabled={isEliminandoAgregado}>
+            <Button variant="outline" className="flex-1 h-12 rounded-lg font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEliminarAgregadoAbierto(false)}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1 h-12 rounded-lg font-bold" onClick={eliminarAgregadoGlobal} disabled={isEliminandoAgregado}>
               {isEliminandoAgregado ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogDesactivarAbierto} onOpenChange={setDialogDesactivarAbierto}>
-        <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
-          <div className={cn("h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4", productoADesactivar?.activo ? "bg-orange-100 dark:bg-orange-500/10" : "bg-green-100 dark:bg-green-500/10")}>
-            <Power className={cn("h-8 w-8", productoADesactivar?.activo ? "text-orange-600" : "text-green-600")} />
-          </div>
-          <DialogTitle className="text-2xl font-bold mb-2">
-            {productoADesactivar?.activo ? '¿Ocultar producto?' : '¿Activar producto?'}
-          </DialogTitle>
-          <DialogDescription className="text-base mb-8">
-            {productoADesactivar?.activo ? 'El producto desaparecerá del menú público, pero seguirá en el sistema.' : 'El producto volverá a estar disponible para la venta.'}
-          </DialogDescription>
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogDesactivarAbierto(false)}>Cancelar</Button>
-            <Button className={cn("flex-1 h-12 rounded-xl font-bold text-white shadow-sm", productoADesactivar?.activo ? "bg-orange-500 hover:bg-orange-600" : "bg-green-500 hover:bg-green-600")} onClick={toggleActivoProducto} disabled={isDesactivando}>
-              {isDesactivando ? <Loader2 className="h-5 w-5 animate-spin" /> : (productoADesactivar?.activo ? 'Ocultar' : 'Activar')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      {/* ─────────────────────────────────────────────
-          MODAL: DESCUENTOS MASIVOS
-      ───────────────────────────────────────────── */}
-      <Dialog open={dialogDescuentoMasivoAbierto} onOpenChange={(open) => { setDialogDescuentoMasivoAbierto(open); if (!open) { setBusquedaDescuento(''); setProductosDescuentoSeleccionados([]) } }}>
-        <DialogContent className="max-w-lg p-0 gap-0 sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden max-h-[90dvh] flex flex-col">
-          <div className="px-6 sm:px-8 pt-8 pb-4 shrink-0 bg-white dark:bg-zinc-950 z-10 border-b border-zinc-100 dark:border-zinc-800">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center">
-                  <Zap className="h-5 w-5 text-amber-500" />
-                </div>
-                Descuentos Masivos
-              </DialogTitle>
-              <DialogDescription className="text-base text-muted-foreground mt-2">
-                Aplica descuentos por tiempo limitado a varios productos a la vez.
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
-            {/* Sección 1: Configurar descuento */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-base border-b border-zinc-100 dark:border-zinc-800 pb-2">Configurar descuento</h3>
-              <div className="space-y-1">
-                <Label className={phantomLabelClass}>Porcentaje de descuento (%) <span className="font-normal text-muted-foreground">— 0 = quitar descuento</span></Label>
-                <div className="relative">
-                  <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input type="number" min="0" max="100" step="1" value={descuentoMasivoPct} onChange={(e) => setDescuentoMasivoPct(e.target.value)} placeholder="0" className={cn(phantomInputClass, "pl-10")} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label className={phantomLabelClass}>Inicio (opcional)</Label>
-                  <Input type="datetime-local" value={descuentoMasivoInicio} onChange={(e) => setDescuentoMasivoInicio(e.target.value)} className={phantomInputClass} />
-                </div>
-                <div className="space-y-1">
-                  <Label className={phantomLabelClass}>Fin (opcional)</Label>
-                  <Input type="datetime-local" value={descuentoMasivoFin} onChange={(e) => setDescuentoMasivoFin(e.target.value)} className={phantomInputClass} />
-                </div>
-              </div>
-              {/* Presets rápidos */}
-              <div className="flex gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground self-center font-medium">Presets fin:</span>
-                {[{ label: '1h', ms: 3600000 }, { label: '8h', ms: 28800000 }, { label: '24h', ms: 86400000 }, { label: '7 días', ms: 604800000 }].map(({ label, ms }) => (
-                  <Button key={label} type="button" variant="outline" size="sm" className="h-8 px-3 rounded-lg text-xs font-semibold border-zinc-200 dark:border-zinc-700" onClick={() => {
-                    const fin = new Date(Date.now() + ms)
-                    setDescuentoMasivoFin(fin.toISOString().slice(0, 16))
-                  }}>
-                    {label}
-                  </Button>
-                ))}
-                {descuentoMasivoFin && (
-                  <Button type="button" variant="ghost" size="sm" className="h-8 px-2 rounded-lg text-xs text-muted-foreground" onClick={() => setDescuentoMasivoFin('')}>
-                    <X className="h-3 w-3 mr-1" /> Quitar
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Sección 2: Seleccionar productos */}
-            <div className="space-y-3">
-              <h3 className="font-bold text-base border-b border-zinc-100 dark:border-zinc-800 pb-2">Seleccionar productos</h3>
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar producto..." value={busquedaDescuento} onChange={(e) => setBusquedaDescuento(e.target.value)} className="h-11 pl-11 rounded-xl bg-zinc-50 dark:bg-zinc-900 border-transparent focus:border-[#FF7A00]" />
-              </div>
-              <div className="flex gap-3 text-xs font-semibold">
-                <button type="button" className="text-[#FF7A00] hover:underline" onClick={() => setProductosDescuentoSeleccionados(productos.map(p => p.id))}>Seleccionar todos</button>
-                <span className="text-muted-foreground">·</span>
-                <button type="button" className="text-muted-foreground hover:underline" onClick={() => setProductosDescuentoSeleccionados([])}>Deseleccionar todos</button>
-                <span className="ml-auto text-muted-foreground">{productosDescuentoSeleccionados.length} seleccionados</span>
-              </div>
-              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
-                {productos.filter(p => p.nombre.toLowerCase().includes(busquedaDescuento.toLowerCase())).map((p) => {
-                  const isSelected = productosDescuentoSeleccionados.includes(p.id)
-                  return (
-                    <div
-                      key={p.id}
-                      className={cn("flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all", isSelected ? "bg-orange-50/50 dark:bg-orange-950/20 border-[#FF7A00]" : "bg-white dark:bg-zinc-950 border-transparent hover:border-zinc-200 dark:hover:border-zinc-800")}
-                      onClick={() => setProductosDescuentoSeleccionados(prev => isSelected ? prev.filter(id => id !== p.id) : [...prev, p.id])}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className={cn("h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0", isSelected ? "bg-[#FF7A00] border-[#FF7A00]" : "border-zinc-300 dark:border-zinc-600")}>
-                          {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
-                        </div>
-                        <span className={cn("text-sm font-semibold truncate", isSelected ? "text-[#FF7A00]" : "text-foreground")}>{p.nombre}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 ml-2">
-                        {(p as any).descuento && (p as any).descuento > 0 && (
-                          <Badge className="bg-emerald-500 text-white text-[10px] font-bold border-none px-1.5">-{(p as any).descuento}%</Badge>
-                        )}
-                        {(p as any).descuentoFechaFin && formatTimeLeft((p as any).descuentoFechaFin) && (
-                          <span className="text-[10px] text-amber-600 font-semibold">⏱ {formatTimeLeft((p as any).descuentoFechaFin)}</span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-6 sm:px-8 py-5 shrink-0 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-end gap-3 z-10">
-            <Button type="button" variant="ghost" onClick={() => setDialogDescuentoMasivoAbierto(false)} disabled={aplicandoDescuento} className="h-12 px-6 rounded-xl font-semibold text-muted-foreground hover:text-foreground">
-              Cancelar
-            </Button>
-            <Button
-              disabled={productosDescuentoSeleccionados.length === 0 || descuentoMasivoPct === '' || aplicandoDescuento}
-              onClick={async () => {
-                if (!token) return
-                setIsAplicandoDescuento(true)
-                try {
-                  await productosApi.bulkDescuento(token, {
-                    productoIds: productosDescuentoSeleccionados,
-                    descuento: parseInt(descuentoMasivoPct, 10),
-                    descuentoFechaInicio: descuentoMasivoInicio || null,
-                    descuentoFechaFin: descuentoMasivoFin || null,
-                  })
-                  toast.success(`Descuento aplicado a ${productosDescuentoSeleccionados.length} producto(s)`)
-                  await fetchData()
-                  setDialogDescuentoMasivoAbierto(false)
-                  setProductosDescuentoSeleccionados([])
-                  setDescuentoMasivoPct('')
-                  setDescuentoMasivoInicio('')
-                  setDescuentoMasivoFin('')
-                } catch (error: any) {
-                  toast.error('Error al aplicar descuento', { description: error.message || 'Error de conexión' })
-                } finally {
-                  setIsAplicandoDescuento(false)
-                }
-              }}
-              className="h-12 px-8 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-transform"
-            >
-              {aplicandoDescuento ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Zap className="mr-2 h-5 w-5" />}
-              Aplicar a {productosDescuentoSeleccionados.length} producto{productosDescuentoSeleccionados.length !== 1 ? 's' : ''}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

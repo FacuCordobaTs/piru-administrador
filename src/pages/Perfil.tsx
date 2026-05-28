@@ -54,7 +54,9 @@ import {
   ChevronRight,
   AlertCircle,
   Package,
+  FileText,
 } from 'lucide-react'
+import FacturacionAfipSection from '@/components/FacturacionAfipSection'
 import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
 import { PWAInstallButton } from '@/components/PWAInstallButton'
@@ -958,6 +960,7 @@ const Perfil = () => {
     { value: 'delivery', icon: Truck, label: 'Delivery' },
     { value: 'experiencia', icon: Palette, label: 'Experiencia' },
     { value: 'sucursales', label: 'Sucursales', icon: Store },
+    { value: 'facturacion', icon: FileText, label: 'Facturación' },
     { value: 'hardware', icon: Printer, label: 'Hardware' },
   ]
 
@@ -1737,6 +1740,13 @@ const Perfil = () => {
           {/* ─────────────────────────────────────────────
               TAB: HARDWARE
           ───────────────────────────────────────────── */}
+          {/* ─────────────────────────────────────────────
+              TAB: FACTURACIÓN
+          ───────────────────────────────────────────── */}
+          <TabsContent value="facturacion" className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
+            <FacturacionAfipSection />
+          </TabsContent>
+
           <TabsContent value="hardware" className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
             <div className={cn(phantomCardClass, "max-w-2xl")}>
               <div className="p-6 sm:p-8">

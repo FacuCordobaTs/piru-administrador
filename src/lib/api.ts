@@ -1329,3 +1329,44 @@ export const zonasDeliveryApi = {
     })
   },
 }
+
+export const facturacionApi = {
+  getEstado: async (token: string) => {
+    return fetchApi('/facturacion/estado', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  configurar: async (token: string, data: { afipCuit: string; afipClaveFiscal: string; afipCondicionIva: 'RI' | 'MO' }) => {
+    return fetchApi('/facturacion/configurar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+  },
+  desactivar: async (token: string) => {
+    return fetchApi('/facturacion/desactivar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  facturarBatch: async (token: string, pedidoIds: number[]) => {
+    return fetchApi('/facturacion/facturar-batch', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pedidoIds }),
+    })
+  },
+  getPedidosSinFacturar: async (token: string) => {
+    return fetchApi('/facturacion/pedidos-sin-facturar', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  getPdfUrl: async (token: string, pedidoId: number) => {
+    return fetchApi(`/facturacion/pedidos/${pedidoId}/factura/pdf`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+}

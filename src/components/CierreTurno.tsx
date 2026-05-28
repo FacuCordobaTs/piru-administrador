@@ -1,22 +1,21 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuthStore } from '@/store/authStore'
-import { pedidosApi } from '@/lib/api'
+import { pedidosApi, facturacionApi } from '@/lib/api'
 import {
-  X, Loader2, FileText, Printer, Search, ChevronDown, ChevronRight,
-  Wallet, Smartphone, Building2, CheckCircle2, AlertCircle, TrendingUp, Truck, UserRound
+  X, Loader2, FileText, Search, ChevronDown, ChevronRight, ArrowLeft,
+  Truck, TrendingUp, Banknote, Smartphone, Landmark, Receipt, ShoppingBag, UtensilsCrossed
 } from 'lucide-react'
+import FacturacionBatchCierre from '@/components/FacturacionBatchCierre'
+import { cn } from '@/lib/utils'
 
 /* ==========================================================================
    INTERFACES & TYPES
-   Cierre de turno: mesas (pedido), delivery/takeaway (pedido_unificado)
    ========================================================================== */
 interface CierreTurnoItem { id: number; productoId: number; nombreProducto: string; cantidad: number; precioUnitario: string; clienteNombre?: string; estado?: string; agregados?: any }
 interface CierreTurnoPedidoMesa { id: number; mesaId: number | null; nombrePedido: string | null; estado: string; total: string; createdAt: string; closedAt: string | null; mesaNombre: string | null; tipo: 'mesa'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; pagos?: any[]; pagosSubtotal?: any[] }
-interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'delivery'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null }
-interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null }
+interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'delivery'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null; afipFacturado?: boolean; afipCae?: string | null; afipNumeroComprobante?: number | null; afipPdfUrl?: string | null }
+interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; afipFacturado?: boolean; afipCae?: string | null; afipNumeroComprobante?: number | null; afipPdfUrl?: string | null }
 type CierreTurnoPedido = CierreTurnoPedidoMesa | CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway
 
 interface ProductoVendido { nombre: string; cantidad: number; totalVendido: number }
@@ -37,7 +36,8 @@ interface CierreTurnoProps { open: boolean; onClose: () => void }
    ========================================================================== */
 const formatTime = (dateString: string) => {
   const date = new Date(dateString)
-  return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  date.setHours(date.getHours() + 3)
+  return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 const formatDateLabel = (dateString: string) => {
   const [year, month, day] = dateString.split('-').map(Number)
@@ -49,9 +49,8 @@ const formatDateLabel = (dateString: string) => {
   return date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-
 /* ==========================================================================
-   NUEVO COMPONENTE: DASHBOARD MÉTRICAS (VISUAL & MINIMALISTA)
+   DASHBOARD MÉTRICAS
    ========================================================================== */
 interface DashboardMetricasProps {
   total: number
@@ -59,146 +58,64 @@ interface DashboardMetricasProps {
   pedidosTotal: number
   pedidosPagados: number
   fechaLabel: string
+  onDateClick: () => void
 }
-function DashboardMetricas({ total, pagos, pedidosTotal, pedidosPagados, fechaLabel }: DashboardMetricasProps) {
-  // Cálculos de porcentajes para la barra visual
-  const pctEfectivo = total > 0 ? (pagos.efectivo / total) * 100 : 0
-  const pctMP = total > 0 ? (pagos.mercadopago / total) * 100 : 0
-  const pctTransf = total > 0 ? (pagos.transferencia / total) * 100 : 0
 
-  // Porcentaje de cobro (eficiencia)
-  const pctCobrado = pedidosTotal > 0 ? Math.round((pedidosPagados / pedidosTotal) * 100) : 0
+function PaymentCard({ label, amount, icon: Icon }: { label: string; amount: number; icon: React.ElementType }) {
+  const isZero = amount === 0
+  return (
+    <div className={cn('flex-1 flex flex-col gap-4 px-5 py-5 rounded-xl bg-muted', isZero ? 'opacity-40' : '')}>
+      <div className="flex items-center gap-2">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+        <p className="text-sm font-bold text-foreground">{label}</p>
+      </div>
+      <p className="text-2xl font-extrabold text-foreground leading-none">
+        ${amount.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+      </p>
+    </div>
+  )
+}
+
+function DashboardMetricas({ total, pagos, pedidosTotal, pedidosPagados, fechaLabel, onDateClick }: DashboardMetricasProps) {
   const pedidosPendientes = pedidosTotal - pedidosPagados
+  const intPart = Math.floor(total)
+  const decPart = (total % 1).toFixed(2).split('.')[1]
 
   return (
-    <div className="space-y-4 mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
-
-      {/* 1. Bloque Principal: Total y Barra de Composición */}
-      <div className="bg-card rounded-xl border shadow-sm p-4 sm:p-5 relative overflow-hidden">
-        {/* Fondo decorativo sutil */}
-        <div className="absolute top-0 right-0 p-10 opacity-[0.03] dark:opacity-[0.05] pointer-events-none">
-          <TrendingUp size={120} />
-        </div>
-
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6 relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ventas Totales</span>
-              <span className="text-[10px] bg-muted px-2 py-0.5 rounded-full text-muted-foreground border border-transparent dark:border-border">{fechaLabel}</span>
-            </div>
-            <h2 className="text-4xl sm:text-5xl font-extrabold text-foreground tracking-tight">
-              ${total.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              <span className="text-xl sm:text-2xl text-muted-foreground/50 font-medium">,{(total % 1).toFixed(2).split('.')[1]}</span>
-            </h2>
-          </div>
-
-          <div className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full border 
-            ${pctCobrado === 100
-              ? 'bg-green-500/10 text-green-700 border-green-200 dark:text-green-400 dark:border-green-800/50'
-              : 'bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400 dark:border-amber-800/50'
-            }`}>
-            {pctCobrado === 100 ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            <span>{pctCobrado}% cobrado</span>
-          </div>
-        </div>
-
-        {/* Barra Visual de Distribución */}
-        <div className="relative z-10">
-          <div className="h-4 w-full flex rounded-full overflow-hidden bg-muted/50 dark:bg-muted mb-2">
-            {pctEfectivo > 0 && (
-              <div style={{ width: `${pctEfectivo}%` }} className="bg-emerald-500 dark:bg-emerald-600 transition-all duration-700 hover:brightness-110" title={`Efectivo: ${pctEfectivo.toFixed(1)}%`} />
-            )}
-            {pctMP > 0 && (
-              <div style={{ width: `${pctMP}%` }} className="bg-sky-500 dark:bg-sky-600 transition-all duration-700 hover:brightness-110" title={`MercadoPago: ${pctMP.toFixed(1)}%`} />
-            )}
-            {pctTransf > 0 && (
-              <div style={{ width: `${pctTransf}%` }} className="bg-violet-500 dark:bg-violet-600 transition-all duration-700 hover:brightness-110" title={`Transferencia: ${pctTransf.toFixed(1)}%`} />
-            )}
-          </div>
-
-          {/* Leyenda inteligente */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground font-medium">
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>Efectivo ({Math.round(pctEfectivo)}%)</div>
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-sky-500"></div>Mercado Pago ({Math.round(pctMP)}%)</div>
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-violet-500"></div>Transferencias ({Math.round(pctTransf)}%)</div>
-          </div>
-        </div>
+    <div className="space-y-10">
+      <div className="text-center">
+        <button
+          onClick={onDateClick}
+          className="inline-flex items-center gap-1.5 text-xs mb-1 px-3 py-1.5 rounded-full bg-muted hover:bg-muted/70 transition-colors text-muted-foreground hover:text-foreground"
+        >
+          {fechaLabel}
+          <ChevronDown className="h-3 w-3" />
+        </button>
+        <p className="text-xs font-bold mb-4 text-foreground uppercase tracking-widest">Total</p>
+        <h2 className="text-6xl sm:text-8xl font-bold tracking-tight leading-none text-foreground">
+          ${intPart.toLocaleString('es-AR')}
+          <span className="text-3xl font-normal text-muted-foreground/50">,{decPart}</span>
+        </h2>
+        {pedidosPendientes > 0 && (
+          <p className="mt-3 text-sm" style={{ color: '#FF7A00' }}>
+            {pedidosPendientes} {pedidosPendientes === 1 ? 'orden pendiente de cobro' : 'órdenes pendientes de cobro'}
+          </p>
+        )}
       </div>
 
-      {/* 2. Grid de Detalles (Tarjetas) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-
-        <MetricaCard
-          title="Efectivo"
-          amount={pagos.efectivo}
-          icon={<Wallet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
-          colorClass="border-emerald-500 bg-emerald-50/50 dark:bg-emerald-500/10 hover:bg-emerald-100/50 dark:hover:bg-emerald-500/20"
-          barColor="bg-emerald-500"
-        />
-
-        <MetricaCard
-          title="Mercado Pago"
-          amount={pagos.mercadopago}
-          icon={<Smartphone className="w-4 h-4 text-sky-600 dark:text-sky-400" />}
-          colorClass="border-sky-500 bg-sky-50/50 dark:bg-sky-500/10 hover:bg-sky-100/50 dark:hover:bg-sky-500/20"
-          barColor="bg-sky-500"
-        />
-
-        <MetricaCard
-          title="Transferencias"
-          amount={pagos.transferencia}
-          icon={<Building2 className="w-4 h-4 text-violet-600 dark:text-violet-400" />}
-          colorClass="border-violet-500 bg-violet-50/50 dark:bg-violet-500/10 hover:bg-violet-100/50 dark:hover:bg-violet-500/20"
-          barColor="bg-violet-500"
-        />
-
-        {/* Card Estado de Órdenes */}
-        <Card className={`p-4 flex flex-col justify-between border-l-4 shadow-sm relative overflow-hidden transition-colors 
-          ${pedidosPendientes > 0
-            ? 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-500/10'
-            : 'border-l-slate-400 bg-card'
-          }`}>
-          <div className="flex justify-between items-start">
-            <span className="text-xs font-bold text-muted-foreground uppercase">Órdenes</span>
-            <div className="text-muted-foreground opacity-50">#</div>
-          </div>
-          <div className="mt-3">
-            <div className="text-xl font-bold text-foreground">
-              {pedidosPagados} <span className="text-muted-foreground text-sm font-normal">/ {pedidosTotal}</span>
-            </div>
-            <div className={`text-xs mt-1 font-medium ${pedidosPendientes > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-              {pedidosPendientes > 0
-                ? `⚠️ ${pedidosPendientes} por cobrar`
-                : '✅ Todo cobrado'}
-            </div>
-          </div>
-        </Card>
-
+      <div>
+        <div className="flex gap-3">
+          <PaymentCard label="Efectivo" amount={pagos.efectivo} icon={Banknote} />
+          <PaymentCard label="Mercado Pago" amount={pagos.mercadopago} icon={Smartphone} />
+          <PaymentCard label="Transferencia" amount={pagos.transferencia} icon={Landmark} />
+        </div>
       </div>
     </div>
   )
 }
 
-function MetricaCard({ title, amount, icon, colorClass, barColor }: { title: string, amount: number, icon: React.ReactNode, colorClass: string, barColor: string }) {
-  return (
-    <Card className={`p-4 flex flex-col justify-between shadow-sm border-l-4 transition-all ${colorClass}`}>
-      <div className="flex justify-between items-start mb-2">
-        <span className="text-xs font-bold text-muted-foreground uppercase truncate">{title}</span>
-        {icon}
-      </div>
-      <div>
-        <div className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
-          ${amount.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-        </div>
-      </div>
-      {/* Mini barra decorativa */}
-      <div className={`h-1 w-8 rounded-full mt-3 opacity-30 ${barColor}`} />
-    </Card>
-  )
-}
-
 /* ==========================================================================
-   PEDIDO CARD COMPONENT (EXISTENTE, LIGERAMENTE RETOCADO)
+   PEDIDO CARD COMPONENT
    ========================================================================== */
 interface PedidoCardProps {
   pedido: CierreTurnoPedido
@@ -208,21 +125,54 @@ interface PedidoCardProps {
 
 function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
   const key = `${pedido.tipo}-${pedido.id}`
+  const token = useAuthStore(s => s.token)
+  const [pdfLoading, setPdfLoading] = useState(false)
 
-  // 1. precioUnitario ya incluye agregados (los suma el backend al crear el pedido)
+  const handleVerFactura = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!token) return
+    setPdfLoading(true)
+    try {
+      const res: any = await facturacionApi.getPdfUrl(token, pedido.id)
+      if (res.success && res.url) window.open(res.url, '_blank')
+    } catch { }
+    finally { setPdfLoading(false) }
+  }
+
+  const getMetodoPagoIcons = (): React.ElementType[] => {
+    const mapIcon = (raw: string | null | undefined): React.ElementType | null => {
+      if (!raw) return null
+      const low = raw.toLowerCase()
+      if (low === 'efectivo' || low === 'cash') return Banknote
+      if (low.includes('mercadopago')) return Smartphone
+      if (low.includes('transfer')) return Landmark
+      return null
+    }
+    if (!pedido.pagado) return []
+    if (pedido.tipo === 'mesa') {
+      const mesaP = pedido as CierreTurnoPedidoMesa
+      const paidSub = mesaP.pagosSubtotal?.filter((ps: any) => ps.estado === 'paid') || []
+      const paidBase = mesaP.pagos?.filter((pg: any) => pg.estado === 'paid') || []
+      const methods = paidSub.length > 0 ? paidSub.map((ps: any) => ps.metodo)
+        : paidBase.length > 0 ? paidBase.map((pg: any) => pg.metodo)
+        : mesaP.metodoPago ? [mesaP.metodoPago] : []
+      return [...new Set(methods.map(mapIcon).filter(Boolean))] as React.ElementType[]
+    }
+    const icon = mapIcon(pedido.metodoPago)
+    return icon ? [icon] : []
+  }
+
   const itemSubtotal = (it: CierreTurnoItem) => {
     const unit = parseFloat(it.precioUnitario || '0')
     return unit * (it.cantidad || 1)
   }
 
-  // 2. Deducir costo dinámico de envío: total + descuento - ítems
   const sumItems = pedido.items.reduce((acc, it) => acc + itemSubtotal(it), 0)
   const montoDescuento = (pedido.tipo === 'delivery' || pedido.tipo === 'takeaway')
     ? parseFloat(String((pedido as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).montoDescuento ?? 0)) || 0
     : 0
   const dynamicDeliveryFee = pedido.tipo === 'delivery' ? Math.max(0, parseFloat(pedido.total) + montoDescuento - sumItems) : 0
 
-  // 3. Agrupar ítems (pedido_unificado: delivery/takeaway no tienen clienteNombre por ítem)
   const groups: { cliente: string; items: CierreTurnoItem[] }[] = (() => {
     const map = new Map<string, CierreTurnoItem[]>()
     const defaultCliente = (pedido.tipo === 'delivery' || pedido.tipo === 'takeaway')
@@ -235,7 +185,6 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
       map.get(cliente)!.push(it)
     })
 
-    // Si es pedido DELIVERY, agregar el costo de zona calculado dinámicamente
     if (pedido.tipo === 'delivery') {
       const envioItem: CierreTurnoItem = {
         id: -1,
@@ -264,7 +213,6 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
     ? sumItems + dynamicDeliveryFee - montoDescuento
     : parseFloat(pedido.total)
 
-  // Helper para renderizar la lista de agregados visualmente
   const renderAgregadosUI = (agregadosRaw: any) => {
     if (!agregadosRaw) return null
     let arr: any[] = []
@@ -274,11 +222,10 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
       arr = agregadosRaw
     }
     if (arr.length === 0) return null
-
     return (
-      <div className="mt-1 flex flex-col gap-0.5">
+      <div className="mt-0.5 flex flex-col gap-0.5">
         {arr.map((ag: any, idx: number) => (
-          <span key={idx} className="text-[11px] text-muted-foreground/80">
+          <span key={idx} className="text-xs text-muted-foreground/60">
             + {ag.nombre} (${parseFloat(ag.precio).toLocaleString('es-AR')})
           </span>
         ))}
@@ -286,124 +233,92 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
     )
   }
 
+  const pedidoLabel = pedido.tipo === 'mesa'
+    ? (pedido as CierreTurnoPedidoMesa).mesaNombre || 'Mesa'
+    : pedido.tipo === 'delivery'
+      ? (pedido as CierreTurnoPedidoDelivery).nombreCliente || 'Delivery'
+      : (pedido as CierreTurnoPedidoTakeaway).nombreCliente || 'Takeaway'
+
+  const hasFactura = pedido.tipo !== 'mesa' && (pedido as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).afipFacturado
+
   return (
-    <Card className="shadow-sm">
-      <CardContent className="p-3">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="text-lg leading-none">{pedido.tipo === 'mesa' ? '🍽️' : pedido.tipo === 'delivery' ? '🚚' : '🛍️'}</div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">
-                    {pedido.tipo === 'mesa' ? (pedido as CierreTurnoPedidoMesa).mesaNombre || 'Mesa' :
-                      pedido.tipo === 'delivery' ? (pedido as CierreTurnoPedidoDelivery).nombreCliente || 'Delivery' :
-                        (pedido as CierreTurnoPedidoTakeaway).nombreCliente || 'Takeaway'}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground truncate">
-                    {pedido.tipo === 'mesa' ? (pedido as CierreTurnoPedidoMesa).nombrePedido || '' : ''}
-                  </div>
-                </div>
-              </div>
+    <div className="rounded-lg bg-muted/40">
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/60 transition-colors rounded-lg"
+        onClick={() => onToggle(key)}
+      >
+        <span className="w-6 shrink-0 flex items-center justify-center text-muted-foreground/40">
+          {pedido.tipo === 'mesa'
+            ? <UtensilsCrossed className="h-3.5 w-3.5" />
+            : pedido.tipo === 'delivery'
+              ? <Truck className="h-3.5 w-3.5" />
+              : <ShoppingBag className="h-3.5 w-3.5" />}
+        </span>
+        <span className="text-sm font-medium flex-1 truncate text-foreground">{pedidoLabel}</span>
+        {!pedido.pagado && (
+          <span className="text-xs shrink-0 text-orange-500">Pendiente</span>
+        )}
+        {hasFactura && (
+          <button
+            onClick={handleVerFactura}
+            disabled={pdfLoading}
+            className="flex items-center gap-1 text-xs shrink-0 transition-opacity hover:opacity-70 disabled:opacity-30 text-muted-foreground/60"
+          >
+            {pdfLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+            Factura
+          </button>
+        )}
+        <span className="text-sm font-semibold text-foreground shrink-0">
+          ${totalConEnvio.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+        </span>
+        {pedido.pagado && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            {getMetodoPagoIcons().map((Icon, i) => <Icon key={i} className="h-3.5 w-3.5 text-foreground" />)}
+          </div>
+        )}
+        <span className="text-xs text-muted-foreground/50 w-10 text-right shrink-0">{formatTime(pedido.createdAt)}</span>
+        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground/40 transition-transform shrink-0', isOpen && 'rotate-180')} />
+      </div>
 
-              <div className="ml-auto flex items-center gap-3">
-                <div className="text-xs">{pedido.pagado ? 'Pagado ✅' : 'Pendiente de pago❌'}</div>
-                <div className="text-base font-bold text-primary">
-                  ${totalConEnvio.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                </div>
-                <div className="text-xs text-muted-foreground">{formatTime(pedido.createdAt)}</div>
-                <button onClick={() => onToggle(key)} className="p-1 rounded hover:bg-muted/10">
-                  {!isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-2 text-xs text-muted-foreground">
-              {pedido.totalItems + (pedido.tipo === 'delivery' ? 1 : 0)} item{(pedido.totalItems + (pedido.tipo === 'delivery' ? 1 : 0)) !== 1 ? 's' : ''}
-            </div>
-
-            {!isOpen && (
-              <div id={`pedido-items-${key}`} className="mt-3 space-y-4">
-                {groups.map((grp, gi) => (
-                  <div key={`${key}-grp-${gi}`} className="rounded-md border overflow-hidden">
-                    <div className="px-3 py-2 bg-muted/10 flex items-center justify-between">
-                      <div className="text-sm font-medium">{grp.cliente}</div>
-                      <div className="text-xs text-muted-foreground">{grp.items.length} artículo{grp.items.length !== 1 ? 's' : ''}</div>
+      {isOpen && (
+        <div className="px-4 pb-4 pt-1 space-y-6">
+          {groups.map((grp, gi) => (
+            <div key={`${key}-grp-${gi}`}>
+              {groups.length > 1 && (
+                <p className="text-xs mb-2 text-muted-foreground">{grp.cliente}</p>
+              )}
+              <div>
+                {grp.items.map((it) => (
+                  <div key={it.id} className="flex items-start justify-between py-1.5">
+                    <div className="flex-1 min-w-0 pr-6">
+                      <span className="text-sm text-muted-foreground">
+                        {it.nombreProducto || `Producto #${it.productoId}`}
+                      </span>
+                      {it.estado && (
+                        <div className="text-xs mt-0.5 text-muted-foreground/60">{it.estado}</div>
+                      )}
+                      {renderAgregadosUI(it.agregados)}
                     </div>
-
-                    {/* VISTA DESKTOP */}
-                    <div className="w-full overflow-x-auto hidden sm:block">
-                      <table className="w-full table-fixed text-sm">
-                        <thead>
-                          <tr className="bg-muted/5 text-[13px] text-muted-foreground">
-                            <th className="py-2 px-3 text-left w-[60%]">Producto</th>
-                            <th className="py-2 px-3 text-center w-[10%]">Cant.</th>
-                            <th className="py-2 px-3 text-right w-[15%]">P. Unit.</th>
-                            <th className="py-2 px-3 text-right w-[15%]">Subtotal</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {grp.items.map((it) => (
-                            <tr key={it.id} className="border-t bg-background">
-                              <td className="py-3 px-3 align-top min-w-0">
-                                <div className="truncate font-medium">{it.nombreProducto || `Producto #${it.productoId}`}</div>
-                                {it.estado && <div className="text-[12px] text-muted-foreground mt-0.5">{it.estado}</div>}
-                                {renderAgregadosUI(it.agregados)}
-                              </td>
-                              <td className="py-3 px-3 text-center font-mono align-top">{it.cantidad}</td>
-                              <td className="py-3 px-3 text-right font-mono align-top">${parseFloat(it.precioUnitario).toFixed(2)}</td>
-                              <td className="py-3 px-3 text-right font-semibold align-top">${itemSubtotal(it).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t bg-muted/10">
-                            <td className="py-2 px-3 text-sm font-semibold">Total</td>
-                            <td />
-                            <td />
-                            <td className="py-2 px-3 text-right font-semibold">
-                              ${grp.items.reduce((s, it) => s + itemSubtotal(it), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-
-                    {/* VISTA MOBILE */}
-                    <div className="w-full block sm:hidden px-3 py-2 space-y-2">
-                      {grp.items.map((it) => (
-                        <div key={`mobile-${it.id}`} className="rounded-md border p-3 bg-background">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium truncate">{it.nombreProducto || `Producto #${it.productoId}`}</div>
-                              {it.estado && <div className="text-xs text-muted-foreground mt-1">{it.estado}</div>}
-                              {renderAgregadosUI(it.agregados)}
-                            </div>
-                            <div className="text-sm font-mono text-right min-w-[70px]">
-                              x{it.cantidad}
-                            </div>
-                          </div>
-                          <div className="mt-2 flex items-center justify-between text-xs font-mono text-muted-foreground">
-                            <div>P.Unit. ${parseFloat(it.precioUnitario).toFixed(2)}</div>
-                            <div>Subtotal ${itemSubtotal(it).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
-                          </div>
-                        </div>
-                      ))}
-                      <div className="pt-2 border-t">
-                        <div className="flex items-center justify-between text-sm font-semibold">
-                          <div>Total</div>
-                          <div>${grp.items.reduce((s, it) => s + itemSubtotal(it), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
-                        </div>
-                      </div>
+                    <div className="flex items-start gap-6 shrink-0">
+                      <span className="text-sm w-24 text-right text-foreground/70">
+                        ${itemSubtotal(it).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
                     </div>
                   </div>
                 ))}
+                <div className="h-px bg-border/50 my-1" />
+                <div className="flex items-center justify-between py-1.5">
+                  <span className="text-sm font-semibold text-foreground">Total</span>
+                  <span className="text-sm font-semibold text-foreground">
+                    ${grp.items.reduce((s, it) => s + itemSubtotal(it), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          ))}
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </div>
   )
 }
 
@@ -412,12 +327,15 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
    ========================================================================== */
 export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
   const token = useAuthStore(s => s.token)
-  const restaurante = useAuthStore(s => s.restaurante)
   const [data, setData] = useState<CierreTurnoData | null>(null)
   const [loading, setLoading] = useState(false)
   const [selectedFecha, setSelectedFecha] = useState<string>('')
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [filterTipo, setFilterTipo] = useState<'takeaway' | 'delivery' | null>(null)
+  const [afipHabilitado, setAfipHabilitado] = useState(false)
+  const [activeModal, setActiveModal] = useState<'facturacion' | 'envios' | 'ranking' | null>(null)
+  const [showDateModal, setShowDateModal] = useState(false)
 
   const fetchCierreTurno = useCallback(async (fecha?: string) => {
     if (!token) return
@@ -435,8 +353,13 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
   useEffect(() => {
     if (!open) return
-    setQuery(''); setExpanded(new Set()); setSelectedFecha('')
+    setQuery(''); setExpanded(new Set()); setSelectedFecha(''); setFilterTipo(null)
     fetchCierreTurno()
+    if (token) {
+      facturacionApi.getEstado(token)
+        .then((res: any) => { if (res.success) setAfipHabilitado(res.data.habilitado) })
+        .catch(() => { })
+    }
   }, [open])
 
   const toggle = (k: string) => {
@@ -450,16 +373,28 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
   }, [data])
 
   const filtered = useMemo(() => {
-    if (!query) return allPedidos
+    let result = allPedidos
+    if (filterTipo) result = result.filter(p => p.tipo === filterTipo)
+    if (!query) return result
     const q = query.toLowerCase()
-    return allPedidos.filter(p => {
+    return result.filter(p => {
       const label = p.tipo === 'mesa' ? (p as CierreTurnoPedidoMesa).mesaNombre || '' :
         p.tipo === 'delivery' ? (p as CierreTurnoPedidoDelivery).nombreCliente || '' :
           (p as CierreTurnoPedidoTakeaway).nombreCliente || ''
       if (label.toLowerCase().includes(q)) return true
       return p.items.some(i => (i.nombreProducto || '').toLowerCase().includes(q))
     })
-  }, [allPedidos, query])
+  }, [allPedidos, query, filterTipo])
+
+  const allExpanded = filtered.length > 0 && filtered.every(p => expanded.has(`${p.tipo}-${p.id}`))
+
+  const toggleAll = () => {
+    if (allExpanded) {
+      setExpanded(new Set())
+    } else {
+      setExpanded(new Set(filtered.map(p => `${p.tipo}-${p.id}`)))
+    }
+  }
 
   const total = useMemo(() => data ? parseFloat(data.totales.general) : 0, [data])
 
@@ -468,7 +403,6 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
     if (!data) return res;
 
     allPedidos.forEach(p => {
-      // Usamos directamente p.total. Ya incluye ítems, agregados y envío de zona.
       const baseMonto = parseFloat(p.total);
 
       const mapMetodo = (raw: string | null | undefined) => {
@@ -519,7 +453,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
   const topProducts = useMemo(() => {
     if (!data) return []
-    return data.productosVendidos.filter(p => !p.nombre.startsWith('[Extra]'))
+    return data.productosVendidos.filter(p => !p.nombre.startsWith('[Extra]') && !p.nombre.startsWith('Envío') && p.nombre !== 'Delivery')
   }, [data])
 
   const repartidorStats = useMemo(() => {
@@ -550,184 +484,297 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
     }
   }, [data])
 
-  const exportCSV = () => {
-    if (!data) return
-    const rows = [['tipo', 'id', 'label', 'estado', 'total', 'items', 'hora'].join(',')]
-    allPedidos.forEach(p => {
-      const label = p.tipo === 'mesa' ? (p as CierreTurnoPedidoMesa).mesaNombre || '' :
-        p.tipo === 'delivery' ? (p as CierreTurnoPedidoDelivery).nombreCliente || '' :
-          (p as CierreTurnoPedidoTakeaway).nombreCliente || ''
-      rows.push([p.tipo, p.id, `"${label}"`, p.estado, p.total, p.totalItems, new Date(p.createdAt).toISOString()].join(','))
+  const groupedFechas = useMemo(() => {
+    if (!data?.fechasDisponibles) return []
+    const groups = new Map<string, string[]>()
+    data.fechasDisponibles.forEach(f => {
+      const [year, month] = f.split('-')
+      const key = `${year}-${month}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(f)
     })
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `cierre_${data.fecha}.csv`; a.click(); URL.revokeObjectURL(url)
-  }
+    return Array.from(groups.entries()).map(([key, dates]) => {
+      const [year, month] = key.split('-').map(Number)
+      const raw = new Date(year, month - 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+      return { label: raw.charAt(0).toUpperCase() + raw.slice(1), dates }
+    })
+  }, [data?.fechasDisponibles])
 
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-auto">
-      {/* Header Fijo */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-b bg-background/95 gap-3 sticky top-0 z-20 backdrop-blur supports-backdrop-filter:bg-background/60">
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <button onClick={onClose} className="p-2 rounded hover:bg-muted/50 transition-colors"><X className="h-5 w-5" /></button>
-          <div>
-            <div className="text-lg font-bold">Cierre de Turno</div>
-            <div className="text-xs text-muted-foreground">{restaurante?.nombre || 'Restaurante'}</div>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
-          <Select value={selectedFecha} onValueChange={(v: string) => { setSelectedFecha(v); fetchCierreTurno(v) }}>
-            <SelectTrigger className="h-9 w-full sm:w-44 text-sm"><SelectValue placeholder="Seleccionar día" /></SelectTrigger>
-            <SelectContent>
-              {data?.fechasDisponibles.map(f => <SelectItem key={f} value={f}>{formatDateLabel(f)}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-1 mt-2 sm:mt-0 self-end sm:self-auto">
-            <button onClick={exportCSV} title="Exportar CSV" className="p-2 rounded hover:bg-muted/50 border"><FileText className="h-4 w-4" /></button>
-            <button onClick={() => window.print()} title="Imprimir" className="p-2 rounded hover:bg-muted/50 border"><Printer className="h-4 w-4" /></button>
-          </div>
-        </div>
+    <div className="fixed inset-0 z-50 flex flex-col overflow-auto bg-background text-foreground">
+      {/* Header */}
+      <div className="flex items-center px-6 py-4 sticky top-0 z-20 bg-background border-b border-border">
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-lg transition-opacity hover:opacity-70 text-muted-foreground"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
       </div>
 
       {/* Content */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center">
-            <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
-            <p className="text-sm text-muted-foreground mt-2">Calculando métricas...</p>
-          </div>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/30" />
         </div>
       ) : !data ? (
-        <div className="flex-1 flex items-center justify-center text-muted-foreground p-4">Sin datos para mostrar</div>
+        <div className="flex-1 flex items-center justify-center p-4 text-sm text-muted-foreground/60">
+          Sin datos para mostrar
+        </div>
       ) : (
         <ScrollArea className="flex-1">
-          <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
+          <div className="max-w-3xl mx-auto px-6 sm:px-10 py-12 space-y-16">
 
-            {/* ---> COMPONENTE REDISEÑADO <--- */}
             <DashboardMetricas
               total={total}
               pagos={pagosDesglosados}
               pedidosTotal={allPedidos.length}
               pedidosPagados={allPedidos.filter(p => p.pagado).length}
               fechaLabel={formatDateLabel(data.fecha)}
+              onDateClick={() => setShowDateModal(true)}
             />
 
-            {/* Sección Repartidores */}
-            {data.pedidosDelivery.length > 0 && (
-              <div className="rounded-xl border bg-card p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <Truck className="h-4 w-4 text-[#FF7A00]" />
-                    Envíos del día
-                  </div>
-                  <span className="text-sm font-bold text-[#FF7A00]">
-                    ${repartidorStats.totalDeliveryFee.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-                  </span>
+            <div className="flex gap-3 flex-wrap">
+              {afipHabilitado && (
+                <button
+                  onClick={() => setActiveModal('facturacion')}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-muted text-sm text-foreground hover:opacity-70 transition-opacity cursor-pointer"
+                >
+                  <Receipt className="h-4 w-4 text-muted-foreground/60" />
+                  Facturación
+                </button>
+              )}
+              <button
+                onClick={() => setActiveModal('envios')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-muted text-sm text-foreground hover:opacity-70 transition-opacity cursor-pointer"
+              >
+                <Truck className="h-4 w-4 text-muted-foreground/60" />
+                Envíos del día
+              </button>
+              <button
+                onClick={() => setActiveModal('ranking')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-muted text-sm text-foreground hover:opacity-70 transition-opacity cursor-pointer"
+              >
+                <TrendingUp className="h-4 w-4 text-muted-foreground/60" />
+                Productos vendidos
+              </button>
+            </div>
+
+            <div>
+              <div className="relative mb-8">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Buscar mesa, cliente o producto..."
+                  className="w-full h-10 pl-10 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/50 bg-card border border-border rounded-lg text-foreground focus:border-border"
+                />
+              </div>
+
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setFilterTipo(filterTipo === 'takeaway' ? null : 'takeaway')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      filterTipo === 'takeaway'
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {filterTipo === 'takeaway' ? <X className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
+                    Takeaway
+                  </button>
+                  <button
+                    onClick={() => setFilterTipo(filterTipo === 'delivery' ? null : 'delivery')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      filterTipo === 'delivery'
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {filterTipo === 'delivery' ? <X className="h-3 w-3" /> : <Truck className="h-3 w-3" />}
+                    Delivery
+                  </button>
                 </div>
-                {repartidorStats.porRepartidor.length > 0 && (
-                  <div className="space-y-2">
+                {filtered.length > 0 && (
+                  <button
+                    onClick={toggleAll}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {allExpanded ? 'Contraer todo' : 'Expandir todo'}
+                  </button>
+                )}
+              </div>
+
+              {filtered.length === 0 ? (
+                <p className="text-sm py-12 text-center text-muted-foreground/60">
+                  No se encontraron pedidos con ese criterio.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {filtered.map((p) => {
+                    const key = `${p.tipo}-${p.id}`
+                    return (
+                      <PedidoCard
+                        key={key}
+                        pedido={p}
+                        isOpen={expanded.has(key)}
+                        onToggle={toggle}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </ScrollArea>
+      )}
+
+      {showDateModal && data && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 p-4"
+          onClick={() => setShowDateModal(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-background rounded-xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <span className="text-sm font-semibold text-foreground">Seleccionar día</span>
+              <button onClick={() => setShowDateModal(false)} className="p-1.5 rounded-lg hover:opacity-70 text-muted-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-3 max-h-[60vh] overflow-auto">
+              {groupedFechas.map(({ label, dates }) => (
+                <div key={label} className="mb-4 last:mb-0">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 px-2 mb-1.5">{label}</p>
+                  <div className="space-y-0.5">
+                    {dates.map(f => (
+                      <button
+                        key={f}
+                        onClick={() => { setSelectedFecha(f); fetchCierreTurno(f); setShowDateModal(false) }}
+                        className={cn(
+                          'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                          f === selectedFecha
+                            ? 'bg-foreground text-background font-medium'
+                            : 'text-foreground hover:bg-muted'
+                        )}
+                      >
+                        {formatDateLabel(f)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeModal && data && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 p-4"
+          onClick={() => setActiveModal(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-background rounded-xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <span className="text-sm font-semibold text-foreground">
+                {activeModal === 'facturacion' ? 'Facturación' : activeModal === 'envios' ? 'Envíos del día' : 'Ranking de productos'}
+              </span>
+              <button onClick={() => setActiveModal(null)} className="p-1.5 rounded-lg hover:opacity-70 text-muted-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-6 max-h-[70vh] overflow-auto">
+              {activeModal === 'facturacion' && (
+                <FacturacionBatchCierre pedidos={allPedidos} />
+              )}
+              {activeModal === 'envios' && (
+                data.pedidosDelivery.length === 0 ? (
+                  <p className="text-sm text-muted-foreground/60">Sin envíos registrados</p>
+                ) : (
+                  <div>
+                    <div className="flex items-center justify-between mb-5">
+                      <span className="text-sm font-semibold text-foreground">Total envíos</span>
+                      <span className="text-sm text-muted-foreground">
+                        ${repartidorStats.totalDeliveryFee.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
                     {repartidorStats.porRepartidor.map(r => (
-                      <div key={r.nombre} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 border border-border">
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-full bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
-                            <UserRound className="h-3.5 w-3.5 text-[#FF7A00]" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold">{r.nombre}</p>
-                            <p className="text-[10px] text-muted-foreground">{r.cantidad} {r.cantidad === 1 ? 'envío' : 'envíos'}</p>
-                          </div>
+                      <div key={r.nombre} className="flex items-center justify-between py-2.5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-foreground">{r.nombre}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {r.cantidad} {r.cantidad === 1 ? 'envío' : 'envíos'}
+                          </span>
                         </div>
-                        <span className="text-xs font-bold tabular-nums">
+                        <span className="text-sm text-foreground">
                           ${r.totalFee.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     ))}
                     {repartidorStats.sinAsignar > 0 && (
-                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/20 border border-dashed border-border text-muted-foreground">
-                        <span className="text-xs">{repartidorStats.sinAsignar} {repartidorStats.sinAsignar === 1 ? 'envío' : 'envíos'} sin repartidor</span>
-                      </div>
+                      <p className="text-xs py-2 text-muted-foreground">
+                        {repartidorStats.sinAsignar} {repartidorStats.sinAsignar === 1 ? 'envío' : 'envíos'} sin repartidor asignado
+                      </p>
                     )}
                   </div>
-                )}
-                {repartidorStats.porRepartidor.length === 0 && repartidorStats.sinAsignar > 0 && (
-                  <p className="text-xs text-muted-foreground">{repartidorStats.sinAsignar} {repartidorStats.sinAsignar === 1 ? 'envío' : 'envíos'} sin repartidor asignado</p>
-                )}
-              </div>
-            )}
-
-            {/* Buscador & Lista */}
-            <div className="space-y-4">
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"><Search className="h-4 w-4" /></div>
-                <input
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  placeholder="Buscar mesa, cliente o producto..."
-                  className="w-full h-11 pl-10 pr-3 rounded-lg border bg-background text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"
-                />
-              </div>
-
-              <div className="space-y-3">
-                {filtered.length === 0 ? (
-                  <div className="text-center py-12 border rounded-xl border-dashed">
-                    <p className="text-muted-foreground text-sm">No se encontraron pedidos con ese criterio.</p>
+                )
+              )}
+              {activeModal === 'ranking' && (
+                topProducts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground/60">Sin ventas registradas</p>
+                ) : (
+                  <div>
+                    {topProducts.slice(0, 9).map((tp, idx) => {
+                      const percentage = total > 0 ? (tp.totalVendido / total) * 100 : 0
+                      return (
+                        <div key={tp.nombre} className="py-3 border-b border-border/30">
+                          <div className="flex items-baseline gap-4">
+                            <span className="text-xs w-5 shrink-0 text-right tabular-nums text-muted-foreground/60">
+                              {idx + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-4 mb-2">
+                                <span className="text-sm font-medium truncate text-foreground" title={tp.nombre}>
+                                  {tp.nombre}
+                                </span>
+                                <div className="flex items-center gap-4 shrink-0">
+                                  <span className="text-xs text-muted-foreground">{tp.cantidad} u.</span>
+                                  <span className="text-sm text-foreground">
+                                    ${tp.totalVendido.toLocaleString('es-AR')}
+                                  </span>
+                                  <span className="text-xs w-10 text-right tabular-nums text-muted-foreground">
+                                    {percentage.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="h-0.5 bg-muted rounded-sm">
+                                <div
+                                  className="h-full bg-muted-foreground/50 rounded-sm transition-[width] duration-500 ease-in-out"
+                                  style={{ width: `${Math.max(2, percentage)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                ) : filtered.map((p) => {
-                  const key = `${p.tipo}-${p.id}`
-                  return (
-                    <PedidoCard
-                      key={key}
-                      pedido={p}
-                      isOpen={expanded.has(key)}
-                      onToggle={toggle}
-                    />
-                  )
-                })}
-              </div>
+                )
+              )}
             </div>
-
-            {/* Top Products (Estilizado) */}
-            <div className="pt-6 border-t mt-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="text-base font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-primary" />
-                  Ranking de productos
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {topProducts.length === 0 ? (
-                  <div className="text-xs text-muted-foreground col-span-full">Sin ventas registradas</div>
-                ) : topProducts.slice(0, 9).map((tp, idx) => {
-                  const percentage = total > 0 ? (tp.totalVendido / total) * 100 : 0
-                  return (
-                    <div key={tp.nombre} className="rounded-lg border p-3 bg-card hover:shadow-sm transition-all flex flex-col justify-between">
-                      <div>
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="text-xs font-bold text-muted-foreground/50">#{idx + 1}</span>
-                          <span className="text-xs font-mono font-medium">${tp.totalVendido.toLocaleString('es-AR')}</span>
-                        </div>
-                        <div className="font-medium text-sm truncate" title={tp.nombre}>{tp.nombre}</div>
-                      </div>
-                      <div className="mt-2">
-                        <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                          <span>{tp.cantidad} u.</span>
-                          <span>{percentage.toFixed(1)}%</span>
-                        </div>
-                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div style={{ width: `${Math.max(5, percentage)}%` }} className="h-full bg-primary/70" />
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
           </div>
-        </ScrollArea>
+        </div>
       )}
     </div>
   )
