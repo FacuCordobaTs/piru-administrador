@@ -7,6 +7,7 @@ interface ItemPedidoLike {
     agregados?: any[]
     categoriaNombre?: string
     varianteNombre?: string
+    clienteNombre?: string | null
 }
 
 // Interface for factura items - includes clienteNombre for grouping
@@ -23,7 +24,7 @@ interface PedidoLike {
     direccion?: string | null
     telefono?: string | null
     deliveryFee?: number
-    notas?: string | null // <-- AGREGA ESTA LÍNEA
+    notas?: string | null
     metodoPago?: string | null
     /** Monto descontado por cupón (ya reflejado en total del pedido) */
     montoDescuento?: string | number | null
@@ -31,6 +32,7 @@ interface PedidoLike {
     codigoDescuentoCodigo?: string | null
     sucursalNombre?: string | null
     horarioProgramado?: string | null
+    grupal?: boolean | null
 }
 
 const formatMetodoPagoPrinter = (metodoPago: string | null | undefined): string => {
@@ -168,36 +170,52 @@ export const formatComanda = (
         commands.push('--------------------------------\n');
     }
 
-    // ITEMS — Nombre del producto en DOBLE ALTO + NEGRITA para que la cocina lo lea rápido
-    items.forEach(item => {
-        // Nombre del producto: GRANDE (Doble alto + Negrita)
+    const printItem = (item: ItemPedidoLike, indent = '') => {
         const sufijoVariante = item.varianteNombre ? ` (${item.varianteNombre})` : '';
         const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
         commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
-        commands.push(`${item.cantidad}x ${nombre}\n`);
+        commands.push(`${indent}${item.cantidad}x ${nombre}\n`);
         commands.push(ESC + '!' + '\x00'); // Normal
 
-
-        // Agregados (CON:)
         if (item.agregados && item.agregados.length > 0) {
             commands.push(ESC + '!' + '\x10'); // Doble alto
-            commands.push(`  CON:\n`);
-            item.agregados.forEach(a => {
-                commands.push(`   + ${a.nombre}\n`);
+            commands.push(`${indent}  CON:\n`);
+            item.agregados.forEach((a: any) => {
+                commands.push(`${indent}   + ${a.nombre}\n`);
             });
             commands.push(ESC + '!' + '\x00');
         }
 
-        // Excluidos (SIN:)
         if (item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0) {
             commands.push(ESC + '!' + '\x10'); // Doble alto
-            commands.push(`  SIN:\n`);
-            item.ingredientesExcluidosNombres.forEach(nombre => {
-                commands.push(`   - ${nombre}\n`);
+            commands.push(`${indent}  SIN:\n`);
+            item.ingredientesExcluidosNombres.forEach((n: string) => {
+                commands.push(`${indent}   - ${n}\n`);
             });
             commands.push(ESC + '!' + '\x00');
         }
-    });
+    };
+
+    // ITEMS — Nombre del producto en DOBLE ALTO + NEGRITA para que la cocina lo lea rápido
+    if (pedido.grupal) {
+        // Pedido grupal: agrupar items por clienteNombre
+        const porCliente = items.reduce((acc, item) => {
+            const key = item.clienteNombre || 'Sin nombre';
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(item);
+            return acc;
+        }, {} as Record<string, ItemPedidoLike[]>);
+
+        Object.entries(porCliente).forEach(([cliente, clienteItems]) => {
+            commands.push(ESC + '!' + '\x08'); // Negrita
+            commands.push(`>> ${cliente.toUpperCase()}\n`);
+            commands.push(ESC + '!' + '\x00'); // Normal
+            clienteItems.forEach(item => printItem(item, '  '));
+            commands.push('--------------------------------\n');
+        });
+    } else {
+        items.forEach(item => printItem(item));
+    }
 
     // Delivery Fee explicitly added if requested
     if (pedido.deliveryFee !== undefined && pedido.deliveryFee > 0) {

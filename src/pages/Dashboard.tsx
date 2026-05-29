@@ -36,7 +36,7 @@ interface DeliveryItem {
     id: number; productoId: number; cantidad: number; precioUnitario: string;
     nombreProducto: string; imagenUrl: string | null;
     ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
-    agregados?: any; varianteNombre?: string;
+    agregados?: any; varianteNombre?: string; clienteNombre?: string | null;
 }
 interface UnifiedPedido {
     id: number; tipo: 'delivery' | 'takeaway'; estado: string; total: string; createdAt: string;
@@ -47,6 +47,7 @@ interface UnifiedPedido {
     demoraMinutos?: number | null; notificarWhatsapp?: boolean | null;
     horarioProgramado?: string | null; latitud?: string | null; longitud?: string | null;
     deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null;
+    grupal?: boolean | null;
 }
 interface Repartidor { id: number; nombre: string; estado: 'activo' | 'inactivo'; restauranteId: number }
 
@@ -605,7 +606,7 @@ const Dashboard = () => {
                         direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
                         tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                         metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
-                        horarioProgramado: pedido.horarioProgramado,
+                        horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal,
                     }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
                     printRaw(commandsToBytes(comandaData))
@@ -1154,6 +1155,7 @@ const Dashboard = () => {
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
                                                             sucursalNombre: selectedUnifiedPedido.sucursalNombre,
                                                             horarioProgramado: selectedUnifiedPedido.horarioProgramado,
+                                                            grupal: selectedUnifiedPedido.grupal,
                                                         }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                                                         printRaw(commandsToBytes(data))
                                                     }}>
@@ -1208,39 +1210,89 @@ const Dashboard = () => {
                                                 <div className="space-y-4">
                                                     <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Comanda ({selectedUnifiedPedido.totalItems} ítems)</h3>
                                                     <div className="space-y-6 mt-4">
-                                                        {selectedUnifiedPedido.items.map((item, idx) => (
-                                                            <div key={idx} className="flex justify-between items-start gap-4">
-                                                                <div className="flex gap-4">
-                                                                    <span className="font-bold text-lg w-6 text-muted-foreground">{item.cantidad}x</span>
-                                                                    <div>
-                                                                        <p className="font-bold text-lg text-foreground">
-                                                                            {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-sm font-semibold">({item.varianteNombre})</span>}
-                                                                        </p>
-                                                                        {formatAgregados(item.agregados).length > 0 && (
-                                                                            <div className="mt-1 space-y-0.5">
-                                                                                {formatAgregados(item.agregados).map((ag: any, i: number) => (
-                                                                                    <p key={i} className="text-sm text-muted-foreground font-medium">
-                                                                                        <span className="text-emerald-500 font-bold mr-1.5">+</span>{ag.nombre}
+                                                        {selectedUnifiedPedido.grupal ? (
+                                                            Object.entries(
+                                                                selectedUnifiedPedido.items.reduce((acc, item) => {
+                                                                    const key = item.clienteNombre || 'Sin nombre'
+                                                                    if (!acc[key]) acc[key] = []
+                                                                    acc[key].push(item)
+                                                                    return acc
+                                                                }, {} as Record<string, DeliveryItem[]>)
+                                                            ).map(([cliente, clienteItems]) => (
+                                                                <div key={cliente} className="space-y-4">
+                                                                    <p className="text-xs font-bold text-[#FF7A00] uppercase tracking-widest flex items-center gap-1.5">
+                                                                        <User className="h-3.5 w-3.5" />{cliente}
+                                                                    </p>
+                                                                    {clienteItems.map((item, idx) => (
+                                                                        <div key={idx} className="flex justify-between items-start gap-4">
+                                                                            <div className="flex gap-4">
+                                                                                <span className="font-bold text-lg w-6 text-muted-foreground">{item.cantidad}x</span>
+                                                                                <div>
+                                                                                    <p className="font-bold text-lg text-foreground">
+                                                                                        {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-sm font-semibold">({item.varianteNombre})</span>}
                                                                                     </p>
-                                                                                ))}
+                                                                                    {formatAgregados(item.agregados).length > 0 && (
+                                                                                        <div className="mt-1 space-y-0.5">
+                                                                                            {formatAgregados(item.agregados).map((ag: any, i: number) => (
+                                                                                                <p key={i} className="text-sm text-muted-foreground font-medium">
+                                                                                                    <span className="text-emerald-500 font-bold mr-1.5">+</span>{ag.nombre}
+                                                                                                </p>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                                                                        <div className="mt-1 space-y-0.5">
+                                                                                            {item.ingredientesExcluidosNombres.map((nombre, i) => (
+                                                                                                <p key={i} className="text-sm text-muted-foreground font-medium">
+                                                                                                    <span className="text-red-500 font-bold mr-1.5">-</span>Sin {nombre}
+                                                                                                </p>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
                                                                             </div>
-                                                                        )}
-                                                                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                                                            <div className="mt-1 space-y-0.5">
-                                                                                {item.ingredientesExcluidosNombres.map((nombre, i) => (
-                                                                                    <p key={i} className="text-sm text-muted-foreground font-medium">
-                                                                                        <span className="text-red-500 font-bold mr-1.5">-</span>Sin {nombre}
-                                                                                    </p>
-                                                                                ))}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
+                                                                            <span className="font-bold text-lg whitespace-nowrap text-foreground">
+                                                                                ${(parseFloat(item.precioUnitario || '0') * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                                            </span>
+                                                                        </div>
+                                                                    ))}
                                                                 </div>
-                                                                <span className="font-bold text-lg whitespace-nowrap text-foreground">
-                                                                    ${(parseFloat(item.precioUnitario || '0') * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                                                                </span>
-                                                            </div>
-                                                        ))}
+                                                            ))
+                                                        ) : (
+                                                            selectedUnifiedPedido.items.map((item, idx) => (
+                                                                <div key={idx} className="flex justify-between items-start gap-4">
+                                                                    <div className="flex gap-4">
+                                                                        <span className="font-bold text-lg w-6 text-muted-foreground">{item.cantidad}x</span>
+                                                                        <div>
+                                                                            <p className="font-bold text-lg text-foreground">
+                                                                                {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-sm font-semibold">({item.varianteNombre})</span>}
+                                                                            </p>
+                                                                            {formatAgregados(item.agregados).length > 0 && (
+                                                                                <div className="mt-1 space-y-0.5">
+                                                                                    {formatAgregados(item.agregados).map((ag: any, i: number) => (
+                                                                                        <p key={i} className="text-sm text-muted-foreground font-medium">
+                                                                                            <span className="text-emerald-500 font-bold mr-1.5">+</span>{ag.nombre}
+                                                                                        </p>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+                                                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                                                                <div className="mt-1 space-y-0.5">
+                                                                                    {item.ingredientesExcluidosNombres.map((nombre, i) => (
+                                                                                        <p key={i} className="text-sm text-muted-foreground font-medium">
+                                                                                            <span className="text-red-500 font-bold mr-1.5">-</span>Sin {nombre}
+                                                                                        </p>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className="font-bold text-lg whitespace-nowrap text-foreground">
+                                                                        ${(parseFloat(item.precioUnitario || '0') * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                                    </span>
+                                                                </div>
+                                                            ))
+                                                        )}
                                                         <div className="space-y-2 pt-4 border-t border-dashed border-border/60">
                                                             {selectedUnifiedPedido.tipo === 'delivery' && (
                                                                 <div className="flex justify-between items-center text-muted-foreground text-sm font-medium">
@@ -1562,42 +1614,93 @@ const Dashboard = () => {
                                             <div className="mb-6">
                                                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Comanda</h3>
                                                 <div className="space-y-0 px-2">
-                                                    {selectedUnifiedPedido.items.map((item, idx) => {
-                                                        const basePrice = parseFloat(item.precioUnitario || '0')
-                                                        const lineTotal = basePrice * item.cantidad
-
-                                                        return (
-                                                            <div key={idx} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
-                                                                <div className="flex items-baseline gap-3 flex-1 min-w-0">
-                                                                    <span className="font-mono text-sm text-muted-foreground w-6 shrink-0">{item.cantidad}x</span>
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <span className="text-sm font-medium text-foreground">
-                                                                            {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-[11px] font-bold">({item.varianteNombre})</span>}
-                                                                        </span>
-                                                                        {formatAgregados(item.agregados).length > 0 && (
-                                                                            <div className="mt-1 space-y-0.5">
-                                                                                {formatAgregados(item.agregados).map((ag: any, i: number) => (
-                                                                                    <p key={i} className="text-xs text-muted-foreground">
-                                                                                        <span className="text-emerald-500 font-bold mr-1">+</span>{ag.nombre}
-                                                                                    </p>
-                                                                                ))}
+                                                    {selectedUnifiedPedido.grupal ? (
+                                                        Object.entries(
+                                                            selectedUnifiedPedido.items.reduce((acc, item) => {
+                                                                const key = item.clienteNombre || 'Sin nombre'
+                                                                if (!acc[key]) acc[key] = []
+                                                                acc[key].push(item)
+                                                                return acc
+                                                            }, {} as Record<string, DeliveryItem[]>)
+                                                        ).map(([cliente, clienteItems], gIdx) => (
+                                                            <div key={cliente} className={gIdx > 0 ? 'mt-4 pt-4 border-t border-border/60' : ''}>
+                                                                <p className="text-[11px] font-bold text-[#FF7A00] uppercase tracking-widest flex items-center gap-1 mb-2">
+                                                                    <User className="h-3 w-3" />{cliente}
+                                                                </p>
+                                                                {clienteItems.map((item, idx) => {
+                                                                    const basePrice = parseFloat(item.precioUnitario || '0')
+                                                                    const lineTotal = basePrice * item.cantidad
+                                                                    return (
+                                                                        <div key={idx} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                                                                            <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                                                                                <span className="font-mono text-sm text-muted-foreground w-6 shrink-0">{item.cantidad}x</span>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <span className="text-sm font-medium text-foreground">
+                                                                                        {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-[11px] font-bold">({item.varianteNombre})</span>}
+                                                                                    </span>
+                                                                                    {formatAgregados(item.agregados).length > 0 && (
+                                                                                        <div className="mt-1 space-y-0.5">
+                                                                                            {formatAgregados(item.agregados).map((ag: any, i: number) => (
+                                                                                                <p key={i} className="text-xs text-muted-foreground">
+                                                                                                    <span className="text-emerald-500 font-bold mr-1">+</span>{ag.nombre}
+                                                                                                </p>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                                                                        <div className="mt-1 space-y-0.5">
+                                                                                            {item.ingredientesExcluidosNombres.map((nombre, i) => (
+                                                                                                <p key={i} className="text-[11px] text-orange-500">Sin: {nombre}</p>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
                                                                             </div>
-                                                                        )}
-                                                                        {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
-                                                                            <div className="mt-1 space-y-0.5">
-                                                                                {item.ingredientesExcluidosNombres.map((nombre, i) => (
-                                                                                    <p key={i} className="text-[11px] text-orange-500">Sin: {nombre}</p>
-                                                                                ))}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
-                                                                    ${lineTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                                                                </span>
+                                                                            <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                                                                                ${lineTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                                            </span>
+                                                                        </div>
+                                                                    )
+                                                                })}
                                                             </div>
-                                                        )
-                                                    })}
+                                                        ))
+                                                    ) : (
+                                                        selectedUnifiedPedido.items.map((item, idx) => {
+                                                            const basePrice = parseFloat(item.precioUnitario || '0')
+                                                            const lineTotal = basePrice * item.cantidad
+                                                            return (
+                                                                <div key={idx} className={`flex items-baseline justify-between py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                                                                    <div className="flex items-baseline gap-3 flex-1 min-w-0">
+                                                                        <span className="font-mono text-sm text-muted-foreground w-6 shrink-0">{item.cantidad}x</span>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <span className="text-sm font-medium text-foreground">
+                                                                                {item.nombreProducto} {item.varianteNombre && <span className="text-orange-500 text-[11px] font-bold">({item.varianteNombre})</span>}
+                                                                            </span>
+                                                                            {formatAgregados(item.agregados).length > 0 && (
+                                                                                <div className="mt-1 space-y-0.5">
+                                                                                    {formatAgregados(item.agregados).map((ag: any, i: number) => (
+                                                                                        <p key={i} className="text-xs text-muted-foreground">
+                                                                                            <span className="text-emerald-500 font-bold mr-1">+</span>{ag.nombre}
+                                                                                        </p>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+                                                                            {item.ingredientesExcluidosNombres && item.ingredientesExcluidosNombres.length > 0 && (
+                                                                                <div className="mt-1 space-y-0.5">
+                                                                                    {item.ingredientesExcluidosNombres.map((nombre, i) => (
+                                                                                        <p key={i} className="text-[11px] text-orange-500">Sin: {nombre}</p>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className="text-sm font-medium tabular-nums shrink-0 ml-4">
+                                                                        ${lineTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                                    </span>
+                                                                </div>
+                                                            )
+                                                        })
+                                                    )}
 
                                                     {selectedUnifiedPedido.tipo === 'delivery' && (
                                                         <div className="flex items-baseline justify-between py-3 border-t border-border/40 text-muted-foreground">
@@ -1666,6 +1769,7 @@ const Dashboard = () => {
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
                                                             sucursalNombre: selectedUnifiedPedido.sucursalNombre,
                                                             horarioProgramado: selectedUnifiedPedido.horarioProgramado,
+                                                            grupal: selectedUnifiedPedido.grupal,
                                                         }, itemsToPrint, restaurante?.nombre || 'Restaurante')
                                                         printRaw(commandsToBytes(data))
                                                     }}>
