@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react'
+import { useState, useEffect, useCallback, Fragment, useMemo } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,12 +11,13 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi } from '@/lib/api'
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
+import { orderEventBus } from '@/hooks/useAdminWebSocket'
 import CierreTurno from '@/components/CierreTurno'
 import {
     Loader2, Plus, Clock, Trash2, AlertCircle,
     User, ArrowLeft, Printer, Truck, MapPin,
     Phone, ShoppingBag, CalendarDays, Tag, Settings, CheckCircle2,
-    Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle,
+    Receipt, Wallet, Zap, CreditCard, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX,
 } from 'lucide-react'
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
@@ -147,12 +148,7 @@ const computeOrderTotal = (pedido: { total: string; tipo: string; items: any[]; 
     return itemsSubtotal + deliveryFee - montoDescuento
 }
 
-const deferComandaHastaPagado = (metodoPago: string | null | undefined, cucuruConfigurado: boolean | null | undefined): boolean => {
-    const m = String(metodoPago || '').trim()
-    if (['transferencia_automatica_cucuru', 'transferencia_automatica_talo', 'mercadopago', 'mercadopago_checkout', 'mercadopago_bricks'].includes(m)) return true
-    if (cucuruConfigurado && (m === 'transferencia' || m === '')) return true
-    return false
-}
+
 
 const metodoPagoListBadge = (metodoPago: string | null | undefined) => {
     const m = String(metodoPago || '').trim()
@@ -340,19 +336,12 @@ const Dashboard = () => {
     const { restaurante: restauranteStore, productos: allProductos } = useRestauranteStore()
 
     const { printRaw, selectedPrinter } = usePrinter()
-    const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
-    const initialLoadDoneRef = useRef(false)
-    const { isConnected, lastUpdate } = useAdminContext()
+    const { isConnected } = useAdminContext()
 
     // Estados Principales
     const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [selectedUnifiedPedido, setSelectedUnifiedPedido] = useState<UnifiedPedido | null>(null)
-
-    // Paginación y Lazy Loading
-    const [page, setPage] = useState(1)
-    const [hasMore, setHasMore] = useState(true)
-    const [isLoadingMore, setIsLoadingMore] = useState(false)
 
     const [updatingPago, setUpdatingPago] = useState<string | null>(null)
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
@@ -470,160 +459,99 @@ const Dashboard = () => {
     }, [])
 
     useEffect(() => {
-        setPage(1)
-        setHasMore(true)
+        // No pagination logic needed anymore since getActivos returns all active orders
     }, [sucursalActivaId])
 
     // ─────────────────────────────────────────────
     // FETCH Y WEBSOCKETS
     // ─────────────────────────────────────────────
-    const fetchPedidos = useCallback(async (pageNum = 1, append = false) => {
-        if (!token) return
-        if (!append) setIsLoading(true)
-        else setIsLoadingMore(true)
+    const tryImprimirPedido = useCallback(async (pedido: UnifiedPedido) => {
+        if (!selectedPrinter) return
+        if (pedido.impreso) return
 
         try {
-            const response = await pedidoUnificadoApi.getAll(
+            const claimRes = await pedidoUnificadoApi.claimImpresion(token!, pedido.id) as any;
+            if (!claimRes.success) {
+                // someone else claimed it
+                return;
+            }
+
+            const itemsToPrint = pedido.items.map(item => {
+                const producto = allProductos.find(p => p.id === item.productoId)
+                return { ...item, producto }
+            })
+
+            if (itemsToPrint.length > 0) {
+                const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
+                const comandaData = formatComanda({
+                    id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
+                    direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
+                    tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
+                    metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
+                    horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal,
+                }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+
+                await printRaw(commandsToBytes(comandaData))
+                setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
+            }
+        } catch (e) {
+            console.error('Error auto-imprimiendo:', e)
+        }
+    }, [selectedPrinter, token, allProductos, restaurante, printRaw])
+
+    const hydrateActivos = useCallback(async () => {
+        if (!token) return
+        setIsLoading(true)
+
+        try {
+            const response = await pedidoUnificadoApi.getActivos(
                 token,
                 'all',
-                pageNum,
-                50,
-                undefined,
                 sucursalActivaId,
             ) as any
             if (response.success && response.data) {
                 const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway') as UnifiedPedido[]
-
-                setUnifiedPedidos(prev => {
-                    const combined: UnifiedPedido[] = append ? [...prev, ...validPedidos] : validPedidos
-                    const uniqueMap = new Map<string, UnifiedPedido>()
-                    combined.forEach((item: UnifiedPedido) => uniqueMap.set(`${item.tipo}-${item.id}`, item))
-                    const unique = Array.from(uniqueMap.values())
-                    return unique.sort((a: UnifiedPedido, b: UnifiedPedido) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime())
-                })
-
-                setHasMore(response.pagination?.hasMore ?? false)
-
-                if (!append) {
-                    setSelectedUnifiedPedido((prevSelected) => {
-                        if (!prevSelected) return prevSelected
-                        const updated = validPedidos.find((p: any) => p.id === prevSelected.id && p.tipo === prevSelected.tipo)
-                        return updated || prevSelected
-                    })
-                }
+                setUnifiedPedidos(validPedidos.sort((a, b) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime()))
             }
         } catch (error) {
-            console.error('Error fetching pedidos:', error)
+            console.error('Error hydrating pedidos activos:', error)
         } finally {
             setIsLoading(false)
-            setIsLoadingMore(false)
         }
     }, [token, sucursalActivaId])
 
     useEffect(() => {
         if (!token || !prefsReady) return
-        fetchPedidos(1, false)
-    }, [token, prefsReady, fetchPedidos])
+        hydrateActivos()
+    }, [token, prefsReady, hydrateActivos])
 
     useEffect(() => {
-        if (!prefsReady || !lastUpdate) return
-        if (lastUpdate.type !== 'delivery' && lastUpdate.type !== 'takeaway') return
-        if (
-            sucursalActivaId != null &&
-            lastUpdate.sucursalId !== undefined &&
-            lastUpdate.sucursalId !== sucursalActivaId
-        ) {
-            return
-        }
-        fetchPedidos(1, false)
-    }, [lastUpdate, fetchPedidos, sucursalActivaId, prefsReady])
-
-    const handleLoadMore = () => {
-        if (!hasMore || isLoadingMore) return
-        const nextPage = page + 1
-        setPage(nextPage)
-        fetchPedidos(nextPage, true)
-    }
-
-    // ─────────────────────────────────────────────
-    // AUTO-IMPRESIÓN
-    // ─────────────────────────────────────────────
-    useEffect(() => {
-        if (!selectedPrinter) return
-
-        unifiedPedidos.forEach(pedido => {
-            const pedidoKey = `${pedido.tipo}-${pedido.id}`
-            const currentPagado = pedido.pagado
-            const prevData = processedOrdersRef.current.get(pedidoKey)
-            const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
-
-            // Archivado → registrar y nunca imprimir
-            if (pedido.estado === 'archived') {
-                if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
-                return
+        const unsubscribe = orderEventBus.subscribe((event) => {
+            if (sucursalActivaId != null && event.sucursalId !== undefined && event.sucursalId !== sucursalActivaId) {
+                return; // ignore events from other branches
             }
 
-            // Ya impreso en la DB → registrar y saltar
-            if (pedido.impreso) {
-                if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
-                return
-            }
-
-            let shouldPrint = false
-
-            if (!prevData) {
-                // Primera vez que vemos este pedido
-                if (!initialLoadDoneRef.current) {
-                    // Carga inicial (F5, apertura): solo registrar, NO imprimir
-                    processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
-                    return
-                }
-                // Pedido NUEVO que llegó en vivo después de la carga inicial
-                if (deferUntilPaid) {
-                    // Método deferred (MP, Cucuru, Talo): solo imprimir si ya está pagado
-                    shouldPrint = !!currentPagado
-                } else {
-                    // Método no-deferred (efectivo, transf manual): imprimir inmediatamente
-                    shouldPrint = true
-                }
-            } else {
-                // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
-                if (deferUntilPaid && currentPagado && !prevData.pagado) {
-                    shouldPrint = true
-                }
-            }
-
-            if (shouldPrint) {
-                const itemsToPrint = pedido.items.map(item => {
-                    const producto = allProductos.find(p => p.id === item.productoId)
-                    return { ...item, producto }
+            if (event.event === 'remove') {
+                setUnifiedPedidos(prev => prev.filter(p => !(p.id === event.pedidoId && p.tipo === event.tipo)))
+            } else if (event.event === 'upsert' && event.pedido) {
+                setUnifiedPedidos(prev => {
+                    const uniqueMap = new Map<string, UnifiedPedido>()
+                    prev.forEach((item: UnifiedPedido) => uniqueMap.set(`${item.tipo}-${item.id}`, item))
+                    uniqueMap.set(`${event.pedido.tipo}-${event.pedido.id}`, event.pedido)
+                    const unique = Array.from(uniqueMap.values())
+                    return unique.sort((a, b) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime())
                 })
 
-                if (itemsToPrint.length > 0) {
-                    const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
-                    const comandaData = formatComanda({
-                        id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
-                        direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
-                        tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
-                        metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
-                        horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal,
-                    }, itemsToPrint, restaurante?.nombre || 'Restaurante')
-
-                    printRaw(commandsToBytes(comandaData))
-                        .then(() => {
-                            setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
-                        })
-                        .catch(console.error)
+                if (event.shouldPrint && !event.pedido.impreso) {
+                    tryImprimirPedido(event.pedido)
                 }
             }
-            processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
         })
 
-        // Después de procesar el primer batch, marcar carga inicial como completada
-        if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
-            initialLoadDoneRef.current = true
-        }
-    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore])
+        return () => { unsubscribe(); };
+    }, [sucursalActivaId, tryImprimirPedido])
+
+
 
     // ─────────────────────────────────────────────
     // ACCIONES DE PEDIDO
@@ -1079,17 +1007,7 @@ const Dashboard = () => {
                                             })}
                                         </div>
 
-                                        {hasMore && (
-                                            <Button
-                                                variant="ghost"
-                                                className="w-full mt-4 text-xs font-semibold text-muted-foreground border border-dashed border-border rounded-xl h-10"
-                                                onClick={handleLoadMore}
-                                                disabled={isLoadingMore}
-                                            >
-                                                {isLoadingMore ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
-                                                Cargar más antiguos
-                                            </Button>
-                                        )}
+
                                     </div>
                                 )}
                             </div>

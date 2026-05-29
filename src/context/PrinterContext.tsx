@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 const STORAGE_KEY = 'tauri_printer_name';
@@ -37,21 +37,25 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     }, []);
 
-    /** Bytes ESC/POS (p. ej. `commandsToBytes(formatComanda(...))`). Cupón/descuento van en `printerUtils`. */
-    const printRaw = useCallback(async (data: number[]) => {
+    const printChainRef = useRef<Promise<void>>(Promise.resolve());
+
+    /** Bytes ESC/POS (p. ej. `commandsToBytes(formatComanda(...))`). Ejecutados en serie mediante printChainRef. */
+    const printRaw = useCallback((data: number[]) => {
         if (!selectedPrinter) {
-            throw new Error('No hay impresora seleccionada');
+            return Promise.reject(new Error('No hay impresora seleccionada'));
         }
 
-        try {
-            await invoke('send_print_job', {
+        printChainRef.current = printChainRef.current
+            .then(() => invoke<void>('send_print_job', {
                 printerName: selectedPrinter,
                 content: data
+            }))
+            .catch(error => {
+                console.error('Error al imprimir:', error);
+                throw error;
             });
-        } catch (error) {
-            console.error('Error al imprimir:', error);
-            throw error;
-        }
+
+        return printChainRef.current;
     }, [selectedPrinter]);
 
     // Cargar impresoras al montar el componente

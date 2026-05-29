@@ -76,12 +76,12 @@ async function fetchApi<T>(
       const errorMessage = typeof data?.error === 'string'
         ? data.error
         : data?.message
-        ? data.message
-        : data?.error?.message
-        ? data.error.message
-        : data?.error?.issues
-        ? data.error.issues.map((i: { message?: string; path?: string[] }) => i.message || i.path?.join('.')).join('; ') || 'Error de validación'
-        : 'Error en la solicitud'
+          ? data.message
+          : data?.error?.message
+            ? data.error.message
+            : data?.error?.issues
+              ? data.error.issues.map((i: { message?: string; path?: string[] }) => i.message || i.path?.join('.')).join('; ') || 'Error de validación'
+              : 'Error en la solicitud'
 
       throw new ApiError(errorMessage, response.status, data)
     }
@@ -1143,6 +1143,25 @@ export const pedidoUnificadoApi = {
       body: JSON.stringify(body),
     })
   },
+  getActivos: async (
+    token: string,
+    tipo: 'delivery' | 'takeaway' | 'all' = 'all',
+    sucursalId?: number | null,
+  ) => {
+    const params = new URLSearchParams()
+    if (tipo !== 'all') params.append('tipo', tipo)
+    if (sucursalId != null) params.append('sucursalId', String(sucursalId))
+    return fetchApi(`/pedido-unificado/activos?${params}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  claimImpresion: async (token: string, id: number) => {
+    return fetchApi(`/pedido-unificado/${id}/impreso`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
   delete: async (token: string, id: number) => {
     return fetchApi(`/pedido-unificado/${id}`, {
       method: 'DELETE',
@@ -1213,6 +1232,10 @@ export const deliveryApi = {
     id: number,
     metodoPagoOrOpts?: string | { metodoPago?: string; pagado?: boolean }
   ) => pedidoUnificadoApi.marcarPagado(token, id, metodoPagoOrOpts),
+  getActivos: (token: string, sucursalId?: number | null) =>
+    pedidoUnificadoApi.getActivos(token, 'delivery', sucursalId),
+  claimImpresion: (token: string, id: number) =>
+    pedidoUnificadoApi.claimImpresion(token, id),
 }
 
 // Takeaway API - usa pedidoUnificado por detrás (compatibilidad)
@@ -1229,6 +1252,10 @@ export const takeawayApi = {
     id: number,
     metodoPagoOrOpts?: string | { metodoPago?: string; pagado?: boolean }
   ) => pedidoUnificadoApi.marcarPagado(token, id, metodoPagoOrOpts),
+  getActivos: (token: string, sucursalId?: number | null) =>
+    pedidoUnificadoApi.getActivos(token, 'takeaway', sucursalId),
+  claimImpresion: (token: string, id: number) =>
+    pedidoUnificadoApi.claimImpresion(token, id),
 }
 
 export const sucursalesApi = {
