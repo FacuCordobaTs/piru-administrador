@@ -57,7 +57,7 @@ import {
   FileText,
 } from 'lucide-react'
 import FacturacionAfipSection from '@/components/FacturacionAfipSection'
-import { usePrinter } from '@/context/PrinterContext'
+import { usePrinter, isVirtualPrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
 import { PWAInstallButton } from '@/components/PWAInstallButton'
 
@@ -2000,8 +2000,19 @@ const Perfil = () => {
                           <SelectValue placeholder="Elegir del listado..." />
                         </SelectTrigger>
                         <SelectContent className="rounded-2xl border-zinc-200 dark:border-zinc-800">
-                          {printers.map((p, i) => (
-                            <SelectItem key={i} value={p} className="py-3 text-base rounded-xl cursor-pointer">{p}</SelectItem>
+                          {[...printers]
+                            .sort((a, b) => {
+                              const aVirtual = isVirtualPrinter(a) ? 1 : 0;
+                              const bVirtual = isVirtualPrinter(b) ? 1 : 0;
+                              return aVirtual - bVirtual;
+                            })
+                            .map((p, i) => (
+                            <SelectItem key={i} value={p} className={cn(
+                              "py-3 text-base rounded-xl cursor-pointer",
+                              isVirtualPrinter(p) && "opacity-50"
+                            )}>
+                              {p}{isVirtualPrinter(p) ? ' ⚠️ (virtual)' : ''}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

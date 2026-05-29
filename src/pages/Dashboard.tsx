@@ -600,7 +600,10 @@ const Dashboard = () => {
                 })
 
                 if (event.shouldPrint && !event.pedido.impreso) {
-                    tryImprimirPedido(event.pedido)
+                    tryImprimirPedido(event.pedido).catch((e) => {
+                        console.error('Fallo al imprimir pedido desde evento:', e)
+                        // best-effort: el pedido ya está en el board
+                    })
                 }
             }
         })
