@@ -85,6 +85,32 @@ export interface AdminUpdateEvent {
   sucursalId?: number | null
 }
 
+export interface AdminOrderEvent {
+  event: 'upsert' | 'remove'
+  reason: string
+  tipo: 'delivery' | 'takeaway'
+  pedidoId: number
+  sucursalId?: number | null
+  shouldPrint?: boolean
+  pedido?: any
+}
+
+type OrderEventHandler = (event: AdminOrderEvent) => void;
+class OrderEventBus {
+  private listeners: Set<OrderEventHandler> = new Set();
+  
+  subscribe(handler: OrderEventHandler) {
+    this.listeners.add(handler);
+    return () => this.listeners.delete(handler);
+  }
+  
+  emit(event: AdminOrderEvent) {
+    this.listeners.forEach(handler => handler(event));
+  }
+}
+
+export const orderEventBus = new OrderEventBus();
+
 export interface UseAdminWebSocketReturn {
   mesas: MesaConPedido[]
   notifications: Notification[]
@@ -323,6 +349,10 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
                       ? data.payload.sucursalId
                       : undefined,
                 })
+                break
+
+              case 'ADMIN_ORDER_EVENT':
+                orderEventBus.emit(data.payload as AdminOrderEvent)
                 break
 
               case 'ADMIN_NOTIFICACIONES_INICIAL':
