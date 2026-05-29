@@ -343,6 +343,11 @@ const Dashboard = () => {
     const [isLoading, setIsLoading] = useState(true)
     const [selectedUnifiedPedido, setSelectedUnifiedPedido] = useState<UnifiedPedido | null>(null)
 
+    // Archived pagination
+    const [archivedPage, setArchivedPage] = useState(1)
+    const [hasMore, setHasMore] = useState(false)
+    const [isLoadingMore, setIsLoadingMore] = useState(false)
+
     const [updatingPago, setUpdatingPago] = useState<string | null>(null)
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
     const [showOrderMap, setShowOrderMap] = useState(false)
@@ -459,7 +464,14 @@ const Dashboard = () => {
     }, [])
 
     useEffect(() => {
-        // No pagination logic needed anymore since getActivos returns all active orders
+        if (!token || !prefsReady) return
+        // On sucursal change: clear pedidos, re-hydrate activos + archived page 1
+        setUnifiedPedidos([])
+        setSelectedUnifiedPedido(null)
+        setArchivedPage(1)
+        hydrateActivos()
+        fetchArchivedPage(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sucursalActivaId])
 
     // ─────────────────────────────────────────────
@@ -511,7 +523,16 @@ const Dashboard = () => {
             ) as any
             if (response.success && response.data) {
                 const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway') as UnifiedPedido[]
-                setUnifiedPedidos(validPedidos.sort((a, b) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime()))
+                setUnifiedPedidos(prev => {
+                    const map = new Map<string, UnifiedPedido>()
+                    // Keep existing archived orders
+                    prev.filter(p => p.estado === 'archived').forEach(p => map.set(`${p.tipo}-${p.id}`, p))
+                    // Upsert activos (overwrite any stale entry)
+                    validPedidos.forEach(p => map.set(`${p.tipo}-${p.id}`, p))
+                    return Array.from(map.values()).sort(
+                        (a, b) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime(),
+                    )
+                })
             }
         } catch (error) {
             console.error('Error hydrating pedidos activos:', error)
@@ -520,10 +541,46 @@ const Dashboard = () => {
         }
     }, [token, sucursalActivaId])
 
+    const fetchArchivedPage = useCallback(async (pageNum: number) => {
+        if (!token) return
+        setIsLoadingMore(true)
+        try {
+            const res = await pedidoUnificadoApi.getAll(
+                token, 'all', pageNum, 50, 'archived', sucursalActivaId,
+            ) as any
+            if (res.success && res.data) {
+                const incoming = (res.data as UnifiedPedido[]).filter(
+                    (p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway',
+                )
+                setUnifiedPedidos(prev => {
+                    const map = new Map<string, UnifiedPedido>()
+                    prev.forEach(p => map.set(`${p.tipo}-${p.id}`, p))
+                    incoming.forEach(p => map.set(`${p.tipo}-${p.id}`, p))
+                    return Array.from(map.values()).sort(
+                        (a, b) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime(),
+                    )
+                })
+                setHasMore(res.pagination?.hasMore ?? false)
+            }
+        } catch (error) {
+            console.error('Error fetching archived page:', error)
+        } finally {
+            setIsLoadingMore(false)
+        }
+    }, [token, sucursalActivaId])
+
+    const handleLoadMore = useCallback(() => {
+        const nextPage = archivedPage + 1
+        setArchivedPage(nextPage)
+        fetchArchivedPage(nextPage)
+    }, [archivedPage, fetchArchivedPage])
+
     useEffect(() => {
         if (!token || !prefsReady) return
         hydrateActivos()
-    }, [token, prefsReady, hydrateActivos])
+        setArchivedPage(1)
+        fetchArchivedPage(1)
+    }, [token, prefsReady, hydrateActivos, fetchArchivedPage])
 
     useEffect(() => {
         const unsubscribe = orderEventBus.subscribe((event) => {
@@ -1007,6 +1064,22 @@ const Dashboard = () => {
                                             })}
                                         </div>
 
+                                        {hasMore && (
+                                            <div className="flex justify-center pt-3">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 text-xs px-4 rounded-xl"
+                                                    onClick={handleLoadMore}
+                                                    disabled={isLoadingMore}
+                                                >
+                                                    {isLoadingMore
+                                                        ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                                                        : null}
+                                                    {isLoadingMore ? 'Cargando...' : 'Cargar más'}
+                                                </Button>
+                                            </div>
+                                        )}
 
                                     </div>
                                 )}
