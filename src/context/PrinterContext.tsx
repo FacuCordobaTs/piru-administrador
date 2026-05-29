@@ -1,23 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 const STORAGE_KEY = 'tauri_printer_name';
-
-/** Impresoras virtuales conocidas que NO son comanderas térmicas reales. */
-export const VIRTUAL_PRINTER_NAMES = [
-    'onenote',
-    'microsoft print to pdf',
-    'microsoft xps document writer',
-    'fax',
-    'send to onenote',
-    'xps',
-];
-
-/** Devuelve true si el nombre de impresora parece ser virtual (no una comandera real). */
-export const isVirtualPrinter = (name: string): boolean => {
-    const lower = name.toLowerCase();
-    return VIRTUAL_PRINTER_NAMES.some(vp => lower.includes(vp));
-};
 
 interface PrinterContextType {
     printers: string[];
@@ -37,84 +21,42 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return localStorage.getItem(STORAGE_KEY);
     });
 
-    // Ref para tener siempre la lista actual de impresoras en los callbacks
-    const printersRef = useRef<string[]>([]);
-    printersRef.current = printers;
-
     // Actualizar localStorage cuando cambie la impresora seleccionada
     const setSelectedPrinter = useCallback((name: string) => {
         setSelectedPrinterState(name);
         localStorage.setItem(STORAGE_KEY, name);
     }, []);
 
-    // Obtener lista de impresoras desde el backend Rust (interno, devuelve la lista)
-    const fetchPrinterList = useCallback(async (): Promise<string[]> => {
+    // Obtener lista de impresoras desde el backend Rust
+    const refreshPrinters = useCallback(async () => {
         try {
             const printerList = await invoke<string[]>('get_printers');
             setPrinters(printerList);
-            return printerList;
         } catch (error) {
             console.error('Error al obtener impresoras:', error);
-            return [] as string[];
         }
     }, []);
 
-    const refreshPrinters = useCallback(async () => {
-        await fetchPrinterList();
-    }, [fetchPrinterList]);
-
-    const printChainRef = useRef<Promise<void>>(Promise.resolve());
-
-    /** Bytes ESC/POS (p. ej. `commandsToBytes(formatComanda(...))`). Ejecutados en serie mediante printChainRef. */
-    const printRaw = useCallback((data: number[]) => {
+    /** Bytes ESC/POS (p. ej. `commandsToBytes(formatComanda(...))`). Cupón/descuento van en `printerUtils`. */
+    const printRaw = useCallback(async (data: number[]) => {
         if (!selectedPrinter) {
-            return Promise.reject(new Error('No hay impresora seleccionada'));
+            throw new Error('No hay impresora seleccionada');
         }
 
-        // Validar que la impresora seleccionada siga existiendo en la lista actual
-        if (printersRef.current.length > 0 && !printersRef.current.includes(selectedPrinter)) {
-            console.warn(
-                `Impresora "${selectedPrinter}" ya no existe en el sistema. Descartando selección.`
-            );
-            setSelectedPrinterState(null);
-            localStorage.removeItem(STORAGE_KEY);
-            return Promise.reject(
-                new Error(
-                    `La impresora "${selectedPrinter}" ya no está disponible en el sistema. ` +
-                    'Seleccioná una impresora válida en Configuración > Hardware.'
-                )
-            );
-        }
-
-        printChainRef.current = printChainRef.current
-            .then(() => invoke<void>('send_print_job', {
+        try {
+            await invoke('send_print_job', {
                 printerName: selectedPrinter,
                 content: data
-            }))
-            .catch(error => {
-                console.error('Error al imprimir:', error);
-                throw error;
             });
-
-        return printChainRef.current;
+        } catch (error) {
+            console.error('Error al imprimir:', error);
+            throw error;
+        }
     }, [selectedPrinter]);
 
-    // Cargar impresoras al montar el componente y validar la guardada
+    // Cargar impresoras al montar el componente
     useEffect(() => {
-        (async () => {
-            const printerList = await fetchPrinterList();
-            if (!printerList || printerList.length === 0) return;
-
-            // Validar que la impresora guardada exista en la lista real
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved && printerList.length > 0 && !printerList.includes(saved)) {
-                console.warn(
-                    `Impresora guardada "${saved}" no existe en el sistema. Descartando.`
-                );
-                setSelectedPrinterState(null);
-                localStorage.removeItem(STORAGE_KEY);
-            }
-        })();
+        refreshPrinters();
     }, [refreshPrinters]);
 
     return (
