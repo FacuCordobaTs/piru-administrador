@@ -500,58 +500,57 @@ const Perfil = () => {
       .catch(() => {})
   }, [token])
 
-  const abrirPopupMeta = () => {
-    const FB = (window as any).FB
-    FB.init({ appId: '939939975659282', cookie: true, xfbml: true, version: 'v22.0' })
-    const handleResponse = async (response: any) => {
-      if (response.authResponse?.code) {
-        setWaLoading(true)
-        try {
-          const res = await fetch(`${waApiBase}/whatsapp-oauth/connect`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: response.authResponse.code }),
-          })
-          const data = await res.json()
-          if (data.success) {
-            setWaStatus({ conectado: true, phoneNumber: data.phoneNumber, tokenVencido: false })
-            toast.success(`WhatsApp conectado: ${data.phoneNumber}`)
-          } else {
-            toast.error(data.message || 'Error al conectar WhatsApp')
-          }
-        } catch {
-          toast.error('Error al conectar WhatsApp')
-        } finally {
-          setWaLoading(false)
-        }
+  const intercambiarCodeWhatsApp = async (code: string) => {
+    if (!token) return
+    setWaLoading(true)
+    try {
+      const res = await fetch(`${waApiBase}/whatsapp-oauth/connect`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setWaStatus({ conectado: true, phoneNumber: data.phoneNumber, tokenVencido: false })
+        toast.success(`WhatsApp conectado: ${data.phoneNumber}`)
+      } else {
+        toast.error(data.message || 'Error al conectar WhatsApp')
       }
+    } catch {
+      toast.error('Error al conectar WhatsApp')
+    } finally {
+      setWaLoading(false)
     }
-
-    FB.login(
-      (response: any) => {
-        void handleResponse(response)
-      },
-      {
-        config_id: '2543954492702386',
-        response_type: 'code',
-        override_default_response_type: true,
-        extras: { sessionInfoVersion: 2 },
-      }
-    )
   }
 
-  const conectarWhatsApp = () => {
-    if (!(window as any).FB) {
-      const script = document.createElement('script')
-      script.src = 'https://connect.facebook.net/es_LA/sdk.js'
-      script.async = true
-      script.defer = true
-      script.crossOrigin = 'anonymous'
-      document.body.appendChild(script)
-      script.onload = () => abrirPopupMeta()
-    } else {
-      abrirPopupMeta()
+  // Captura el ?code= cuando Meta redirige de vuelta tras el OAuth de WhatsApp.
+  // Usamos el flujo de redirect clásico (no el popup del SDK) porque el SDK ata
+  // el code a un redirect_uri dinámico (xd_arbiter) imposible de reproducir en el
+  // backend, lo que provoca OAuthException subcode 36008 al canjear el code.
+  useEffect(() => {
+    if (!token) return
+    const urlParams = new URLSearchParams(window.location.search)
+    const code = urlParams.get('code')
+    const state = urlParams.get('state')
+    if (code && state === 'whatsapp') {
+      window.history.replaceState({}, '', window.location.pathname)
+      void intercambiarCodeWhatsApp(code)
     }
+  }, [token])
+
+  const conectarWhatsApp = () => {
+    // redirect_uri debe ser EXACTAMENTE el registrado en "URI de redireccionamiento
+    // de OAuth válidos" de la app de Meta (modo estricto activado).
+    const redirectUri = 'https://admin.piru.app/dashboard/perfil'
+    const url =
+      `https://www.facebook.com/v22.0/dialog/oauth?` +
+      `client_id=939939975659282` +
+      `&config_id=2543954492702386` +
+      `&response_type=code` +
+      `&override_default_response_type=true` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&state=whatsapp`
+    window.location.href = url
   }
 
   const desconectarWhatsApp = async () => {
