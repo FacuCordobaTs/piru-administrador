@@ -9,9 +9,9 @@ import { toast } from 'sonner'
 import { FileText, Loader2, CheckCircle2, AlertCircle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const phantomCardClass = "bg-white dark:bg-zinc-950 rounded-[32px] shadow-xl shadow-zinc-200/40 dark:shadow-none border border-zinc-100 dark:border-zinc-800/80 overflow-hidden"
-const phantomInputClass = "h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-transparent focus:bg-background focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-base px-5 w-full"
-const phantomLabelClass = "text-sm font-medium text-foreground ml-1 mb-1.5 block"
+const phantomCardClass = ""
+const phantomInputClass = "h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-transparent focus:ring-2 focus:ring-[#FF7A00]/30 transition-all text-base px-4 w-full"
+const phantomLabelClass = "text-sm font-medium text-muted-foreground mb-2 block"
 
 interface EstadoAfip {
   habilitado: boolean

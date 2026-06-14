@@ -18,9 +18,9 @@ import { Loader2, MapPin, Map as MapIcon, Trash2, Save, X } from 'lucide-react'
 // ─────────────────────────────────────────────
 // Estilos base "Phantom"
 // ─────────────────────────────────────────────
-const phantomCardClass = "bg-white dark:bg-[#121212] rounded-[32px] shadow-sm border border-zinc-100 dark:border-zinc-800 overflow-hidden"
-const phantomInputClass = "h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
-const phantomLabelClass = "text-sm font-bold text-foreground ml-1 mb-1.5 block"
+const phantomCardClass = ""
+const phantomInputClass = "h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-transparent focus:ring-2 focus:ring-[#FF7A00]/30 transition-all text-base px-4 w-full"
+const phantomLabelClass = "text-sm font-medium text-muted-foreground mb-2 block"
 
 interface Coordenada { lat: number; lng: number }
 

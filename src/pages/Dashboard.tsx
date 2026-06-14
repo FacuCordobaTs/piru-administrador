@@ -12,12 +12,13 @@ import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursale
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
+import PuntoDeVenta from '@/components/PuntoDeVenta'
 import {
     Loader2, Plus, Clock, Trash2, AlertCircle,
     User, ArrowLeft, Printer, Truck, MapPin,
     Phone, ShoppingBag, CalendarDays, Tag, Settings, CheckCircle2,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle,
-    MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX,
+    MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
 } from 'lucide-react'
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -47,7 +48,7 @@ interface UnifiedPedido {
     demoraMinutos?: number | null; notificarWhatsapp?: boolean | null;
     horarioProgramado?: string | null; latitud?: string | null; longitud?: string | null;
     deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null;
-    grupal?: boolean | null;
+    grupal?: boolean | null; creadoPorIa?: boolean | null; anotadoManualmente?: boolean | null;
 }
 interface Repartidor { id: number; nombre: string; estado: 'activo' | 'inactivo'; restauranteId: number }
 
@@ -203,9 +204,35 @@ function MapBoundsController({ positions }: { positions: [number, number][] }) {
     return null
 }
 
-const OrderMapView = ({ orders, onClose }: { orders: UnifiedPedido[]; onClose: () => void }) => {
+function MapFlyTo({ coords }: { coords: { lat: number; lng: number; id: number } | null }) {
+    const map = useMap()
+    const mounted = useRef(false)
+    useEffect(() => {
+        if (!mounted.current) { mounted.current = true; return }
+        if (!coords) return
+        map.flyTo([coords.lat, coords.lng], Math.max(map.getZoom(), 15), { duration: 0.8 })
+    }, [coords?.id])
+    return null
+}
+
+const parseCoord = (v: string | null | undefined) => parseFloat(String(v || '').replace(',', '.'))
+
+const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onAprobarPago, onNotificar, onRepartidorSelected, repartidoresList, updatingPago, sendingNotification, asignandoRepartidor, onShowOrdersList }: {
+    orders: UnifiedPedido[]
+    onClose: () => void
+    externalSelected?: UnifiedPedido | null
+    onSelectPedido?: (pedido: UnifiedPedido | null) => void
+    onAprobarPago?: (pedido: UnifiedPedido, metodo?: 'efectivo' | 'transferencia') => void
+    onNotificar?: (pedido: UnifiedPedido) => void
+    onRepartidorSelected?: (pedido: UnifiedPedido, repartidorId: number | null) => void
+    repartidoresList?: Repartidor[]
+    updatingPago?: string | null
+    sendingNotification?: string | null
+    asignandoRepartidor?: boolean
+    onShowOrdersList?: () => void
+}) => {
     const [selected, setSelected] = useState<UnifiedPedido | null>(null)
-    const parseCoord = (v: string | null | undefined) => parseFloat(String(v || '').replace(',', '.'))
+    const [showRepartidorOverlay, setShowRepartidorOverlay] = useState(false)
 
     const ordersWithCoords = orders.filter(p => {
         if (p.tipo !== 'delivery' || !p.latitud || !p.longitud) return false
@@ -213,6 +240,49 @@ const OrderMapView = ({ orders, onClose }: { orders: UnifiedPedido[]; onClose: (
         const lng = parseCoord(p.longitud)
         return !isNaN(lat) && !isNaN(lng) && !(lat === 0 && lng === 0)
     })
+
+    const flyCoords = useMemo(() => {
+        if (!externalSelected?.latitud || !externalSelected?.longitud) return null
+        const lat = parseCoord(externalSelected.latitud)
+        const lng = parseCoord(externalSelected.longitud)
+        if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return null
+        return { lat, lng, id: externalSelected.id }
+    }, [externalSelected?.id])
+
+    useEffect(() => {
+        if (!externalSelected) return
+        const inMap = ordersWithCoords.find(p => p.id === externalSelected.id)
+        if (inMap) setSelected(inMap)
+    }, [externalSelected?.id])
+
+    // Clear selection when order is no longer in map (e.g. after archiving)
+    useEffect(() => {
+        if (selected && !ordersWithCoords.find(p => p.id === selected.id && p.tipo === selected.tipo)) {
+            setSelected(null)
+            setShowRepartidorOverlay(false)
+        }
+    }, [orders])
+
+    const handleMarkerClick = (pedido: UnifiedPedido) => {
+        const next = selected?.id === pedido.id ? null : pedido
+        setSelected(next)
+        onSelectPedido?.(next)
+    }
+
+    const handleCloseSelected = () => {
+        setSelected(null)
+        onSelectPedido?.(null)
+    }
+
+    const handleMapDespachar = () => {
+        if (!selected) return
+        const activos = (repartidoresList || []).filter(r => r.estado === 'activo')
+        if (selected.tipo === 'delivery' && activos.length >= 2) {
+            setShowRepartidorOverlay(true)
+        } else {
+            onRepartidorSelected?.(selected, null)
+        }
+    }
 
     const positions = ordersWithCoords.map(p => [parseCoord(p.latitud), parseCoord(p.longitud)] as [number, number])
 
@@ -232,9 +302,11 @@ const OrderMapView = ({ orders, onClose }: { orders: UnifiedPedido[]; onClose: (
                         </Badge>
                     )}
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
-                    <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1.5">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
             </div>
 
             {ordersWithCoords.length === 0 ? (
@@ -245,60 +317,190 @@ const OrderMapView = ({ orders, onClose }: { orders: UnifiedPedido[]; onClose: (
                 </div>
             ) : (
                 <div className="flex-1 relative overflow-hidden">
+                    {/* Chips de pedidos — strip horizontal flotando sobre el mapa, solo mobile */}
+                    {orders.length > 0 && (
+                        <div className="absolute top-3 left-0 right-0 z-[1001] lg:hidden pointer-events-none">
+                            <div className="flex gap-2 overflow-x-auto px-3 pointer-events-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                {orders.map(pedido => {
+                                    const isChipSelected = selected?.id === pedido.id && selected?.tipo === pedido.tipo
+                                    const hasCoords = !!(pedido.latitud && pedido.longitud && parseCoord(pedido.latitud) !== 0)
+                                    return (
+                                        <button
+                                            key={`chip-${pedido.tipo}-${pedido.id}`}
+                                            onClick={() => {
+                                                if (hasCoords) {
+                                                    handleMarkerClick(pedido)
+                                                } else {
+                                                    const next = isChipSelected ? null : pedido
+                                                    setSelected(next)
+                                                    onSelectPedido?.(next)
+                                                }
+                                            }}
+                                            className={cn(
+                                                "shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-full text-xs font-bold shadow-lg border transition-all active:scale-95",
+                                                isChipSelected
+                                                    ? "bg-[#FF7A00] text-white border-[#FF7A00] shadow-[#FF7A00]/30"
+                                                    : "bg-background/95 dark:bg-background/95 text-foreground border-border backdrop-blur-sm"
+                                            )}
+                                        >
+                                            <span className="font-black">#{pedido.id}</span>
+                                            {pedido.tipo === 'takeaway'
+                                                ? <ShoppingBag className="h-3 w-3 opacity-70" />
+                                                : <Truck className="h-3 w-3 opacity-70" />}
+                                            {pedido.nombreCliente && (
+                                                <span className={cn("max-w-[80px] truncate", isChipSelected ? "opacity-90" : "text-muted-foreground")}>
+                                                    {pedido.nombreCliente.split(' ')[0]}
+                                                </span>
+                                            )}
+                                            <span className={cn("font-black", isChipSelected ? "" : "text-[#FF7A00]")}>
+                                                ${computeOrderTotal(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                            </span>
+                                            {!pedido.pagado && (
+                                                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", isChipSelected ? "bg-white/70" : "bg-amber-500")} />
+                                            )}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
                     <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} attributionControl={false}>
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                         <MapBoundsController positions={positions} />
+                        <MapFlyTo coords={flyCoords} />
                         {ordersWithCoords.map(pedido => {
                             const lat = parseCoord(pedido.latitud)
                             const lng = parseCoord(pedido.longitud)
                             const isSelected = selected?.id === pedido.id
-                            const bg = isSelected ? '#E66E00' : '#FF7A00'
-                            const icon = L.divIcon({
-                                className: '',
-                                iconSize: [56, 38],
-                                iconAnchor: [28, 38],
-                                html: `<div style="background:${bg};color:white;width:52px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.35);border:2px solid white;position:relative;margin:2px 2px 0"><span>#${pedido.id}</span><div style="position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid ${bg}"></div></div>`,
-                            })
+                            const icon = isSelected
+                                ? L.divIcon({
+                                    className: '',
+                                    iconSize: [72, 48],
+                                    iconAnchor: [36, 48],
+                                    html: `<div style="background:white;color:#FF7A00;width:68px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;box-shadow:0 4px 16px rgba(255,122,0,0.5);border:2.5px solid #FF7A00;position:relative;margin:2px 2px 0"><span>#${pedido.id}</span><div style="position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid #FF7A00"></div></div>`,
+                                })
+                                : L.divIcon({
+                                    className: '',
+                                    iconSize: [56, 38],
+                                    iconAnchor: [28, 38],
+                                    html: `<div style="background:#FF7A00;color:white;width:52px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.35);border:2px solid white;position:relative;margin:2px 2px 0"><span>#${pedido.id}</span><div style="position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #FF7A00"></div></div>`,
+                                })
                             return (
                                 <Marker
                                     key={`${pedido.tipo}-${pedido.id}`}
                                     position={[lat, lng]}
                                     icon={icon}
-                                    eventHandlers={{ click: () => setSelected(prev => prev?.id === pedido.id ? null : pedido) }}
+                                    eventHandlers={{ click: () => handleMarkerClick(pedido) }}
                                 />
                             )
                         })}
                     </MapContainer>
 
+                    {/* Repartidor selector overlay - floats above the map and popup */}
+                    {showRepartidorOverlay && selected && (
+                        <div className="absolute inset-0 z-[1002] bg-background/75 backdrop-blur-sm flex items-end justify-center p-4">
+                            <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-9 w-9 rounded-xl bg-[#FF7A00]/10 flex items-center justify-center">
+                                            <Truck className="h-4 w-4 text-[#FF7A00]" />
+                                        </div>
+                                        <p className="font-bold text-base">¿Quién hace el envío?</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowRepartidorOverlay(false)}
+                                        className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground cursor-pointer"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    {(repartidoresList || []).filter(r => r.estado === 'activo').map(r => (
+                                        <button
+                                            key={r.id}
+                                            disabled={asignandoRepartidor}
+                                            onClick={() => {
+                                                onRepartidorSelected?.(selected, r.id)
+                                                setShowRepartidorOverlay(false)
+                                            }}
+                                            className="w-full flex items-center gap-3 p-4 rounded-2xl border border-border bg-card hover:bg-accent hover:border-[#FF7A00]/40 transition-all text-left font-semibold disabled:opacity-50 cursor-pointer"
+                                        >
+                                            <div className="h-9 w-9 rounded-full bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
+                                                <UserRound className="h-5 w-5 text-[#FF7A00]" />
+                                            </div>
+                                            {r.nombre}
+                                        </button>
+                                    ))}
+                                    <button
+                                        disabled={asignandoRepartidor}
+                                        onClick={() => {
+                                            onRepartidorSelected?.(selected, null)
+                                            setShowRepartidorOverlay(false)
+                                        }}
+                                        className="w-full p-3 rounded-2xl border border-dashed border-border text-muted-foreground hover:bg-muted/40 transition-all text-sm font-medium disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {asignandoRepartidor ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Despachar sin asignar repartidor'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Order popup */}
                     {selected && (
                         <div className="absolute bottom-4 left-4 right-4 z-[1001] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+                            {/* Header */}
                             <div className="flex items-start justify-between p-4 pb-3 border-b border-border">
-                                <div>
-                                    <p className="font-black text-base text-foreground">Pedido #{selected.id}</p>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                                        <p className="font-black text-base text-foreground">Pedido #{selected.id}</p>
+                                        {selected.horarioProgramado && (
+                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-0.5 font-bold">
+                                                <Clock className="h-2.5 w-2.5 shrink-0" />{selected.horarioProgramado}
+                                            </Badge>
+                                        )}
+                                        {selected.pagado ? (
+                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Pagado</Badge>
+                                        ) : (
+                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-border bg-muted text-muted-foreground">Sin cobrar</Badge>
+                                        )}
+                                    </div>
                                     {selected.nombreCliente && (
                                         <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
                                             <User className="h-3.5 w-3.5 shrink-0" />{selected.nombreCliente}
                                         </p>
+                                    )}
+                                    {selected.telefono && (
+                                        <a href={`tel:${selected.telefono}`} className="text-xs text-muted-foreground hover:text-[#FF7A00] flex items-center gap-1 mt-0.5 transition-colors">
+                                            <Phone className="h-3 w-3 shrink-0" />{selected.telefono}
+                                        </a>
                                     )}
                                     {selected.direccion && (
                                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                                             <MapPin className="h-3 w-3 shrink-0" />{selected.direccion}
                                         </p>
                                     )}
+                                    {selected.notas && (
+                                        <p className="text-xs text-orange-500 flex items-start gap-1 mt-1.5 italic">
+                                            <Tag className="h-3 w-3 shrink-0 mt-0.5" />{selected.notas}
+                                        </p>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-start gap-2 shrink-0 ml-3">
                                     <span className="font-black text-2xl text-[#FF7A00]">
                                         ${computeOrderTotal(selected).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                     </span>
                                     <button
-                                        className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground"
-                                        onClick={() => setSelected(null)}
+                                        className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground cursor-pointer shrink-0"
+                                        onClick={handleCloseSelected}
                                     >
                                         <X className="h-4 w-4" />
                                     </button>
                                 </div>
                             </div>
-                            <div className="overflow-y-auto max-h-48 p-4 space-y-2">
+
+                            {/* Items list */}
+                            <div className="overflow-y-auto max-h-36 p-4 pt-3 space-y-1.5">
                                 {selected.items.map((item, idx) => (
                                     <div key={idx} className="flex justify-between gap-2">
                                         <div className="flex gap-2 flex-1 min-w-0">
@@ -323,6 +525,66 @@ const OrderMapView = ({ orders, onClose }: { orders: UnifiedPedido[]; onClose: (
                                     </div>
                                 )}
                             </div>
+
+                            {/* Action buttons */}
+                            {selected.estado !== 'archived' && (
+                                <div className="p-3 pt-0 flex gap-2">
+                                    {onNotificar && selected.pagado && selected.telefono && (
+                                        <button
+                                            onClick={() => onNotificar(selected)}
+                                            disabled={sendingNotification === selected.id.toString()}
+                                            className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-muted border border-border text-muted-foreground hover:bg-accent transition-colors text-xs font-bold disabled:opacity-50 cursor-pointer shrink-0"
+                                        >
+                                            {sendingNotification === selected.id.toString()
+                                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                : <MessageCircle className="h-3.5 w-3.5" />}
+                                            Avisar
+                                        </button>
+                                    )}
+                                    {!selected.pagado ? (
+                                        pedidoCobroManualYaElegido(selected.metodoPago) ? (
+                                            <button
+                                                onClick={() => onAprobarPago?.(selected)}
+                                                disabled={updatingPago === selected.id.toString()}
+                                                className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                                            >
+                                                {updatingPago === selected.id.toString() ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                                                Cobrar
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => onAprobarPago?.(selected, 'efectivo')}
+                                                    disabled={updatingPago === selected.id.toString()}
+                                                    className="flex-1 flex items-center justify-center gap-1 h-9 rounded-xl bg-muted border border-border text-foreground hover:bg-accent text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                                                >
+                                                    {updatingPago === selected.id.toString() ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span>💵</span>}
+                                                    Efectivo
+                                                </button>
+                                                <button
+                                                    onClick={() => onAprobarPago?.(selected, 'transferencia')}
+                                                    disabled={updatingPago === selected.id.toString()}
+                                                    className="flex-1 flex items-center justify-center gap-1 h-9 rounded-xl bg-muted border border-border text-foreground hover:bg-accent text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                                                >
+                                                    {updatingPago === selected.id.toString() ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span>🏦</span>}
+                                                    Transf.
+                                                </button>
+                                            </>
+                                        )
+                                    ) : (
+                                        <button
+                                            onClick={handleMapDespachar}
+                                            disabled={updatingPago === selected.id.toString() || asignandoRepartidor}
+                                            className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {(updatingPago === selected.id.toString() || asignandoRepartidor)
+                                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                : <Truck className="h-3.5 w-3.5" />}
+                                            Despachar
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -357,7 +619,9 @@ const Dashboard = () => {
     const [updatingPago, setUpdatingPago] = useState<string | null>(null)
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
     const [showOrderMap, setShowOrderMap] = useState(false)
+    const [showPOS, setShowPOS] = useState(false)
     const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
+    const [showMobileOrdersSheet, setShowMobileOrdersSheet] = useState(false)
     const [showCierreTurno, setShowCierreTurno] = useState(false)
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
@@ -531,6 +795,7 @@ const Dashboard = () => {
         if (
             sucursalActivaId != null &&
             lastUpdate.sucursalId !== undefined &&
+            lastUpdate.sucursalId !== null &&
             lastUpdate.sucursalId !== sucursalActivaId
         ) {
             return
@@ -815,6 +1080,22 @@ const Dashboard = () => {
     }
 
     // ─────────────────────────────────────────────
+    // POS (anotar pedido manual)
+    // ─────────────────────────────────────────────
+    const openPOS = () => {
+        setShowOrderMap(false)
+        setSelectedUnifiedPedido(null)
+        setShowPOS(true)
+        setMobileView('detail')
+    }
+
+    const handlePedidoManualCreado = (_pedidoId: number) => {
+        setShowPOS(false)
+        setMobileView('orders')
+        fetchPedidos(1, false)
+    }
+
+    // ─────────────────────────────────────────────
     // RENDER DE LISTAS
     // ─────────────────────────────────────────────
     const activeOrders = unifiedPedidos.filter(p => p.estado !== 'archived')
@@ -847,16 +1128,18 @@ const Dashboard = () => {
             <header className="shrink-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between z-10">
                 <div className="flex items-center gap-3">
                     {mobileView === 'detail' && (
-                        <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => { setMobileView('orders'); setShowOrderMap(false) }}>
+                        <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => { setMobileView('orders'); setShowOrderMap(false); setShowPOS(false) }}>
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                     )}
                     <h1 className="text-xl font-bold tracking-tight text-foreground">
-                        {mobileView === 'detail' && showOrderMap
-                            ? 'Mapa de pedidos'
-                            : mobileView === 'detail' && selectedUnifiedPedido
-                                ? `Pedido #${selectedUnifiedPedido.id}`
-                                : (restaurante?.nombre || 'Operaciones')}
+                        {mobileView === 'detail' && showPOS
+                            ? 'Anotar pedido'
+                            : mobileView === 'detail' && showOrderMap
+                                ? 'Mapa de pedidos'
+                                : mobileView === 'detail' && selectedUnifiedPedido
+                                    ? `Pedido #${selectedUnifiedPedido.id}`
+                                    : (restaurante?.nombre || 'Operaciones')}
                     </h1>
                     <Badge variant="outline" className={cn("hidden sm:flex items-center gap-1.5 text-xs font-medium border", isConnected ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20" : "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20")}>
                         <div className={cn("h-2 w-2 rounded-full", isConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} />
@@ -871,7 +1154,7 @@ const Dashboard = () => {
                     {sucursalesList.some((s) => s.activo) ? (
                         <button
                             type="button"
-                            className="hidden sm:inline text-[11px] font-semibold text-muted-foreground underline-offset-4 hover:text-[#FF7A00] hover:underline"
+                            className="hidden sm:inline text-[11px] font-semibold text-muted-foreground underline-offset-4 hover:text-[#FF7A00] hover:underline cursor-pointer"
                             onClick={() => setShowSucursalSelector(true)}
                         >
                             Cambiar sucursal
@@ -880,6 +1163,26 @@ const Dashboard = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {mobileView === 'detail' && activeOrders.length > 0 && (
+                        <button
+                            onClick={() => setShowMobileOrdersSheet(true)}
+                            className="lg:hidden flex items-center gap-1.5 h-8 px-3 rounded-xl bg-muted border border-border text-xs font-bold text-foreground hover:bg-accent transition-colors"
+                        >
+                            <List className="h-3.5 w-3.5" />
+                            {activeOrders.length}
+                        </button>
+                    )}
+                    <Button
+                        variant="outline"
+                        className={cn(
+                            "h-10 rounded-xl flex",
+                            showPOS && "border-[#FF7A00] text-[#FF7A00] bg-[#FF7A00]/10"
+                        )}
+                        onClick={openPOS}
+                    >
+                        <ShoppingCart className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Anotar pedido</span>
+                    </Button>
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
@@ -906,7 +1209,7 @@ const Dashboard = () => {
                                         variant="outline"
                                         size="sm"
                                         className="h-8 text-xs px-2 gap-1.5"
-                                        onClick={() => { setShowOrderMap(true); setMobileView('detail') }}
+                                        onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}
                                     >
                                         <MapIcon className="h-3.5 w-3.5" /> Mapa
                                     </Button>
@@ -943,22 +1246,37 @@ const Dashboard = () => {
                                                         </div>
                                                     )}
                                                     <Card
-                                                        onClick={() => { setSelectedUnifiedPedido(pedido); setMobileView('detail'); }}
+                                                        onClick={() => {
+                                                            setSelectedUnifiedPedido(pedido)
+                                                            setShowPOS(false)
+                                                            if (!showOrderMap) setMobileView('detail')
+                                                        }}
                                                         className={cn(
-                                                            "p-3 rounded-xl cursor-pointer transition-all border flex flex-col gap-2",
+                                                            "p-3 rounded-xl cursor-pointer transition-all flex flex-col gap-2 border-0",
                                                             isSelected
-                                                                ? "border-[#FF7A00] bg-orange-500/10 dark:bg-orange-500/20"
-                                                                : "border-border bg-card hover:bg-accent/50 shadow-sm"
+                                                                ? "bg-muted/20 border-r-[3px] border-r-[#FF7A00]"
+                                                                : "bg-muted/20 hover:bg-muted/40"
                                                         )}
                                                     >
                                                         <div className="flex justify-between items-start gap-2">
                                                             <div className="flex items-center gap-2 flex-wrap">
-                                                                <span className="font-bold text-sm flex items-center gap-1.5">
-                                                                    {pedido.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5 text-[#FF7A00]" /> : <ShoppingBag className="h-3.5 w-3.5 text-[#FF7A00]" />}
-                                                                    #{pedido.id}
+                                                                <span className="font-bold text-sm">#{pedido.id}</span>
+                                                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                                                                    {pedido.tipo === 'delivery' ? <Truck className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
+                                                                    {pedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
                                                                 </span>
+                                                                {pedido.creadoPorIa && (
+                                                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center gap-0.5">
+                                                                        <MessageCircle className="h-2.5 w-2.5 shrink-0" />IA
+                                                                    </Badge>
+                                                                )}
+                                                                {pedido.anotadoManualmente && (
+                                                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center gap-0.5">
+                                                                        <ShoppingCart className="h-2.5 w-2.5 shrink-0" />Manual
+                                                                    </Badge>
+                                                                )}
                                                                 {!pedido.pagado && (
-                                                                    <Badge className="bg-red-500/10 text-red-600 dark:text-red-400 text-[9px] px-1 border-none hover:bg-red-500/20">Pendiente</Badge>
+                                                                    <Badge className="bg-muted text-muted-foreground text-[9px] px-1 border border-border hover:bg-muted/80">Pendiente</Badge>
                                                                 )}
                                                                 {pagoBadge && (
                                                                     <Badge variant="outline" className={cn("text-[9px] px-1 py-0 h-4 border-none", pagoBadge.className)}>
@@ -975,7 +1293,7 @@ const Dashboard = () => {
                                                                     </Badge>
                                                                 )}
                                                                 {pedido.horarioProgramado && (
-                                                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-0.5 font-bold">
+                                                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-border bg-muted text-muted-foreground flex items-center gap-0.5 font-bold">
                                                                         <Clock className="h-2.5 w-2.5 shrink-0" />{pedido.horarioProgramado}
                                                                     </Badge>
                                                                 )}
@@ -999,7 +1317,7 @@ const Dashboard = () => {
                                                             <div className="flex items-center gap-1.5 shrink-0">
                                                                 {pedido.pagado && (
                                                                     <button
-                                                                        className="h-7 px-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 text-[10px] font-bold"
+                                                                        className="h-7 px-2 rounded-md bg-muted border border-border flex items-center gap-1 text-muted-foreground hover:bg-accent transition-colors disabled:opacity-50 text-[10px] font-bold cursor-pointer"
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             handleNotificarCliente(pedido);
@@ -1065,7 +1383,7 @@ const Dashboard = () => {
                                                             </div>
                                                         )}
                                                         <div
-                                                            onClick={() => { setSelectedUnifiedPedido(pedido); setMobileView('detail'); }}
+                                                            onClick={() => { setSelectedUnifiedPedido(pedido); setShowPOS(false); setMobileView('detail'); }}
                                                             className="flex items-center justify-between p-3 rounded-xl bg-card border border-border opacity-60 hover:opacity-100 cursor-pointer active:scale-[0.99] transition-all"
                                                         >
                                                             <div className="flex items-center gap-2">
@@ -1100,10 +1418,26 @@ const Dashboard = () => {
                             "flex-1 bg-background relative overflow-hidden",
                             mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
                         )}>
-                            {showOrderMap ? (
+                            {showPOS ? (
+                                <PuntoDeVenta
+                                    onClose={() => { setShowPOS(false); setMobileView('orders') }}
+                                    onCreated={handlePedidoManualCreado}
+                                    sucursalActivaId={sucursalActivaId}
+                                />
+                            ) : showOrderMap ? (
                                 <OrderMapView
                                     orders={activeOrders}
                                     onClose={() => { setShowOrderMap(false); setMobileView('orders') }}
+                                    externalSelected={selectedUnifiedPedido}
+                                    onSelectPedido={(pedido) => setSelectedUnifiedPedido(pedido)}
+                                    onAprobarPago={handleAprobarPago}
+                                    onNotificar={handleNotificarCliente}
+                                    onRepartidorSelected={(pedido, repartidorId) => handleRepartidorSelected(pedido.tipo, pedido.id, repartidorId)}
+                                    repartidoresList={repartidoresList}
+                                    updatingPago={updatingPago}
+                                    sendingNotification={sendingNotification}
+                                    asignandoRepartidor={asignandoRepartidor}
+                                    onShowOrdersList={() => setShowMobileOrdersSheet(true)}
                                 />
                             ) : selectedUnifiedPedido ? (
                                 <div className="flex flex-col h-full w-full relative">
@@ -1113,12 +1447,13 @@ const Dashboard = () => {
                                         {/* 1. Header Desktop (Ocupa todo el ancho superior) */}
                                         <div className="flex items-start justify-between border-b border-border pb-6 mb-8 shrink-0">
                                             <div>
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <Badge variant="outline" className="uppercase tracking-widest text-[10px] font-bold bg-muted/50">
-                                                        {selectedUnifiedPedido.tipo}
-                                                    </Badge>
+                                                <div className="flex items-center gap-2.5 mb-2">
+                                                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                                        {selectedUnifiedPedido.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+                                                        {selectedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                                                    </span>
                                                     {selectedUnifiedPedido.estado === 'archived' && (
-                                                        <Badge variant="secondary" className="bg-muted text-muted-foreground text-[10px]">Archivado</Badge>
+                                                        <span className="text-[10px] font-medium text-muted-foreground">· Archivado</span>
                                                     )}
                                                 </div>
                                                 <h2 className="text-4xl font-black text-foreground tracking-tight">Pedido #{selectedUnifiedPedido.id}</h2>
@@ -1128,13 +1463,16 @@ const Dashboard = () => {
                                                     <span className="opacity-50 font-normal ml-1">({formatTimeAgo(selectedUnifiedPedido.createdAt)})</span>
                                                 </p>
                                                 {selectedUnifiedPedido.horarioProgramado && (
-                                                    <div className="flex items-center gap-3 mt-4 px-5 py-3 bg-amber-500/10 rounded-2xl border-2 border-amber-500/40">
-                                                        <Clock className="h-6 w-6 text-amber-600 dark:text-amber-400 shrink-0" />
-                                                        <div>
-                                                            <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pedido programado para las</p>
-                                                            <p className="text-3xl font-black text-amber-700 dark:text-amber-300 leading-none mt-0.5">{selectedUnifiedPedido.horarioProgramado}</p>
+                                                    <>
+                                                        <Separator className="bg-border/60 mt-4" />
+                                                        <div className="flex items-center gap-3 mt-4">
+                                                            <CalendarDays className="h-5 w-5 text-muted-foreground shrink-0" />
+                                                            <div>
+                                                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">Programado para las</p>
+                                                                <p className="text-3xl font-black text-foreground leading-tight tracking-tight">{selectedUnifiedPedido.horarioProgramado}</p>
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    </>
                                                 )}
                                             </div>
 
@@ -1320,23 +1658,20 @@ const Dashboard = () => {
                                                     </span>
                                                 </div>
 
-                                                <div className={cn(
-                                                    "w-full flex flex-col gap-2 p-4 rounded-xl border",
-                                                    selectedUnifiedPedido.pagado
-                                                        ? "bg-emerald-500/10 border-emerald-500/20"
-                                                        : "bg-red-500/10 border-red-500/20"
-                                                )}>
+                                                <div className="flex items-center justify-between py-2 border-t border-b border-border">
                                                     <div className="flex items-center gap-2">
-                                                        {selectedUnifiedPedido.pagado ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <AlertCircle className="h-5 w-5 text-red-500" />}
-                                                        <span className={cn("font-bold text-sm", selectedUnifiedPedido.pagado ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
-                                                            {selectedUnifiedPedido.pagado ? 'PAGO VERIFICADO' : 'PAGO PENDIENTE'}
+                                                        {selectedUnifiedPedido.pagado
+                                                            ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                                            : <AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                                                        <span className={cn("font-semibold text-sm", selectedUnifiedPedido.pagado ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>
+                                                            {selectedUnifiedPedido.pagado ? 'Pago verificado' : 'Pago pendiente'}
                                                         </span>
                                                     </div>
                                                     {(() => {
                                                         const b = metodoPagoListBadge(selectedUnifiedPedido.metodoPago)
                                                         if (!b) return null
                                                         return (
-                                                            <Badge variant="outline" className={cn('self-start text-xs border-none', b.className)}>
+                                                            <Badge variant="outline" className="text-xs bg-muted text-muted-foreground border-border">
                                                                 {b.icon && <span className="mr-1">{b.icon}</span>}
                                                                 {b.label}
                                                             </Badge>
@@ -1349,7 +1684,7 @@ const Dashboard = () => {
                                                         <div className="flex gap-3">
                                                             <Button
                                                                 variant="outline"
-                                                                className="h-14 rounded-xl border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold active:scale-[0.98] transition-transform"
+                                                                className="h-14 rounded-xl font-bold active:scale-[0.98] transition-transform"
                                                                 onClick={() => handleNotificarCliente(selectedUnifiedPedido)}
                                                                 disabled={sendingNotification === selectedUnifiedPedido.id.toString()}
                                                             >
@@ -1359,7 +1694,7 @@ const Dashboard = () => {
                                                                 Avisar Cliente
                                                             </Button>
                                                             <Button
-                                                                className="flex-1 h-14 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white text-lg font-bold shadow-lg shadow-orange-500/20 active:scale-[0.98] transition-transform"
+                                                                className="flex-1 h-14 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white text-lg font-bold active:scale-[0.98] transition-transform"
                                                                 onClick={() => void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)}
                                                             >
                                                                 Despachar Pedido
@@ -1407,7 +1742,7 @@ const Dashboard = () => {
                                                                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Confirmar al cliente</span>
                                                             </div>
                                                             {selectedUnifiedPedido.demoraMinutos != null && (
-                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0">
+                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-muted px-2 py-0.5 rounded-full shrink-0">
                                                                     <CheckCircle className="h-3 w-3" /> {selectedUnifiedPedido.demoraMinutos} min
                                                                 </span>
                                                             )}
@@ -1467,11 +1802,11 @@ const Dashboard = () => {
                                                         <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full">Archivado</span>
                                                     )}
                                                     {selectedUnifiedPedido.pagado ? (
-                                                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full flex items-center gap-1">
+                                                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-muted px-2.5 py-1 rounded-full flex items-center gap-1">
                                                             <CheckCircle className="h-3 w-3" /> Pagado
                                                         </span>
                                                     ) : (
-                                                        <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full">
+                                                        <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
                                                             Sin cobrar
                                                         </span>
                                                     )}
@@ -1480,9 +1815,10 @@ const Dashboard = () => {
 
                                             {/* Hero Mobile */}
                                             <div className="text-center mb-8">
-                                                <p className="text-sm text-muted-foreground mb-1 uppercase tracking-widest font-semibold">
-                                                    {selectedUnifiedPedido.tipo === 'delivery' ? '🚚 Delivery' : '🛍️ Take Away'}
-                                                </p>
+                                                <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-1">
+                                                    {selectedUnifiedPedido.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+                                                    {selectedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                                                </div>
                                                 <p className="text-5xl font-black tracking-tight mb-3 text-foreground">
                                                     ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                 </p>
@@ -1497,13 +1833,16 @@ const Dashboard = () => {
                                                     </span>
                                                 </div>
                                                 {selectedUnifiedPedido.horarioProgramado && (
-                                                    <div className="flex items-center justify-center gap-2 mt-3 px-4 py-3 bg-amber-500/10 rounded-2xl border-2 border-amber-500/40 max-w-xs mx-auto">
-                                                        <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
-                                                        <div className="text-left">
-                                                            <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide">Programado para las</p>
-                                                            <p className="text-2xl font-black text-amber-700 dark:text-amber-300 leading-none">{selectedUnifiedPedido.horarioProgramado}</p>
+                                                    <>
+                                                        <Separator className="bg-border/60 mt-3 w-24 mx-auto" />
+                                                        <div className="inline-flex items-center gap-2 mt-3">
+                                                            <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                            <div className="text-left">
+                                                                <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-widest">Programado para las</p>
+                                                                <p className="text-2xl font-black text-foreground leading-tight tracking-tight">{selectedUnifiedPedido.horarioProgramado}</p>
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    </>
                                                 )}
                                             </div>
 
@@ -1555,7 +1894,7 @@ const Dashboard = () => {
                                                     <div className="flex items-center justify-between">
                                                         <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Confirmar al cliente</p>
                                                         {selectedUnifiedPedido.demoraMinutos != null && (
-                                                            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                                            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-muted px-2 py-0.5 rounded-full">
                                                                 <CheckCircle className="h-3 w-3" /> {selectedUnifiedPedido.demoraMinutos} min
                                                             </span>
                                                         )}
@@ -1798,7 +2137,7 @@ const Dashboard = () => {
                                                             <div className="flex items-center gap-2">
                                                                 <button
                                                                     onClick={() => setShowDeleteDialog(true)}
-                                                                    className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                                                                    className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 cursor-pointer"
                                                                 >
                                                                     <Trash2 className="h-5 w-5" />
                                                                 </button>
@@ -1806,7 +2145,7 @@ const Dashboard = () => {
                                                                     <button
                                                                         onClick={() => handleNotificarCliente(selectedUnifiedPedido)}
                                                                         disabled={sendingNotification === selectedUnifiedPedido.id.toString()}
-                                                                        className="h-14 w-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors shrink-0 disabled:opacity-50"
+                                                                        className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:bg-accent transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
                                                                     >
                                                                         {sendingNotification === selectedUnifiedPedido.id.toString()
                                                                             ? <Loader2 className="h-5 w-5 animate-spin" />
@@ -1814,7 +2153,7 @@ const Dashboard = () => {
                                                                     </button>
                                                                 )}
                                                                 <Button
-                                                                    className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#F97316] hover:bg-[#EA580C]" : "bg-emerald-600 hover:bg-emerald-700 shadow-[0_0_20px_rgba(5,150,105,0.15)]")}
+                                                                    className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#F97316] hover:bg-[#EA580C]" : "bg-emerald-600 hover:bg-emerald-700")}
                                                                     onClick={() => {
                                                                         if (selectedUnifiedPedido.pagado) void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)
                                                                         else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
@@ -1859,7 +2198,7 @@ const Dashboard = () => {
                             <Plus className="h-12 w-12 text-[#FF7A00] mx-auto mb-4" />
                             <h2 className="text-2xl font-bold mb-2">Crear Pedido Manual</h2>
                             <p className="text-muted-foreground mb-8">Esta función es para cargar un pedido que tomaste por teléfono o mostrador rápidamente.</p>
-                            <Button size="lg" className="w-full h-14 rounded-2xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold shadow-lg shadow-orange-500/20" onClick={() => toast.info('Abre el catálogo para agregar productos aquí')}>
+                            <Button size="lg" className="w-full h-14 rounded-2xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold" onClick={() => toast.info('Abre el catálogo para agregar productos aquí')}>
                                 Abrir Catálogo (Próximamente)
                             </Button>
                             <Button variant="ghost" className="w-full mt-2 h-14 rounded-2xl font-semibold" onClick={() => setDashboardMode('orders')}>
@@ -1869,6 +2208,96 @@ const Dashboard = () => {
                     </div>
                 )}
             </div>
+
+            {/* ── MOBILE ORDERS BOTTOM SHEET ── */}
+            {showMobileOrdersSheet && (
+                <div className="fixed inset-0 z-[9999] lg:hidden" onClick={() => setShowMobileOrdersSheet(false)}>
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+                    <div
+                        className="absolute bottom-0 left-0 right-0 bg-background rounded-t-3xl flex flex-col"
+                        style={{ maxHeight: '72vh' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex justify-center pt-3 pb-1 shrink-0">
+                            <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+                        </div>
+                        <div className="px-5 py-3 border-b border-border flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold text-base">Pedidos activos</span>
+                                <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0 text-[10px]">
+                                    {activeOrders.length}
+                                </Badge>
+                            </div>
+                            <button
+                                onClick={() => setShowMobileOrdersSheet(false)}
+                                className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 pb-safe">
+                            {activeOrders.length === 0 ? (
+                                <div className="text-center py-10 text-muted-foreground text-sm">
+                                    <Receipt className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                    No hay pedidos activos
+                                </div>
+                            ) : (
+                                activeOrders.map(pedido => {
+                                    const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
+                                    const pagoBadge = metodoPagoListBadge(pedido.metodoPago)
+                                    return (
+                                        <div
+                                            key={`sheet-${pedido.tipo}-${pedido.id}`}
+                                            onClick={() => {
+                                                setSelectedUnifiedPedido(pedido)
+                                                setShowMobileOrdersSheet(false)
+                                            }}
+                                            className={cn(
+                                                "flex items-center justify-between p-3 rounded-xl border cursor-pointer active:scale-[0.99] transition-all",
+                                                isSelected
+                                                    ? "bg-[#FF7A00]/10 border-[#FF7A00]/30"
+                                                    : "bg-muted/20 border-border hover:bg-muted/40"
+                                            )}
+                                        >
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-bold text-sm">#{pedido.id}</span>
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                                                        {pedido.tipo === 'delivery' ? <Truck className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
+                                                        {pedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                                                    </span>
+                                                    {!pedido.pagado && (
+                                                        <span className="text-[9px] font-semibold text-amber-600 dark:text-amber-400">Sin cobrar</span>
+                                                    )}
+                                                    {pagoBadge && (
+                                                        <Badge variant="outline" className={cn("text-[9px] px-1 py-0 h-4 border-none", pagoBadge.className)}>
+                                                            {pagoBadge.icon && <span className="mr-0.5">{pagoBadge.icon}</span>}{pagoBadge.label}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                {pedido.nombreCliente && (
+                                                    <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">{pedido.nombreCliente}</p>
+                                                )}
+                                                {pedido.tipo === 'delivery' && pedido.direccion && (
+                                                    <p className="text-[11px] text-muted-foreground truncate max-w-[200px] flex items-center gap-1 mt-0.5">
+                                                        <MapPin className="h-2.5 w-2.5 shrink-0" />{pedido.direccion}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="text-right shrink-0 ml-3">
+                                                <span className="font-black text-sm">
+                                                    ${computeOrderTotal(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                </span>
+                                                <p className="text-[10px] text-muted-foreground mt-0.5">{formatTimeAgo(pedido.createdAt)}</p>
+                                            </div>
+                                        </div>
+                                    )
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── DIÁLOGO ELIMINAR ── */}
             <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
@@ -2042,7 +2471,7 @@ const Dashboard = () => {
                                         </p>
                                         <div className="space-y-2">
                                             {repartidoresList.filter(r => r.estado === 'activo').map(r => (
-                                                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                                                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
                                                     <span className="font-semibold text-sm">{r.nombre}</span>
                                                     <Button
                                                         size="sm"
@@ -2129,7 +2558,7 @@ const Dashboard = () => {
                                     const { tipo, id } = pendingDispatchPedido
                                     void handleRepartidorSelected(tipo, id, r.id)
                                 }}
-                                className="w-full flex items-center gap-3 p-4 rounded-2xl border border-border bg-card hover:bg-accent hover:border-[#FF7A00]/40 transition-all text-left font-semibold disabled:opacity-50"
+                                className="w-full flex items-center gap-3 p-4 rounded-2xl border border-border bg-card hover:bg-accent hover:border-[#FF7A00]/40 transition-all text-left font-semibold disabled:opacity-50 cursor-pointer"
                             >
                                 <div className="h-9 w-9 rounded-full bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
                                     <UserRound className="h-5 w-5 text-[#FF7A00]" />
@@ -2144,7 +2573,7 @@ const Dashboard = () => {
                                 const { tipo, id } = pendingDispatchPedido
                                 void handleRepartidorSelected(tipo, id, null)
                             }}
-                            className="w-full p-3 rounded-2xl border border-dashed border-border text-muted-foreground hover:bg-muted/40 transition-all text-sm font-medium disabled:opacity-50"
+                            className="w-full p-3 rounded-2xl border border-dashed border-border text-muted-foreground hover:bg-muted/40 transition-all text-sm font-medium disabled:opacity-50 cursor-pointer"
                         >
                             {asignandoRepartidor ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Despachar sin asignar repartidor'}
                         </button>

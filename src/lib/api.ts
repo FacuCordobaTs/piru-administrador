@@ -114,6 +114,14 @@ export const authApi = {
       body: JSON.stringify({ email, password, nombre }),
     })
   },
+
+  changePassword: async (token: string, currentPassword: string, newPassword: string) => {
+    return fetchApi('/auth/change-password', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+  },
 }
 
 // Onboarding API
@@ -1079,6 +1087,14 @@ export const notificacionesApi = {
 }
 
 // Pedido Unificado API (delivery + takeaway) - backend único
+export type PedidoUnificadoItemInput = {
+  productoId: number
+  varianteId?: number
+  cantidad: number
+  ingredientesExcluidos?: number[]
+  agregados?: Array<{ id: number; nombre: string; precio: string | number }>
+}
+
 export const pedidoUnificadoApi = {
   getAll: async (
     token: string,
@@ -1109,8 +1125,32 @@ export const pedidoUnificadoApi = {
   create: async (
     token: string,
     data:
-      | { tipo: 'delivery'; direccion: string; nombreCliente?: string; telefono?: string; notas?: string; items: Array<{ productoId: number; cantidad: number; ingredientesExcluidos?: number[] }> }
-      | { tipo: 'takeaway'; nombreCliente?: string; telefono?: string; notas?: string; items: Array<{ productoId: number; cantidad: number; ingredientesExcluidos?: number[] }> }
+      | {
+          tipo: 'delivery'
+          direccion: string
+          nombreCliente?: string
+          telefono?: string
+          notas?: string
+          latitud?: string | number
+          longitud?: string | number
+          deliveryFee?: string | number
+          anotadoManualmente?: boolean
+          pagado?: boolean
+          metodoPago?: string
+          sucursalId?: number
+          items: Array<PedidoUnificadoItemInput>
+        }
+      | {
+          tipo: 'takeaway'
+          nombreCliente?: string
+          telefono?: string
+          notas?: string
+          anotadoManualmente?: boolean
+          pagado?: boolean
+          metodoPago?: string
+          sucursalId?: number
+          items: Array<PedidoUnificadoItemInput>
+        }
   ) => {
     return fetchApi('/pedido-unificado/create', {
       method: 'POST',

@@ -1,14 +1,11 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense, useRef } from 'react'
 import { useNavigate } from 'react-router'
-import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
   SelectContent,
@@ -18,19 +15,16 @@ import {
 } from '@/components/ui/select'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { restauranteApi, mercadopagoApi, cucuruApi, ApiError } from '@/lib/api'
+import { restauranteApi, mercadopagoApi, cucuruApi, authApi, ApiError } from '@/lib/api'
 import ImageUpload from '@/components/ImageUpload'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Mail,
   MapPin,
-  Phone,
   Edit,
   LogOut,
   Store,
   Loader2,
-  Settings,
   CreditCard,
   Link2,
   Unlink,
@@ -46,18 +40,16 @@ import {
   UtensilsCrossed,
   RefreshCw,
   Ticket,
-  Palette,
   Zap,
   Globe,
   Copy,
-  Smartphone,
-  ChevronRight,
   AlertCircle,
   Package,
-  FileText,
+  X,
+  Lock,
 } from 'lucide-react'
 import FacturacionAfipSection from '@/components/FacturacionAfipSection'
-import { usePrinter, isVirtualPrinter } from '@/context/PrinterContext'
+import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
 import { PWAInstallButton } from '@/components/PWAInstallButton'
 
@@ -68,11 +60,13 @@ const MP_APP_ID = 38638191854826
 const MP_REDIRECT_URI = import.meta.env.VITE_MP_REDIRECT_URI || 'https://api.piru.app/api/mp/callback'
 
 // ─────────────────────────────────────────────
-// Estilos base "Phantom"
+// Estilos base
+// Superficie: sin bordes ni sombras pesadas. El contraste
+// (blanco sobre zinc-50) separa; el espacio estructura.
 // ─────────────────────────────────────────────
-const phantomCardClass = "bg-white dark:bg-zinc-950 rounded-[32px] shadow-xl shadow-zinc-200/40 dark:shadow-none border border-zinc-100 dark:border-zinc-800/80 overflow-hidden"
-const phantomInputClass = "h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
-const phantomLabelClass = "text-sm font-medium text-foreground ml-1 mb-1.5 block"
+const phantomCardClass = ""
+const phantomInputClass = "h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-transparent focus:ring-2 focus:ring-[#FF7A00]/30 transition-all text-base px-4 w-full"
+const phantomLabelClass = "text-sm font-medium text-muted-foreground mb-2 block"
 
 interface Sucursal {
   id: number
@@ -85,19 +79,19 @@ interface Sucursal {
 }
 
 // ─────────────────────────────────────────────
-// Small helper: row toggle for feature switches
+// Small helper: row toggle for feature switches.
+// Sin tile de color: ícono neutro, jerarquía por peso
+// tipográfico, filas separadas por espacio (no por bordes).
 // ─────────────────────────────────────────────
 function ToggleRow({
   icon,
-  iconBg,
   title,
   description,
   checked,
   onCheckedChange,
   disabled,
 }: {
-  icon: React.ReactNode
-  iconBg: string
+  icon?: React.ReactNode
   title: string
   description: string
   checked: boolean
@@ -105,14 +99,18 @@ function ToggleRow({
   disabled?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-5 group hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20 transition-colors px-2 -mx-2 rounded-2xl cursor-pointer" onClick={() => !disabled && onCheckedChange()}>
-      <div className="flex items-center gap-4 min-w-0">
-        <div className={`shrink-0 h-12 w-12 rounded-[18px] flex items-center justify-center ${iconBg}`}>
-          {icon}
-        </div>
+    <div
+      className={cn(
+        "flex items-center justify-between gap-6 py-3 cursor-pointer",
+        disabled && "opacity-50 pointer-events-none"
+      )}
+      onClick={() => !disabled && onCheckedChange()}
+    >
+      <div className="flex items-start gap-3 min-w-0">
+        {icon && <div className="shrink-0 mt-0.5 text-zinc-400 dark:text-zinc-500">{icon}</div>}
         <div className="min-w-0">
-          <p className="text-base font-semibold text-foreground truncate">{title}</p>
-          <p className="text-sm text-muted-foreground truncate">{description}</p>
+          <p className="text-[15px] font-semibold text-foreground">{title}</p>
+          <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
         </div>
       </div>
       <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} onClick={(e) => e.stopPropagation()} />
@@ -121,30 +119,32 @@ function ToggleRow({
 }
 
 // ─────────────────────────────────────────────
-// Integration Status Card wrapper
+// Integration Status Card wrapper.
+// Sin borde de color para categorizar: superficie neutra.
+// El estado (conectado/no) se comunica adentro, con texto.
 // ─────────────────────────────────────────────
 function IntegrationCard({
-  connected,
-  accentClass,
   children,
 }: {
-  connected: boolean
-  accentClass: string
+  connected?: boolean
   children: React.ReactNode
 }) {
   return (
-    <Card
-      className={cn(
-        "rounded-[32px] border-2 transition-colors",
-        connected
-          ? accentClass
-          : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950"
-      )}
-    >
+    <div>
       {children}
-    </Card>
+    </div>
   )
 }
+
+const SECTIONS = [
+  { id: 'general', label: 'General', Icon: Store },
+  { id: 'pagos', label: 'Pagos', Icon: CreditCard },
+  { id: 'delivery', label: 'Delivery', Icon: Truck },
+  { id: 'experiencia', label: 'Experiencia', Icon: UtensilsCrossed },
+  { id: 'sucursales', label: 'Sucursales', Icon: MapPin },
+  { id: 'facturacion', label: 'Facturación', Icon: Ticket },
+  { id: 'hardware', label: 'Hardware', Icon: Printer },
+]
 
 const Perfil = () => {
   const navigate = useNavigate()
@@ -153,9 +153,6 @@ const Perfil = () => {
   const restauranteStore = useRestauranteStore()
   const { restaurante, isLoading } = restauranteStore
 
-  // Estados del modal de edición
-  const [dialogAbierto, setDialogAbierto] = useState(false)
-  const [dialogTab, setDialogTab] = useState('info')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     nombre: '',
@@ -172,7 +169,12 @@ const Perfil = () => {
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [imageLightBase64, setImageLightBase64] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('general')
+  const [direccionTexto, setDireccionTexto] = useState<string>('')
+  const [direccionLat, setDireccionLat] = useState<number | null>(null)
+  const [direccionLng, setDireccionLng] = useState<number | null>(null)
+  const direccionInputRef = useRef<HTMLInputElement>(null)
+  const autocompleteRef = useRef<any>(null)
+  const formInitializedRef = useRef(false)
 
   const [sucursales, setSucursales] = useState<Sucursal[]>([])
   const [sucursalesLoaded, setSucursalesLoaded] = useState(false)
@@ -193,8 +195,6 @@ const Perfil = () => {
   const [isTogglingDisenoAlternativo, setIsTogglingDisenoAlternativo] = useState(false)
   const [isTogglingOrderGroupEnabled, setIsTogglingOrderGroupEnabled] = useState(false)
   const [isTogglingCodigoDescuentoEnabled, setIsTogglingCodigoDescuentoEnabled] = useState(false)
-  const [isTogglingCardsPaymentsEnabled, setIsTogglingCardsPaymentsEnabled] = useState(false)
-  const [isTogglingCucuruCheckoutEnabled, setIsTogglingCucuruCheckoutEnabled] = useState(false)
   const [isTogglingNotificarClientesWhatsapp, setIsTogglingNotificarClientesWhatsapp] = useState(false)
   const [isTogglingModoConfirmacionManual, setIsTogglingModoConfirmacionManual] = useState(false)
   const [isTogglingDeliveryEnabled, setIsTogglingDeliveryEnabled] = useState(false)
@@ -213,22 +213,37 @@ const Perfil = () => {
   const [isReenviandoWebhookCucuru, setIsReenviandoWebhookCucuru] = useState(false)
   const [cucuruApiKey, setCucuruApiKey] = useState('')
   const [cucuruCollectorId, setCucuruCollectorId] = useState('')
-  // const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
-  // const [taloClientIdInput, setTaloClientIdInput] = useState('')
-  // const [taloClientSecretInput, setTaloClientSecretInput] = useState('')
-  // const [taloUserIdInput, setTaloUserIdInput] = useState('')
-  const [isSavingPasarela, setIsSavingPasarela] = useState(false)
-  const [proveedorPago, setProveedorPago] = useState<string>(
-    (restaurante as any)?.proveedorPago || 'manual'
-  )
+  const [isConfiguringTalo, setIsConfiguringTalo] = useState(false)
   const [taloClientId, setTaloClientId] = useState('')
   const [taloClientSecret, setTaloClientSecret] = useState('')
   const [taloUserId, setTaloUserId] = useState('')
+  const [cfgMpCheckout, setCfgMpCheckout] = useState(true)
+  const [cfgMpBricks, setCfgMpBricks] = useState(false)
+  const [cfgTfAuto, setCfgTfAuto] = useState(false)
+  const [cfgTfManual, setCfgTfManual] = useState(false)
+  const [cfgEfectivo, setCfgEfectivo] = useState(true)
+  const [cfgAlias, setCfgAlias] = useState('')
+  const [proveedorTransferencia, setProveedorTransferencia] = useState<'cucuru' | 'talo'>('cucuru')
+  const [isSavingMetodosPago, setIsSavingMetodosPago] = useState(false)
+
+  // Cambiar contraseña
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [changePasswordForm, setChangePasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+
+  // WhatsApp OAuth state
+  const [waStatus, setWaStatus] = useState<{
+    conectado: boolean
+    phoneNumber: string | null
+    tokenVencido: boolean
+  } | null>(null)
+  const [waLoading, setWaLoading] = useState(false)
 
   // Tauri Printer State
   const { printers, selectedPrinter, setSelectedPrinter, refreshPrinters, printRaw } = usePrinter()
   const [isListingPrinters, setIsListingPrinters] = useState(false)
   const [isPrintingTest, setIsPrintingTest] = useState(false)
+  const [activeSection, setActiveSection] = useState<string | null>(null)
 
   // Horarios state
   const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -273,7 +288,7 @@ const Perfil = () => {
   }, [token])
 
   useEffect(() => {
-    if (activeTab !== 'sucursales' || sucursalesLoaded) return
+    if (sucursalesLoaded) return
     const fetchSucursales = async () => {
       if (!token) return
       try {
@@ -289,7 +304,7 @@ const Perfil = () => {
       }
     }
     void fetchSucursales()
-  }, [activeTab, sucursalesLoaded, token])
+  }, [sucursalesLoaded, token])
 
   const agregarTurno = (dia: number) => {
     setHorarios((prev) => ({
@@ -360,17 +375,97 @@ const Perfil = () => {
     }
   }, [])
 
+  // Load Google Maps Places script for address autocomplete
   useEffect(() => {
-    const prov = (restaurante as any)?.proveedorPago
-    if (prov && ['cucuru', 'talo', 'mercadopago', 'manual'].includes(prov)) {
-      setProveedorPago(prov)
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+    if (!apiKey || (window as any).google?.maps?.places) return
+    if (document.querySelector('script[data-gmaps]')) return
+    const script = document.createElement('script')
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.async = true
+    script.defer = true
+    script.dataset.gmaps = '1'
+    document.head.appendChild(script)
+  }, [])
+
+  // Initialize address autocomplete once the input is rendered
+  useEffect(() => {
+    const init = () => {
+      if (!direccionInputRef.current || !(window as any).google?.maps?.places) return
+      if (autocompleteRef.current) return
+      const ac = new (window as any).google.maps.places.Autocomplete(direccionInputRef.current, {
+        componentRestrictions: { country: 'ar' },
+        fields: ['formatted_address', 'geometry'],
+        types: ['address'],
+      })
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace()
+        if (place?.geometry?.location) {
+          setDireccionTexto(place.formatted_address || '')
+          setDireccionLat(place.geometry.location.lat())
+          setDireccionLng(place.geometry.location.lng())
+        }
+      })
+      autocompleteRef.current = ac
     }
 
-    if (restaurante) {
-      if ((restaurante as any).taloClientId) setTaloClientId((restaurante as any).taloClientId)
-      if ((restaurante as any).taloClientSecret) setTaloClientSecret((restaurante as any).taloClientSecret)
-      if ((restaurante as any).taloUserId) setTaloUserId((restaurante as any).taloUserId)
+    if ((window as any).google?.maps?.places) {
+      init()
+    } else {
+      const interval = setInterval(() => {
+        if ((window as any).google?.maps?.places) {
+          clearInterval(interval)
+          init()
+        }
+      }, 200)
+      return () => clearInterval(interval)
     }
+  }, [])
+
+  useEffect(() => {
+    if (!restaurante) return
+    const r = restaurante as any
+    const c = r.metodosPagoConfig || {}
+    const mpOk = !!r.mpConnected
+    const taloCred = !!(r.taloClientId && r.taloClientSecret && r.taloUserId)
+    const autoTf = !!(r.cucuruConfigurado || taloCred)
+    setCfgMpCheckout(c.mercadopagoCheckout ?? (mpOk && r.cardsPaymentsEnabled !== false))
+    setCfgMpBricks(c.mercadopagoBricks ?? false)
+    setCfgTfAuto(c.transferenciaAutomatica ?? autoTf)
+    setCfgTfManual(c.transferenciaManual ?? (!autoTf && !!(r.transferenciaAlias && String(r.transferenciaAlias).trim())))
+    setCfgEfectivo(c.efectivo ?? true)
+    setCfgAlias(r.transferenciaAlias || '')
+    if (r.proveedorPago === 'talo') setProveedorTransferencia('talo')
+    else if (r.proveedorPago === 'cucuru') setProveedorTransferencia('cucuru')
+    else if (taloCred && !r.cucuruConfigurado) setProveedorTransferencia('talo')
+    else setProveedorTransferencia('cucuru')
+    if (r.taloClientId) setTaloClientId(r.taloClientId)
+    if (r.taloClientSecret) setTaloClientSecret(r.taloClientSecret)
+    if (r.taloUserId) setTaloUserId(r.taloUserId)
+  }, [restaurante])
+
+  // Populate inline form once when restaurante first loads
+  useEffect(() => {
+    if (!restaurante || formInitializedRef.current) return
+    formInitializedRef.current = true
+    setFormData({
+      nombre: restaurante.nombre || '',
+      direccion: restaurante.direccion || '',
+      telefono: restaurante.telefono || '',
+      username: restaurante.username || '',
+      deliveryFee: restaurante.deliveryFee || '',
+      whatsappEnabled: restaurante.whatsappEnabled || false,
+      whatsappNumber: restaurante.whatsappNumber || '',
+      comprobantesWhatsapp: restaurante.comprobantesWhatsapp || '',
+      transferenciaAlias: restaurante.transferenciaAlias || '',
+      colorPrimario: restaurante.colorPrimario || '',
+      colorSecundario: restaurante.colorSecundario || '',
+    })
+    setImageBase64(restaurante.imagenUrl || null)
+    setImageLightBase64(restaurante.imagenLightUrl || null)
+    setDireccionTexto((restaurante as any).direccionTexto || '')
+    setDireccionLat((restaurante as any).direccionLat ? parseFloat((restaurante as any).direccionLat) : null)
+    setDireccionLng((restaurante as any).direccionLng ? parseFloat((restaurante as any).direccionLng) : null)
   }, [restaurante])
 
   useEffect(() => {
@@ -394,6 +489,76 @@ const Perfil = () => {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
+
+  const waApiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+
+  useEffect(() => {
+    if (!token) return
+    fetch(`${waApiBase}/whatsapp-oauth/status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { if (data.success) setWaStatus(data) })
+      .catch(() => {})
+  }, [token])
+
+  const abrirPopupMeta = () => {
+    const FB = (window as any).FB
+    FB.init({ appId: '939939975659282', cookie: true, xfbml: true, version: 'v22.0' })
+    FB.login(
+      async (response: any) => {
+        if (response.authResponse?.code) {
+          setWaLoading(true)
+          try {
+            const res = await fetch(`${waApiBase}/whatsapp-oauth/connect`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code: response.authResponse.code }),
+            })
+            const data = await res.json()
+            if (data.success) {
+              setWaStatus({ conectado: true, phoneNumber: data.phoneNumber, tokenVencido: false })
+              toast.success(`WhatsApp conectado: ${data.phoneNumber}`)
+            } else {
+              toast.error(data.message || 'Error al conectar WhatsApp')
+            }
+          } catch {
+            toast.error('Error al conectar WhatsApp')
+          } finally {
+            setWaLoading(false)
+          }
+        }
+      },
+      {
+        config_id: '2543954492702386',
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { sessionInfoVersion: 2 },
+      }
+    )
+  }
+
+  const conectarWhatsApp = () => {
+    if (!(window as any).FB) {
+      const script = document.createElement('script')
+      script.src = 'https://connect.facebook.net/es_LA/sdk.js'
+      script.async = true
+      script.defer = true
+      script.crossOrigin = 'anonymous'
+      document.body.appendChild(script)
+      script.onload = () => abrirPopupMeta()
+    } else {
+      abrirPopupMeta()
+    }
+  }
+
+  const desconectarWhatsApp = async () => {
+    if (!confirm('¿Desconectar el número de WhatsApp?')) return
+    await fetch(`${waApiBase}/whatsapp-oauth/disconnect`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    setWaStatus({ conectado: false, phoneNumber: null, tokenVencido: false })
+    toast.success('WhatsApp desconectado')
+  }
 
   const handleListPrinters = async () => {
     setIsListingPrinters(true)
@@ -466,35 +631,38 @@ const Perfil = () => {
     navigate('/login')
   }
 
-  // const handleConfigurarTalo = async () => {
-  //   if (!token) return
-  //   if (!taloClientIdInput.trim() || !taloClientSecretInput.trim() || !taloUserIdInput.trim()) {
-  //     toast.error('Debes ingresar Client ID, Client Secret y User ID de Talo')
-  //     return
-  //   }
-  //   setIsConfiguringTalo(true)
-  //   try {
-  //     const response = (await restauranteApi.configurarTalo(
-  //       token,
-  //       taloClientIdInput.trim(),
-  //       taloClientSecretInput.trim(),
-  //       taloUserIdInput.trim()
-  //     )) as { success: boolean }
-  //     if (response.success) {
-  //       toast.success('Talo configurado con éxito', {
-  //         description: 'Tus credenciales de Talo están listas para transferencias en tiempo real.',
-  //       })
-  //       restauranteStore.fetchData()
-  //       setTaloClientIdInput('')
-  //       setTaloClientSecretInput('')
-  //       setTaloUserIdInput('')
-  //     }
-  //   } catch (error) {
-  //     toast.error('Error al configurar Talo')
-  //   } finally {
-  //     setIsConfiguringTalo(false)
-  //   }
-  // }
+  const handleChangePassword = async () => {
+    if (!token) return
+    if (!changePasswordForm.currentPassword || !changePasswordForm.newPassword) {
+      toast.error('Completá todos los campos')
+      return
+    }
+    if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
+      toast.error('Las contraseñas nuevas no coinciden')
+      return
+    }
+    if (changePasswordForm.newPassword.length < 6) {
+      toast.error('La nueva contraseña debe tener al menos 6 caracteres')
+      return
+    }
+    setIsChangingPassword(true)
+    try {
+      const response = (await authApi.changePassword(token, changePasswordForm.currentPassword, changePasswordForm.newPassword)) as { success: boolean; message: string }
+      if (response.success) {
+        toast.success('Contraseña actualizada correctamente')
+        setChangePasswordOpen(false)
+        setChangePasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(error.message)
+      } else {
+        toast.error('Error al cambiar la contraseña')
+      }
+    } finally {
+      setIsChangingPassword(false)
+    }
+  }
 
   const handleConfigurarCucuru = async () => {
     if (!token) return
@@ -524,40 +692,59 @@ const Perfil = () => {
     }
   }
 
-  const handleGuardarPasarelaPago = async () => {
+  const handleSaveMetodosPago = async () => {
     if (!token) return
-    if (
-      proveedorPago === 'talo' &&
-      (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim())
-    ) {
-      toast.error('Para usar Talo debes ingresar Client ID, Client Secret y User ID')
+    const r = restaurante as any
+    const cucuruOk = !!r?.cucuruConfigurado
+    const taloOk = !!(r?.taloClientId && r?.taloClientSecret && r?.taloUserId)
+    setIsSavingMetodosPago(true)
+    try {
+      await restauranteApi.updateMetodosPago(token, {
+        mercadopagoCheckout: cfgMpCheckout,
+        mercadopagoBricks: cfgMpBricks,
+        transferenciaAutomatica: cfgTfAuto,
+        transferenciaManual: cfgTfManual,
+        efectivo: cfgEfectivo,
+        transferenciaAlias: cfgAlias,
+      })
+      if (cfgTfAuto && cucuruOk && taloOk) {
+        await restauranteApi.updatePasarelaPago(token, { proveedorPago: proveedorTransferencia })
+      }
+      await restauranteStore.fetchData()
+      toast.success('Métodos de pago guardados')
+    } catch {
+      toast.error('No se pudieron guardar los métodos de pago')
+    } finally {
+      setIsSavingMetodosPago(false)
+    }
+  }
+
+  const handleConfigurarTalo = async () => {
+    if (!token) return
+    if (!taloClientId.trim() || !taloClientSecret.trim() || !taloUserId.trim()) {
+      toast.error('Ingresá Client ID, Client Secret y User ID de Talo')
       return
     }
-    setIsSavingPasarela(true)
+    setIsConfiguringTalo(true)
     try {
-      const payload: Record<string, unknown> = {
-        proveedorPago: proveedorPago as 'cucuru' | 'talo' | 'mercadopago' | 'manual',
-      }
-      if (taloClientId.trim() && taloClientSecret.trim() && taloUserId.trim()) {
-        payload.taloClientId = taloClientId.trim()
-        payload.taloClientSecret = taloClientSecret.trim()
-        payload.taloUserId = taloUserId.trim()
-      }
-      const response = (await restauranteApi.updatePasarelaPago(token, payload)) as {
-        success: boolean
-      }
+      const response = (await restauranteApi.configurarTalo(
+        token,
+        taloClientId.trim(),
+        taloClientSecret.trim(),
+        taloUserId.trim()
+      )) as { success: boolean }
       if (response.success) {
-        toast.success('Pasarela de pago actualizada')
+        toast.success('Talo configurado correctamente')
         restauranteStore.fetchData()
       }
     } catch (error) {
       if (error instanceof ApiError) {
-        toast.error('Error al guardar', { description: error.message })
+        toast.error('Error al configurar Talo', { description: error.message })
       } else {
         toast.error('Error de conexión')
       }
     } finally {
-      setIsSavingPasarela(false)
+      setIsConfiguringTalo(false)
     }
   }
 
@@ -800,48 +987,6 @@ const Perfil = () => {
     }
   }
 
-  const handleToggleCardsPaymentsEnabled = async () => {
-    if (!token) return
-    setIsTogglingCardsPaymentsEnabled(true)
-    try {
-      const response = (await restauranteApi.toggleCardsPaymentsEnabled(token)) as {
-        success: boolean
-        cardsPaymentsEnabled: boolean
-      }
-      if (response.success) {
-        toast.success(
-          response.cardsPaymentsEnabled ? 'Tarjeta visible en checkout' : 'Tarjeta oculta en checkout'
-        )
-        restauranteStore.fetchData()
-      }
-    } catch (error) {
-      toast.error('Error al cambiar la configuración')
-    } finally {
-      setIsTogglingCardsPaymentsEnabled(false)
-    }
-  }
-
-  const handleToggleCucuruCheckoutEnabled = async () => {
-    if (!token) return
-    setIsTogglingCucuruCheckoutEnabled(true)
-    try {
-      const response = (await restauranteApi.toggleCucuruEnabled(token)) as {
-        success: boolean
-        cucuruEnabled: boolean
-      }
-      if (response.success) {
-        toast.success(
-          response.cucuruEnabled ? 'Transferencia visible en checkout' : 'Transferencia oculta en checkout'
-        )
-        restauranteStore.fetchData()
-      }
-    } catch (error) {
-      toast.error('Error al cambiar la configuración')
-    } finally {
-      setIsTogglingCucuruCheckoutEnabled(false)
-    }
-  }
-
   const handleToggleDisenoAlternativo = async () => {
     if (!token) return
     setIsTogglingDisenoAlternativo(true)
@@ -863,30 +1008,7 @@ const Perfil = () => {
     }
   }
 
-  const abrirDialogEditar = () => {
-    if (restaurante) {
-      setFormData({
-        nombre: restaurante.nombre || '',
-        direccion: restaurante.direccion || '',
-        telefono: restaurante.telefono || '',
-        username: restaurante.username || '',
-        deliveryFee: restaurante.deliveryFee || '',
-        whatsappEnabled: restaurante.whatsappEnabled || false,
-        whatsappNumber: restaurante.whatsappNumber || '',
-        comprobantesWhatsapp: restaurante.comprobantesWhatsapp || '',
-        transferenciaAlias: restaurante.transferenciaAlias || '',
-        colorPrimario: restaurante.colorPrimario || '',
-        colorSecundario: restaurante.colorSecundario || '',
-      })
-      setImageBase64(restaurante.imagenUrl || null)
-      setImageLightBase64(restaurante.imagenLightUrl || null)
-      setDialogTab('info')
-      setDialogAbierto(true)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSavePerfil = async () => {
     if (!token) {
       toast.error('No hay sesión activa')
       return
@@ -921,17 +1043,21 @@ const Perfil = () => {
       if (imageBase64 && imageBase64.startsWith('data:image')) updateData.image = imageBase64
       if (imageLightBase64 && imageLightBase64.startsWith('data:image'))
         updateData.imageLight = imageLightBase64
+      const prevDireccionTexto = (restaurante as any)?.direccionTexto || ''
+      if (direccionTexto !== prevDireccionTexto) {
+        updateData.direccionTexto = direccionTexto || null
+        updateData.direccionLat = direccionLat
+        updateData.direccionLng = direccionLng
+      }
 
       if (Object.keys(updateData).length === 0) {
         toast.info('No hay cambios para guardar')
-        setDialogAbierto(false)
         return
       }
       const response = (await restauranteApi.update(token, updateData)) as { success: boolean }
       if (response.success) {
         toast.success('Perfil actualizado correctamente')
         await restauranteStore.fetchData()
-        setDialogAbierto(false)
       }
     } catch (error) {
       if (error instanceof ApiError) {
@@ -1045,7 +1171,7 @@ const Perfil = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="min-h-dvh flex items-center justify-center bg-white dark:bg-black">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
           <p className="text-sm text-zinc-500 font-medium">Cargando tu espacio…</p>
@@ -1054,377 +1180,390 @@ const Perfil = () => {
     )
   }
 
-  const TABS = [
-    { value: 'general', icon: Store, label: 'General' },
-    { value: 'pagos', icon: CreditCard, label: 'Pagos' },
-    { value: 'delivery', icon: Truck, label: 'Delivery' },
-    { value: 'experiencia', icon: Palette, label: 'Experiencia' },
-    { value: 'sucursales', label: 'Sucursales', icon: Store },
-    { value: 'facturacion', icon: FileText, label: 'Facturación' },
-    { value: 'hardware', icon: Printer, label: 'Hardware' },
-  ]
-
-  const productosActivos = restauranteStore.productos.filter((p) => p.activo).length
-  const totalProductos = restauranteStore.productos.length
+  const sectionVisible = (id: string) => activeSection === null || activeSection === id
 
   return (
-    <div className="min-h-dvh bg-zinc-50 dark:bg-background pb-24 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
+    <div className="min-h-dvh bg-white dark:bg-black pb-14 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
 
-      {/* ── Hero Header ── */}
-      <div className="bg-white dark:bg-zinc-950/50 border-b border-zinc-200 dark:border-zinc-800/80 pb-6">
-        {/* Orange banner */}
-        <div className="h-32 sm:h-40 bg-[#FF7A00] relative overflow-hidden">
-          <div
-            className="absolute inset-0 opacity-[0.07]"
-            style={{
-              backgroundImage:
-                'repeating-linear-gradient(0deg,#000 0,#000 1px,transparent 0,transparent 40px),repeating-linear-gradient(90deg,#000 0,#000 1px,transparent 0,transparent 40px)',
-            }}
-          />
-          <div className="absolute inset-0 bg-black/10 mix-blend-overlay" />
-        </div>
+      {/* ── Header ── */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5 sm:pt-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 
-        <div className="max-w-5xl mx-auto px-4 sm:px-8">
-          {/* Profile row — overlaps banner */}
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 -mt-12 sm:-mt-16">
-
-            <div className="flex flex-col sm:flex-row sm:items-end gap-5">
-              <div className="relative shrink-0">
-                <div className="h-28 w-28 sm:h-32 sm:w-32 rounded-[28px] bg-white dark:bg-zinc-900 shadow-2xl ring-[6px] ring-white dark:ring-zinc-950 overflow-hidden">
-                  {restaurante?.imagenUrl ? (
-                    <img
-                      src={restaurante.imagenUrl}
-                      alt={restaurante.nombre}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="h-full w-full bg-linear-to-br from-orange-400 to-[#FF7A00] flex items-center justify-center">
-                      <Store className="h-10 w-10 sm:h-12 sm:w-12 text-white" />
-                    </div>
-                  )}
+          <div className="flex items-center gap-5 min-w-0">
+            <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 overflow-hidden shrink-0">
+              {restaurante?.imagenUrl ? (
+                <img
+                  src={restaurante.imagenUrl}
+                  alt={restaurante.nombre}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="h-full w-full bg-[#FF7A00] flex items-center justify-center">
+                  <Store className="h-7 w-7 sm:h-8 sm:w-8 text-white" />
                 </div>
-                <div className="absolute -bottom-1 -right-1 bg-green-500 rounded-full p-1.5 ring-4 ring-white dark:ring-zinc-950 shadow-sm">
-                  <CheckCircle2 className="h-4 w-4 text-white" />
-                </div>
-              </div>
-
-              <div className="pb-2">
-                <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-                  {restaurante?.nombre}
-                </h1>
-                <div className="flex items-center gap-2 mt-1.5 text-muted-foreground">
-                  <Mail className="h-4 w-4" />
-                  <span className="text-sm font-medium">{restaurante?.email}</span>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-3 pb-2 w-full sm:w-auto">
-              <PWAInstallButton />
-              <Button
-                variant="outline"
-                onClick={abrirDialogEditar}
-                className="flex-1 sm:flex-none h-12 rounded-2xl gap-2 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 font-semibold"
-              >
-                <Edit className="h-4 w-4" />
-                <span className="hidden sm:inline">Editar Perfil</span>
-                <span className="sm:hidden">Editar</span>
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={handleLogout}
-                className="h-12 w-12 rounded-2xl p-0 text-zinc-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-              >
-                <LogOut className="h-5 w-5" />
-              </Button>
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground truncate">
+                {restaurante?.nombre}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1 truncate">{restaurante?.email}</p>
             </div>
           </div>
 
-          {/* Link in Bio pill */}
-          {restaurante?.username && (
-            <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-zinc-100 dark:bg-zinc-900/50 rounded-2xl border-none max-w-fit hover:bg-zinc-200/50 dark:hover:bg-zinc-900 transition-colors group">
-                <div className="flex items-center gap-2">
-                  <Globe className="h-5 w-5 text-[#FF7A00]" />
-                  <span className="text-base font-semibold text-foreground tracking-tight">
-                    piru.app/{restaurante.username}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 border-l border-zinc-300 dark:border-zinc-700 pl-3 ml-1">
-                  <button onClick={copyLink} className="p-1.5 text-muted-foreground hover:text-[#FF7A00] hover:bg-white dark:hover:bg-zinc-800 rounded-lg transition-all" title="Copiar link">
-                    <Copy className="h-4 w-4" />
-                  </button>
-                  <a href={`https://my.piru.app/${restaurante.username}`} target="_blank" rel="noreferrer" className="p-1.5 text-muted-foreground hover:text-[#FF7A00] hover:bg-white dark:hover:bg-zinc-800 rounded-lg transition-all" title="Abrir link">
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Actions */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <PWAInstallButton />
+            <Button
+              variant="ghost"
+              onClick={() => setChangePasswordOpen(true)}
+              className="h-11 w-11 rounded-xl p-0 text-zinc-400 hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              title="Cambiar contraseña"
+            >
+              <Lock className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleLogout}
+              className="h-11 w-11 rounded-xl p-0 text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+              title="Cerrar sesión"
+            >
+              <LogOut className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
+
+        {/* Link público */}
+        {restaurante?.username && (
+          <div className="mt-4 flex items-center justify-between gap-3 px-4 py-2 bg-zinc-100 dark:bg-zinc-900 rounded-xl max-w-md">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Globe className="h-4 w-4 text-[#FF7A00] shrink-0" />
+              <span className="text-[15px] font-semibold text-foreground tracking-tight truncate">
+                piru.app/{restaurante.username}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={copyLink} className="p-2 text-muted-foreground hover:text-[#FF7A00] rounded-lg transition-colors" title="Copiar link">
+                <Copy className="h-4 w-4" />
+              </button>
+              <a href={`https://my.piru.app/${restaurante.username}`} target="_blank" rel="noreferrer" className="p-2 text-muted-foreground hover:text-[#FF7A00] rounded-lg transition-colors" title="Abrir link">
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Main content ── */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-8 mt-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+      {/* ── Floating Side Nav ── */}
+      <nav
+        className="fixed hidden xl:flex flex-col top-1/2 z-40"
+        style={{ left: 'calc((100vw - 64rem) / 4)', transform: 'translateX(-50%) translateY(-50%)' }}
+      >
+        <div className="bg-white/80 backdrop-blur-sm dark:bg-zinc-900 rounded-2xl shadow-xl shadow-zinc-300/60 dark:shadow-black/40 border border-zinc-100 dark:border-zinc-800 p-2 flex flex-col gap-0.5">
+          {SECTIONS.map(({ id, label, Icon }) => {
+            const isActive = activeSection === id
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveSection(prev => prev === id ? null : id)}
+                className={cn(
+                  "flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 w-full text-left",
+                  isActive
+                    ? "bg-[#FF7A00] text-white"
+                    : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-foreground"
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{label}</span>
+                {isActive && <X className="h-3 w-3 ml-auto shrink-0 opacity-80" />}
+              </button>
+            )
+          })}
+        </div>
+      </nav>
 
-          {/* Tab bar (Pills Style) */}
-          <div className="-mx-4 px-4 overflow-x-auto scrollbar-none pb-2">
-            <TabsList className="inline-flex bg-zinc-200/50 dark:bg-zinc-900 p-1.5 rounded-[20px] h-auto gap-1">
-              {TABS.map((tab) => (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="
-                    flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-semibold
-                    text-muted-foreground hover:text-foreground
-                    data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-950 
-                    data-[state=active]:text-foreground data-[state=active]:shadow-sm
-                    transition-all whitespace-nowrap
-                  "
-                >
-                  <tab.icon className={cn("h-4 w-4", activeTab === tab.value ? "text-[#FF7A00]" : "text-muted-foreground")} />
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
+      {/* ── Main content — scroll vertical ── */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 mt-6">
 
-          {/* ─────────────────────────────────────────────
-              TAB: GENERAL
-          ───────────────────────────────────────────── */}
-          <TabsContent value="general" className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* ── SECCIÓN: General ── */}
+        <div className={cn("overflow-hidden transition-all duration-300 ease-in-out", sectionVisible('general') ? "opacity-100 max-h-[5000px] mb-10" : "opacity-0 max-h-0 mb-0 pointer-events-none")}>
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">General</h2>
+          <div>
 
-              {/* Business info */}
-              <div className={cn(phantomCardClass, "lg:col-span-2")}>
-                <div className="p-6 sm:p-8">
-                  <h2 className="text-xl font-bold mb-6">Detalles del Negocio</h2>
-
-                  <div className="space-y-5">
-                    {[
-                      { icon: Store, label: 'Nombre', value: restaurante?.nombre },
-                      { icon: Link2, label: 'Enlace', value: restaurante?.username ? `piru.app/${restaurante.username}` : undefined },
-                      { icon: MapPin, label: 'Dirección', value: restaurante?.direccion },
-                      { icon: Phone, label: 'Teléfono', value: restaurante?.telefono },
-                      { icon: Truck, label: 'Envío', value: restaurante?.deliveryFee ? `$${restaurante.deliveryFee}` : undefined },
-                    ].map(({ icon: Icon, label, value }) => (
-                      <div key={label} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/40">
-                        <div className="flex items-center gap-3 w-40 shrink-0 text-muted-foreground">
-                          <Icon className="h-5 w-5" />
-                          <span className="text-sm font-medium">{label}</span>
-                        </div>
-                        <span className={cn("text-base sm:text-sm font-medium ml-8 sm:ml-0", value ? "text-foreground" : "text-muted-foreground italic")}>
-                          {value || 'No configurado'}
-                        </span>
-                      </div>
-                    ))}
+            {/* Main — editable inline */}
+            <div className="space-y-4">
+              <div className={phantomCardClass}>
+                <div>
+                  <div className="mb-5">
+                    <h3 className="text-xl font-bold tracking-tight">Información del negocio</h3>
                   </div>
 
-                  <Separator className="my-8 border-zinc-100 dark:border-zinc-800" />
-
-                  <h3 className="text-lg font-bold mb-4">Comunicaciones</h3>
-
-                  <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                      <div className="flex items-start gap-4">
-                        <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
-                          <Smartphone className="h-5 w-5 text-green-600 dark:text-green-500" />
-                        </div>
-                        <div>
-                          <p className="text-base font-semibold">Notificaciones a WhatsApp</p>
-                          <p className="text-sm text-muted-foreground mt-0.5">{restaurante?.whatsappEnabled ? `Activado para ${restaurante.whatsappNumber}` : 'Recibí pedidos en tu celular'}</p>
-                        </div>
-                      </div>
-                      <Badge variant={restaurante?.whatsappEnabled ? 'default' : 'secondary'} className={cn("w-fit", restaurante?.whatsappEnabled ? 'bg-green-500 hover:bg-green-600' : '')}>
-                        {restaurante?.whatsappEnabled ? 'Activado' : 'Desactivado'}
-                      </Badge>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div className="space-y-1">
+                      <Label htmlFor="nombre" className={phantomLabelClass}>Nombre del local</Label>
+                      <Input id="nombre" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} placeholder="Ej: Burger Bros" className={phantomInputClass} />
                     </div>
-
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                      <div className="flex items-start gap-4">
-                        <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
-                          <Smartphone className="h-5 w-5 text-[#FF7A00]" />
-                        </div>
-                        <div>
-                          <p className="text-base font-semibold">Avisos automáticos a clientes</p>
-                          <p className="text-sm text-muted-foreground mt-0.5">Notificar cambios de estado del pedido.</p>
-                        </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="username" className={phantomLabelClass}>Alias URL</Label>
+                      <div className="relative flex items-center overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 focus-within:ring-2 focus-within:ring-[#FF7A00]/30 transition-all">
+                        <span className="pl-4 pr-1 text-muted-foreground font-mono text-sm select-none">piru.app/</span>
+                        <Input id="username" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} placeholder="mi-local" className="h-10 bg-transparent border-none focus-visible:ring-0 px-0 font-mono text-base w-full min-w-0" />
                       </div>
-                      <Switch checked={(restaurante as any)?.notificarClientesWhatsapp !== false} onCheckedChange={handleToggleNotificarClientesWhatsapp} disabled={isTogglingNotificarClientesWhatsapp} />
                     </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label htmlFor="direccionTexto" className={phantomLabelClass}>Dirección del local (para takeaway y chatbot)</Label>
+                      <div className="relative">
+                        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <input
+                          ref={direccionInputRef}
+                          id="direccionTexto"
+                          type="text"
+                          value={direccionTexto}
+                          onChange={(e) => {
+                            setDireccionTexto(e.target.value)
+                            setDireccionLat(null)
+                            setDireccionLng(null)
+                          }}
+                          placeholder="Buscá la dirección exacta del local..."
+                          autoComplete="off"
+                          className={cn(phantomInputClass, "pl-10")}
+                        />
+                        {direccionLat && (
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Geocodificada</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
+                  <Separator className="my-6" />
+
+                  <h3 className="text-lg font-bold mb-1">Contacto y cobros</h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div className="space-y-1.5">
+                      <Label className={phantomLabelClass}>WhatsApp del local</Label>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={formData.whatsappEnabled}
+                          onCheckedChange={(v) => setFormData({ ...formData, whatsappEnabled: v })}
+                        />
+                        <Input
+                          value={formData.whatsappNumber}
+                          onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                          placeholder="5491123456789"
+                          disabled={!formData.whatsappEnabled}
+                          className={cn(phantomInputClass, "flex-1")}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className={phantomLabelClass}>WhatsApp para comprobantes</Label>
+                      <Input
+                        value={formData.comprobantesWhatsapp}
+                        onChange={(e) => setFormData({ ...formData, comprobantesWhatsapp: e.target.value })}
+                        placeholder="5491123456789"
+                        className={phantomInputClass}
+                      />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className={phantomLabelClass}>Alias / CBU para transferencias</Label>
+                      <Input
+                        value={formData.transferenciaAlias}
+                        onChange={(e) => setFormData({ ...formData, transferenciaAlias: e.target.value })}
+                        placeholder="Ej: minombre.mp"
+                        className={cn(phantomInputClass, "font-mono")}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator className="my-6" />
+
+                  <h3 className="text-lg font-bold mb-1">Notificaciones</h3>
+
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    <ToggleRow
+                      title="Avisos automáticos a clientes"
+                      description=""
+                      checked={(restaurante as any)?.notificarClientesWhatsapp !== false}
+                      onCheckedChange={handleToggleNotificarClientesWhatsapp}
+                      disabled={isTogglingNotificarClientesWhatsapp}
+                    />
                     {(restaurante as any)?.notificarClientesWhatsapp && (
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                        <div className="flex items-start gap-4">
-                          <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
-                            <Smartphone className="h-5 w-5 text-[#FF7A00]" />
-                          </div>
-                          <div>
-                            <p className="text-base font-semibold">Confirmación manual con demora</p>
-                            <p className="text-sm text-muted-foreground mt-0.5">En lugar del aviso automático, el admin ingresa la demora y lo envía manualmente desde el panel.</p>
-                          </div>
-                        </div>
-                        <Switch checked={(restaurante as any)?.modoConfirmacionManual === true} onCheckedChange={handleToggleModoConfirmacionManual} disabled={isTogglingModoConfirmacionManual} />
-                      </div>
+                      <ToggleRow
+                        title="Confirmación manual con demora"
+                        description="En lugar del aviso automático, ingresás la demora y lo enviás manualmente desde el panel."
+                        checked={(restaurante as any)?.modoConfirmacionManual === true}
+                        onCheckedChange={handleToggleModoConfirmacionManual}
+                        disabled={isTogglingModoConfirmacionManual}
+                      />
                     )}
                   </div>
-                </div>
-              </div>
 
-              {/* Right column: Stats + Quick nav */}
-              <div className="space-y-6">
-                <div className={cn(phantomCardClass, "bg-[#FF7A00] text-white border-none shadow-orange-500/20")}>
-                  <div className="p-6 sm:p-8">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-bold">Catálogo</h3>
-                      <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center">
-                        <Package className="h-5 w-5 text-white" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-4xl font-black">{productosActivos}</p>
-                        <p className="text-sm text-orange-100 mt-1 font-medium">Activos</p>
-                      </div>
-                      <div>
-                        <p className="text-4xl font-black opacity-80">{totalProductos}</p>
-                        <p className="text-sm text-orange-100 mt-1 font-medium">Total</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className={phantomCardClass}>
-                  <div className="p-2">
-                    {[
-                      { label: 'Configurar pagos', tab: 'pagos', icon: CreditCard },
-                      { label: 'Horarios y delivery', tab: 'delivery', icon: Clock },
-                      { label: 'Diseño y Menú', tab: 'experiencia', icon: Palette },
-                    ].map(({ label, tab, icon: Icon }) => (
-                      <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors group"
-                      >
-                        <div className="h-10 w-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center group-hover:bg-orange-50 dark:group-hover:bg-orange-900/30 transition-colors">
-                          <Icon className="h-5 w-5 text-muted-foreground group-hover:text-[#FF7A00]" />
-                        </div>
-                        <span className="font-semibold text-foreground flex-1 text-left">{label}</span>
-                        <ChevronRight className="h-5 w-5 text-zinc-300 group-hover:text-[#FF7A00]" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* ─────────────────────────────────────────────
-              TAB: PAGOS
-          ───────────────────────────────────────────── */}
-          <TabsContent value="pagos" className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
-
-            <div className={phantomCardClass}>
-              <div className="p-6 sm:p-8">
-                <div className="max-w-xl mb-8">
-                  <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                    <Settings className="h-6 w-6 text-[#FF7A00]" />
-                    Proveedor principal
-                  </h2>
-                  <p className="text-muted-foreground">Elegí cómo querés validar los cobros de tus clientes de forma automática.</p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                  {[
-                    { value: 'manual', label: 'Manual', sub: 'Vos validás', icon: CheckCircle2 },
-                    { value: 'cucuru', label: 'Cucuru', sub: 'Billetera virtual', icon: Wallet },
-                    { value: 'talo', label: 'Talo', sub: 'Tiempo real', icon: Zap },
-                    { value: 'mercadopago', label: 'MercadoPago', sub: 'Tarjetas', icon: CreditCard },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setProveedorPago(opt.value)}
-                      className={cn(
-                        "flex flex-col items-start p-5 rounded-3xl border-2 transition-all text-left",
-                        proveedorPago === opt.value
-                          ? "border-[#FF7A00] bg-orange-50/50 dark:bg-orange-950/20 shadow-md shadow-orange-500/10"
-                          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 hover:border-zinc-300 dark:hover:border-zinc-700"
-                      )}
+                  <div className="flex justify-end mt-6">
+                    <Button
+                      onClick={handleSavePerfil}
+                      disabled={isSubmitting}
+                      className="h-12 px-7 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white"
                     >
-                      <opt.icon className={cn("h-6 w-6 mb-4", proveedorPago === opt.value ? "text-[#FF7A00]" : "text-muted-foreground")} />
-                      <span className="font-bold text-lg text-foreground block">{opt.label}</span>
-                      <span className="text-sm text-muted-foreground">{opt.sub}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {proveedorPago === 'talo' && (
-                  <div className="p-6 mb-8 bg-zinc-50 dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800">
-                    <h4 className="font-semibold mb-4 text-foreground">Credenciales Talo</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <Input type="password" placeholder="Client ID" value={taloClientId} onChange={(e) => setTaloClientId(e.target.value)} className={phantomInputClass} />
-                      <Input type="password" placeholder="Client Secret" value={taloClientSecret} onChange={(e) => setTaloClientSecret(e.target.value)} className={phantomInputClass} />
-                      <Input placeholder="User ID" value={taloUserId} onChange={(e) => setTaloUserId(e.target.value)} className={phantomInputClass} />
-                    </div>
+                      {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+                      Guardar cambios
+                    </Button>
                   </div>
-                )}
-
-                <Button
-                  onClick={handleGuardarPasarelaPago}
-                  disabled={isSavingPasarela}
-                  className="h-14 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20"
-                >
-                  {isSavingPasarela ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-                  Guardar Preferencia
-                </Button>
+                </div>
               </div>
             </div>
 
-            {/* Integrations grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          </div>
+        </section>
+        </div>
+
+        {/* ── SECCIÓN: Pagos ── */}
+        <div className={cn("overflow-hidden transition-all duration-300 ease-in-out", sectionVisible('pagos') ? "opacity-100 max-h-[5000px] mb-10" : "opacity-0 max-h-0 mb-0 pointer-events-none")}>
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Pagos</h2>
+          <div>
+
+            {/* ── Métodos de pago activos ── */}
+            <div className="max-w-xl mb-2">
+              <h3 className="text-xl font-bold tracking-tight">Métodos de pago</h3>
+              <p className="text-sm text-muted-foreground mt-1">Elegí qué medios de pago ofreces en tu link.</p>
+            </div>
+
+            <div className="space-y-6 mt-5">
+              <div>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Automáticos (Mercado Pago)</p>
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="cfg-mp-co" className="text-sm font-bold flex items-center gap-2"><CreditCard className="h-4 w-4 text-[#009EE3]" /> Mercado Pago Checkout</Label>
+                      <p className="text-xs text-muted-foreground">Redirige a la app de MP. Ideal para pagar con dinero en cuenta.</p>
+                    </div>
+                    <Switch id="cfg-mp-co" checked={cfgMpCheckout} onCheckedChange={setCfgMpCheckout} />
+                  </div>
+                  <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="cfg-mp-br" className="text-sm font-bold flex items-center gap-2"><CreditCard className="h-4 w-4 text-[#009EE3]" /> Mercado Pago Tarjetas</Label>
+                      <p className="text-xs text-muted-foreground">Formulario embebido. El cliente paga con tarjeta sin salir de tu menú.</p>
+                    </div>
+                    <Switch id="cfg-mp-br" checked={cfgMpBricks} onCheckedChange={setCfgMpBricks} />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Automáticos (Transferencias)</p>
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="cfg-tf-au" className="text-sm font-bold flex items-center gap-2"><Zap className="h-4 w-4 text-amber-500" /> Transf. Automática</Label>
+                      <p className="text-xs text-muted-foreground">Vía Cucuru o Talo (si están configurados más abajo).</p>
+                      {cfgTfAuto && (() => {
+                        const cucuruOk = !!(restaurante as any)?.cucuruConfigurado
+                        const taloOk = !!(restaurante as any)?.taloClientId && !!(restaurante as any)?.taloClientSecret && !!(restaurante as any)?.taloUserId
+                        if (cucuruOk && taloOk) {
+                          return (
+                            <div className="flex gap-2 mt-3">
+                              {(['cucuru', 'talo'] as const).map((p) => (
+                                <button
+                                  key={p}
+                                  type="button"
+                                  onClick={() => setProveedorTransferencia(p)}
+                                  className={cn(
+                                    "flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all border",
+                                    proveedorTransferencia === p
+                                      ? "bg-amber-50 dark:bg-amber-950/20 border-amber-400 text-amber-700 dark:text-amber-400"
+                                      : "bg-muted border-transparent text-muted-foreground hover:border-border"
+                                  )}
+                                >
+                                  {p === 'cucuru' ? 'Cucuru' : 'Talo'}
+                                </button>
+                              ))}
+                            </div>
+                          )
+                        }
+                        if (cucuruOk) return <p className="text-xs mt-2 text-muted-foreground">Usará Cucuru</p>
+                        if (taloOk) return <p className="text-xs mt-2 text-muted-foreground">Usará Talo</p>
+                        return <p className="text-xs mt-2 text-amber-600 dark:text-amber-400">Configurá Cucuru o Talo en Integraciones.</p>
+                      })()}
+                    </div>
+                    <Switch id="cfg-tf-au" checked={cfgTfAuto} onCheckedChange={setCfgTfAuto} />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Manuales</p>
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="cfg-tf-man" className="text-sm font-bold flex items-center gap-2"><Wallet className="h-4 w-4 text-muted-foreground" /> Transf. Manual (Alias)</Label>
+                      <p className="text-xs text-muted-foreground">Mostrás tu CBU/Alias y verificás a mano.</p>
+                      {cfgTfManual && (
+                        <Input id="cfg-alias" value={cfgAlias} onChange={(e) => setCfgAlias(e.target.value)} placeholder="Tu alias..." className="h-10 mt-3 rounded-xl bg-background font-mono text-sm" />
+                      )}
+                    </div>
+                    <Switch id="cfg-tf-man" checked={cfgTfManual} onCheckedChange={setCfgTfManual} />
+                  </div>
+                  <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/20">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="cfg-cash" className="text-sm font-bold">Efectivo</Label>
+                      <p className="text-xs text-muted-foreground">El cliente elige al pagar; el pedido entra en el panel para cobrar en caja.</p>
+                    </div>
+                    <Switch id="cfg-cash" checked={cfgEfectivo} onCheckedChange={setCfgEfectivo} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <Button onClick={handleSaveMetodosPago} disabled={isSavingMetodosPago} className="h-12 px-7 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white">
+                {isSavingMetodosPago ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+                Guardar métodos de pago
+              </Button>
+            </div>
+
+            <Separator className="my-8" />
+
+            {/* ── Integraciones ── */}
+            <div className="max-w-xl mb-5">
+              <h3 className="text-xl font-bold tracking-tight">Integraciones</h3>
+              <p className="text-sm text-muted-foreground mt-1">Conectá las pasarelas de pago que querés usar.</p>
+            </div>
+
+            <div className="flex flex-col lg:grid lg:grid-cols-2 lg:gap-8 gap-6">
 
               {/* MercadoPago */}
-              <IntegrationCard connected={!!restaurante?.mpConnected} accentClass="border-[#009EE3] bg-[#009EE3]/5 dark:bg-[#009EE3]/10">
-                <div className="p-6 sm:p-8 flex flex-col h-full">
-                  <div className="flex items-center justify-between mb-6">
+              <IntegrationCard>
+                <div className="flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
-                      <div className="h-14 w-14 rounded-[20px] bg-[#009EE3] flex items-center justify-center shrink-0">
-                        <span className="text-white font-bold text-lg">MP</span>
+                      <div className="h-12 w-12 rounded-2xl bg-[#009EE3] flex items-center justify-center shrink-0">
+                        <span className="text-white font-bold">MP</span>
                       </div>
                       <div>
                         <h3 className="text-xl font-bold">MercadoPago</h3>
                         <p className="text-sm text-muted-foreground">Tarjetas y dinero en cuenta</p>
                       </div>
                     </div>
-                    <Badge className={restaurante?.mpConnected ? 'bg-[#009EE3] hover:bg-[#009EE3] text-white' : 'bg-zinc-200 dark:bg-zinc-800 text-muted-foreground'} variant={restaurante?.mpConnected ? 'default' : 'secondary'}>
-                      {restaurante?.mpConnected ? 'Activo' : 'Inactivo'}
-                    </Badge>
+                    <span className={cn("text-sm font-semibold", restaurante?.mpConnected ? "text-green-600 dark:text-green-500" : "text-zinc-400 dark:text-zinc-600")}>
+                      {restaurante?.mpConnected ? 'Conectado' : 'Sin conectar'}
+                    </span>
                   </div>
-
                   <div className="flex-1">
                     {restaurante?.mpConnected ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between p-4 bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                          <div>
-                            <p className="text-sm font-semibold">ID de Cuenta</p>
-                            <p className="text-xs text-muted-foreground font-mono mt-1">{restaurante.mpUserId}</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium text-muted-foreground">Checkout</span>
-                            <Switch checked={(restaurante as any)?.cardsPaymentsEnabled !== false} onCheckedChange={handleToggleCardsPaymentsEnabled} disabled={isTogglingCardsPaymentsEnabled} />
-                          </div>
-                        </div>
-                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">Tu cuenta de MercadoPago está conectada. Podés activar Checkout o Tarjetas en la sección de métodos de pago de arriba.</p>
                     ) : (
-                      <p className="text-sm text-muted-foreground">Conectá tu cuenta de MercadoPago para habilitar el pago con tarjetas en tu menú online.</p>
+                      <p className="text-sm text-muted-foreground leading-relaxed">Conectá tu cuenta de MercadoPago para habilitar el pago con tarjetas en tu menú online.</p>
                     )}
                   </div>
-
-                  <div className="mt-6 pt-6 border-t border-zinc-200/50 dark:border-zinc-800/50">
+                  <div className="mt-4">
                     {restaurante?.mpConnected ? (
-                      <Button variant="outline" className="w-full h-12 rounded-xl text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-950/30 dark:border-red-900" onClick={handleDesconectarMP} disabled={isDisconnectingMP}>
+                      <Button variant="ghost" className="w-full h-12 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 font-semibold" onClick={handleDesconectarMP} disabled={isDisconnectingMP}>
                         {isDisconnectingMP ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlink className="mr-2 h-4 w-4" />}
                         Desconectar
                       </Button>
@@ -1432,7 +1571,7 @@ const Perfil = () => {
                       <Button asChild className="w-full h-12 rounded-xl font-semibold bg-[#009EE3] hover:bg-[#0088C4] text-white">
                         <a href={getMercadoPagoAuthUrl() || '#'}>
                           <Link2 className="mr-2 h-4 w-4" />
-                          Conectar Cuenta
+                          Conectar cuenta
                         </a>
                       </Button>
                     )}
@@ -1441,33 +1580,27 @@ const Perfil = () => {
               </IntegrationCard>
 
               {/* Cucuru */}
-              <IntegrationCard connected={!!(restaurante as any)?.cucuruConfigurado} accentClass="border-purple-500 bg-purple-500/5 dark:bg-purple-500/10">
-                <div className="p-6 sm:p-8 flex flex-col h-full">
-                  <div className="flex items-center justify-between mb-6">
+              <IntegrationCard>
+                <div className="flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
-                      <div className="h-14 w-14 rounded-[20px] bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center shrink-0">
-                        <Wallet className="h-6 w-6 text-purple-600" />
+                      <div className="h-12 w-12 rounded-2xl bg-purple-600 flex items-center justify-center shrink-0">
+                        <Wallet className="h-6 w-6 text-white" />
                       </div>
                       <div>
                         <h3 className="text-xl font-bold">Cucuru</h3>
-                        <p className="text-sm text-muted-foreground">Billetera Virtual</p>
+                        <p className="text-sm text-muted-foreground">Transferencia automática</p>
                       </div>
                     </div>
-                    <Badge className={(restaurante as any)?.cucuruConfigurado ? 'bg-purple-600 hover:bg-purple-600 text-white' : 'bg-zinc-200 dark:bg-zinc-800 text-muted-foreground'} variant={(restaurante as any)?.cucuruConfigurado ? 'default' : 'secondary'}>
-                      {(restaurante as any)?.cucuruConfigurado ? 'Activo' : 'Inactivo'}
-                    </Badge>
+                    <span className={cn("text-sm font-semibold", (restaurante as any)?.cucuruConfigurado ? "text-green-600 dark:text-green-500" : "text-zinc-400 dark:text-zinc-600")}>
+                      {(restaurante as any)?.cucuruConfigurado ? 'Conectado' : 'Sin conectar'}
+                    </span>
                   </div>
-
                   <div className="flex-1">
-                    <div className="flex items-center justify-between mb-6">
-                      <span className="text-sm font-semibold">Mostrar en Checkout</span>
-                      <Switch checked={(restaurante as any)?.cucuruEnabled !== false} onCheckedChange={handleToggleCucuruCheckoutEnabled} disabled={isTogglingCucuruCheckoutEnabled} />
-                    </div>
-
                     {(restaurante as any)?.cucuruConfigurado ? (
-                      <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-950/20 rounded-2xl border border-green-200 dark:border-green-900">
-                        <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-500 shrink-0" />
-                        <span className="text-sm font-medium text-green-800 dark:text-green-300">Webhooks sincronizados</span>
+                      <div className="flex items-center gap-2.5 text-green-600 dark:text-green-500">
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        <span className="text-sm font-medium">Webhooks sincronizados</span>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -1476,17 +1609,100 @@ const Perfil = () => {
                       </div>
                     )}
                   </div>
-
-                  <div className="mt-6 pt-6 border-t border-zinc-200/50 dark:border-zinc-800/50">
+                  <div className="mt-4">
                     {(restaurante as any)?.cucuruConfigurado ? (
-                      <Button variant="outline" className="w-full h-12 rounded-xl" onClick={handleReenviarWebhookCucuru} disabled={isReenviandoWebhookCucuru}>
+                      <Button variant="ghost" className="w-full h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200/70 dark:hover:bg-zinc-700 font-semibold" onClick={handleReenviarWebhookCucuru} disabled={isReenviandoWebhookCucuru}>
                         {isReenviandoWebhookCucuru ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                        Reenviar Webhook
+                        Reenviar webhook
                       </Button>
                     ) : (
                       <Button className="w-full h-12 rounded-xl font-semibold bg-purple-600 hover:bg-purple-700 text-white" onClick={handleConfigurarCucuru} disabled={isConfiguringCucuru}>
                         {isConfiguringCucuru ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Configurar Cuenta
+                        Configurar cuenta
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </IntegrationCard>
+
+              {/* Talo */}
+              <IntegrationCard>
+                <div className="flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-amber-500 flex items-center justify-center shrink-0">
+                        <Zap className="h-6 w-6 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold">Talo</h3>
+                        <p className="text-sm text-muted-foreground">Transferencia en tiempo real</p>
+                      </div>
+                    </div>
+                    <span className={cn("text-sm font-semibold", (restaurante as any)?.taloClientId ? "text-green-600 dark:text-green-500" : "text-zinc-400 dark:text-zinc-600")}>
+                      {(restaurante as any)?.taloClientId ? 'Configurado' : 'Sin configurar'}
+                    </span>
+                  </div>
+                  <div className="flex-1 space-y-3">
+                    <Input type="password" placeholder="Client ID" value={taloClientId} onChange={(e) => setTaloClientId(e.target.value)} className={phantomInputClass} />
+                    <Input type="password" placeholder="Client Secret" value={taloClientSecret} onChange={(e) => setTaloClientSecret(e.target.value)} className={phantomInputClass} />
+                    <Input placeholder="User ID" value={taloUserId} onChange={(e) => setTaloUserId(e.target.value)} className={phantomInputClass} />
+                  </div>
+                  <div className="mt-4">
+                    <Button className="w-full h-12 rounded-xl font-semibold bg-amber-500 hover:bg-amber-600 text-white" onClick={handleConfigurarTalo} disabled={isConfiguringTalo}>
+                      {isConfiguringTalo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Guardar credenciales
+                    </Button>
+                  </div>
+                </div>
+              </IntegrationCard>
+
+              {/* WhatsApp Business */}
+              <IntegrationCard>
+                <div className="flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-[#25D366] flex items-center justify-center shrink-0">
+                        <span className="text-white font-bold text-xs">WA</span>
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold">WhatsApp Business</h3>
+                        <p className="text-sm text-muted-foreground">IA para pedidos por WhatsApp</p>
+                      </div>
+                    </div>
+                    <span className={cn("text-sm font-semibold", waStatus?.conectado ? "text-green-600 dark:text-green-500" : "text-zinc-400 dark:text-zinc-600")}>
+                      {waStatus?.conectado ? 'Conectado' : 'Sin conectar'}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    {waStatus?.conectado ? (
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Número: <span className="font-medium text-foreground">{waStatus.phoneNumber}</span></p>
+                        {waStatus.tokenVencido && (
+                          <p className="text-sm font-medium text-red-500 flex items-center gap-1"><AlertCircle className="h-3.5 w-3.5" /> Token vencido — reconectá el número</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground leading-relaxed">Conectá tu número de WhatsApp Business para que la IA atienda pedidos automáticamente.</p>
+                    )}
+                  </div>
+                  <div className="mt-4">
+                    {waStatus?.conectado ? (
+                      <div className="flex flex-col gap-2">
+                        {waStatus.tokenVencido && (
+                          <Button className="w-full h-12 rounded-xl font-semibold bg-[#25D366] hover:bg-[#1ebe5a] text-white" onClick={conectarWhatsApp} disabled={waLoading}>
+                            {waLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                            Reconectar
+                          </Button>
+                        )}
+                        <Button variant="ghost" className="w-full h-12 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 font-semibold" onClick={desconectarWhatsApp}>
+                          <Unlink className="mr-2 h-4 w-4" />
+                          Desconectar
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button className="w-full h-12 rounded-xl font-semibold bg-[#25D366] hover:bg-[#1ebe5a] text-white" onClick={conectarWhatsApp} disabled={waLoading}>
+                        {waLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+                        {waLoading ? 'Conectando...' : 'Conectar número'}
                       </Button>
                     )}
                   </div>
@@ -1494,285 +1710,251 @@ const Perfil = () => {
               </IntegrationCard>
 
             </div>
-          </TabsContent>
+          </div>
+        </section>
+        </div>
 
-          {/* ─────────────────────────────────────────────
-              TAB: DELIVERY (Horarios)
-          ───────────────────────────────────────────── */}
-          <TabsContent value="delivery" className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
-            <div className="flex flex-col gap-6">
-
-              {/* Tipos de pedido activos */}
-              <div className={phantomCardClass}>
-                <div className="p-6 sm:p-8">
-                  <div className="max-w-xl mb-6">
-                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                      <UtensilsCrossed className="h-6 w-6 text-[#FF7A00]" />
-                      Tipos de Pedido
-                    </h2>
-                    <p className="text-muted-foreground">Activá o desactivá los modos de pedido disponibles para tus clientes. Podés apagar el delivery o el take away cuando no los quieras ofrecer.</p>
-                  </div>
-                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
-                    <ToggleRow
-                      icon={<Truck className="h-6 w-6 text-blue-600 dark:text-blue-400" />}
-                      iconBg="bg-blue-100 dark:bg-blue-900/30"
-                      title="Delivery"
-                      description="Los clientes pueden pedir con envío a domicilio"
-                      checked={(restaurante as any)?.deliveryEnabled !== false}
-                      onCheckedChange={handleToggleDeliveryEnabled}
-                      disabled={isTogglingDeliveryEnabled}
-                    />
-                    <ToggleRow
-                      icon={<Package className="h-6 w-6 text-violet-600 dark:text-violet-400" />}
-                      iconBg="bg-violet-100 dark:bg-violet-900/30"
-                      title="Take Away"
-                      description="Los clientes pueden pedir para retirar en el local"
-                      checked={(restaurante as any)?.takeawayEnabled !== false}
-                      onCheckedChange={handleToggleTakeawayEnabled}
-                      disabled={isTogglingTakeawayEnabled}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Horarios */}
-              <div className={phantomCardClass}>
-                <div className="p-6 sm:p-8">
-                  <div className="max-w-xl mb-8">
-                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                      <Clock className="h-6 w-6 text-[#FF7A00]" />
-                      Horarios de Atención
-                    </h2>
-                    <p className="text-muted-foreground">Configurá los turnos para cada día. Si un día no tiene turnos, la tienda aparecerá cerrada.</p>
-                  </div>
-
-                  {!horariosLoaded ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {DIAS_SEMANA.map((nombreDia, diaIdx) => {
-                        const turnos = horarios[diaIdx] || []
-                        const estaAbierto = turnos.length > 0
-                        return (
-                          <div
-                            key={diaIdx}
-                            className={cn(
-                              "rounded-[24px] p-4 sm:p-5 transition-all border",
-                              estaAbierto
-                                ? "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-sm"
-                                : "bg-zinc-50 dark:bg-zinc-950 border-dashed border-zinc-200 dark:border-zinc-800 opacity-60 hover:opacity-100"
-                            )}
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-
-                              <div className="flex items-center gap-3 sm:w-32 shrink-0 pt-2">
-                                <div className={cn("h-3 w-3 rounded-full shrink-0", estaAbierto ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-700")} />
-                                <span className="text-base font-bold text-foreground">{nombreDia}</span>
-                              </div>
-
-                              <div className="flex-1 flex flex-col gap-3 min-w-0">
-                                {turnos.length === 0 ? (
-                                  <span className="text-sm text-muted-foreground italic py-2">Cerrado</span>
-                                ) : (
-                                  <div className="flex flex-col gap-3">
-                                    {turnos.map((turno, tIdx) => (
-                                      <div key={tIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-4 bg-zinc-50 dark:bg-zinc-950 p-2 rounded-2xl w-full xl:w-fit border border-zinc-100 dark:border-zinc-900">
-                                        <Input
-                                          type="time"
-                                          value={turno.horaApertura}
-                                          onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaApertura', e.target.value)}
-                                          className="h-10 flex-1 min-w-[90px] sm:w-28 rounded-xl bg-white dark:bg-zinc-900 border-none font-medium"
-                                        />
-                                        <span className="text-muted-foreground font-medium text-sm">a</span>
-                                        <Input
-                                          type="time"
-                                          value={turno.horaCierre}
-                                          onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaCierre', e.target.value)}
-                                          className="h-10 flex-1 min-w-[90px] sm:w-28 rounded-xl bg-white dark:bg-zinc-900 border-none font-medium"
-                                        />
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-10 w-10 text-muted-foreground hover:text-red-500 rounded-xl shrink-0"
-                                          onClick={() => eliminarTurno(diaIdx, tIdx)}
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
-                                <Button
-                                  variant="outline"
-                                  onClick={() => agregarTurno(diaIdx)}
-                                  className="h-10 rounded-xl px-4 text-sm font-semibold w-full sm:w-fit mt-1"
-                                >
-                                  <Plus className="h-4 w-4 mr-2" /> Agregar turno
-                                </Button>
-                              </div>
-
-                            </div>
-                          </div>
-                        )
-                      })}
-
-                      <div className="pt-8 flex justify-end">
-                        <Button
-                          onClick={guardarHorarios}
-                          disabled={isSavingHorarios}
-                          className="h-14 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20 w-full sm:w-auto"
-                        >
-                          {isSavingHorarios && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-                          Guardar Horarios
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Pedidos Programados */}
-              <div className={phantomCardClass}>
-                <div className="p-6 sm:p-8">
-                  <div className="max-w-xl mb-6">
-                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                      <Clock className="h-6 w-6 text-[#FF7A00]" />
-                      Pedidos Programados
-                    </h2>
-                    <p className="text-muted-foreground">Permitís que los clientes hagan pedidos fuera de horario para recibirlos después. Podés configurar franjas horarias predefinidas o dejar que elijan la hora libremente.</p>
-                  </div>
-                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
-                    <ToggleRow
-                      icon={<Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />}
-                      iconBg="bg-amber-100 dark:bg-amber-900/30"
-                      title="Permitir pedidos programados"
-                      description="Los clientes pueden hacer pedidos fuera del horario de atención eligiendo cuándo recibirlos"
-                      checked={(restaurante as any)?.permitirPedidosProgramados === true}
-                      onCheckedChange={handleTogglePermitirPedidosProgramados}
-                      disabled={isTogglingPermitirPedidosProgramados}
-                    />
-                    <ToggleRow
-                      icon={<List className="h-6 w-6 text-teal-600 dark:text-teal-400" />}
-                      iconBg="bg-teal-100 dark:bg-teal-900/30"
-                      title="Usar franjas de horario"
-                      description="Mostrar opciones predefinidas en lugar de permitir que el cliente ingrese cualquier hora"
-                      checked={(restaurante as any)?.usarFranjasHorario === true}
-                      onCheckedChange={handleToggleUsarFranjasHorario}
-                      disabled={isTogglingUsarFranjasHorario || !(restaurante as any)?.permitirPedidosProgramados}
-                    />
-                  </div>
-
-                  {(restaurante as any)?.usarFranjasHorario && (
-                    <div className="mt-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-base font-bold">Franjas de horario</h3>
-                        <Button
-                          size="sm"
-                          className="h-9 rounded-xl px-4 bg-[#FF7A00] hover:bg-[#E66E00] text-white"
-                          onClick={() => {
-                            if (!franjasLoaded) cargarFranjas()
-                            setEditingFranja(null)
-                            setFranjaForm({ nombre: '', horaInicio: '09:00', horaFin: '18:00', activo: true })
-                            setFranjaDialogOpen(true)
-                          }}
-                        >
-                          <Plus className="h-4 w-4 mr-1" /> Nueva franja
-                        </Button>
-                      </div>
-                      {!franjasLoaded ? (
-                        <Button variant="outline" className="rounded-xl" onClick={cargarFranjas}>
-                          <RefreshCw className="h-4 w-4 mr-2" /> Cargar franjas
-                        </Button>
-                      ) : franjas.length === 0 ? (
-                        <p className="text-sm text-muted-foreground italic">No hay franjas configuradas. Agregá una para que tus clientes puedan elegir.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {franjas.map(f => (
-                            <div key={f.id} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-                              <div className="flex items-center gap-3">
-                                <div className={cn("h-2.5 w-2.5 rounded-full", f.activo ? "bg-green-500" : "bg-zinc-300")} />
-                                <div>
-                                  <p className="font-semibold text-sm">{f.nombre}</p>
-                                  <p className="text-xs text-muted-foreground">{f.horaInicio} – {f.horaFin}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"
-                                  onClick={() => {
-                                    setEditingFranja(f)
-                                    setFranjaForm({ nombre: f.nombre, horaInicio: f.horaInicio, horaFin: f.horaFin, activo: f.activo })
-                                    setFranjaDialogOpen(true)
-                                  }}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-muted-foreground hover:text-red-500"
-                                  onClick={() => handleDeleteFranja(f.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Mapa Zonas */}
-              <div>
-                <Suspense
-                  fallback={
-                    <div className={cn(phantomCardClass, "flex items-center justify-center py-20")}>
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  }
-                >
-                  <ZonasDeliveryMap />
-                </Suspense>
-              </div>
-
-            </div>
-          </TabsContent>
-
-          {/* ─────────────────────────────────────────────
-              TAB: EXPERIENCIA
-          ───────────────────────────────────────────── */}
-          <TabsContent value="experiencia" className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
+        {/* ── SECCIÓN: Delivery ── */}
+        <div className={cn("overflow-hidden transition-all duration-300 ease-in-out", sectionVisible('delivery') ? "opacity-100 max-h-[5000px] mb-10" : "opacity-0 max-h-0 mb-0 pointer-events-none")}>
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Delivery y horarios</h2>
+          <div>
 
             <div className={phantomCardClass}>
-              <div className="p-6 sm:p-8">
-                <div className="max-w-xl mb-8">
-                  <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                    <Palette className="h-6 w-6 text-[#FF7A00]" />
-                    Diseño del Menú
-                  </h2>
-                  <p className="text-muted-foreground">Elegí el estilo visual que verán tus clientes al entrar a tu enlace.</p>
+              <div>
+                <div className="max-w-xl mb-4">
+                  <h3 className="text-xl font-bold tracking-tight">Tipos de pedido</h3>
+                </div>
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  <ToggleRow
+                    icon={<Truck className="h-5 w-5" />}
+                    title="Delivery"
+                    description=""
+                    checked={(restaurante as any)?.deliveryEnabled !== false}
+                    onCheckedChange={handleToggleDeliveryEnabled}
+                    disabled={isTogglingDeliveryEnabled}
+                  />
+                  <ToggleRow
+                    icon={<Package className="h-5 w-5" />}
+                    title="Take Away"
+                    description=""
+                    checked={(restaurante as any)?.takeawayEnabled !== false}
+                    onCheckedChange={handleToggleTakeawayEnabled}
+                    disabled={isTogglingTakeawayEnabled}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator className="my-8" />
+
+            <div className={phantomCardClass}>
+              <div>
+                <div className="max-w-xl mb-4">
+                  <h3 className="text-xl font-bold tracking-tight">Horarios de atención</h3>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl">
-                  {/* Glassmorphism */}
+                {!horariosLoaded ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
+                  </div>
+                ) : (
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {DIAS_SEMANA.map((nombreDia, diaIdx) => {
+                      const turnos = horarios[diaIdx] || []
+                      const estaAbierto = turnos.length > 0
+                      return (
+                        <div key={diaIdx} className="flex flex-col sm:flex-row sm:items-start gap-4 py-5">
+                          <div className="flex items-center gap-3 sm:w-36 shrink-0 sm:pt-2">
+                            <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", estaAbierto ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-700")} />
+                            <span className={cn("text-base font-semibold", estaAbierto ? "text-foreground" : "text-muted-foreground")}>{nombreDia}</span>
+                          </div>
+                          <div className="flex-1 flex flex-col gap-2.5 min-w-0">
+                            {turnos.length === 0 ? (
+                              <span className="text-sm text-muted-foreground sm:pt-2.5">Cerrado</span>
+                            ) : (
+                              turnos.map((turno, tIdx) => (
+                                <div key={tIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 bg-zinc-100 dark:bg-zinc-800 p-1.5 rounded-xl w-full xl:w-fit">
+                                  <Input
+                                    type="time"
+                                    value={turno.horaApertura}
+                                    onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaApertura', e.target.value)}
+                                    className="h-10 flex-1 min-w-[90px] sm:w-28 rounded-lg bg-white dark:bg-zinc-900 border-none font-medium"
+                                  />
+                                  <span className="text-muted-foreground font-medium text-sm">a</span>
+                                  <Input
+                                    type="time"
+                                    value={turno.horaCierre}
+                                    onChange={(e) => actualizarTurno(diaIdx, tIdx, 'horaCierre', e.target.value)}
+                                    className="h-10 flex-1 min-w-[90px] sm:w-28 rounded-lg bg-white dark:bg-zinc-900 border-none font-medium"
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-10 w-10 text-muted-foreground hover:text-red-500 rounded-lg shrink-0"
+                                    onClick={() => eliminarTurno(diaIdx, tIdx)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))
+                            )}
+                            <button
+                              onClick={() => agregarTurno(diaIdx)}
+                              className="flex items-center gap-1.5 text-sm font-semibold text-[#FF7A00] hover:text-[#E66E00] w-fit mt-0.5 transition-colors"
+                            >
+                              <Plus className="h-4 w-4" /> Agregar turno
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div className="pt-8 flex justify-end">
+                      <Button
+                        onClick={guardarHorarios}
+                        disabled={isSavingHorarios}
+                        className="h-12 px-7 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white w-full sm:w-auto"
+                      >
+                        {isSavingHorarios && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
+                        Guardar horarios
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Separator className="my-8" />
+
+            <div className={phantomCardClass}>
+              <div>
+                <div className="max-w-xl mb-4">
+                  <h3 className="text-xl font-bold tracking-tight">Pedidos programados</h3>
+                </div>
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  <ToggleRow
+                    icon={<Clock className="h-5 w-5" />}
+                    title="Permitir pedidos programados"
+                    description=""
+                    checked={(restaurante as any)?.permitirPedidosProgramados === true}
+                    onCheckedChange={handleTogglePermitirPedidosProgramados}
+                    disabled={isTogglingPermitirPedidosProgramados}
+                  />
+                  <ToggleRow
+                    icon={<List className="h-5 w-5" />}
+                    title="Usar franjas de horario"
+                    description=""
+                    checked={(restaurante as any)?.usarFranjasHorario === true}
+                    onCheckedChange={handleToggleUsarFranjasHorario}
+                    disabled={isTogglingUsarFranjasHorario || !(restaurante as any)?.permitirPedidosProgramados}
+                  />
+                </div>
+
+                {(restaurante as any)?.usarFranjasHorario && (
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-base font-bold">Franjas de horario</h3>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-9 rounded-lg px-3 text-sm font-semibold text-[#FF7A00] hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                        onClick={() => {
+                          if (!franjasLoaded) cargarFranjas()
+                          setEditingFranja(null)
+                          setFranjaForm({ nombre: '', horaInicio: '09:00', horaFin: '18:00', activo: true })
+                          setFranjaDialogOpen(true)
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-1" /> Nueva franja
+                      </Button>
+                    </div>
+                    {!franjasLoaded ? (
+                      <Button variant="ghost" className="rounded-lg bg-zinc-100 dark:bg-zinc-800" onClick={cargarFranjas}>
+                        <RefreshCw className="h-4 w-4 mr-2" /> Cargar franjas
+                      </Button>
+                    ) : franjas.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No hay franjas configuradas. Agregá una para que tus clientes puedan elegir.</p>
+                    ) : (
+                      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {franjas.map(f => (
+                          <div key={f.id} className="flex items-center justify-between gap-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className={cn("h-2 w-2 rounded-full shrink-0", f.activo ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-700")} />
+                              <div>
+                                <p className="font-semibold text-[15px]">{f.nombre}</p>
+                                <p className="text-xs text-muted-foreground">{f.horaInicio} – {f.horaFin}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg"
+                                onClick={() => {
+                                  setEditingFranja(f)
+                                  setFranjaForm({ nombre: f.nombre, horaInicio: f.horaInicio, horaFin: f.horaFin, activo: f.activo })
+                                  setFranjaDialogOpen(true)
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-red-500"
+                                onClick={() => handleDeleteFranja(f.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Separator className="my-8" />
+
+            <div>
+              <Suspense
+                fallback={
+                  <div className={cn(phantomCardClass, "flex items-center justify-center py-20")}>
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                }
+              >
+                <ZonasDeliveryMap />
+              </Suspense>
+            </div>
+
+          </div>
+        </section>
+        </div>
+
+        {/* ── SECCIÓN: Experiencia ── */}
+        <div className={cn("overflow-hidden transition-all duration-300 ease-in-out", sectionVisible('experiencia') ? "opacity-100 max-h-[5000px] mb-10" : "opacity-0 max-h-0 mb-0 pointer-events-none")}>
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Experiencia</h2>
+          <div>
+
+            <div className={phantomCardClass}>
+              <div>
+                <div className="max-w-xl mb-4">
+                  <h3 className="text-xl font-bold tracking-tight">Diseño del menú</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
                   <button
                     onClick={() => restaurante?.disenoAlternativo && handleToggleDisenoAlternativo()}
                     disabled={isTogglingDisenoAlternativo && !restaurante?.disenoAlternativo}
                     className={cn(
-                      "relative rounded-[32px] border-2 p-5 text-left transition-all",
+                      "relative rounded-3xl p-4 text-left transition-all",
                       !restaurante?.disenoAlternativo
-                        ? "border-[#FF7A00] bg-orange-50/30 dark:bg-orange-950/20 ring-4 ring-[#FF7A00]/10"
-                        : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 hover:border-zinc-300"
+                        ? "bg-orange-50/60 dark:bg-orange-950/20"
+                        : "bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60"
                     )}
                   >
                     {!restaurante?.disenoAlternativo && (
-                      <div className="absolute top-4 right-4 bg-white dark:bg-zinc-900 rounded-full p-1 shadow-sm">
-                        <CheckCircle2 className="h-5 w-5 text-[#FF7A00]" />
-                      </div>
+                      <CheckCircle2 className="absolute top-4 right-4 h-5 w-5 text-[#FF7A00]" />
                     )}
-                    <div className="aspect-video rounded-2xl overflow-hidden mb-4 bg-zinc-900 relative shadow-inner">
+                    <div className="aspect-video rounded-2xl overflow-hidden mb-4 bg-zinc-900 relative">
                       <div className="absolute inset-0 bg-linear-to-br from-orange-500/20 to-transparent" />
                       <div className="absolute bottom-3 left-3 right-3 h-12 bg-white/10 backdrop-blur-md rounded-xl border border-white/20" />
                     </div>
@@ -1780,55 +1962,51 @@ const Perfil = () => {
                     <p className="text-sm text-muted-foreground mt-1">Moderno, flotante y premium. Ideal para destacar marca.</p>
                   </button>
 
-                  {/* Full Image */}
                   <button
                     onClick={() => !restaurante?.disenoAlternativo && handleToggleDisenoAlternativo()}
                     disabled={isTogglingDisenoAlternativo && !!restaurante?.disenoAlternativo}
                     className={cn(
-                      "relative rounded-[32px] border-2 p-5 text-left transition-all",
+                      "relative rounded-3xl p-4 text-left transition-all",
                       restaurante?.disenoAlternativo
-                        ? "border-[#FF7A00] bg-orange-50/30 dark:bg-orange-950/20 ring-4 ring-[#FF7A00]/10"
-                        : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 hover:border-zinc-300"
+                        ? "bg-orange-50/60 dark:bg-orange-950/20"
+                        : "bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60"
                     )}
                   >
                     {restaurante?.disenoAlternativo && (
-                      <div className="absolute top-4 right-4 bg-white dark:bg-zinc-900 rounded-full p-1 shadow-sm">
-                        <CheckCircle2 className="h-5 w-5 text-[#FF7A00]" />
-                      </div>
+                      <CheckCircle2 className="absolute top-4 right-4 h-5 w-5 text-[#FF7A00]" />
                     )}
                     <div className="aspect-video rounded-2xl overflow-hidden mb-4 bg-zinc-200 dark:bg-zinc-800 relative">
                       <div className="absolute inset-0 bg-linear-to-br from-zinc-400 to-zinc-500 dark:from-zinc-600 dark:to-zinc-700" />
-                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-white dark:bg-zinc-950 h-14">
+                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-zinc-950 h-14">
                         <div className="h-2 w-20 bg-zinc-200 dark:bg-zinc-800 rounded-full mb-2" />
                         <div className="h-2 w-12 bg-zinc-200 dark:bg-zinc-800 rounded-full" />
                       </div>
                     </div>
-                    <p className="text-lg font-bold text-foreground">Clásico (Imagen completa)</p>
+                    <p className="text-lg font-bold text-foreground">Clásico (imagen completa)</p>
                     <p className="text-sm text-muted-foreground mt-1">Enfoque 100% en las fotos de tus productos.</p>
                   </button>
                 </div>
               </div>
             </div>
 
+            <Separator className="my-8" />
+
             <div className={phantomCardClass}>
-              <div className="p-6 sm:p-8">
-                <h3 className="text-xl font-bold mb-6">Funcionalidades Extras</h3>
-                <div className="space-y-2">
+              <div>
+                <h3 className="text-xl font-bold tracking-tight mb-4">Funcionalidades extras</h3>
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
                   <ToggleRow
-                    icon={<UtensilsCrossed className="h-6 w-6 text-indigo-600" />}
-                    iconBg="bg-indigo-100 dark:bg-indigo-900/50"
+                    icon={<UtensilsCrossed className="h-5 w-5" />}
                     title="Pedido entre amigos"
-                    description="Permite que varias personas armen un solo carrito compartiendo un link."
+                    description="Varias personas arman un solo carrito compartiendo un link."
                     checked={(restaurante as any)?.orderGroupEnabled !== false}
                     onCheckedChange={handleToggleOrderGroupEnabled}
                     disabled={isTogglingOrderGroupEnabled}
                   />
-                  <div className="h-px w-full bg-zinc-100 dark:bg-zinc-800/50" />
                   <ToggleRow
-                    icon={<Ticket className="h-6 w-6 text-teal-600" />}
-                    iconBg="bg-teal-100 dark:bg-teal-900/50"
+                    icon={<Ticket className="h-5 w-5" />}
                     title="Códigos de descuento"
-                    description="Habilita la caja para ingresar cupones promocionales en el checkout."
+                    description=""
                     checked={(restaurante as any)?.codigoDescuentoEnabled !== false}
                     onCheckedChange={handleToggleCodigoDescuentoEnabled}
                     disabled={isTogglingCodigoDescuentoEnabled}
@@ -1836,367 +2014,214 @@ const Perfil = () => {
                 </div>
               </div>
             </div>
-          </TabsContent>
 
-          {/* ─────────────────────────────────────────────
-              TAB: SUCURSALES
-          ───────────────────────────────────────────── */}
-          <TabsContent value="sucursales" className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
+            <Separator className="mb-8 mt-2" />
+
             <div className={phantomCardClass}>
-              <div className="p-6 sm:p-8">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
-                  <div>
-                    <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                      <Store className="h-6 w-6 text-[#FF7A00]" />
-                      Sucursales
-                    </h2>
-                    <p className="text-muted-foreground max-w-xl">
-                      Cada sucursal tiene su propia comandera y WhatsApp. Los pedidos se enrutan automáticamente según la zona de delivery.
-                    </p>
+              <div>
+                <div className="max-w-xl mb-6">
+                  <h3 className="text-xl font-bold tracking-tight">Identidad visual</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+                  <div className="space-y-2">
+                    <Label className={phantomLabelClass}>Logo (Modo Oscuro)</Label>
+                    <div className="bg-zinc-900 rounded-3xl p-2 border-2 border-dashed border-zinc-700 hover:border-zinc-500 transition-colors">
+                      <ImageUpload onImageChange={setImageBase64} currentImage={imageBase64} maxSize={5} />
+                    </div>
                   </div>
+                  <div className="space-y-2">
+                    <Label className={phantomLabelClass}>Logo (Modo Claro)</Label>
+                    <div className="bg-zinc-50 dark:bg-zinc-800 rounded-3xl p-2 border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-500 transition-colors">
+                      <ImageUpload onImageChange={setImageLightBase64} currentImage={imageLightBase64} maxSize={5} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+                  <div className="space-y-1.5">
+                    <Label className={phantomLabelClass}>Color primario (botones)</Label>
+                    <div className="flex gap-2">
+                      <Input type="color" className="w-10 h-10 p-1 cursor-pointer rounded-xl border-none shrink-0" value={formData.colorPrimario || '#FF7A00'} onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })} />
+                      <Input value={formData.colorPrimario} onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })} className={cn(phantomInputClass, "font-mono uppercase")} placeholder="#FF7A00" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={phantomLabelClass}>Color secundario (fondos)</Label>
+                    <div className="flex gap-2">
+                      <Input type="color" className="w-10 h-10 p-1 cursor-pointer rounded-xl border-none shrink-0" value={formData.colorSecundario || '#ffffff'} onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })} />
+                      <Input value={formData.colorSecundario} onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })} className={cn(phantomInputClass, "font-mono uppercase")} placeholder="#FFFFFF" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
                   <Button
-                    onClick={abrirCrearSucursal}
-                    className="shrink-0 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold gap-2 shadow-md shadow-orange-500/20"
+                    onClick={handleSavePerfil}
+                    disabled={isSubmitting}
+                    className="h-12 px-7 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white"
                   >
-                    <Plus className="h-4 w-4" /> Nueva
+                    {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+                    Guardar cambios
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        </div>
+
+        {/* ── SECCIÓN: Sucursales ── */}
+        <div className={cn("overflow-hidden transition-all duration-300 ease-in-out", sectionVisible('sucursales') ? "opacity-100 max-h-[5000px] mb-10" : "opacity-0 max-h-0 mb-0 pointer-events-none")}>
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Sucursales</h2>
+          <div className={phantomCardClass}>
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-5">
+                <Button
+                  onClick={abrirCrearSucursal}
+                  className="shrink-0 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold gap-2"
+                >
+                  <Plus className="h-4 w-4" /> Nueva
+                </Button>
+              </div>
+
+              {!sucursalesLoaded ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
+                </div>
+              ) : sucursales.length === 0 ? (
+                <div className="text-center py-16">
+                  <Store className="h-9 w-9 text-zinc-300 dark:text-zinc-700 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold mb-1">Sin sucursales configuradas</h3>
+                  <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                    Agregá tu primera sucursal para habilitar el ruteo automático de pedidos.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {sucursales.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between gap-3 py-4 group">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <Store className={cn('h-5 w-5 shrink-0', s.activo ? 'text-[#FF7A00]' : 'text-zinc-400 dark:text-zinc-600')} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-[15px] truncate">{s.nombre}</p>
+                            {!s.activo && <span className="text-xs font-medium text-muted-foreground">· Inactiva</span>}
+                            {s.whatsappEnabled && s.whatsappNumber && <span className="text-xs font-medium text-green-600 dark:text-green-500">· WhatsApp</span>}
+                          </div>
+                          {s.direccion && <p className="text-sm text-muted-foreground truncate mt-0.5">{s.direccion}</p>}
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-lg shrink-0 text-muted-foreground"
+                        onClick={() => abrirEditarSucursal(s)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+        </div>
+
+        {/* ── SECCIÓN: Facturación ── */}
+        <div className={cn("overflow-hidden transition-all duration-300 ease-in-out", sectionVisible('facturacion') ? "opacity-100 max-h-[5000px] mb-10" : "opacity-0 max-h-0 mb-0 pointer-events-none")}>
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Facturación</h2>
+          <FacturacionAfipSection />
+        </section>
+        </div>
+
+        {/* ── SECCIÓN: Hardware ── */}
+        <div className={cn("overflow-hidden transition-all duration-300 ease-in-out", sectionVisible('hardware') ? "opacity-100 max-h-[5000px] mb-10" : "opacity-0 max-h-0 mb-0 pointer-events-none")}>
+        <section>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Hardware</h2>
+          <div className={cn(phantomCardClass, "max-w-2xl")}>
+            <div>
+              <div className="mb-5">
+                <h3 className="text-xl font-bold tracking-tight">Impresora térmica</h3>
+              </div>
+
+              {selectedPrinter ? (
+                <div className="flex items-center gap-3.5 p-4 bg-green-950/20 rounded-xl mb-5">
+                  <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-500 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-bold text-green-900 dark:text-green-100">Impresora lista</p>
+                    <p className="text-sm text-green-700 dark:text-green-300 mt-0.5 truncate">{selectedPrinter}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3.5 p-4 bg-amber-950/20 rounded-xl mb-5">
+                  <AlertCircle className="h-6 w-6 text-amber-600 dark:text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-[15px] font-bold text-amber-900 dark:text-amber-100">Sin configurar</p>
+                    <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">Buscá y seleccioná una impresora.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-5">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    onClick={handleListPrinters}
+                    disabled={isListingPrinters}
+                    className="flex-1 h-12 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 font-bold"
+                  >
+                    {isListingPrinters ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <List className="mr-2 h-5 w-5" />}
+                    Buscar dispositivos
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={handleTestPrint}
+                    disabled={isPrintingTest || !selectedPrinter}
+                    className="flex-1 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200/70 dark:hover:bg-zinc-700 font-bold"
+                  >
+                    {isPrintingTest ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Printer className="mr-2 h-5 w-5" />}
+                    Ticket de prueba
                   </Button>
                 </div>
 
-                {!sucursalesLoaded ? (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
-                  </div>
-                ) : sucursales.length === 0 ? (
-                  <div className="text-center py-16 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-[24px]">
-                    <div className="h-16 w-16 bg-orange-50 dark:bg-orange-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Store className="h-8 w-8 text-[#FF7A00]" />
-                    </div>
-                    <h3 className="text-lg font-bold mb-2">Sin sucursales configuradas</h3>
-                    <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                      Agregá tu primera sucursal para habilitar el ruteo automático de pedidos.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {sucursales.map((s) => (
-                      <div
-                        key={s.id}
-                        className="flex items-center justify-between p-5 rounded-[20px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 hover:border-[#FF7A00]/40 transition-colors gap-3"
-                      >
-                        <div className="flex items-center gap-4 min-w-0">
-                          <div
-                            className={cn(
-                              'h-10 w-10 rounded-xl flex items-center justify-center shrink-0',
-                              s.activo ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-zinc-200 dark:bg-zinc-800',
-                            )}
-                          >
-                            <Store className={cn('h-5 w-5', s.activo ? 'text-[#FF7A00]' : 'text-muted-foreground')} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-bold text-base truncate">{s.nombre}</p>
-                              {!s.activo && (
-                                <Badge variant="secondary" className="text-[10px]">
-                                  Inactiva
-                                </Badge>
-                              )}
-                              {s.whatsappEnabled && s.whatsappNumber && (
-                                <Badge className="bg-green-500/10 text-green-700 dark:text-green-400 border-none text-[10px]">
-                                  WA
-                                </Badge>
-                              )}
-                            </div>
-                            {s.direccion && (
-                              <p className="text-sm text-muted-foreground truncate mt-0.5">{s.direccion}</p>
-                            )}
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 rounded-xl shrink-0"
-                          onClick={() => abrirEditarSucursal(s)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
+                {printers.length > 0 && (
+                  <div>
+                    <Label className={phantomLabelClass}>Seleccionar impresora</Label>
+                    <Select value={selectedPrinter || ''} onValueChange={setSelectedPrinter}>
+                      <SelectTrigger className="h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-transparent focus:ring-2 focus:ring-[#FF7A00]/30 text-base font-medium">
+                        <SelectValue placeholder="Elegir del listado..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-2xl border-zinc-200 dark:border-zinc-800">
+                        {[...printers].map((p, i) => (
+                          <SelectItem key={i} value={p} className="py-3 text-base rounded-xl cursor-pointer">
+                            {p}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
-            </div>
-          </TabsContent>
-
-          {/* ─────────────────────────────────────────────
-              TAB: HARDWARE
-          ───────────────────────────────────────────── */}
-          {/* ─────────────────────────────────────────────
-              TAB: FACTURACIÓN
-          ───────────────────────────────────────────── */}
-          <TabsContent value="facturacion" className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
-            <FacturacionAfipSection />
-          </TabsContent>
-
-          <TabsContent value="hardware" className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 outline-none">
-            <div className={cn(phantomCardClass, "max-w-2xl")}>
-              <div className="p-6 sm:p-8">
-                <div className="mb-8">
-                  <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                    <Printer className="h-6 w-6 text-[#FF7A00]" />
-                    Impresora Térmica
-                  </h2>
-                  <p className="text-muted-foreground">Conectá tu comandera local para imprimir tickets automáticos. (Requiere Piru Desktop).</p>
-                </div>
-
-                {selectedPrinter ? (
-                  <div className="flex items-center gap-4 p-5 bg-green-50 dark:bg-green-950/20 border-2 border-green-500/20 rounded-3xl mb-8">
-                    <div className="h-12 w-12 rounded-[18px] bg-green-100 dark:bg-green-900/50 flex items-center justify-center shrink-0">
-                      <CheckCircle2 className="h-6 w-6 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="text-base font-bold text-green-900 dark:text-green-100">Impresora Lista</p>
-                      <p className="text-sm text-green-700 dark:text-green-300 mt-0.5 font-medium">{selectedPrinter}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-4 p-5 bg-amber-50 dark:bg-amber-950/20 border-2 border-amber-500/20 rounded-3xl mb-8">
-                    <div className="h-12 w-12 rounded-[18px] bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
-                      <AlertCircle className="h-6 w-6 text-amber-600" />
-                    </div>
-                    <div>
-                      <p className="text-base font-bold text-amber-900 dark:text-amber-100">Sin configurar</p>
-                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">Buscá y seleccioná una impresora.</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-6">
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <Button
-                      onClick={handleListPrinters}
-                      disabled={isListingPrinters}
-                      className="flex-1 h-14 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 font-bold text-base shadow-lg shadow-black/10"
-                    >
-                      {isListingPrinters ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <List className="mr-2 h-5 w-5" />}
-                      Buscar Dispositivos
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={handleTestPrint}
-                      disabled={isPrintingTest || !selectedPrinter}
-                      className="flex-1 h-14 rounded-2xl border-2 font-bold text-base hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                    >
-                      {isPrintingTest ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Printer className="mr-2 h-5 w-5" />}
-                      Ticket de Prueba
-                    </Button>
-                  </div>
-
-                  {printers.length > 0 && (
-                    <div className="p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
-                      <Label className={phantomLabelClass}>Seleccionar Impresora</Label>
-                      <Select value={selectedPrinter || ''} onValueChange={setSelectedPrinter}>
-                        <SelectTrigger className="h-14 rounded-2xl bg-white dark:bg-zinc-950 border-transparent focus:ring-2 focus:ring-[#FF7A00]/20 text-base font-medium mt-2">
-                          <SelectValue placeholder="Elegir del listado..." />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-2xl border-zinc-200 dark:border-zinc-800">
-                          {[...printers]
-                            .sort((a, b) => {
-                              const aVirtual = isVirtualPrinter(a) ? 1 : 0;
-                              const bVirtual = isVirtualPrinter(b) ? 1 : 0;
-                              return aVirtual - bVirtual;
-                            })
-                            .map((p, i) => (
-                            <SelectItem key={i} value={p} className={cn(
-                              "py-3 text-base rounded-xl cursor-pointer",
-                              isVirtualPrinter(p) && "opacity-50"
-                            )}>
-                              {p}{isVirtualPrinter(p) ? ' ⚠️ (virtual)' : ''}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-        </Tabs>
-      </div>
-
-      {/* ─────────────────────────────────────────────
-          DIALOG: Editar perfil
-      ───────────────────────────────────────────── */}
-      <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 gap-0 sm:rounded-[32px] border-zinc-200 dark:border-zinc-800">
-          <div className="px-6 pt-8 pb-6 bg-zinc-50 dark:bg-zinc-950 sticky top-0 z-10">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-                  <Settings className="h-5 w-5 text-[#FF7A00]" />
-                </div>
-                Editar Perfil
-              </DialogTitle>
-              <DialogDescription className="text-base text-muted-foreground mt-2">
-                Actualizá la información pública y personalización de tu tienda.
-              </DialogDescription>
-            </DialogHeader>
-
-            {/* Modal Tabs */}
-            <div className="flex items-center gap-2 mt-6 overflow-x-auto pb-2 scrollbar-none">
-              {[
-                { value: 'info', label: 'Información' },
-                { value: 'branding', label: 'Branding' },
-                { value: 'comunicacion', label: 'Transferencias' },
-              ].map((t) => (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => setDialogTab(t.value)}
-                  className={cn(
-                    "px-5 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap",
-                    dialogTab === t.value
-                      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-md"
-                      : "bg-white dark:bg-zinc-900 text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
             </div>
           </div>
+        </section>
+        </div>
 
-          <form onSubmit={handleSubmit} className="bg-white dark:bg-zinc-950">
-            <div className="p-6 sm:p-8 min-h-[40vh]">
-              {/* Tab: Información */}
-              {dialogTab === 'info' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 animate-in fade-in duration-300">
-                  <div className="space-y-1">
-                    <Label htmlFor="nombre" className={phantomLabelClass}>Nombre del local</Label>
-                    <Input id="nombre" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} placeholder="Ej: Burger Bros" required className={phantomInputClass} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="username" className={phantomLabelClass}>Alias URL</Label>
-                    <div className="relative flex items-center overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-900 focus-within:ring-2 focus-within:ring-[#FF7A00] transition-all">
-                      <span className="pl-5 pr-1 text-muted-foreground font-mono text-sm select-none">piru.app/</span>
-                      <Input id="username" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} placeholder="mi-local" className="h-14 bg-transparent border-none focus-visible:ring-0 px-0 font-mono text-base w-full min-w-0" />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="telefono" className={phantomLabelClass}>Teléfono público</Label>
-                    <Input id="telefono" value={formData.telefono} onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} placeholder="+54 9..." className={phantomInputClass} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="deliveryFee" className={phantomLabelClass}>Costo de envío base</Label>
-                    <div className="relative">
-                      <span className="absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">$</span>
-                      <Input id="deliveryFee" type="number" step="0.01" value={formData.deliveryFee} onChange={(e) => setFormData({ ...formData, deliveryFee: e.target.value })} placeholder="0.00" className={cn(phantomInputClass, "pl-10")} />
-                    </div>
-                  </div>
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label htmlFor="direccion" className={phantomLabelClass}>Dirección física</Label>
-                    <Input id="direccion" value={formData.direccion} onChange={(e) => setFormData({ ...formData, direccion: e.target.value })} placeholder="Ej: Av. Siempreviva 742" className={phantomInputClass} />
-                  </div>
-                </div>
-              )}
-
-              {/* Tab: Branding */}
-              {dialogTab === 'branding' && (
-                <div className="space-y-8 animate-in fade-in duration-300">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <Label className={phantomLabelClass}>Logo (Modo Oscuro)</Label>
-                      <div className="bg-zinc-900 rounded-3xl p-2 border-2 border-dashed border-zinc-700 hover:border-zinc-500 transition-colors">
-                        <ImageUpload onImageChange={setImageBase64} currentImage={imageBase64} maxSize={5} />
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <Label className={phantomLabelClass}>Logo (Modo Claro)</Label>
-                      <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-3xl p-2 border-2 border-dashed border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 transition-colors">
-                        <ImageUpload onImageChange={setImageLightBase64} currentImage={imageLightBase64} maxSize={5} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-6 bg-zinc-50 dark:bg-zinc-900/50 rounded-3xl border border-zinc-200 dark:border-zinc-800">
-                    <h4 className="font-bold mb-4">Colores de marca</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                      <div className="space-y-2">
-                        <Label htmlFor="colorPrimario" className="text-sm font-medium">Primario (Botones principales)</Label>
-                        <div className="flex gap-3">
-                          <Input type="color" className="w-14 h-14 p-1 cursor-pointer rounded-2xl border-none" value={formData.colorPrimario || '#FF7A00'} onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })} />
-                          <Input value={formData.colorPrimario} onChange={(e) => setFormData({ ...formData, colorPrimario: e.target.value })} className={cn(phantomInputClass, "font-mono uppercase")} placeholder="#FF7A00" />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="colorSecundario" className="text-sm font-medium">Secundario (Fondos)</Label>
-                        <div className="flex gap-3">
-                          <Input type="color" className="w-14 h-14 p-1 cursor-pointer rounded-2xl border-none" value={formData.colorSecundario || '#ffffff'} onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })} />
-                          <Input value={formData.colorSecundario} onChange={(e) => setFormData({ ...formData, colorSecundario: e.target.value })} className={cn(phantomInputClass, "font-mono uppercase")} placeholder="#FFFFFF" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab: Comunicación / Transferencias */}
-              {dialogTab === 'comunicacion' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
-                  <div className="space-y-2">
-                    <Label htmlFor="whatsappNumber" className={phantomLabelClass}>WhatsApp para Notificaciones</Label>
-                    <Input id="whatsappNumber" value={formData.whatsappNumber} onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })} placeholder="Ej: 5491123456789" className={phantomInputClass} />
-                    <p className="text-sm text-muted-foreground mt-2 pl-2">El número que usa tu local para recibir los pedidos entrantes. Formato internacional sin '+'.</p>
-                  </div>
-
-                  <Separator className="my-6 border-zinc-100 dark:border-zinc-800" />
-
-                  <div className="space-y-2">
-                    <Label htmlFor="transferenciaAlias" className={phantomLabelClass}>Alias / CBU para transferencias</Label>
-                    <Input id="transferenciaAlias" value={formData.transferenciaAlias} onChange={(e) => setFormData({ ...formData, transferenciaAlias: e.target.value })} placeholder="Ej: minombre.mp" className={cn(phantomInputClass, "font-mono")} />
-                    <p className="text-sm text-muted-foreground mt-2 pl-2">Se mostrará a tus clientes en el checkout si la transferencia manual está activa.</p>
-                  </div>
-
-                  <Separator className="my-6 border-zinc-100 dark:border-zinc-800" />
-
-                  <div className="space-y-2">
-                    <Label htmlFor="comprobantesWhatsapp" className={phantomLabelClass}>WhatsApp para comprobantes</Label>
-                    <Input id="comprobantesWhatsapp" value={formData.comprobantesWhatsapp} onChange={(e) => setFormData({ ...formData, comprobantesWhatsapp: e.target.value })} placeholder="Ej: 5491123456789" className={phantomInputClass} />
-                    <p className="text-sm text-muted-foreground mt-2 pl-2">El número donde los clientes enviarán el ticket de pago. Formato internacional sin '+'.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer actions */}
-            <div className="flex items-center justify-end gap-3 px-6 py-5 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 sticky bottom-0">
-              <Button type="button" variant="ghost" onClick={() => setDialogAbierto(false)} disabled={isSubmitting} className="h-12 px-6 rounded-xl font-medium">
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isSubmitting} className="h-12 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20">
-                {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
-                Guardar Cambios
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      </div>
 
       <Dialog open={sucursalDialogOpen} onOpenChange={setSucursalDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 p-0 gap-0">
-          <div className="px-6 pt-7 pb-5 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800">
+          <div className="px-5 pt-5 pb-4 bg-zinc-50 dark:bg-zinc-950">
             <DialogHeader>
-              <DialogTitle className="text-xl font-bold flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-                  <Store className="h-4 w-4 text-[#FF7A00]" />
-                </div>
-                {editingSucursal ? 'Editar Sucursal' : 'Nueva Sucursal'}
+              <DialogTitle className="text-xl font-bold tracking-tight">
+                {editingSucursal ? 'Editar sucursal' : 'Nueva sucursal'}
               </DialogTitle>
             </DialogHeader>
           </div>
-          <div className="p-6 sm:p-8 space-y-5 bg-white dark:bg-zinc-950">
+          <div className="p-4 sm:p-5 space-y-5 bg-white dark:bg-zinc-950">
             <div className="space-y-1">
               <Label className={phantomLabelClass}>Nombre *</Label>
               <Input
@@ -2304,10 +2329,67 @@ const Perfil = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Dialog: Cambiar contraseña */}
+      <Dialog open={changePasswordOpen} onOpenChange={(open) => {
+        setChangePasswordOpen(open)
+        if (!open) setChangePasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      }}>
+        <DialogContent className="sm:max-w-md rounded-[32px] p-0 overflow-hidden">
+          <div className="p-4 sm:p-5">
+            <DialogHeader className="mb-6">
+              <DialogTitle className="text-2xl font-bold">Cambiar contraseña</DialogTitle>
+              <DialogDescription>Ingresá tu contraseña actual y la nueva para actualizarla.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className={phantomLabelClass}>Contraseña actual</Label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  className={phantomInputClass}
+                  value={changePasswordForm.currentPassword}
+                  onChange={e => setChangePasswordForm(f => ({ ...f, currentPassword: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className={phantomLabelClass}>Nueva contraseña</Label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  className={phantomInputClass}
+                  value={changePasswordForm.newPassword}
+                  onChange={e => setChangePasswordForm(f => ({ ...f, newPassword: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className={phantomLabelClass}>Confirmar nueva contraseña</Label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  className={phantomInputClass}
+                  value={changePasswordForm.confirmPassword}
+                  onChange={e => setChangePasswordForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleChangePassword() }}
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end mt-6">
+              <Button variant="ghost" onClick={() => setChangePasswordOpen(false)} disabled={isChangingPassword} className="h-12 px-6 rounded-xl font-medium">
+                Cancelar
+              </Button>
+              <Button onClick={handleChangePassword} disabled={isChangingPassword} className="h-12 px-8 rounded-xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20">
+                {isChangingPassword ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+                Cambiar contraseña
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog: Franja de Horario */}
       <Dialog open={franjaDialogOpen} onOpenChange={setFranjaDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-[32px] p-0 overflow-hidden">
-          <div className="p-6 sm:p-8">
+          <div className="p-4 sm:p-5">
             <DialogHeader className="mb-6">
               <DialogTitle className="text-2xl font-bold">{editingFranja ? 'Editar franja' : 'Nueva franja'}</DialogTitle>
               <DialogDescription>Configurá el nombre y el rango de horas para esta franja.</DialogDescription>

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Upload, X, Image as ImageIcon } from 'lucide-react'
@@ -14,6 +14,10 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5 }: ImageUploadPr
   const [preview, setPreview] = useState<string | null>(currentImage || null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setPreview(currentImage || null)
+  }, [currentImage])
 
   const convertToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {

@@ -8,6 +8,8 @@ import {
   Wallet,
   Package,
   CalendarDays,
+  Globe,
+  ShoppingBag,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 
@@ -20,10 +22,14 @@ interface MetricasData {
   ingresos: {
     mensual: number;
     historico: number;
+    mensualManual?: number;
+    mensualWeb?: number;
   };
   pedidos: {
     mensuales: number;
     mensualesPagados: number;
+    mensualesManual?: number;
+    mensualesWeb?: number;
     historicos: number;
   };
   desgloseMetodoPago: Array<{
@@ -135,6 +141,13 @@ export default function Metricas() {
   const { ingresos, pedidos, desgloseMetodoPago, topProductos } = data
 
   const totalMensual = ingresos.mensual
+  const ingresoWeb = ingresos.mensualWeb ?? 0
+  const ingresoManual = ingresos.mensualManual ?? 0
+  const pedidosWeb = pedidos.mensualesWeb ?? 0
+  const pedidosManual = pedidos.mensualesManual ?? 0
+  const baseOrigen = (ingresoWeb + ingresoManual) > 0 ? (ingresoWeb + ingresoManual) : 1
+  const pctWeb = (ingresoWeb / baseOrigen) * 100
+  const pctManual = (ingresoManual / baseOrigen) * 100
   
   let pagoEfectivo = 0
   let pagoMP = 0
@@ -321,6 +334,55 @@ export default function Metricas() {
               <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-xs"></div>Mercado Pago ({Math.round(pctMP)}%) - ${pagoMP.toLocaleString('es-AR')}</div>
               <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-violet-500 shadow-xs"></div>Transferencias ({Math.round(pctTransf)}%) - ${pagoTransf.toLocaleString('es-AR')}</div>
             </div>
+          </div>
+        </div>
+
+        {/* 1b. Origen de las ventas: Web (con comisión) vs Manual (POS local, sin comisión) */}
+        <div className={`${phantomCardClass} p-6 sm:p-8`}>
+          <div className="flex items-center gap-2 mb-5">
+            <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">Origen de las ventas</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Web */}
+            <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800/80 p-5 bg-zinc-50/50 dark:bg-zinc-900/20">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-sky-500/10 rounded-xl">
+                    <Globe className="w-4 h-4 text-sky-500" />
+                  </div>
+                  <span className="text-sm font-bold text-foreground">Por la web (clientes)</span>
+                </div>
+                <span className="text-[10px] bg-sky-500/10 text-sky-600 dark:text-sky-400 px-2 py-0.5 rounded-full font-bold">CON COMISIÓN</span>
+              </div>
+              <div className="text-3xl font-bold tracking-tight text-foreground">
+                ${ingresoWeb.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </div>
+              <div className="text-xs mt-1 font-medium text-zinc-400">{pedidosWeb} pedidos · {Math.round(pctWeb)}% del total</div>
+            </div>
+
+            {/* Manual */}
+            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/40 p-5 bg-emerald-50/50 dark:bg-emerald-900/10">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-emerald-500/10 rounded-xl">
+                    <ShoppingBag className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <span className="text-sm font-bold text-foreground">Anotados manualmente</span>
+                </div>
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full font-bold">SIN COMISIÓN</span>
+              </div>
+              <div className="text-3xl font-bold tracking-tight text-foreground">
+                ${ingresoManual.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </div>
+              <div className="text-xs mt-1 font-medium text-zinc-400">{pedidosManual} pedidos · {Math.round(pctManual)}% del total</div>
+            </div>
+          </div>
+
+          {/* Barra comparativa */}
+          <div className="h-3 w-full flex rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800/80 mt-5 shadow-inner">
+            {pctWeb > 0 && <div style={{ width: `${pctWeb}%` }} className="bg-sky-500" title={`Web: ${pctWeb.toFixed(1)}%`} />}
+            {pctManual > 0 && <div style={{ width: `${pctManual}%` }} className="bg-emerald-500" title={`Manual: ${pctManual.toFixed(1)}%`} />}
           </div>
         </div>
 

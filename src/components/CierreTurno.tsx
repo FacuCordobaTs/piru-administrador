@@ -8,14 +8,18 @@ import {
 } from 'lucide-react'
 import FacturacionBatchCierre from '@/components/FacturacionBatchCierre'
 import { cn } from '@/lib/utils'
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip
+} from 'recharts'
 
 /* ==========================================================================
    INTERFACES & TYPES
    ========================================================================== */
 interface CierreTurnoItem { id: number; productoId: number; nombreProducto: string; cantidad: number; precioUnitario: string; clienteNombre?: string; estado?: string; agregados?: any }
 interface CierreTurnoPedidoMesa { id: number; mesaId: number | null; nombrePedido: string | null; estado: string; total: string; createdAt: string; closedAt: string | null; mesaNombre: string | null; tipo: 'mesa'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; pagos?: any[]; pagosSubtotal?: any[] }
-interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'delivery'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null; afipFacturado?: boolean; afipCae?: string | null; afipNumeroComprobante?: number | null; afipPdfUrl?: string | null }
-interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; afipFacturado?: boolean; afipCae?: string | null; afipNumeroComprobante?: number | null; afipPdfUrl?: string | null }
+interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'delivery'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null; afipFacturado?: boolean; afipCae?: string | null; afipNumeroComprobante?: number | null; afipPdfUrl?: string | null; anotadoManualmente?: boolean }
+interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; afipFacturado?: boolean; afipCae?: string | null; afipNumeroComprobante?: number | null; afipPdfUrl?: string | null; anotadoManualmente?: boolean }
 type CierreTurnoPedido = CierreTurnoPedidoMesa | CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway
 
 interface ProductoVendido { nombre: string; cantidad: number; totalVendido: number }
@@ -24,8 +28,8 @@ interface CierreTurnoData {
   pedidosMesa: CierreTurnoPedidoMesa[]
   pedidosDelivery: CierreTurnoPedidoDelivery[]
   pedidosTakeaway: CierreTurnoPedidoTakeaway[]
-  totales: { mesa: string; delivery: string; takeaway: string; general: string }
-  cantidades: { mesa: number; delivery: number; takeaway: number; total: number }
+  totales: { mesa: string; delivery: string; takeaway: string; general: string; manual?: string; web?: string }
+  cantidades: { mesa: number; delivery: number; takeaway: number; total: number; manual?: number; web?: number }
   productosVendidos: ProductoVendido[]
   fechasDisponibles: string[]
 }
@@ -255,6 +259,9 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
               : <ShoppingBag className="h-3.5 w-3.5" />}
         </span>
         <span className="text-sm font-medium flex-1 truncate text-foreground">{pedidoLabel}</span>
+        {pedido.tipo !== 'mesa' && (pedido as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).anotadoManualmente && (
+          <span className="text-[10px] shrink-0 px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold">Manual</span>
+        )}
         {!pedido.pagado && (
           <span className="text-xs shrink-0 text-orange-500">Pendiente</span>
         )}
@@ -323,6 +330,143 @@ function PedidoCard({ pedido, isOpen, onToggle }: PedidoCardProps) {
 }
 
 /* ==========================================================================
+   HOURLY CHART
+   ========================================================================== */
+function HourlyTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-background border border-border rounded-xl px-3.5 py-2.5 shadow-xl space-y-1.5">
+      <p className="text-xs font-semibold text-foreground">{label}</p>
+      {payload.map((entry: any) => (
+        <div key={entry.dataKey} className="flex items-center gap-2 text-xs">
+          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: entry.color }} />
+          <span className="text-muted-foreground">
+            {entry.dataKey === 'orders' ? 'Pedidos' : 'Facturado'}:
+          </span>
+          <span className="font-semibold text-foreground">
+            {entry.dataKey === 'orders'
+              ? entry.value
+              : `$${Number(entry.value).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function HourlyChart({ pedidos }: { pedidos: CierreTurnoPedido[] }) {
+  const data = useMemo(() => {
+    const buckets: Record<number, { orders: number; total: number }> = {}
+    pedidos.forEach(p => {
+      const date = new Date(p.createdAt)
+      date.setHours(date.getHours() + 3)
+      const hour = date.getHours()
+      if (!buckets[hour]) buckets[hour] = { orders: 0, total: 0 }
+      buckets[hour].orders++
+      buckets[hour].total += parseFloat(p.total) || 0
+    })
+    const hours = Object.keys(buckets).map(Number).sort((a, b) => a - b)
+    if (!hours.length) return []
+    const minHour = Math.max(0, hours[0] - 1)
+    const maxHour = Math.min(23, hours[hours.length - 1] + 1)
+    const result = []
+    for (let h = minHour; h <= maxHour; h++) {
+      result.push({
+        hour: `${String(h).padStart(2, '0')}h`,
+        orders: buckets[h]?.orders ?? 0,
+        total: Math.round(buckets[h]?.total ?? 0),
+      })
+    }
+    return result
+  }, [pedidos])
+
+  if (data.length < 2) return null
+
+  const maxTotal = Math.max(...data.map(d => d.total))
+  const fmtTotal = (v: number) => {
+    if (maxTotal >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
+    if (maxTotal >= 1_000) return `$${(v / 1_000).toFixed(0)}k`
+    return `$${v}`
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold uppercase tracking-widest text-foreground">Actividad por hora</p>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-0.5 bg-foreground rounded-full" />
+            <span className="text-xs text-muted-foreground">Pedidos</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-0.5 rounded-full" style={{ background: '#FF7A00' }} />
+            <span className="text-xs text-muted-foreground">Facturado</span>
+          </div>
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <LineChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+          <CartesianGrid
+            strokeDasharray="4 4"
+            stroke="currentColor"
+            strokeOpacity={0.08}
+            vertical={false}
+          />
+          <XAxis
+            dataKey="hour"
+            tick={{ fontSize: 11, fill: 'currentColor', opacity: 0.4 }}
+            axisLine={false}
+            tickLine={false}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            yAxisId="orders"
+            orientation="left"
+            tick={{ fontSize: 11, fill: 'currentColor', opacity: 0.4 }}
+            axisLine={false}
+            tickLine={false}
+            width={22}
+            allowDecimals={false}
+          />
+          <YAxis
+            yAxisId="total"
+            orientation="right"
+            tick={{ fontSize: 11, fill: '#FF7A00', opacity: 0.7 }}
+            axisLine={false}
+            tickLine={false}
+            width={46}
+            tickFormatter={fmtTotal}
+          />
+          <Tooltip content={<HourlyTooltip />} cursor={{ stroke: 'currentColor', strokeOpacity: 0.12, strokeWidth: 1 }} />
+          <Line
+            yAxisId="orders"
+            type="monotone"
+            dataKey="orders"
+            stroke="currentColor"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4, strokeWidth: 0 }}
+            animationDuration={1000}
+            animationEasing="ease-out"
+          />
+          <Line
+            yAxisId="total"
+            type="monotone"
+            dataKey="total"
+            stroke="#FF7A00"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4, fill: '#FF7A00', strokeWidth: 0 }}
+            animationDuration={1300}
+            animationEasing="ease-out"
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+/* ==========================================================================
    MAIN COMPONENT
    ========================================================================== */
 export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
@@ -333,6 +477,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [filterTipo, setFilterTipo] = useState<'takeaway' | 'delivery' | null>(null)
+  const [filterOrigen, setFilterOrigen] = useState<'manual' | 'web' | null>(null)
   const [afipHabilitado, setAfipHabilitado] = useState(false)
   const [activeModal, setActiveModal] = useState<'facturacion' | 'envios' | 'ranking' | null>(null)
   const [showDateModal, setShowDateModal] = useState(false)
@@ -353,7 +498,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
   useEffect(() => {
     if (!open) return
-    setQuery(''); setExpanded(new Set()); setSelectedFecha(''); setFilterTipo(null)
+    setQuery(''); setExpanded(new Set()); setSelectedFecha(''); setFilterTipo(null); setFilterOrigen(null)
     fetchCierreTurno()
     if (token) {
       facturacionApi.getEstado(token)
@@ -375,6 +520,12 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
   const filtered = useMemo(() => {
     let result = allPedidos
     if (filterTipo) result = result.filter(p => p.tipo === filterTipo)
+    if (filterOrigen) {
+      result = result.filter(p => {
+        const manual = (p.tipo !== 'mesa') && (p as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).anotadoManualmente === true
+        return filterOrigen === 'manual' ? manual : !manual
+      })
+    }
     if (!query) return result
     const q = query.toLowerCase()
     return result.filter(p => {
@@ -384,7 +535,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
       if (label.toLowerCase().includes(q)) return true
       return p.items.some(i => (i.nombreProducto || '').toLowerCase().includes(q))
     })
-  }, [allPedidos, query, filterTipo])
+  }, [allPedidos, query, filterTipo, filterOrigen])
 
   const allExpanded = filtered.length > 0 && filtered.every(p => expanded.has(`${p.tipo}-${p.id}`))
 
@@ -397,6 +548,21 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
   }
 
   const total = useMemo(() => data ? parseFloat(data.totales.general) : 0, [data])
+
+  // Diferenciación origen: pedidos anotados manualmente (POS local, sin comisión) vs tomados por la web
+  const origenStats = useMemo(() => {
+    const esManual = (p: CierreTurnoPedido) =>
+      p.tipo !== 'mesa' && (p as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).anotadoManualmente === true
+    const manualPedidos = allPedidos.filter(esManual)
+    const webPedidos = allPedidos.filter(p => !esManual(p))
+    const sum = (arr: CierreTurnoPedido[]) => arr.reduce((s, p) => s + (parseFloat(p.total) || 0), 0)
+    return {
+      manualTotal: data?.totales.manual != null ? parseFloat(data.totales.manual) : sum(manualPedidos),
+      webTotal: data?.totales.web != null ? parseFloat(data.totales.web) : sum(webPedidos),
+      manualCount: data?.cantidades.manual ?? manualPedidos.length,
+      webCount: data?.cantidades.web ?? webPedidos.length,
+    }
+  }, [allPedidos, data])
 
   const pagosDesglosados = useMemo(() => {
     const res = { efectivo: 0, mercadopago: 0, transferencia: 0 };
@@ -536,6 +702,38 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
               onDateClick={() => setShowDateModal(true)}
             />
 
+            <HourlyChart pedidos={allPedidos} />
+
+            {/* Diferenciación: pedidos por la web (cobrados) vs anotados manualmente (sin comisión) */}
+            {(origenStats.manualCount > 0 || origenStats.webCount > 0) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2 px-5 py-5 rounded-xl bg-muted">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm font-bold text-foreground">Por la web</p>
+                  </div>
+                  <p className="text-2xl font-extrabold text-foreground leading-none">
+                    ${origenStats.webTotal.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {origenStats.webCount} {origenStats.webCount === 1 ? 'pedido' : 'pedidos'} · se cobra comisión
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 px-5 py-5 rounded-xl bg-sky-500/10 border border-sky-500/20">
+                  <div className="flex items-center gap-2">
+                    <ShoppingBag className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+                    <p className="text-sm font-bold text-sky-700 dark:text-sky-300">Anotados manualmente</p>
+                  </div>
+                  <p className="text-2xl font-extrabold text-sky-700 dark:text-sky-300 leading-none">
+                    ${origenStats.manualTotal.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </p>
+                  <p className="text-xs text-sky-600/80 dark:text-sky-400/80">
+                    {origenStats.manualCount} {origenStats.manualCount === 1 ? 'pedido' : 'pedidos'} · sin comisión
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3 flex-wrap">
               {afipHabilitado && (
                 <button
@@ -598,6 +796,30 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
                   >
                     {filterTipo === 'delivery' ? <X className="h-3 w-3" /> : <Truck className="h-3 w-3" />}
                     Delivery
+                  </button>
+                  <button
+                    onClick={() => setFilterOrigen(filterOrigen === 'web' ? null : 'web')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      filterOrigen === 'web'
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {filterOrigen === 'web' ? <X className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
+                    Web
+                  </button>
+                  <button
+                    onClick={() => setFilterOrigen(filterOrigen === 'manual' ? null : 'manual')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      filterOrigen === 'manual'
+                        ? 'bg-sky-500 text-white'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {filterOrigen === 'manual' ? <X className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
+                    Manual
                   </button>
                 </div>
                 {filtered.length > 0 && (
@@ -735,7 +957,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
                   <p className="text-sm text-muted-foreground/60">Sin ventas registradas</p>
                 ) : (
                   <div>
-                    {topProducts.slice(0, 9).map((tp, idx) => {
+                    {topProducts.map((tp, idx) => {
                       const percentage = total > 0 ? (tp.totalVendido / total) * 100 : 0
                       return (
                         <div key={tp.nombre} className="py-3 border-b border-border/30">
