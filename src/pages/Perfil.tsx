@@ -503,29 +503,33 @@ const Perfil = () => {
   const abrirPopupMeta = () => {
     const FB = (window as any).FB
     FB.init({ appId: '939939975659282', cookie: true, xfbml: true, version: 'v22.0' })
-    FB.login(
-      async (response: any) => {
-        if (response.authResponse?.code) {
-          setWaLoading(true)
-          try {
-            const res = await fetch(`${waApiBase}/whatsapp-oauth/connect`, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code: response.authResponse.code }),
-            })
-            const data = await res.json()
-            if (data.success) {
-              setWaStatus({ conectado: true, phoneNumber: data.phoneNumber, tokenVencido: false })
-              toast.success(`WhatsApp conectado: ${data.phoneNumber}`)
-            } else {
-              toast.error(data.message || 'Error al conectar WhatsApp')
-            }
-          } catch {
-            toast.error('Error al conectar WhatsApp')
-          } finally {
-            setWaLoading(false)
+    const handleResponse = async (response: any) => {
+      if (response.authResponse?.code) {
+        setWaLoading(true)
+        try {
+          const res = await fetch(`${waApiBase}/whatsapp-oauth/connect`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: response.authResponse.code }),
+          })
+          const data = await res.json()
+          if (data.success) {
+            setWaStatus({ conectado: true, phoneNumber: data.phoneNumber, tokenVencido: false })
+            toast.success(`WhatsApp conectado: ${data.phoneNumber}`)
+          } else {
+            toast.error(data.message || 'Error al conectar WhatsApp')
           }
+        } catch {
+          toast.error('Error al conectar WhatsApp')
+        } finally {
+          setWaLoading(false)
         }
+      }
+    }
+
+    FB.login(
+      (response: any) => {
+        void handleResponse(response)
       },
       {
         config_id: '2543954492702386',
