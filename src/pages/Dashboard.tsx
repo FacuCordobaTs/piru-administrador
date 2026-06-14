@@ -217,7 +217,7 @@ function MapFlyTo({ coords }: { coords: { lat: number; lng: number; id: number }
 
 const parseCoord = (v: string | null | undefined) => parseFloat(String(v || '').replace(',', '.'))
 
-const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onAprobarPago, onNotificar, onRepartidorSelected, repartidoresList, updatingPago, sendingNotification, asignandoRepartidor, onShowOrdersList }: {
+const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onAprobarPago, onNotificar, onRepartidorSelected, repartidoresList, updatingPago, sendingNotification, asignandoRepartidor }: {
     orders: UnifiedPedido[]
     onClose: () => void
     externalSelected?: UnifiedPedido | null
