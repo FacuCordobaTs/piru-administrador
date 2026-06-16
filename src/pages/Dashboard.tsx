@@ -858,28 +858,39 @@ const Dashboard = () => {
                 }
             }
 
-            if (shouldPrint) {
-                const itemsToPrint = pedido.items.map(item => {
-                    const producto = allProductos.find(p => p.id === item.productoId)
-                    return { ...item, producto }
-                })
+            if (shouldPrint && token) {
+                // Claim atómico contra el backend: si hay otro dispositivo/pestaña del mismo
+                // restaurante conectado, solo uno de los dos debe ganar la carrera e imprimir.
+                pedidoUnificadoApi.claimImpreso(token, pedido.id)
+                    .then((res: any) => {
+                        if (!res?.claimed) return
 
-                if (itemsToPrint.length > 0) {
-                    const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
-                    const comandaData = formatComanda({
-                        id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
-                        direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
-                        tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
-                        metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
-                        horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal,
-                    }, itemsToPrint, restaurante?.nombre || 'Restaurante')
-
-                    printRaw(commandsToBytes(comandaData))
-                        .then(() => {
-                            setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
+                        const itemsToPrint = pedido.items.map(item => {
+                            const producto = allProductos.find(p => p.id === item.productoId)
+                            return { ...item, producto }
                         })
-                        .catch(console.error)
-                }
+
+                        if (itemsToPrint.length > 0) {
+                            const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
+                            const comandaData = formatComanda({
+                                id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
+                                direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
+                                tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
+                                metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
+                                horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal,
+                            }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+
+                            printRaw(commandsToBytes(comandaData)).catch((err) => {
+                                // El claim ya quedó en true en el backend (no se reintentará solo),
+                                // así que avisamos al local para que reimprima a mano desde el pedido.
+                                console.error('Error imprimiendo comanda automática:', err)
+                                toast.error(`No se pudo imprimir el pedido #${pedido.id}. Reimprimilo manualmente.`)
+                            })
+                        }
+
+                        setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
+                    })
+                    .catch(console.error)
             }
             processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
         })

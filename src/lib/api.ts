@@ -425,6 +425,13 @@ export const restauranteApi = {
     })
   },
 
+  toggleSoloPedidosProgramados: async (token: string) => {
+    return fetchApi('/restaurante/toggle-solo-pedidos-programados', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
   getFranjasHorario: async (token: string) => {
     return fetchApi('/restaurante/franjas-horario', {
       method: 'GET',
@@ -1214,6 +1221,13 @@ export const pedidoUnificadoApi = {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({ repartidorId }),
+    })
+  },
+  /** Claim atómico de impresión: solo un dispositivo "gana" y debe imprimir (claimed: true) */
+  claimImpreso: async (token: string, pedidoId: number) => {
+    return fetchApi(`/pedido-unificado/${pedidoId}/impreso`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
     })
   },
 }

@@ -201,6 +201,7 @@ const Perfil = () => {
   const [isTogglingTakeawayEnabled, setIsTogglingTakeawayEnabled] = useState(false)
   const [isTogglingPermitirPedidosProgramados, setIsTogglingPermitirPedidosProgramados] = useState(false)
   const [isTogglingUsarFranjasHorario, setIsTogglingUsarFranjasHorario] = useState(false)
+  const [isTogglingSoloPedidosProgramados, setIsTogglingSoloPedidosProgramados] = useState(false)
 
   type FranjaHorario = { id: number; nombre: string; horaInicio: string; horaFin: string; activo: boolean }
   const [franjas, setFranjas] = useState<FranjaHorario[]>([])
@@ -915,6 +916,28 @@ const Perfil = () => {
     }
   }
 
+  const handleToggleSoloPedidosProgramados = async () => {
+    if (!token) return
+    setIsTogglingSoloPedidosProgramados(true)
+    try {
+      const response = (await restauranteApi.toggleSoloPedidosProgramados(token)) as {
+        success: boolean
+        soloPedidosProgramados?: boolean
+        message?: string
+      }
+      if (response.success) {
+        toast.success(response.soloPedidosProgramados ? 'Pedidos programados obligatorios' : 'Pedidos programados ya no son obligatorios')
+        restauranteStore.fetchData()
+      } else {
+        toast.error(response.message || 'Error al cambiar la configuración')
+      }
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : 'Error al cambiar la configuración')
+    } finally {
+      setIsTogglingSoloPedidosProgramados(false)
+    }
+  }
+
   const cargarFranjas = async () => {
     if (!token) return
     try {
@@ -1186,10 +1209,15 @@ const Perfil = () => {
   const sectionVisible = (id: string) => activeSection === null || activeSection === id
 
   return (
-    <div className="min-h-dvh bg-white dark:bg-black pb-14 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
+    <div className="min-h-dvh bg-white dark:bg-neutral-950 pb-14 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
 
       {/* ── Header ── */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-5 sm:pt-8">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">Configuraciones</h1>
+          <p className="text-sm text-muted-foreground mt-1">Administra tu restaurante, pagos y preferencias</p>
+        </div>
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 
           <div className="flex items-center gap-5 min-w-0">
@@ -1850,6 +1878,14 @@ const Perfil = () => {
                     checked={(restaurante as any)?.usarFranjasHorario === true}
                     onCheckedChange={handleToggleUsarFranjasHorario}
                     disabled={isTogglingUsarFranjasHorario || !(restaurante as any)?.permitirPedidosProgramados}
+                  />
+                  <ToggleRow
+                    icon={<Lock className="h-5 w-5" />}
+                    title="Solo permitir pedidos programados"
+                    description="Los clientes están obligados a elegir una franja de horario para poder pedir, no pueden pedir para ahora."
+                    checked={(restaurante as any)?.soloPedidosProgramados === true}
+                    onCheckedChange={handleToggleSoloPedidosProgramados}
+                    disabled={isTogglingSoloPedidosProgramados || !(restaurante as any)?.usarFranjasHorario}
                   />
                 </div>
 

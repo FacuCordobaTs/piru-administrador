@@ -2,9 +2,17 @@ use std::fs::File;
 use std::io::Write;
 #[cfg(windows)]
 use std::ptr::null_mut;
+use std::sync::Mutex;
 use std::time::Duration;
 #[cfg(windows)]
 use widestring::U16CString;
+use tauri::State;
+
+/// Serializa todos los trabajos de impresión: dos comandas que lleguen "al mismo tiempo"
+/// (ej. varios pedidos creados juntos) no deben pelear por el mismo puerto serial/impresora.
+/// Sin esto, abrir el mismo puerto COM dos veces en simultáneo falla para una de las dos
+/// y esa comanda se pierde silenciosamente.
+struct PrintQueue(Mutex<()>);
 
 #[cfg(windows)]
 use windows_sys::Win32::{
@@ -99,7 +107,19 @@ fn get_printers_windows() -> Vec<String> {
 
 /// Envía bytes raw (ESC/POS) a la impresora especificada o al puerto COM
 #[tauri::command]
-fn send_print_job(printer_name: String, content: Vec<u8>) -> Result<(), String> {
+fn send_print_job(
+    printer_name: String,
+    content: Vec<u8>,
+    print_queue: State<'_, PrintQueue>,
+) -> Result<(), String> {
+    // Un solo trabajo de impresión a la vez. Si el mutex quedó "envenenado" por un panic
+    // previo (no debería pasar, pero por las dudas) lo recuperamos en vez de tirar todos
+    // los próximos prints para siempre.
+    let _guard = print_queue
+        .0
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     // 1. LOGICA DE DEBUG: Si es nuestra impresora virtual, guardamos en disco
     if printer_name == "GUARDAR EN ARCHIVO (DEBUG)" {
         let path = "ticket_debug.bin";
@@ -234,6 +254,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(PrintQueue(Mutex::new(())))
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

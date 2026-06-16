@@ -5,6 +5,7 @@ import { isTokenExpired } from '@/lib/api'
 import { useEffect } from 'react'
 import { AdminProvider } from '@/context/AdminContext'
 import NotificationOverlay from '@/components/NotificationOverlay'
+import GlobalAutoPrinter from '@/components/GlobalAutoPrinter'
 
 const ProtectedLayout = () => {
   const { isAuthenticated, token, logout } = useAuthStore()
@@ -45,6 +46,7 @@ const ProtectedLayout = () => {
   return (
     <AdminProvider>
       <NotificationOverlay />
+      <GlobalAutoPrinter />
       <Outlet />
     </AdminProvider>
   )
