@@ -625,6 +625,16 @@ export const productosApi = {
       },
       body: JSON.stringify(data),
     }),
+
+  // Reordenar productos (drag & drop): productoIds en el orden deseado
+  reorder: (token: string, productoIds: number[]) =>
+    fetchApi('/producto/reorder', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ productoIds }),
+    }),
 }
 
 // Ingredientes API
@@ -1250,6 +1260,16 @@ export const repartidoresApi = {
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({ estado }),
     }),
+  stats: async (token: string, filters?: { from?: string; to?: string }) => {
+    const params = new URLSearchParams()
+    if (filters?.from) params.append('from', filters.from)
+    if (filters?.to) params.append('to', filters.to)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return fetchApi(`/repartidores/stats${query}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }
 
 // Delivery API - usa pedidoUnificado por detrás (compatibilidad)

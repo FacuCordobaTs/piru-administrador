@@ -85,8 +85,14 @@ function parseDashboardDate(value: string | undefined | null): Date {
     return new Date(s)
 }
 
+// El backend envía timestamps con el horario local AR pero etiquetados como UTC (Z),
+// por lo que parseDashboardDate devuelve un instante 3h atrasado respecto al real.
+// getPedidoInstant() aplica la corrección para obtener el instante correcto.
+const getPedidoInstant = (dateString: string): Date =>
+    new Date(parseDashboardDate(dateString).getTime() + PEDIDO_RELATIVE_TIME_OFFSET_MS)
+
 const getMinutesAgo = (dateString: string) => {
-    const t = parseDashboardDate(dateString).getTime() + PEDIDO_RELATIVE_TIME_OFFSET_MS
+    const t = getPedidoInstant(dateString).getTime()
     if (Number.isNaN(t)) return 0
     return Math.floor((Date.now() - t) / 60000)
 }
@@ -97,17 +103,21 @@ const formatTimeAgo = (dateString: string) => {
     if (minutes < 60) return `hace ${minutes} min`
     const hours = Math.floor(minutes / 60)
     if (hours < 24) return `hace ${hours}h ${minutes % 60}m`
-    return parseDashboardDate(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: AR_TIMEZONE })
+    return getPedidoInstant(dateString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: AR_TIMEZONE })
 }
 
+const formatPedidoTime = (dateString: string) =>
+    getPedidoInstant(dateString).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: AR_TIMEZONE })
+
 const getDateLabel = (dateString: string) => {
-    const eventDate = parseDashboardDate(dateString)
+    const eventDate = getPedidoInstant(dateString)
     const today = new Date()
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
 
-    const isSameDay = (d1: Date, d2: Date) =>
-        d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear()
+    // Comparar por día en el huso horario AR
+    const arDay = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: AR_TIMEZONE })
+    const isSameDay = (d1: Date, d2: Date) => arDay(d1) === arDay(d2)
 
     if (isSameDay(eventDate, today)) return 'Hoy'
     if (isSameDay(eventDate, yesterday)) return 'Ayer'
@@ -217,14 +227,14 @@ function MapFlyTo({ coords }: { coords: { lat: number; lng: number; id: number }
 
 const parseCoord = (v: string | null | undefined) => parseFloat(String(v || '').replace(',', '.'))
 
-const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onAprobarPago, onNotificar, onRepartidorSelected, repartidoresList, updatingPago, sendingNotification, asignandoRepartidor }: {
+const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onAprobarPago, onNotificar, onDespachar, repartidoresList, updatingPago, sendingNotification, asignandoRepartidor }: {
     orders: UnifiedPedido[]
     onClose: () => void
     externalSelected?: UnifiedPedido | null
     onSelectPedido?: (pedido: UnifiedPedido | null) => void
     onAprobarPago?: (pedido: UnifiedPedido, metodo?: 'efectivo' | 'transferencia') => void
     onNotificar?: (pedido: UnifiedPedido) => void
-    onRepartidorSelected?: (pedido: UnifiedPedido, repartidorId: number | null) => void
+    onDespachar?: (pedido: UnifiedPedido) => void
     repartidoresList?: Repartidor[]
     updatingPago?: string | null
     sendingNotification?: string | null
@@ -232,7 +242,6 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
     onShowOrdersList?: () => void
 }) => {
     const [selected, setSelected] = useState<UnifiedPedido | null>(null)
-    const [showRepartidorOverlay, setShowRepartidorOverlay] = useState(false)
 
     const ordersWithCoords = orders.filter(p => {
         if (p.tipo !== 'delivery' || !p.latitud || !p.longitud) return false
@@ -259,7 +268,6 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
     useEffect(() => {
         if (selected && !ordersWithCoords.find(p => p.id === selected.id && p.tipo === selected.tipo)) {
             setSelected(null)
-            setShowRepartidorOverlay(false)
         }
     }, [orders])
 
@@ -276,12 +284,9 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
 
     const handleMapDespachar = () => {
         if (!selected) return
-        const activos = (repartidoresList || []).filter(r => r.estado === 'activo')
-        if (selected.tipo === 'delivery' && activos.length >= 2) {
-            setShowRepartidorOverlay(true)
-        } else {
-            onRepartidorSelected?.(selected, null)
-        }
+        // Delega al flujo del padre, que abre el Dialog portaleado de selección
+        // de repartidor (con z-index correcto por encima del mapa) cuando corresponde.
+        onDespachar?.(selected)
     }
 
     const positions = ordersWithCoords.map(p => [parseCoord(p.latitud), parseCoord(p.longitud)] as [number, number])
@@ -395,56 +400,6 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                             )
                         })}
                     </MapContainer>
-
-                    {/* Repartidor selector overlay - floats above the map and popup */}
-                    {showRepartidorOverlay && selected && (
-                        <div className="absolute inset-0 z-[1002] bg-background/75 backdrop-blur-sm flex items-end justify-center p-4">
-                            <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-5">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-2">
-                                        <div className="h-9 w-9 rounded-xl bg-[#FF7A00]/10 flex items-center justify-center">
-                                            <Truck className="h-4 w-4 text-[#FF7A00]" />
-                                        </div>
-                                        <p className="font-bold text-base">¿Quién hace el envío?</p>
-                                    </div>
-                                    <button
-                                        onClick={() => setShowRepartidorOverlay(false)}
-                                        className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground cursor-pointer"
-                                    >
-                                        <X className="h-4 w-4" />
-                                    </button>
-                                </div>
-                                <div className="space-y-2">
-                                    {(repartidoresList || []).filter(r => r.estado === 'activo').map(r => (
-                                        <button
-                                            key={r.id}
-                                            disabled={asignandoRepartidor}
-                                            onClick={() => {
-                                                onRepartidorSelected?.(selected, r.id)
-                                                setShowRepartidorOverlay(false)
-                                            }}
-                                            className="w-full flex items-center gap-3 p-4 rounded-2xl border border-border bg-card hover:bg-accent hover:border-[#FF7A00]/40 transition-all text-left font-semibold disabled:opacity-50 cursor-pointer"
-                                        >
-                                            <div className="h-9 w-9 rounded-full bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
-                                                <UserRound className="h-5 w-5 text-[#FF7A00]" />
-                                            </div>
-                                            {r.nombre}
-                                        </button>
-                                    ))}
-                                    <button
-                                        disabled={asignandoRepartidor}
-                                        onClick={() => {
-                                            onRepartidorSelected?.(selected, null)
-                                            setShowRepartidorOverlay(false)
-                                        }}
-                                        className="w-full p-3 rounded-2xl border border-dashed border-border text-muted-foreground hover:bg-muted/40 transition-all text-sm font-medium disabled:opacity-50 cursor-pointer"
-                                    >
-                                        {asignandoRepartidor ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Despachar sin asignar repartidor'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* Order popup */}
                     {selected && (
@@ -1443,7 +1398,7 @@ const Dashboard = () => {
                                     onSelectPedido={(pedido) => setSelectedUnifiedPedido(pedido)}
                                     onAprobarPago={handleAprobarPago}
                                     onNotificar={handleNotificarCliente}
-                                    onRepartidorSelected={(pedido, repartidorId) => handleRepartidorSelected(pedido.tipo, pedido.id, repartidorId)}
+                                    onDespachar={(pedido) => handleDespachar(pedido.tipo, pedido.id)}
                                     repartidoresList={repartidoresList}
                                     updatingPago={updatingPago}
                                     sendingNotification={sendingNotification}
@@ -1470,7 +1425,7 @@ const Dashboard = () => {
                                                 <h2 className="text-4xl font-black text-foreground tracking-tight">Pedido #{selectedUnifiedPedido.id}</h2>
                                                 <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-2 font-medium">
                                                     <Clock className="h-4 w-4" />
-                                                    {getDateLabel(selectedUnifiedPedido.createdAt)}, {parseDashboardDate(selectedUnifiedPedido.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                                                    {getDateLabel(selectedUnifiedPedido.createdAt)}, {formatPedidoTime(selectedUnifiedPedido.createdAt)}
                                                     <span className="opacity-50 font-normal ml-1">({formatTimeAgo(selectedUnifiedPedido.createdAt)})</span>
                                                 </p>
                                                 {selectedUnifiedPedido.horarioProgramado && (

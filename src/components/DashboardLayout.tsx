@@ -16,7 +16,8 @@ import {
   Moon,
   Users,
   Tag,
-  TrendingUp
+  TrendingUp,
+  Truck
 } from 'lucide-react'
 
 const DashboardLayout = () => {
@@ -63,6 +64,7 @@ const DashboardLayout = () => {
     { icon: TrendingUp, label: 'Métricas', path: '/dashboard/metricas' },
     { icon: Package, label: 'Productos', path: '/dashboard/productos' },
     { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
+    { icon: Truck, label: 'Repartidores', path: '/dashboard/repartidores' },
     { icon: Tag, label: 'Códigos de Descuento', path: '/dashboard/codigos-descuento' },
   ]
 

@@ -28,6 +28,7 @@ interface Producto {
   imagenUrl: string | null
   createdAt: string
   categoria: string | null
+  orden?: number | null
   descuento?: number | null
   tieneVariantes?: boolean | null
   etiquetas?: Array<{ id: number; nombre: string }>

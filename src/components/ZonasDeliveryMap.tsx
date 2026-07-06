@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { MapContainer, TileLayer, Polygon, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -13,7 +13,7 @@ import { useAuthStore } from '@/store/authStore'
 import { zonasDeliveryApi } from '@/lib/api'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { Loader2, MapPin, Map as MapIcon, Trash2, Save, X } from 'lucide-react'
+import { Loader2, MapPin, Map as MapIcon, Trash2, Save, X, Pencil } from 'lucide-react'
 
 // ─────────────────────────────────────────────
 // Estilos base "Phantom"
@@ -117,6 +117,51 @@ function FitBounds({ zonas }: { zonas: ZonaDelivery[] }) {
     return null
 }
 
+// Polígono de una zona ya creada. Cuando `isReshaping` está activo, habilita el modo
+// edición de leaflet-draw sobre la capa: aparecen tiradores en cada vértice (y puntos
+// medios) que el usuario puede arrastrar para reformar la zona sin redibujarla entera.
+function EditablePolygon({
+    positions,
+    pathOptions,
+    isReshaping,
+    onClick,
+    onLayerReady,
+}: {
+    positions: [number, number][]
+    pathOptions: L.PathOptions
+    isReshaping: boolean
+    onClick?: () => void
+    onLayerReady: (layer: L.Polygon) => void
+}) {
+    const layerRef = useRef<L.Polygon | null>(null)
+
+    useEffect(() => {
+        const layer = layerRef.current
+        if (!layer) return
+        const editing = (layer as any).editing
+        if (!editing) return
+        if (isReshaping) {
+            editing.enable()
+            onLayerReady(layer)
+        } else {
+            editing.disable()
+        }
+        return () => {
+            try { editing.disable() } catch { /* noop */ }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isReshaping])
+
+    return (
+        <Polygon
+            ref={(instance) => { layerRef.current = (instance as unknown as L.Polygon) || null }}
+            positions={positions}
+            pathOptions={pathOptions}
+            eventHandlers={onClick ? { click: onClick } : {}}
+        />
+    )
+}
+
 export default function ZonasDeliveryMap() {
     const token = useAuthStore((state) => state.token)
     const [zonas, setZonas] = useState<ZonaDelivery[]>([])
@@ -136,7 +181,45 @@ export default function ZonasDeliveryMap() {
 
     const [editingZona, setEditingZona] = useState<ZonaDelivery | null>(null)
 
+    // Modo "reformar" (arrastrar vértices) de la zona que se está editando
+    const [isReshaping, setIsReshaping] = useState(false)
+    const [reshapedCoords, setReshapedCoords] = useState<Coordenada[] | null>(null)
+    const editLayerRef = useRef<L.Polygon | null>(null)
+
     const defaultCenter: [number, number] = [-31.6333, -60.7]
+
+    // Posiciones memoizadas por zona: mantienen una referencia estable entre renders
+    // para que react-leaflet no reescriba la geometría (y descarte los vértices
+    // arrastrados) cuando el usuario tipea en el formulario del overlay.
+    const zonaPositions = useMemo(() => {
+        const m = new Map<number, [number, number][]>()
+        zonas.forEach((z) => {
+            m.set(z.id, Array.isArray(z.poligono) ? z.poligono.map((c) => [c.lat, c.lng] as [number, number]) : [])
+        })
+        return m
+    }, [zonas])
+
+    // Lee las coordenadas actuales de la capa que se está reformando
+    const readLayerCoords = (): Coordenada[] | null => {
+        const layer = editLayerRef.current
+        if (!layer) return null
+        const latlngs = layer.getLatLngs()[0] as L.LatLng[]
+        if (!Array.isArray(latlngs) || latlngs.length < 3) return null
+        return latlngs.map((ll) => ({ lat: ll.lat, lng: ll.lng }))
+    }
+
+    const toggleReshape = () => {
+        setIsReshaping((prev) => {
+            if (prev) {
+                // Salimos del modo edición: capturamos lo dibujado para no perderlo
+                const coords = readLayerCoords()
+                if (coords) setReshapedCoords(coords)
+            } else {
+                setReshapedCoords(null)
+            }
+            return !prev
+        })
+    }
 
     const fetchZonas = async () => {
         if (!token) return
@@ -169,6 +252,8 @@ export default function ZonasDeliveryMap() {
 
     const handlePolygonCreated = (coords: Coordenada[]) => {
         const nextColor = getNextColor(zonas)
+        setIsReshaping(false)
+        setReshapedCoords(null)
         setEditingZona(null) // Cerramos edición si estaba abierta
         setPendingPolygon(coords)
         setFormNombre('')
@@ -179,6 +264,9 @@ export default function ZonasDeliveryMap() {
 
     const handleOpenEdit = (zona: ZonaDelivery) => {
         setPendingPolygon(null) // Cerramos creación si estaba abierta
+        setIsReshaping(false)
+        setReshapedCoords(null)
+        editLayerRef.current = null
         setEditingZona(zona)
         setFormNombre(zona.nombre)
         setFormPrecio(zona.precio)
@@ -190,6 +278,9 @@ export default function ZonasDeliveryMap() {
         setPendingPolygon(null)
         setEditingZona(null)
         setFormSucursalId(null)
+        setIsReshaping(false)
+        setReshapedCoords(null)
+        editLayerRef.current = null
     }
 
     const handleSaveZona = async () => {
@@ -200,12 +291,22 @@ export default function ZonasDeliveryMap() {
         setIsSaving(true)
         try {
             if (editingZona) {
+                // Si se reformó la zona (o se está reformando), enviamos el nuevo polígono
+                let poligonoPayload: Coordenada[] | undefined
+                if (isReshaping) {
+                    const coords = readLayerCoords()
+                    if (coords) poligonoPayload = coords
+                } else if (reshapedCoords) {
+                    poligonoPayload = reshapedCoords
+                }
+
                 // Actualizar
                 const res = await zonasDeliveryApi.update(token, editingZona.id, {
                     nombre: formNombre,
                     precio: formPrecio,
                     color: formColor || undefined,
                     sucursalId: formSucursalId,
+                    ...(poligonoPayload ? { poligono: poligonoPayload } : {}),
                 }) as { success: boolean; data: ZonaDelivery }
 
                 if (res.success) {
@@ -355,21 +456,22 @@ export default function ZonasDeliveryMap() {
                                 <FitBounds zonas={zonas} />
 
                                 {zonas.map((zona) => {
-                                    const positions: [number, number][] = Array.isArray(zona.poligono)
-                                        ? zona.poligono.map(c => [c.lat, c.lng])
-                                        : []
+                                    const positions = zonaPositions.get(zona.id) || []
+                                    const isThisReshaping = editingZona?.id === zona.id && isReshaping
 
                                     return (
-                                        <Polygon
+                                        <EditablePolygon
                                             key={zona.id}
                                             positions={positions}
+                                            isReshaping={isThisReshaping}
+                                            onLayerReady={(layer) => { editLayerRef.current = layer }}
                                             pathOptions={{
                                                 color: zona.color || '#3b82f6',
                                                 fillColor: zona.color || '#3b82f6',
                                                 fillOpacity: 0.25,
-                                                weight: 2,
+                                                weight: isThisReshaping ? 3 : 2,
                                             }}
-                                            eventHandlers={{ click: () => handleOpenEdit(zona) }}
+                                            onClick={isThisReshaping ? undefined : () => handleOpenEdit(zona)}
                                         />
                                     )
                                 })}
@@ -460,6 +562,30 @@ export default function ZonasDeliveryMap() {
                                         </div>
                                     )}
                                 </div>
+
+                                {editingZona && (
+                                    <div className="mt-5">
+                                        <Button
+                                            type="button"
+                                            variant={isReshaping ? 'default' : 'outline'}
+                                            onClick={toggleReshape}
+                                            className={cn(
+                                                "w-full h-12 rounded-2xl font-semibold",
+                                                isReshaping
+                                                    ? "bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-lg shadow-orange-500/20"
+                                                    : "border-zinc-200 dark:border-zinc-800"
+                                            )}
+                                        >
+                                            <Pencil className="h-4 w-4 mr-2" />
+                                            {isReshaping ? 'Listo, dejar de editar forma' : 'Editar forma en el mapa'}
+                                        </Button>
+                                        {isReshaping && (
+                                            <p className="text-xs text-muted-foreground mt-2 text-center">
+                                                Arrastrá las puntas del área para modificarla. Tocá los puntos intermedios para agregar vértices.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="flex gap-2 mt-6">
                                     {editingZona && (

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import {
   Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
   X, AlertTriangle, Percent, Image as ImageIcon,
-  ChevronDown
+  ChevronDown, GripVertical, ArrowUpDown, Check
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
@@ -130,6 +130,12 @@ const Productos = () => {
 
   // ─── Backfill etiquetas ───
   const [isBackfillingEtiquetas, setIsBackfillingEtiquetas] = useState(false)
+
+  // ─── Reordenar productos por categoría (drag & drop) ───
+  const [reordenandoCategoria, setReordenandoCategoria] = useState<string | null>(null)
+  const [ordenLocal, setOrdenLocal] = useState<typeof productos>([])
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [isGuardandoOrden, setIsGuardandoOrden] = useState(false)
 
   useEffect(() => {
     if (!restaurante) fetchData()
@@ -513,6 +519,50 @@ const Productos = () => {
   }
 
   // ─────────────────────────────────────────────
+  // Reordenar productos (drag & drop)
+  // ─────────────────────────────────────────────
+  const iniciarReorden = (categoriaNombre: string, productosCat: typeof productos) => {
+    cerrarPanel()
+    setReordenandoCategoria(categoriaNombre)
+    setOrdenLocal(productosCat)
+    setDragIndex(null)
+  }
+
+  const cancelarReorden = () => {
+    setReordenandoCategoria(null)
+    setOrdenLocal([])
+    setDragIndex(null)
+  }
+
+  // Reordenado en vivo: al pasar por encima de otro item, el arrastrado toma su lugar
+  const handleReorderDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (dragIndex === null || dragIndex === index) return
+    setOrdenLocal(prev => {
+      const next = [...prev]
+      const [movido] = next.splice(dragIndex, 1)
+      next.splice(index, 0, movido)
+      return next
+    })
+    setDragIndex(index)
+  }
+
+  const guardarOrden = async () => {
+    if (!token || ordenLocal.length === 0) return
+    setIsGuardandoOrden(true)
+    try {
+      await productosApi.reorder(token, ordenLocal.map(p => p.id))
+      toast.success('Orden actualizado')
+      await fetchData()
+      cancelarReorden()
+    } catch (error: any) {
+      toast.error('Error al guardar el orden', { description: error.message || 'Error de conexión' })
+    } finally {
+      setIsGuardandoOrden(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // Filtered
   // ─────────────────────────────────────────────
   const productosFiltrados = productos.filter(p => {
@@ -638,12 +688,84 @@ const Productos = () => {
                   return a.localeCompare(b)
                 })
 
-                return categoriasOrdenadas.map((categoriaNombre) => (
+                return categoriasOrdenadas.map((categoriaNombre) => {
+                  const enReorden = reordenandoCategoria === categoriaNombre
+                  return (
                   <div key={categoriaNombre}>
-                    <h2 className="text-[11px] mb-3 font-semibold tracking-[0.12em] uppercase text-zinc-500 pt-10 ">
-                      {categoriaNombre} {porCategoria[categoriaNombre].length}
-                    </h2>
+                    <div className="flex items-center justify-between gap-3 pt-10 mb-3">
+                      <h2 className="text-[11px] font-semibold tracking-[0.12em] uppercase text-zinc-500">
+                        {categoriaNombre} <span className="text-zinc-600">{porCategoria[categoriaNombre].length}</span>
+                      </h2>
+                      {enReorden ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={cancelarReorden}
+                            disabled={isGuardandoOrden}
+                            className="h-7 px-3 rounded-lg text-[11px] font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={guardarOrden}
+                            disabled={isGuardandoOrden}
+                            className="h-7 px-3 rounded-lg text-[11px] font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white transition-colors flex items-center gap-1.5 disabled:opacity-60"
+                          >
+                            {isGuardandoOrden ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                            Guardar orden
+                          </button>
+                        </div>
+                      ) : (
+                        !busqueda && !reordenandoCategoria && porCategoria[categoriaNombre].length > 1 && (
+                          <button
+                            onClick={() => iniciarReorden(categoriaNombre, porCategoria[categoriaNombre])}
+                            className="h-7 px-2.5 rounded-lg text-[11px] font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
+                          >
+                            <ArrowUpDown className="h-3.5 w-3.5" />
+                            Reordenar
+                          </button>
+                        )
+                      )}
+                    </div>
 
+                    {enReorden ? (
+                      <>
+                        <p className="text-xs text-zinc-500 mb-3">
+                          Arrastrá los platos para cambiar el orden en que se muestran a tus clientes.
+                        </p>
+                        <div className="space-y-2 max-w-2xl">
+                          {ordenLocal.map((producto, index) => (
+                            <div
+                              key={producto.id}
+                              draggable
+                              onDragStart={() => setDragIndex(index)}
+                              onDragOver={(e) => handleReorderDragOver(e, index)}
+                              onDragEnd={() => setDragIndex(null)}
+                              className={cn(
+                                "flex items-center gap-3 p-2 pr-4 rounded-2xl bg-zinc-900 border transition-all select-none cursor-grab active:cursor-grabbing",
+                                dragIndex === index ? "border-orange-500/70 opacity-60 shadow-lg" : "border-transparent hover:bg-zinc-800/70",
+                                !producto.activo && "opacity-50"
+                              )}
+                            >
+                              <GripVertical className="h-5 w-5 shrink-0 text-zinc-600" />
+                              <div className="h-6 w-6 shrink-0 rounded-md bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-zinc-400">
+                                {index + 1}
+                              </div>
+                              <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden bg-zinc-800">
+                                {producto.imagenUrl ? (
+                                  <img src={producto.imagenUrl} alt={producto.nombre} className="w-full h-full object-cover pointer-events-none" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <ImageIcon className="h-4 w-4 text-zinc-600" />
+                                  </div>
+                                )}
+                              </div>
+                              <span className="flex-1 text-sm font-medium text-white truncate">{producto.nombre}</span>
+                              <span className="text-sm font-bold text-zinc-400 shrink-0">${parseFloat(producto.precio).toFixed(0)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
                     <div className={cn(
                       "grid gap-3 grid-cols-2 sm:grid-cols-3",
                       activePanelType ? "lg:grid-cols-4" : "lg:grid-cols-4 xl:grid-cols-5"
@@ -695,8 +817,10 @@ const Productos = () => {
                         )
                       })}
                     </div>
+                    )}
                   </div>
-                ))
+                  )
+                })
               })()}
             </div>
           )}

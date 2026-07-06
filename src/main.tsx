@@ -15,6 +15,7 @@ import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
 import Perfil from './pages/Perfil'
 import Clientes from './pages/Clientes'
+import Repartidores from './pages/Repartidores'
 import CodigosDescuento from './pages/CodigosDescuento'
 import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
@@ -97,6 +98,10 @@ const router = createBrowserRouter([
           {
             path: "clientes",
             element: <Clientes />,
+          },
+          {
+            path: "repartidores",
+            element: <Repartidores />,
           },
           {
             path: "codigos-descuento",
