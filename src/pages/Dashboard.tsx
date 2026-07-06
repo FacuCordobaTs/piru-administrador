@@ -227,7 +227,7 @@ function MapFlyTo({ coords }: { coords: { lat: number; lng: number; id: number }
 
 const parseCoord = (v: string | null | undefined) => parseFloat(String(v || '').replace(',', '.'))
 
-const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onAprobarPago, onNotificar, onDespachar, repartidoresList, updatingPago, sendingNotification, asignandoRepartidor }: {
+const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onAprobarPago, onNotificar, onDespachar, updatingPago, sendingNotification, asignandoRepartidor }: {
     orders: UnifiedPedido[]
     onClose: () => void
     externalSelected?: UnifiedPedido | null
@@ -235,7 +235,6 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
     onAprobarPago?: (pedido: UnifiedPedido, metodo?: 'efectivo' | 'transferencia') => void
     onNotificar?: (pedido: UnifiedPedido) => void
     onDespachar?: (pedido: UnifiedPedido) => void
-    repartidoresList?: Repartidor[]
     updatingPago?: string | null
     sendingNotification?: string | null
     asignandoRepartidor?: boolean
@@ -1399,7 +1398,6 @@ const Dashboard = () => {
                                     onAprobarPago={handleAprobarPago}
                                     onNotificar={handleNotificarCliente}
                                     onDespachar={(pedido) => handleDespachar(pedido.tipo, pedido.id)}
-                                    repartidoresList={repartidoresList}
                                     updatingPago={updatingPago}
                                     sendingNotification={sendingNotification}
                                     asignandoRepartidor={asignandoRepartidor}
