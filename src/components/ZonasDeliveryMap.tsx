@@ -59,6 +59,17 @@ function MapResizer() {
     return null
 }
 
+// Recalcula el tamaño del mapa cuando cambia el layout (p. ej. al abrir/cerrar el
+// panel lateral del formulario, que modifica el ancho disponible del mapa).
+function MapResizeOnChange({ dep }: { dep: unknown }) {
+    const map = useMap()
+    useEffect(() => {
+        const timer = setTimeout(() => { map.invalidateSize() }, 250)
+        return () => clearTimeout(timer)
+    }, [dep, map])
+    return null
+}
+
 function DrawControl({ onPolygonCreated }: { onPolygonCreated: (coords: Coordenada[]) => void }) {
     const map = useMap()
     const drawControlRef = useRef<L.Control.Draw | null>(null)
@@ -423,7 +434,7 @@ export default function ZonasDeliveryMap() {
                 setIsMapModalOpen(open)
                 if (!open) closeOverlay()
             }}>
-                <DialogContent className="max-w-5xl w-[95vw] h-[85vh] flex flex-col p-0 overflow-hidden sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                <DialogContent className="w-[97vw] max-w-[97vw] sm:max-w-[1600px] h-[92vh] flex flex-col p-0 overflow-hidden sm:rounded-[32px] border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
                     <DialogHeader className="p-5 px-6 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0">
                         <DialogTitle className="flex items-center justify-between text-xl font-bold">
                             <span className="flex items-center gap-3">
@@ -438,7 +449,8 @@ export default function ZonasDeliveryMap() {
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="flex-1 w-full relative bg-zinc-100 dark:bg-zinc-900">
+                    <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
+                        <div className="relative flex-1 min-w-0 min-h-0 bg-zinc-100 dark:bg-zinc-900">
                         {isMapModalOpen && (
                             <MapContainer
                                 center={defaultCenter}
@@ -452,6 +464,7 @@ export default function ZonasDeliveryMap() {
                                 />
 
                                 <MapResizer />
+                                <MapResizeOnChange dep={!!(pendingPolygon || editingZona)} />
                                 <DrawControl onPolygonCreated={handlePolygonCreated} />
                                 <FitBounds zonas={zonas} />
 
@@ -490,10 +503,11 @@ export default function ZonasDeliveryMap() {
                                 )}
                             </MapContainer>
                         )}
+                        </div>
 
-                        {/* ── OVERLAY FORMULARIO (Reemplaza los modales anidados) ── */}
+                        {/* ── PANEL LATERAL FORMULARIO (a un costado del mapa, sin taparlo) ── */}
                         {(pendingPolygon || editingZona) && (
-                            <div className="absolute top-4 right-4 z-1000 w-[calc(100%-2rem)] sm:w-[340px] bg-white dark:bg-zinc-950 rounded-[24px] p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in slide-in-from-right-8 fade-in">
+                            <div className="w-full sm:w-[400px] shrink-0 border-t sm:border-t-0 sm:border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 overflow-y-auto animate-in slide-in-from-right-8 fade-in">
                                 <div className="flex justify-between items-center mb-5">
                                     <h3 className="text-xl font-bold flex items-center gap-2">
                                         <MapIcon className="h-5 w-5 text-[#FF7A00]" />

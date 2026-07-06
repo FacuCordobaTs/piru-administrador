@@ -321,7 +321,7 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                     <p className="text-xs text-center opacity-60">Las coordenadas se guardan cuando el cliente ingresa su dirección.</p>
                 </div>
             ) : (
-                <div className="flex-1 relative overflow-hidden">
+                <div className="flex-1 relative overflow-hidden isolate">
                     {/* Chips de pedidos — strip horizontal flotando sobre el mapa, solo mobile */}
                     {orders.length > 0 && (
                         <div className="absolute top-3 left-0 right-0 z-[1001] lg:hidden pointer-events-none">
