@@ -10,8 +10,10 @@ import {
   CalendarDays,
   Globe,
   ShoppingBag,
+  Truck,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import Repartidores from './Repartidores'
 
 // ─────────────────────────────────────────────
 // Estilos base "Phantom"
@@ -45,6 +47,50 @@ interface MetricasData {
 }
 
 export default function Metricas() {
+  const [tab, setTab] = useState<'metricas' | 'repartidores'>('metricas')
+
+  return (
+    <div className="min-h-full bg-zinc-50 dark:bg-background">
+      {/* Tab switcher */}
+      <div className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800/80 px-4 sm:px-8">
+        <div className="max-w-5xl mx-auto flex items-center gap-1 h-12">
+          <MetricasTab active={tab === 'metricas'} onClick={() => setTab('metricas')} icon={TrendingUp}>
+            Estadísticas
+          </MetricasTab>
+          <MetricasTab active={tab === 'repartidores'} onClick={() => setTab('repartidores')} icon={Truck}>
+            Repartidores
+          </MetricasTab>
+        </div>
+      </div>
+
+      {tab === 'metricas' ? <MetricasPanel /> : <Repartidores />}
+    </div>
+  )
+}
+
+function MetricasTab({ active, onClick, icon: Icon, children }: {
+  active: boolean
+  onClick: () => void
+  icon: typeof TrendingUp
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative flex items-center gap-2 px-3 h-12 text-sm font-semibold transition-colors ${
+        active ? 'text-foreground' : 'text-zinc-500 hover:text-foreground'
+      }`}
+    >
+      <Icon className={`w-4 h-4 ${active ? 'text-[#FF7A00]' : ''}`} />
+      {children}
+      {active && (
+        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF7A00] rounded-full" />
+      )}
+    </button>
+  )
+}
+
+function MetricasPanel() {
   const token = useAuthStore(s => s.token)
   const [data, setData] = useState<MetricasData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -168,7 +214,7 @@ export default function Metricas() {
     }
   })
 
-  let sumaMediosDePago = pagoEfectivo + pagoMP + pagoTransf + pagoTarjeta;
+  const sumaMediosDePago = pagoEfectivo + pagoMP + pagoTransf + pagoTarjeta;
   // Para los porcentajes usamos la suma total de los medios de pago para que la barra siempre sume 100% de lo reportado
   // (es posible que algunos ingresos totales tengan pequeñas diferencias decimales con el agrupado)
   const basePorcentaje = sumaMediosDePago > 0 ? sumaMediosDePago : 1;

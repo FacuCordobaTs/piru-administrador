@@ -115,6 +115,48 @@ export const authApi = {
     })
   },
 
+  // Registro por WhatsApp (self-serve): envía un código al celular y devuelve un verificationId único.
+  // Sólo pide el teléfono; el resto de los datos se completan en el onboarding.
+  registerTelefonoStart: async (telefono: string) => {
+    return fetchApi('/auth/register-telefono/start', {
+      method: 'POST',
+      body: JSON.stringify({ telefono }),
+    })
+  },
+
+  // Reenvía el código para una sesión de verificación existente.
+  registerTelefonoResend: async (verificationId: string) => {
+    return fetchApi('/auth/register-telefono/resend', {
+      method: 'POST',
+      body: JSON.stringify({ verificationId }),
+    })
+  },
+
+  // Verifica el código de 6 dígitos y crea la cuenta.
+  registerTelefonoVerify: async (verificationId: string, codigo: string) => {
+    return fetchApi('/auth/register-telefono/verify', {
+      method: 'POST',
+      body: JSON.stringify({ verificationId, codigo }),
+    })
+  },
+
+  // Login por WhatsApp (para cuentas registradas con celular, sin contraseña).
+  // Envía un código a un número que YA tiene cuenta. El reenvío reutiliza registerTelefonoResend.
+  loginTelefonoStart: async (telefono: string) => {
+    return fetchApi('/auth/login-telefono/start', {
+      method: 'POST',
+      body: JSON.stringify({ telefono }),
+    })
+  },
+
+  // Verifica el código y devuelve el token de la cuenta existente.
+  loginTelefonoVerify: async (verificationId: string, codigo: string) => {
+    return fetchApi('/auth/login-telefono/verify', {
+      method: 'POST',
+      body: JSON.stringify({ verificationId, codigo }),
+    })
+  },
+
   changePassword: async (token: string, currentPassword: string, newPassword: string) => {
     return fetchApi('/auth/change-password', {
       method: 'PUT',
@@ -135,6 +177,26 @@ export const onboardingApi = {
       body: JSON.stringify(data)
     })
   }
+}
+
+// Carta IA — extracción automática del menú desde imágenes con Claude
+export const cartaIaApi = {
+  // Envía las imágenes (data URLs base64) y devuelve la carta detectada
+  extraer: async (token: string, imagenes: string[]) => {
+    return fetchApi('/carta-ia/extraer', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ imagenes }),
+    })
+  },
+  // Crea todos los productos (con categorías, ingredientes, variantes y extras)
+  crear: async (token: string, carta: any) => {
+    return fetchApi('/carta-ia/crear', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ carta }),
+    })
+  },
 }
 
 export const clientesApi = {
@@ -184,7 +246,13 @@ export const restauranteApi = {
       direccion?: string
       telefono?: string
       image?: string // Base64 de la imagen
+      imageLight?: string // Base64 del logo modo claro
       username?: string
+      colorPrimario?: string
+      colorSecundario?: string
+      direccionTexto?: string | null
+      direccionLat?: number | null
+      direccionLng?: number | null
     }
   ) => {
     return fetchApi('/restaurante/update', {
@@ -709,7 +777,7 @@ export const agregadosApi = {
     })
   },
 
-  update: async (token: string, id: number, data: { nombre?: string; precio?: number }) => {
+  update: async (token: string, id: number, data: { nombre?: string; precio?: number; activo?: boolean }) => {
     return fetchApi(`/agregado/${id}`, {
       method: 'PUT',
       headers: {
@@ -1139,6 +1207,12 @@ export const pedidoUnificadoApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+  clienteContexto: async (token: string, id: number) => {
+    return fetchApi(`/pedido-unificado/${id}/cliente-contexto`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
   create: async (
     token: string,
     data:
@@ -1155,6 +1229,7 @@ export const pedidoUnificadoApi = {
           pagado?: boolean
           metodoPago?: string
           sucursalId?: number
+          notificarWhatsappPrueba?: boolean
           items: Array<PedidoUnificadoItemInput>
         }
       | {
@@ -1166,6 +1241,7 @@ export const pedidoUnificadoApi = {
           pagado?: boolean
           metodoPago?: string
           sucursalId?: number
+          notificarWhatsappPrueba?: boolean
           items: Array<PedidoUnificadoItemInput>
         }
   ) => {

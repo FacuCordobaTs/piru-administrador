@@ -36,7 +36,7 @@ interface Producto {
   variantes?: Array<{ id: number; nombre: string; precio: string }>
 }
 
-interface RestauranteData {
+export interface RestauranteData {
   id: number
   email: string
   nombre: string
@@ -71,6 +71,9 @@ interface RestauranteData {
   colorPrimario: string | null
   colorSecundario: string | null
   disenoAlternativo: boolean | null
+  direccionTexto?: string | null
+  direccionLat?: string | null
+  direccionLng?: string | null
   rapiboyToken: string | null
   proveedorPago: 'cucuru' | 'talo' | 'mercadopago' | 'manual' | null
   taloClientId: string | null
@@ -79,6 +82,12 @@ interface RestauranteData {
   codigoDescuentoEnabled: boolean | null
   notificarClientesWhatsapp: boolean | null
   modoConfirmacionManual: boolean | null
+  orderGroupEnabled: boolean | null
+  deliveryEnabled: boolean | null
+  takeawayEnabled: boolean | null
+  permitirPedidosProgramados: boolean | null
+  usarFranjasHorario: boolean | null
+  soloPedidosProgramados: boolean | null
   metodosPagoConfig?: {
     mercadopagoCheckout?: boolean
     mercadopagoBricks?: boolean
@@ -97,6 +106,7 @@ interface RestauranteState {
   error: string | null
   fetchData: () => Promise<void>
   setRestaurante: (restaurante: RestauranteData) => void
+  setLocal: (partial: Partial<RestauranteData>) => void
   setMesas: (mesas: Mesa[]) => void
   setProductos: (productos: Producto[]) => void
   setCategorias: (categorias: Categoria[]) => void
@@ -163,6 +173,16 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
   },
 
   setRestaurante: (restaurante) => set({ restaurante }),
+
+  // Merge local de campos del restaurante sin fetch. Base del autosave optimista:
+  // la UI refleja el cambio al instante y el sync corre en background.
+  setLocal: (partial) =>
+    set((state) =>
+      state.restaurante
+        ? { restaurante: { ...state.restaurante, ...partial } }
+        : {}
+    ),
+
   setMesas: (mesas) => set({ mesas }),
   setProductos: (productos) => set({ productos }),
   setCategorias: (categorias) => set({ categorias }),

@@ -11,8 +11,9 @@ import {
     ShoppingBag, DollarSign, ChevronRight,
     User, TrendingUp, Users,
     MessageCircle, ExternalLink, X,
-    Clock, Truck, Package, ArrowUpRight, Star
+    Clock, Truck, Package, ArrowUpRight, Star, Ticket
 } from 'lucide-react'
+import CodigosDescuento from './CodigosDescuento'
 
 // --- Types ---
 interface ItemPedido {
@@ -107,9 +108,56 @@ const avatarColors = [
 const getAvatarColor = (id: number) => avatarColors[id % avatarColors.length]
 
 // =============================================================================
-// MAIN COMPONENT
+// MAIN COMPONENT (con tabs: Clientes / Cupones)
 // =============================================================================
 export default function Clientes() {
+    const [tab, setTab] = useState<'clientes' | 'cupones'>('clientes')
+
+    return (
+        <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
+            {/* Tab switcher */}
+            <div className="border-b bg-background px-4 sm:px-6 shrink-0">
+                <div className="flex items-center gap-1 h-12">
+                    <TabButton active={tab === 'clientes'} onClick={() => setTab('clientes')} icon={Users}>
+                        Clientes
+                    </TabButton>
+                    <TabButton active={tab === 'cupones'} onClick={() => setTab('cupones')} icon={Ticket}>
+                        Cupones
+                    </TabButton>
+                </div>
+            </div>
+
+            {/* Panel activo */}
+            <div className="flex-1 min-h-0 flex flex-col">
+                {tab === 'clientes' ? <ClientesPanel /> : <CodigosDescuento />}
+            </div>
+        </div>
+    )
+}
+
+function TabButton({ active, onClick, icon: Icon, children }: {
+    active: boolean
+    onClick: () => void
+    icon: typeof Users
+    children: React.ReactNode
+}) {
+    return (
+        <button
+            onClick={onClick}
+            className={`relative flex items-center gap-2 px-3 h-12 text-sm font-medium transition-colors ${
+                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+            <Icon className="w-4 h-4" />
+            {children}
+            {active && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+            )}
+        </button>
+    )
+}
+
+function ClientesPanel() {
     const token = useAuthStore(state => state.token)
     const [clientes, setClientes] = useState<Cliente[]>([])
     const [loading, setLoading] = useState(true)

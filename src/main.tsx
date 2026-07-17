@@ -1,11 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter, Navigate, useLocation } from "react-router";
 import { RouterProvider } from "react-router/dom";
 import { Toaster } from 'sonner'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import VerificarCodigo from './pages/VerificarCodigo'
+import CuentaCreada from './pages/CuentaCreada'
 import ProtectedLayout from './components/ProtectedLayout'
 import GuestLayout from './components/GuestLayout'
 import DashboardLayout from './components/DashboardLayout'
@@ -13,7 +15,7 @@ import Dashboard from './pages/Dashboard'
 import Pedidos from './pages/Pedidos'
 import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
-import Perfil from './pages/Perfil'
+import AjustesPage from './pages/ajustes'
 import Clientes from './pages/Clientes'
 import Repartidores from './pages/Repartidores'
 import CodigosDescuento from './pages/CodigosDescuento'
@@ -40,6 +42,10 @@ const router = createBrowserRouter([
       {
         path: "/register",
         element: <Register />,
+      },
+      {
+        path: "/verificar/:id",
+        element: <VerificarCodigo />,
       }
     ],
   },
@@ -52,6 +58,16 @@ const router = createBrowserRouter([
         element: <Pedido />,
       },
     ],
+  },
+  {
+    path: "/bienvenida",
+    element: <ProtectedLayout />,
+    children: [
+      {
+        index: true,
+        element: <CuentaCreada />
+      }
+    ]
   },
   {
     path: "/onboarding",
@@ -108,14 +124,30 @@ const router = createBrowserRouter([
             element: <CodigosDescuento />,
           },
           {
+            path: "ajustes",
+            element: <Navigate to="/dashboard/ajustes/general" replace />,
+          },
+          {
+            path: "ajustes/:seccion",
+            element: <AjustesPage />,
+          },
+          {
+            // Compat: /dashboard/perfil es el redirect_uri de los OAuth (MP y
+            // WhatsApp). Redirige a Pagos CONSERVANDO el query (?mp_status,
+            // ?code&state=whatsapp) para que la sección Pagos los procese.
             path: "perfil",
-            element: <Perfil />,
+            element: <PerfilRedirect />,
           },
         ],
       },
     ],
   },
 ]);
+
+function PerfilRedirect() {
+  const { search } = useLocation()
+  return <Navigate to={`/dashboard/ajustes/pagos${search}`} replace />
+}
 
 function App() {
   return (

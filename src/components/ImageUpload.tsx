@@ -8,9 +8,10 @@ interface ImageUploadProps {
   onImageChange: (base64: string | null) => void
   currentImage?: string | null
   maxSize?: number // in MB
+  square?: boolean // preview cuadrado + info de formatos centrada (por defecto: rectángulo 16:9)
 }
 
-const ImageUpload = ({ onImageChange, currentImage, maxSize = 5 }: ImageUploadProps) => {
+const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false }: ImageUploadProps) => {
   const [preview, setPreview] = useState<string | null>(currentImage || null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -115,7 +116,7 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5 }: ImageUploadPr
 
       {preview ? (
         <Card className="relative overflow-hidden">
-          <div className="aspect-video w-full bg-muted">
+          <div className={`${square ? 'aspect-square' : 'aspect-video'} w-full bg-muted`}>
             <img
               src={preview}
               alt="Preview"
@@ -145,7 +146,7 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5 }: ImageUploadPr
         </Card>
       ) : (
         <Card
-          className={`border-2 border-dashed transition-all cursor-pointer ${
+          className={`border-2 border-dashed transition-all cursor-pointer ${square ? 'aspect-square' : ''} ${
             isDragging
               ? 'border-primary bg-primary/5'
               : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
@@ -155,11 +156,11 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5 }: ImageUploadPr
           onDrop={handleDrop}
           onClick={handleClick}
         >
-          <div className="flex flex-col items-center justify-center py-12 px-4">
-            <div className="rounded-full bg-primary/10 p-4 mb-4">
-              <ImageIcon className="h-8 w-8 text-primary" />
+          <div className={`flex flex-col items-center justify-center text-center px-4 ${square ? 'h-full py-4' : 'py-12'}`}>
+            <div className={`rounded-full bg-primary/10 ${square ? 'p-3 mb-3' : 'p-4 mb-4'}`}>
+              <ImageIcon className={square ? 'h-6 w-6 text-primary' : 'h-8 w-8 text-primary'} />
             </div>
-            <p className="text-sm font-medium mb-1">
+            <p className={`font-medium mb-1 ${square ? 'text-xs' : 'text-sm'}`}>
               Haz clic o arrastra una imagen aquí
             </p>
             <p className="text-xs text-muted-foreground text-center">
@@ -169,7 +170,7 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5 }: ImageUploadPr
         </Card>
       )}
 
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <div className={`text-xs text-muted-foreground ${square ? 'flex flex-col items-center text-center gap-0.5' : 'flex items-center justify-between'}`}>
         <span>Formatos: JPG, PNG, WebP</span>
         <span>Tamaño máximo: {maxSize}MB</span>
       </div>

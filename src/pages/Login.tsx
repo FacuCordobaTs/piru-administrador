@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,56 +10,91 @@ import { cn } from '@/lib/utils'
 
 const inputClass = "h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-0 focus-visible:ring-0 focus-visible:bg-zinc-200/70 dark:focus-visible:bg-zinc-800 transition-colors text-base px-5 w-full shadow-none"
 
+type Metodo = 'whatsapp' | 'email'
+
 const Login = () => {
   const navigate = useNavigate()
   const setAuth = useAuthStore((state) => state.setAuth)
+
+  const [metodo, setMetodo] = useState<Metodo>('whatsapp')
+
+  // Login por WhatsApp (cuentas registradas con celular)
+  const [telefono, setTelefono] = useState('')
+  const phoneRef = useRef<HTMLInputElement>(null)
+
+  // Login por email (cuentas legacy con contraseña)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+
   const [isLoading, setIsLoading] = useState(false)
 
-  // Apply system theme preference on mount
+  // Apply system theme preference on mount + autofocus del teléfono
   useEffect(() => {
     const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
     document.documentElement.classList.toggle('dark', isDark)
+    const t = setTimeout(() => phoneRef.current?.focus(), 350)
+    return () => clearTimeout(t)
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const puedeEnviarWhatsapp = telefono.replace(/\D/g, '').length >= 8
+
+  const handleWhatsappSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    let telefonoLimpio = telefono.replace(/\D/g, '')
+    if (telefonoLimpio.length < 8) {
+      toast.error('Ingresá un número de WhatsApp válido')
+      return
+    }
+    if (!telefonoLimpio.startsWith('54')) {
+      telefonoLimpio = `54${telefonoLimpio}`
+    }
+
+    setIsLoading(true)
+    try {
+      const response = await authApi.loginTelefonoStart(telefonoLimpio)
+
+      if (typeof response === 'object' && response !== null && 'verificationId' in response) {
+        const { verificationId, telefono: telefonoNormalizado } = response as { verificationId: string; telefono?: string }
+        toast.success('Código enviado', { description: 'Te lo mandamos por WhatsApp 📲' })
+        navigate(`/verificar/${verificationId}`, {
+          state: { telefono: telefonoNormalizado || telefonoLimpio, mode: 'login' },
+        })
+      } else {
+        toast.error('Error en la respuesta del servidor')
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error('No pudimos enviar el código', { description: error.message })
+      } else {
+        toast.error('Error de conexión', { description: 'No se pudo conectar con el servidor' })
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
       const response = await authApi.login(email, password)
 
-      if (
-        typeof response === 'object' &&
-        response !== null &&
-        'token' in response &&
-        'restaurante' in response
-      ) {
-        const { token, restaurante, message } = response as {
-          token: string
-          restaurante: any
-          message?: string
-        }
-
+      if (typeof response === 'object' && response !== null && 'token' in response && 'restaurante' in response) {
+        const { token, restaurante, message } = response as { token: string; restaurante: any; message?: string }
         setAuth(token, restaurante)
-        toast.success('¡Bienvenido de vuelta!', {
-          description: message || 'Sesión iniciada correctamente',
-        })
+        toast.success('¡Bienvenido de vuelta!', { description: message || 'Sesión iniciada correctamente' })
         navigate('/dashboard')
       } else {
         toast.error('Error en la respuesta del servidor')
       }
     } catch (error) {
       if (error instanceof ApiError) {
-        toast.error('Error al iniciar sesión', {
-          description: error.message,
-        })
+        toast.error('Error al iniciar sesión', { description: error.message })
       } else {
-        toast.error('Error de conexión', {
-          description: 'No se pudo conectar con el servidor',
-        })
+        toast.error('Error de conexión', { description: 'No se pudo conectar con el servidor' })
       }
     } finally {
       setIsLoading(false)
@@ -67,64 +102,118 @@ const Login = () => {
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center w-full bg-background px-6 selection:bg-orange-500/10 selection:text-[#FF7A00]">
-      <div className="w-full max-w-sm animate-in fade-in duration-700">
-        <div className="flex justify-center mb-12">
-          <img src="/logopiru.jpeg" alt="Piru" className="h-12 w-auto rounded-2xl" />
-        </div>
+    <div className="min-h-dvh flex flex-col w-full bg-background px-6 selection:bg-orange-500/10 selection:text-[#FF7A00]">
+      {/* Barra superior: logo + acceso a crear cuenta */}
+      <header className="w-full max-w-md mx-auto flex items-center justify-between pt-7">
+        <img src="/logopiru.jpeg" alt="Piru" className="h-9 w-auto rounded-xl" />
+        <Link to="/register" className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          Crear cuenta
+          <span className="inline-block transition-transform group-hover:translate-x-0.5">→</span>
+        </Link>
+      </header>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <Input
-            id="email"
-            type="email"
-            placeholder="Correo electrónico"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            className={inputClass}
-          />
+      <main className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto pb-16">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-700">
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight text-balance">
+            Entrá a tu local
+          </h1>
+          <p className="text-[15px] text-muted-foreground mt-3">
+            {metodo === 'whatsapp'
+              ? 'Te mandamos un código al WhatsApp de tu local.'
+              : 'Ingresá con tu correo y contraseña.'}
+          </p>
 
-          <div className="relative">
-            <Input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Contraseña"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              className={cn(inputClass, "pr-12")}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((value) => !value)}
-              className="absolute inset-y-0 right-0 flex items-center justify-center w-12 text-muted-foreground hover:text-foreground transition-colors"
-              aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-            >
-              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-            </button>
-          </div>
+          {metodo === 'whatsapp' ? (
+            <form onSubmit={handleWhatsappSubmit} className="mt-8">
+              <label
+                htmlFor="telefono"
+                className="group flex items-center gap-3 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-5 transition-colors focus-within:bg-zinc-200/70 dark:focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-[#FF7A00]/30"
+              >
+                <span className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500 select-none">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current shrink-0" aria-hidden>
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+                  </svg>
+                  <span className="text-base">+54</span>
+                  <span className="h-6 w-px bg-zinc-300 dark:bg-zinc-700" />
+                </span>
+                <input
+                  ref={phoneRef}
+                  id="telefono"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  placeholder="9 351 123 4567"
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  className="flex-1 bg-transparent border-0 outline-none text-base placeholder:text-zinc-400 dark:placeholder:text-zinc-600 w-full min-w-0"
+                />
+              </label>
 
-          <Button
-            type="submit"
-            size="lg"
-            disabled={isLoading}
-            className="w-full h-12 mt-3 rounded-2xl text-sm font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-none transition-all active:scale-[0.98]"
+              <Button
+                type="submit"
+                size="lg"
+                disabled={isLoading || !puedeEnviarWhatsapp}
+                className="w-full h-14 mt-3 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-none transition-all active:scale-[0.985] disabled:opacity-40"
+              >
+                {isLoading ? 'Enviando código…' : 'Continuar'}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleEmailSubmit} className="mt-8 space-y-3">
+              <Input
+                id="email"
+                type="email"
+                placeholder="Correo electrónico"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                className={inputClass}
+              />
+
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  className={cn(inputClass, "pr-12")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="absolute inset-y-0 right-0 flex items-center justify-center w-12 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+
+              <Button
+                type="submit"
+                size="lg"
+                disabled={isLoading}
+                className="w-full h-14 mt-1 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-none transition-all active:scale-[0.985]"
+              >
+                {isLoading ? 'Ingresando…' : 'Entrar'}
+              </Button>
+            </form>
+          )}
+
+          {/* Alternar método: la mayoría de las cuentas nuevas son por WhatsApp;
+              el email queda como camino secundario para cuentas antiguas. */}
+          <button
+            type="button"
+            onClick={() => setMetodo((m) => (m === 'whatsapp' ? 'email' : 'whatsapp'))}
+            className="mt-6 w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            {isLoading ? 'Ingresando...' : 'Entrar'}
-          </Button>
-        </form>
-
-        <div className="text-center text-sm text-muted-foreground mt-10">
-          <Link
-            to="/register"
-            className="text-[#FF7A00] hover:text-[#E66E00] transition-colors font-medium"
-          >
-            Crear cuenta
-          </Link>
+            {metodo === 'whatsapp' ? 'Entrar con correo y contraseña' : 'Entrar con WhatsApp'}
+          </button>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

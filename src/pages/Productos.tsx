@@ -114,7 +114,7 @@ const Productos = () => {
   const [busquedaIngrediente, setBusquedaIngrediente] = useState('')
 
   // ─── Agregados ───
-  const [agregados, setAgregados] = useState<Array<{ id: number; nombre: string; precio: string }>>([])
+  const [agregados, setAgregados] = useState<Array<{ id: number; nombre: string; precio: string; activo?: boolean }>>([])
   const [agregadosSeleccionados, setAgregadosSeleccionados] = useState<number[]>([])
   const [nuevoAgregadoNombre, setNuevoAgregadoNombre] = useState('')
   const [nuevoAgregadoPrecio, setNuevoAgregadoPrecio] = useState('')
@@ -161,7 +161,7 @@ const Productos = () => {
       try {
         const response = await agregadosApi.getAll(token) as {
           success: boolean
-          agregados?: Array<{ id: number; nombre: string; precio: string }>
+          agregados?: Array<{ id: number; nombre: string; precio: string; activo?: boolean }>
         }
         if (response.success && response.agregados) setAgregados(response.agregados)
       } catch (error) {
@@ -423,6 +423,24 @@ const Productos = () => {
       toast.error('Error al actualizar extra', { description: error.message || 'Error de conexión' })
     } finally {
       setIsGuardandoExtraInline(false)
+    }
+  }
+
+  const toggleActivoExtra = async (ag: { id: number; nombre: string; activo?: boolean }) => {
+    if (!token) return
+    const nuevoActivo = ag.activo === false
+    // Optimistic update
+    setAgregados(prev => prev.map(a => a.id === ag.id ? { ...a, activo: nuevoActivo } : a))
+    try {
+      const response = await agregadosApi.update(token, ag.id, { activo: nuevoActivo }) as { success: boolean }
+      if (response.success) {
+        toast.success(nuevoActivo ? 'Extra activado' : 'Extra desactivado')
+      } else {
+        setAgregados(prev => prev.map(a => a.id === ag.id ? { ...a, activo: !nuevoActivo } : a))
+      }
+    } catch (error: any) {
+      setAgregados(prev => prev.map(a => a.id === ag.id ? { ...a, activo: !nuevoActivo } : a))
+      toast.error('Error al cambiar el estado del extra', { description: error.message || 'Error de conexión' })
     }
   }
 
@@ -1265,6 +1283,11 @@ const Productos = () => {
                           >
                             <span className={cn("text-sm font-medium", isSelected ? "text-emerald-400" : "text-zinc-300")}>
                               {ag.nombre} <span className="opacity-60 ml-1 text-xs">+${ag.precio}</span>
+                              {ag.activo === false && (
+                                <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                                  Desactivado
+                                </span>
+                              )}
                             </span>
                             {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
                           </div>
@@ -1540,11 +1563,25 @@ const Productos = () => {
                     ) : (
                       /* Normal row */
                       <div className="flex items-center justify-between px-4 py-3">
-                        <div>
-                          <p className="text-sm font-semibold text-white">{ag.nombre}</p>
+                        <div className={ag.activo === false ? 'opacity-50' : ''}>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-white">{ag.nombre}</p>
+                            {ag.activo === false && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                                Desactivado
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-zinc-500">+${ag.precio}</p>
                         </div>
                         <div className="flex items-center gap-3 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => toggleActivoExtra(ag)}
+                            className={ag.activo === false ? 'text-emerald-500 hover:text-emerald-400 transition-colors' : 'text-amber-500 hover:text-amber-400 transition-colors'}
+                          >
+                            {ag.activo === false ? 'activar' : 'desactivar'}
+                          </button>
                           <button
                             type="button"
                             onClick={() => iniciarEditInlineExtra(ag)}
