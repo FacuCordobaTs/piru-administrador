@@ -354,6 +354,15 @@ export const restauranteApi = {
     })
   },
 
+  toggleWhatsappEnabled: async (token: string) => {
+    return fetchApi('/restaurante/toggle-whatsapp-enabled', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+
   toggleCardsPaymentsEnabled: async (token: string) => {
     return fetchApi('/restaurante/toggle-cards-payments-enabled', {
       method: 'PUT',
@@ -507,7 +516,7 @@ export const restauranteApi = {
     })
   },
 
-  createFranjaHorario: async (token: string, data: { nombre: string; horaInicio: string; horaFin: string; activo?: boolean }) => {
+  createFranjaHorario: async (token: string, data: { nombre: string; horaInicio: string; horaFin: string; activo?: boolean; cupo?: number | null }) => {
     return fetchApi('/restaurante/franjas-horario', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -515,7 +524,7 @@ export const restauranteApi = {
     })
   },
 
-  updateFranjaHorario: async (token: string, id: number, data: { nombre?: string; horaInicio?: string; horaFin?: string; activo?: boolean }) => {
+  updateFranjaHorario: async (token: string, id: number, data: { nombre?: string; horaInicio?: string; horaFin?: string; activo?: boolean; cupo?: number | null }) => {
     return fetchApi(`/restaurante/franjas-horario/${id}`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },

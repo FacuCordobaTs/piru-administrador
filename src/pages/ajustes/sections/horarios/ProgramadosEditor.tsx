@@ -186,6 +186,7 @@ export function ProgramadosEditor({ horarios }: { horarios: HorariosData }) {
                         <p className="text-sm font-medium text-foreground">{f.nombre}</p>
                         <p className="text-xs font-normal text-muted-foreground">
                           {f.horaInicio} – {f.horaFin}
+                          {f.cupo != null && ` · cupo ${f.cupo}`}
                         </p>
                       </div>
                     </div>

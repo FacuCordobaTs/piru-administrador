@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { Switch } from '@/components/ui/switch'
+import { restauranteApi } from '@/lib/api'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { AjusteInput } from '../components/AjusteInput'
+import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import {
   DireccionField,
   SucursalJustInTime,
@@ -11,7 +14,7 @@ import {
   LogoField,
 } from './general/campos'
 
-type EditorId = 'negocio' | 'tienda' | 'logos' | null
+type EditorId = 'negocio' | 'tienda' | 'logos' | 'avisos' | null
 
 export default function General() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
@@ -22,6 +25,8 @@ export default function General() {
   const username = restaurante?.username?.trim()
   const diseno = restaurante?.disenoAlternativo ? 'glass' : 'sólido'
   const tieneLogo = !!(restaurante?.imagenUrl || restaurante?.imagenLightUrl)
+  const avisosOn = restaurante?.whatsappEnabled === true
+  const telefono = restaurante?.telefono?.trim()
 
   return (
     <section className="space-y-6">
@@ -52,6 +57,18 @@ export default function General() {
           }
           estado={username ? 'configurado' : 'sin-configurar'}
           onAccion={() => setEditor('tienda')}
+        />
+        <AjusteRow
+          titulo="Avisos de pedidos"
+          oracion={
+            avisosOn
+              ? telefono
+                ? `Recibís los pedidos nuevos por WhatsApp al ${telefono}`
+                : 'Activado, pero falta cargar el número donde recibirlos'
+              : 'No recibís avisos de pedidos nuevos por WhatsApp'
+          }
+          estado={avisosOn ? (telefono ? 'configurado' : 'atencion') : 'sin-configurar'}
+          onAccion={() => setEditor('avisos')}
         />
         <AjusteRow
           titulo="Logos"
@@ -111,6 +128,41 @@ export default function General() {
           <LogoField which="imageLight" campoLocal="imagenLightUrl" label="Logo (modo claro)" current={restaurante?.imagenLightUrl ?? null} />
         </div>
       </AjusteEditor>
+
+      <AjusteEditor
+        open={editor === 'avisos'}
+        onOpenChange={(o) => !o && setEditor(null)}
+        titulo="Avisos de pedidos"
+        descripcion="Recibí un WhatsApp cada vez que entra un pedido nuevo."
+      >
+        <div className="space-y-5">
+          <AvisosToggle />
+          {avisosOn && (
+            <AjusteInput
+              campo="telefono"
+              label="Número donde recibís los avisos"
+              placeholder="Ej: 11 2345 6789"
+              inputMode="tel"
+            />
+          )}
+        </div>
+      </AjusteEditor>
     </section>
+  )
+}
+
+/** Toggle optimista de las notificaciones de pedidos nuevos al local (WhatsApp). */
+function AvisosToggle() {
+  const { checked, toggle } = useToggleAjuste('whatsappEnabled', restauranteApi.toggleWhatsappEnabled)
+  return (
+    <div className="flex items-center justify-between gap-4 py-1">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">Avisarme por WhatsApp</p>
+        <p className="text-[13px] font-normal text-muted-foreground">
+          Te llega un mensaje con el detalle apenas se confirma cada pedido.
+        </p>
+      </div>
+      <Switch checked={checked} onCheckedChange={toggle} />
+    </div>
   )
 }

@@ -21,6 +21,8 @@ export type FranjaHorario = {
   horaInicio: string
   horaFin: string
   activo: boolean
+  /** Cupo de pedidos pagados por día. null = sin límite. */
+  cupo: number | null
 }
 
 interface FranjaDialogProps {
@@ -31,7 +33,7 @@ interface FranjaDialogProps {
   onSaved: () => void
 }
 
-const vacio = { nombre: '', horaInicio: '09:00', horaFin: '18:00', activo: true }
+const vacio = { nombre: '', horaInicio: '09:00', horaFin: '18:00', activo: true, cupo: null as number | null }
 
 /** Crear/editar franja de horario. Transaccional: conserva Guardar/Cancelar. */
 export function FranjaDialog({ open, onOpenChange, editando, onSaved }: FranjaDialogProps) {
@@ -47,6 +49,7 @@ export function FranjaDialog({ open, onOpenChange, editando, onSaved }: FranjaDi
               horaInicio: editando.horaInicio,
               horaFin: editando.horaFin,
               activo: editando.activo,
+              cupo: editando.cupo ?? null,
             }
           : vacio
       )
@@ -116,6 +119,24 @@ export function FranjaDialog({ open, onOpenChange, editando, onSaved }: FranjaDi
                 onChange={(e) => setForm((f) => ({ ...f, horaFin: e.target.value }))}
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="font-medium">Cupo de pedidos</Label>
+            <Input
+              type="number"
+              min={1}
+              inputMode="numeric"
+              placeholder="Sin límite"
+              className="h-11"
+              value={form.cupo ?? ''}
+              onChange={(e) => {
+                const v = e.target.value
+                setForm((f) => ({ ...f, cupo: v === '' ? null : Math.max(1, parseInt(v, 10) || 1) }))
+              }}
+            />
+            <p className="text-xs font-normal text-muted-foreground">
+              Cuántos pedidos pagados admitís en esta franja por día. Al llegar al tope, deja de mostrarse. Vacío = sin límite.
+            </p>
           </div>
           <div className="flex items-center gap-3 pt-1">
             <Switch
