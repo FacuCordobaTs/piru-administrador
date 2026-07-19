@@ -538,6 +538,13 @@ export const restauranteApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+
+  resetCupoFranjaHorario: async (token: string, id: number) => {
+    return fetchApi(`/restaurante/franjas-horario/${id}/reset-cupo`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }
 
 // Cucuru API

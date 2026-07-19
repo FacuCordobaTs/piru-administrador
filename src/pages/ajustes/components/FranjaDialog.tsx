@@ -23,6 +23,8 @@ export type FranjaHorario = {
   activo: boolean
   /** Cupo de pedidos pagados por día. null = sin límite. */
   cupo: number | null
+  /** Pedidos pagados de hoy que ya ocuparon el cupo. null si la franja no tiene cupo. */
+  cupoUsado?: number | null
 }
 
 interface FranjaDialogProps {

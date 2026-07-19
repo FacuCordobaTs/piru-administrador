@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Trash2, Loader2, Edit, Sparkles, Power, PowerOff } from 'lucide-react'
+import { Plus, Trash2, Loader2, Edit, Sparkles, Power, PowerOff, RotateCcw } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -100,6 +101,28 @@ export function ProgramadosEditor({ horarios }: { horarios: HorariosData }) {
     }
   }
 
+  const [reseteando, setReseteando] = useState<number | null>(null)
+  const resetearCupo = async (id: number) => {
+    const token = useAuthStore.getState().token
+    if (!token) return
+    setReseteando(id)
+    try {
+      const res = (await restauranteApi.resetCupoFranjaHorario(token, id)) as {
+        success: boolean
+        franja: FranjaHorario
+      }
+      if (res.success) {
+        setFranjas((prev) => prev.map((f) => (f.id === id ? { ...f, ...res.franja } : f)))
+        toast.success('Cupo reseteado')
+      }
+    } catch {
+      toast.error('Error al resetear el cupo')
+      void cargarFranjas()
+    } finally {
+      setReseteando(null)
+    }
+  }
+
   const eliminarFranja = async (id: number) => {
     const token = useAuthStore.getState().token
     if (!token) return
@@ -186,11 +209,27 @@ export function ProgramadosEditor({ horarios }: { horarios: HorariosData }) {
                         <p className="text-sm font-medium text-foreground">{f.nombre}</p>
                         <p className="text-xs font-normal text-muted-foreground">
                           {f.horaInicio} – {f.horaFin}
-                          {f.cupo != null && ` · cupo ${f.cupo}`}
+                          {f.cupo != null && ` · ${f.cupoUsado ?? 0}/${f.cupo} ocupados`}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
+                      {f.cupo != null && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 text-muted-foreground hover:text-brand"
+                          title="Resetear cupo ocupado"
+                          disabled={reseteando === f.id || (f.cupoUsado ?? 0) === 0}
+                          onClick={() => resetearCupo(f.id)}
+                        >
+                          {reseteando === f.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
