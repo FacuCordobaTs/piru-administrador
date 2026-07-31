@@ -1580,3 +1580,132 @@ export const facturacionApi = {
     })
   },
 }
+
+// ── Planes y suscripción ──────────────────────────────────────────────────
+// Cobro de la cuota del plan vía Checkout Pro (pago único a la cuenta de Piru).
+export interface PlanCatalogo {
+  id: number
+  codigo: string
+  nombre: string
+  descripcion: string | null
+  precioMensual: string
+  mensajesIncluidos: number
+  mensajesIlimitados: boolean
+  orden: number
+  activo: boolean
+  features: string[]
+}
+
+export interface WalletResumen {
+  ilimitado: boolean
+  cicloRenuevaEn: string | null
+  utility: {
+    incluidosRestantes: number
+    recargaSaldo: number
+    disponible: number
+    cupoPlan: number
+    consumidoCupo: number
+    pctConsumido: number
+    negativo: boolean
+  }
+  marketing: { recargaSaldo: number; disponible: number; negativo: boolean }
+  alerta: '80' | '95' | null
+  autoRecarga: { habilitada: boolean; umbral: number; cantidad: number }
+}
+
+export interface MiSuscripcion {
+  estado: string | null
+  planId: number | null
+  planCodigo: string | null
+  planNombre: string | null
+  conAccesoAPago: boolean
+  sinSuscripcion: boolean
+  fechaProximoCobro: string | null
+  graciaHasta: string | null
+  fechaCancelacion: string | null
+  precioMensual: string | null
+  ciclo: string | null
+  features: string[]
+  wallet: WalletResumen
+}
+
+export const planesApi = {
+  catalogo: async (token: string) =>
+    fetchApi<{ success: boolean; data: PlanCatalogo[] }>('/planes/catalogo', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  miSuscripcion: async (token: string) =>
+    fetchApi<{ success: boolean; data: MiSuscripcion }>('/planes/mi-suscripcion', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  // Inicia el pago de la cuota del plan → devuelve url_pago para redirigir a MP.
+  suscribir: async (token: string, planId: number, ciclo: 'mensual' | 'anual' = 'mensual') =>
+    fetchApi<{ success: boolean; data: { pagoId: number; url_pago: string; monto: string; ciclo: string } }>(
+      '/planes/suscribir',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ planId, ciclo }),
+      },
+    ),
+  cancelar: async (token: string) =>
+    fetchApi<{ success: boolean; message: string }>('/planes/cancelar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  pagos: async (token: string) =>
+    fetchApi<{ success: boolean; data: any[] }>('/planes/pagos', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+}
+
+// ── Wallet de mensajes de WhatsApp (consumible) ───────────────────────────
+export interface PackRecarga {
+  id: number
+  categoria: string
+  nombre: string
+  cantidad: number
+  precio: string
+  orden: number
+  activo: boolean
+}
+
+export const mensajesApi = {
+  saldo: async (token: string) =>
+    fetchApi<{ success: boolean; data: WalletResumen }>('/mensajes/saldo', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  transacciones: async (token: string, page = 1, limit = 50) =>
+    fetchApi<{ success: boolean; data: any[]; pagination: { page: number; limit: number; hasMore: boolean } }>(
+      `/mensajes/transacciones?page=${page}&limit=${limit}`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+    ),
+  packs: async (token: string) =>
+    fetchApi<{ success: boolean; data: PackRecarga[] }>('/mensajes/packs', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  // Inicia la compra de un pack → devuelve url_pago para redirigir a MP.
+  recargaCheckout: async (token: string, packId: number) =>
+    fetchApi<{ success: boolean; data: { recargaId: number; url_pago: string; cantidad: number; monto: string } }>(
+      '/mensajes/recarga/checkout',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ packId }),
+      },
+    ),
+  setAutoRecarga: async (
+    token: string,
+    cfg: { habilitada: boolean; umbral?: number | null; cantidad?: number | null },
+  ) =>
+    fetchApi<{ success: boolean; data: WalletResumen }>('/mensajes/auto-recarga', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(cfg),
+    }),
+}

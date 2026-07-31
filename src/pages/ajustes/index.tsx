@@ -11,6 +11,7 @@ import {
   User,
   Globe,
   Copy,
+  Crown,
   ExternalLink,
   type LucideIcon,
 } from 'lucide-react'
@@ -18,6 +19,8 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { SectionSkeleton } from './components/SectionSkeleton'
+import { DescargarAppBanner } from './components/DescargarAppBanner'
+import { PlanBanner } from './components/PlanBanner'
 
 // ── Detección de entorno de escritorio (Tauri) ──────────────────────────
 // La impresión automática solo existe en la app de escritorio.
@@ -35,6 +38,7 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: 'general', label: 'General', Icon: Store, Component: lazy(() => import('./sections/General')) },
+  { id: 'plan', label: 'Plan y saldo', Icon: Crown, Component: lazy(() => import('./sections/Plan')) },
   { id: 'pagos', label: 'Pagos', Icon: CreditCard, Component: lazy(() => import('./sections/Pagos')) },
   { id: 'horarios', label: 'Horarios', Icon: Clock, Component: lazy(() => import('./sections/Horarios')) },
   { id: 'entregas', label: 'Entregas', Icon: Truck, Component: lazy(() => import('./sections/Entregas')) },
@@ -105,6 +109,16 @@ export default function AjustesPage() {
           </div>
         )}
       </header>
+
+      {/* ── Banner descarga app de escritorio (solo web) ── */}
+      {!isTauri && (
+        <div className="mt-6">
+          <DescargarAppBanner />
+        </div>
+      )}
+
+      {/* ── Banner de atención de plan/saldo (oculto si ya estás en Plan) ── */}
+      {active.id !== 'plan' && <PlanBanner />}
 
       {/* ── Chips horizontales (sticky, <1024px) ── */}
       <nav
