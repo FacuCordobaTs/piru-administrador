@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   ArrowRight, ArrowLeft, Check, Camera, FileText, Link2,
-  Clock, Plus, Trash2, MapPin, Sparkles, Loader2, Copy,
+  Clock, Plus, Trash2, MapPin, Sparkles, Loader2,
   Banknote, ArrowDownToLine, Store, Utensils, Target, PencilRuler, Save, X,
   ImagePlus, Lock, RefreshCw, Pencil
 } from 'lucide-react'
@@ -30,7 +30,7 @@ const MP_REDIRECT_URI = import.meta.env.VITE_MP_REDIRECT_URI || 'https://api.pir
 // La lectura de la carta con IA (lenta) corre en segundo plano desde 'creando'; mientras tanto
 // el usuario avanza por 'preparativos' (logo/horarios) y 'entrega' (delivery/pago). Recién en
 // 'revision' se confirman los productos ya detectados.
-const PHASES = ['nombre', 'ownership', 'carta', 'creando', 'preparativos', 'entrega', 'revision', 'prueba', 'final'] as const
+const PHASES = ['nombre', 'ownership', 'carta', 'creando', 'preparativos', 'entrega', 'pagos', 'revision', 'prueba', 'final'] as const
 type Phase = typeof PHASES[number]
 const phaseIndex = (p: Phase) => PHASES.indexOf(p)
 
@@ -630,11 +630,11 @@ const Onboarding = () => {
       toast.success('¡MercadoPago conectado!')
       const saved = localStorage.getItem('piru_onboarding_data')
       if (saved) setFormData((prev: any) => ({ ...prev, ...JSON.parse(saved), proveedorPago: 'mercadopago' }))
-      setPhase('entrega')
+      setPhase('pagos')
       window.history.replaceState({}, '', window.location.pathname)
     } else if (mpStatus === 'error') {
       toast.error('No se pudo conectar MercadoPago', { description: params.get('mp_error') || undefined })
-      setPhase('entrega')
+      setPhase('pagos')
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -795,9 +795,10 @@ const Onboarding = () => {
 
   const finalizar = async () => {
     localStorage.removeItem('piru_onboarding_data')
-    // Recién ahora sincronizamos el store (completedOnboarding=true) y entramos al panel
+    // Sincronizamos el store (completedOnboarding=true + suscripción). Como el local nuevo aún
+    // no tiene plan pago, el hard paywall lo lleva a /suscribir a elegir y pagar antes del panel.
     await restauranteStore.fetchData()
-    navigate('/dashboard')
+    navigate('/suscribir')
   }
 
   // ────────────────────────────── RENDER DE FASES ──────────────────────────────
@@ -1199,10 +1200,26 @@ const Onboarding = () => {
           </div>
         )}
 
-        {/* Pagos */}
-        <div className="pt-2">
-          <h2 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">¿Y cómo cobrás?</h2>
-          <p className="text-[15px] text-muted-foreground mt-3 mb-4">Prendé los medios que aceptás hoy. Sumás más cuando quieras, en un toque.</p>
+        <Button onClick={() => goTo('pagos')}
+          className="w-full h-14 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
+          Continuar <ArrowRight className="ml-2 h-4 w-4" />
+        </Button>
+      </div>
+    )
+  }
+
+  const renderPagos = () => {
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-6">
+        {/* La lectura de la carta sigue corriendo en segundo plano: mostramos su estado acá también. */}
+        {renderIaIndicator()}
+
+        <div>
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">¿Y cómo cobrás?</h1>
+          <p className="text-[15px] text-muted-foreground mt-3">Prendé los medios que aceptás hoy. Sumás más cuando quieras, en un toque.</p>
+        </div>
+
+        <div>
           <div className="rounded-2xl bg-zinc-100 dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
             <PayRow icon={Banknote} label="Efectivo" desc="Al entregar" checked={formData.metodosPago.efectivo}
               onToggle={() => patch({ metodosPago: { ...formData.metodosPago, efectivo: !formData.metodosPago.efectivo } })} />
@@ -1264,7 +1281,6 @@ const Onboarding = () => {
       // antes de mostrar la pantalla de celebración. Mientras tanto, el preview sigue en "Enviando…".
       await new Promise((r) => setTimeout(r, 3500))
       setPedidoOk(true)
-      setTimeout(() => goTo('final'), 2600)
     } catch (e: any) {
       toast.error('No se pudo crear el pedido', { description: e?.message })
       throw e
@@ -1281,6 +1297,11 @@ const Onboarding = () => {
           </div>
           <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Te llegó el pedido</h1>
           <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">Así vas a recibir cada pedido real: al toque, en tu WhatsApp y en el panel.</p>
+
+          <Button onClick={() => goTo('final')}
+            className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
+            Continuar <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
         </div>
       )
     }
@@ -1311,23 +1332,45 @@ const Onboarding = () => {
   }
 
   const renderFinal = () => {
-    const link = `my.piru.app/${toSlug(formData.nombre) || 'tulocal'}`
-    const copiar = () => { navigator.clipboard.writeText(`https://${link}`); toast.success('Link copiado') }
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 text-center flex flex-col items-center">
         <div className="w-16 h-16 rounded-2xl bg-[#FF7A00] flex items-center justify-center mb-6">
           <Sparkles className="h-8 w-8 text-white" />
         </div>
-        <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Tu local está en vivo</h1>
-        <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">Compartí tu link y empezá a recibir pedidos. Todo lo demás lo ajustás desde el panel.</p>
+        <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Tu local está listo</h1>
+        <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
+          Tu tienda, tu menú y tus medios de pago quedaron cargados. Activá un plan para salir a
+          recibir pedidos: es una cuota fija sin comisión por venta, y podés pagarla mes a mes o
+          por año con descuento.
+        </p>
 
-        <button onClick={copiar} className="mt-7 w-full flex items-center justify-between rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 transition-colors group">
-          <span className="font-mono text-sm truncate"><span className="text-muted-foreground/60">my.piru.app/</span><span className="font-semibold text-[#FF7A00]">{toSlug(formData.nombre) || 'tulocal'}</span></span>
-          <Copy className="h-4 w-4 text-muted-foreground group-hover:text-foreground shrink-0" />
-        </button>
+        {/* Explicamos qué trae cada plan ANTES de mandarlo a /suscribir: que el Básico no es
+            "pelado" (ya recibís y gestionás todo) y que la diferencia real con el Intermedio es
+            el chat con el cliente, no "más features". (Roadmap 2.7) */}
+        <div className="mt-6 w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left">
+          <p className="text-sm font-semibold">Con el Básico ya recibís y gestionás todo</p>
+          <p className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
+            Pedidos por WhatsApp, comandas automáticas, productos ilimitados, todos los medios de
+            pago, cupones, estadísticas, horarios y mapa de pedidos. Cuota fija, sin comisión por venta.
+          </p>
+          <p className="mt-3 text-[13px] text-muted-foreground leading-relaxed">
+            <span className="font-medium text-foreground">¿Querés cero chat con el cliente?</span>{' '}
+            Con el Intermedio los avisos “en camino” y “listo para retirar” salen solos con tu marca,
+            sin que nadie tenga que escribir.
+          </p>
+        </div>
 
-        <Button onClick={finalizar} className="w-full h-14 mt-4 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
-          Ir a mi panel <ArrowRight className="ml-2 h-4 w-4" />
+        <div className="mt-4 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 text-left">
+          <p className="text-sm font-semibold">Tu link</p>
+          <p className="font-mono text-sm mt-1 truncate">
+            <span className="text-muted-foreground/60">my.piru.app/</span>
+            <span className="font-semibold text-[#FF7A00]">{toSlug(formData.nombre) || 'tulocal'}</span>
+          </p>
+          <p className="text-[13px] text-muted-foreground mt-2">Queda activo apenas actives tu plan.</p>
+        </div>
+
+        <Button onClick={finalizar} disabled={busy} className="w-full h-14 mt-4 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Elegir mi plan <ArrowRight className="ml-2 h-4 w-4" /></>}
         </Button>
       </div>
     )
@@ -1342,13 +1385,14 @@ const Onboarding = () => {
       case 'preparativos': return renderPreparativos()
       case 'revision': return renderRevision()
       case 'entrega': return renderEntrega()
+      case 'pagos': return renderPagos()
       case 'prueba': return renderPrueba()
       case 'final': return renderFinal()
     }
   }
 
   // Fases donde tiene sentido volver atrás (no en pantallas de proceso/éxito)
-  const canGoBack = ['ownership', 'carta', 'creando', 'preparativos', 'entrega', 'revision'].includes(phase)
+  const canGoBack = ['ownership', 'carta', 'creando', 'preparativos', 'entrega', 'pagos', 'revision'].includes(phase)
 
   return (
     <div className="min-h-dvh bg-background flex flex-col items-center justify-center px-6 py-6 relative selection:bg-orange-500/10 selection:text-[#FF7A00]">
@@ -1427,7 +1471,7 @@ function FraseAnimada({ text }: { text: string }) {
 }
 
 // ── Indicador reutilizable del estado de la lectura de la carta con IA. Se muestra en las
-//    fases 'creando', 'preparativos', 'entrega' y 'revision' mientras el trabajo corre en
+//    fases 'creando', 'preparativos', 'entrega', 'pagos' y 'revision' mientras el trabajo corre en
 //    segundo plano. El progreso vive en un anillo alrededor del icono. ──
 function IaWaitIndicator({ estado, progress, total, errorMsg, onRetry }: {
   estado: 'idle' | 'procesando' | 'listo' | 'error'; progress: number; total: number; errorMsg?: string; onRetry?: () => void

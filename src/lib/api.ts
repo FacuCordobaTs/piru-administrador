@@ -208,6 +208,49 @@ export const clientesApi = {
       },
     })
   },
+  // Motor de Recompra · 4.2 — envía el próximo toque de la escalera de recupero al cliente.
+  enviarRecupero: async (token: string, clienteId: number) => {
+    return fetchApi(`/clientes/${clienteId}/recupero`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+  },
+  // Motor de Recompra · goteo — estado del motor: PLAN de activación (apagado) o DASHBOARD (encendido).
+  recompraEstado: async (token: string) => {
+    return fetchApi('/clientes/recompra/estado', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  // Enciende el motor (una vez): detecta el stock, aparta el control y arranca el goteo. cupoDiario opcional.
+  activarRecompra: async (token: string, cupoDiario?: number) => {
+    return fetchApi('/clientes/recompra/activar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(cupoDiario != null ? { cupoDiario } : {}),
+    })
+  },
+  pausarRecompra: async (token: string) => {
+    return fetchApi('/clientes/recompra/pausar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  reanudarRecompra: async (token: string) => {
+    return fetchApi('/clientes/recompra/reanudar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  configRecompra: async (token: string, cupoDiario: number) => {
+    return fetchApi('/clientes/recompra/config', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cupoDiario }),
+    })
+  },
 }
 
 // Restaurante API
@@ -1589,7 +1632,12 @@ export interface PlanCatalogo {
   nombre: string
   descripcion: string | null
   precioMensual: string
+  // Descuento porcentual al pagar por año (0-20). Se usa para mostrar el ahorro anual.
+  descuentoAnual: number
   mensajesIncluidos: number
+  // Mensajes de marketing (Motor de Recompra) incluidos por ciclo (Avanzado: 100).
+  mensajesMarketingIncluidos: number
+  // LEGACY: ya ningún plan es ilimitado; se conserva por retrocompat (siempre false).
   mensajesIlimitados: boolean
   orden: number
   activo: boolean
@@ -1607,10 +1655,21 @@ export interface WalletResumen {
     consumidoCupo: number
     pctConsumido: number
     negativo: boolean
+    // Modo gracia (deuda acotada): campos aditivos, opcionales por retrocompat con backends viejos.
+    enGracia?: boolean
+    graciaAgotada?: boolean
+    deudaMaxima?: number
   }
-  marketing: { recargaSaldo: number; disponible: number; negativo: boolean }
+  marketing: {
+    incluidosRestantes: number
+    recargaSaldo: number
+    disponible: number
+    cupoPlan: number
+    consumidoCupo: number
+    negativo: boolean
+  }
   alerta: '80' | '95' | null
-  autoRecarga: { habilitada: boolean; umbral: number; cantidad: number }
+  autoRecarga: { habilitada: boolean; umbral: number; cantidad: number; sugerida: boolean }
 }
 
 export interface MiSuscripcion {
@@ -1620,6 +1679,9 @@ export interface MiSuscripcion {
   planNombre: string | null
   conAccesoAPago: boolean
   sinSuscripcion: boolean
+  // Hard paywall: si requiereSuscripcion y no hay acceso, el panel se bloquea (→ /suscribir).
+  requiereSuscripcion?: boolean
+  accesoPanel?: boolean
   fechaProximoCobro: string | null
   graciaHasta: string | null
   fechaCancelacion: string | null
@@ -1684,11 +1746,14 @@ export const mensajesApi = {
       `/mensajes/transacciones?page=${page}&limit=${limit}`,
       { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
     ),
-  packs: async (token: string) =>
-    fetchApi<{ success: boolean; data: PackRecarga[] }>('/mensajes/packs', {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    }),
+  packs: async (token: string, categoria?: 'utility' | 'marketing') =>
+    fetchApi<{ success: boolean; data: PackRecarga[] }>(
+      `/mensajes/packs${categoria ? `?categoria=${categoria}` : ''}`,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    ),
   // Inicia la compra de un pack → devuelve url_pago para redirigir a MP.
   recargaCheckout: async (token: string, packId: number) =>
     fetchApi<{ success: boolean; data: { recargaId: number; url_pago: string; cantidad: number; monto: string } }>(
@@ -1707,5 +1772,41 @@ export const mensajesApi = {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify(cfg),
+    }),
+  // Auto-recarga asistida: el server elige el pack por config → devuelve url_pago.
+  autoRecargaCheckout: async (token: string) =>
+    fetchApi<{ success: boolean; data: { recargaId: number; url_pago: string; cantidad: number; monto: string } }>(
+      '/mensajes/auto-recarga/checkout',
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+    ),
+  // Genera un link/QR de pago para un pack (para pagar desde el celular, sin login).
+  crearPagoQr: async (token: string, packId: number) =>
+    fetchApi<{ success: boolean; data: { recargaId: number; token: string; url: string; expiraEn: string } }>(
+      '/mensajes/pago-qr',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ packId }),
+      },
+    ),
+}
+
+// ── Link de pago público (/pago/:token) — SIN autenticación ───────────────
+export interface PagoLinkInfo {
+  estado: 'pending' | 'paid' | 'expired'
+  restauranteNombre: string
+  concepto: string
+  cantidad: number
+  categoria: 'utility' | 'marketing'
+  unidad: string
+  monto: string
+}
+
+export const pagoApi = {
+  info: async (token: string) =>
+    fetchApi<{ success: boolean; data: PagoLinkInfo }>(`/pago/${token}`, { method: 'GET' }),
+  checkout: async (token: string) =>
+    fetchApi<{ success: boolean; data: { url_pago: string } }>(`/pago/${token}/checkout`, {
+      method: 'POST',
     }),
 }

@@ -9,16 +9,21 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronUp,
+  QrCode,
+  Copy,
+  ArrowLeft,
 } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { cn } from '@/lib/utils'
+import { cn, descuentoAnualEfectivo, precioAnual } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
 import { mensajesApi, planesApi, type PackRecarga, type PlanCatalogo } from '@/lib/api'
+import { CicloToggle, type Ciclo } from '@/components/CicloToggle'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { SectionSkeleton } from '../components/SectionSkeleton'
-import { useSuscripcion } from '../hooks/useSuscripcion'
+import { useSuscripcion, renovacionProxima } from '../hooks/useSuscripcion'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmtARS = (n: number | string) =>
@@ -118,6 +123,7 @@ export default function Plan() {
         <SaldoCard data={data} onDone={refetch} />
       )}
       {data.wallet?.ilimitado && <SaldoIlimitadoCard />}
+      {data.wallet && mostrarMarketing(data) && <SaldoMarketingCard data={data} />}
       <PlanesDisponibles data={data} catalogo={catalogo} onDone={refetch} />
       <Movimientos />
     </section>
@@ -144,6 +150,15 @@ function AtencionBanner({ data }: { data: NonNullable<ReturnType<typeof useSuscr
     mensaje = 'Te quedaste sin saldo de avisos. Los avisos siguen saliendo, pero quedan como saldo a descontar. Recargá para ponerte al día.'
   } else if (!data.wallet?.ilimitado && data.wallet?.alerta === '95') {
     mensaje = 'Te queda menos del 5% de tus avisos incluidos este mes. Considerá recargar.'
+  } else {
+    const renov = renovacionProxima(data)
+    if (renov) {
+      const fecha = fmtFecha(data.fechaProximoCobro)
+      mensaje =
+        renov.diasRestantes <= 0
+          ? 'Tu plan se renueva hoy. Pagá la cuota para no perder funciones.'
+          : `Tu plan se renueva ${fecha ? `el ${fecha}` : `en ${renov.diasRestantes} días`}. El cobro es manual: pagá la cuota para no perder funciones.`
+    }
   }
 
   if (!mensaje) return null
@@ -234,6 +249,7 @@ function PlanActualCard({
           {data.precioMensual && (
             <p className="text-sm text-muted-foreground">
               {fmtARS(data.precioMensual)} / mes
+              {data.ciclo === 'anual' && ' · facturación anual'}
             </p>
           )}
           {proximo && !necesitaPago && (
@@ -322,6 +338,8 @@ function SaldoCard({
         </p>
       )}
 
+      {w.autoRecarga.habilitada && w.autoRecarga.sugerida && <AutoRecargaPrompt />}
+
       <div className="mt-4 border-t border-border/60 pt-4">
         <AutoRecargaToggle inicial={w.autoRecarga.habilitada} onDone={onDone} />
       </div>
@@ -339,10 +357,116 @@ function SaldoIlimitadoCard() {
         <div>
           <h3 className="text-base font-medium text-foreground">Avisos sin tope</h3>
           <p className="text-[13px] text-muted-foreground">
-            Tu plan Avanzado incluye avisos al cliente sin límite. No necesitás recargar.
+            Tu cuenta tiene avisos al cliente sin límite. No necesitás recargar.
           </p>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Mostrar el saldo de marketing sólo si el plan tiene el Motor de Recompra o ya hay saldo
+// de campaña (cupo del plan o recargas). En Básico/Intermedio no se muestra.
+function mostrarMarketing(data: NonNullable<ReturnType<typeof useSuscripcion>['data']>): boolean {
+  const w = data.wallet
+  if (!w?.marketing) return false
+  return (
+    data.features.includes('motor_recompra') ||
+    w.marketing.cupoPlan > 0 ||
+    w.marketing.recargaSaldo !== 0
+  )
+}
+
+// ── Card de saldo de mensajes de MARKETING (Motor de Recompra) ──────────────
+function SaldoMarketingCard({
+  data,
+}: {
+  data: NonNullable<ReturnType<typeof useSuscripcion>['data']>
+}) {
+  const w = data.wallet
+  const [recargaOpen, setRecargaOpen] = useState(false)
+  const disponible = w.marketing.disponible
+  const cupo = w.marketing.cupoPlan
+  const pct = cupo > 0 ? Math.min(100, Math.round((w.marketing.consumidoCupo / cupo) * 100)) : 0
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <Crown className="h-5 w-5 text-brand" />
+          <div>
+            <h3 className="text-base font-medium text-foreground">Mensajes de campaña</h3>
+            <p className="text-[13px] text-muted-foreground">Para el Motor de Recompra</p>
+          </div>
+        </div>
+        <Button variant="outline" onClick={() => setRecargaOpen(true)} className="shrink-0">
+          Comprar
+        </Button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <div className="flex items-baseline justify-between">
+          <span className={cn('text-2xl font-semibold tabular-nums', disponible < 0 ? 'text-red-500' : 'text-foreground')}>
+            {disponible}
+          </span>
+          <span className="text-[13px] text-muted-foreground">
+            {cupo > 0 ? `${w.marketing.consumidoCupo} / ${cupo} incluidos usados` : 'disponibles'}
+          </span>
+        </div>
+        {cupo > 0 && (
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                'h-full rounded-full transition-all',
+                pct >= 95 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-brand',
+              )}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        )}
+        {w.marketing.recargaSaldo !== 0 && (
+          <p className="text-[13px] text-muted-foreground">
+            {w.marketing.recargaSaldo > 0
+              ? `Incluye ${w.marketing.recargaSaldo} de packs comprados`
+              : `Saldo negativo de ${Math.abs(w.marketing.recargaSaldo)} (se descuenta de tu próxima compra)`}
+          </p>
+        )}
+      </div>
+
+      <RecargaSheet open={recargaOpen} onOpenChange={setRecargaOpen} categoria="marketing" />
+    </div>
+  )
+}
+
+// Auto-recarga asistida: cuando el saldo cruza el umbral y la auto-recarga está activa,
+// dejamos la recarga lista para pagar en 1 tap (no hay débito automático sin card-on-file).
+function AutoRecargaPrompt() {
+  const [cargando, setCargando] = useState(false)
+
+  const pagar = async () => {
+    const token = useAuthStore.getState().token
+    if (!token) return
+    setCargando(true)
+    try {
+      const res = await mensajesApi.autoRecargaCheckout(token)
+      window.location.href = res.data.url_pago
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo preparar la recarga')
+      setCargando(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-brand/30 bg-brand/5 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium text-foreground">Tu recarga automática está lista</p>
+        <p className="text-[13px] text-muted-foreground">
+          Tu saldo está por agotarse. Pagala en un toque y seguís sin cortes.
+        </p>
+      </div>
+      <Button onClick={pagar} disabled={cargando} className="shrink-0">
+        {cargando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pagar recarga'}
+      </Button>
     </div>
   )
 }
@@ -372,7 +496,7 @@ function AutoRecargaToggle({ inicial, onDone }: { inicial: boolean; onDone: () =
       <div className="min-w-0">
         <p className="text-sm font-medium text-foreground">Auto-recarga</p>
         <p className="text-[13px] text-muted-foreground">
-          Cuando tu saldo esté por agotarse, te sugerimos recargar automáticamente.
+          Cuando tu saldo esté por agotarse, te dejamos la recarga lista para pagar en un toque.
         </p>
       </div>
       <Switch checked={on} disabled={saving} onCheckedChange={toggle} />
@@ -381,16 +505,30 @@ function AutoRecargaToggle({ inicial, onDone }: { inicial: boolean; onDone: () =
 }
 
 // ── Sheet de recarga (elegir pack → Checkout Pro) ───────────────────────────
-function RecargaSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+function RecargaSheet({
+  open,
+  onOpenChange,
+  categoria = 'utility',
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  categoria?: 'utility' | 'marketing'
+}) {
   const [packs, setPacks] = useState<PackRecarga[] | null>(null)
   const [comprando, setComprando] = useState<number | null>(null)
+  const [generandoQr, setGenerandoQr] = useState<number | null>(null)
+  // Vista de QR: la compu muestra, el celular paga (sin login).
+  const [qr, setQr] = useState<{ url: string; pack: PackRecarga } | null>(null)
+  const esMarketing = categoria === 'marketing'
+  const unidad = esMarketing ? 'mensajes de campaña' : 'avisos'
 
   useEffect(() => {
     if (!open) return
+    setQr(null)
     const token = useAuthStore.getState().token
     if (!token) return
-    mensajesApi.packs(token).then((r) => setPacks(r.data)).catch(() => setPacks([]))
-  }, [open])
+    mensajesApi.packs(token, categoria).then((r) => setPacks(r.data)).catch(() => setPacks([]))
+  }, [open, categoria])
 
   const comprar = async (packId: number) => {
     const token = useAuthStore.getState().token
@@ -405,14 +543,71 @@ function RecargaSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
     }
   }
 
+  const generarQr = async (pack: PackRecarga) => {
+    const token = useAuthStore.getState().token
+    if (!token) return
+    setGenerandoQr(pack.id)
+    try {
+      const res = await mensajesApi.crearPagoQr(token, pack.id)
+      setQr({ url: res.data.url, pack })
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo generar el QR')
+    } finally {
+      setGenerandoQr(null)
+    }
+  }
+
+  const copiarLink = async () => {
+    if (!qr) return
+    try {
+      await navigator.clipboard.writeText(qr.url)
+      toast.success('Link copiado')
+    } catch {
+      toast.error('No se pudo copiar')
+    }
+  }
+
   return (
     <AjusteEditor
       open={open}
       onOpenChange={onOpenChange}
-      titulo="Recargar saldo de avisos"
-      descripcion="Comprá un pack de avisos. El pago es único y se acredita al instante."
+      titulo={
+        qr
+          ? 'Pagá desde tu celular'
+          : esMarketing
+            ? 'Comprar mensajes de campaña'
+            : 'Recargar saldo de avisos'
+      }
+      descripcion={
+        qr
+          ? 'Escaneá el QR con la cámara de tu celular para pagar sin salir de esta pantalla. El saldo se acredita solo al confirmarse el pago.'
+          : esMarketing
+            ? 'Comprá un pack de mensajes de marketing para tus campañas del Motor de Recompra. El pago es único y se acredita al instante.'
+            : 'Comprá un pack de avisos. Pagá acá o escaneá el QR con el celular. El pago es único y se acredita al instante.'
+      }
     >
-      {packs === null ? (
+      {qr ? (
+        <div className="space-y-4">
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-border p-5">
+            <div className="rounded-lg bg-white p-3">
+              <QRCodeCanvas value={qr.url} size={200} includeMargin />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium text-foreground">{qr.pack.cantidad} {unidad}</p>
+              <p className="text-[13px] text-muted-foreground">{fmtARS(qr.pack.precio)}</p>
+            </div>
+          </div>
+          <Button variant="outline" onClick={copiarLink} className="w-full">
+            <Copy className="mr-2 h-4 w-4" /> Copiar link de pago
+          </Button>
+          <button
+            onClick={() => setQr(null)}
+            className="flex w-full items-center justify-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Elegir otro pack
+          </button>
+        </div>
+      ) : packs === null ? (
         <div className="flex justify-center py-10">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
@@ -423,15 +618,26 @@ function RecargaSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
           {packs.map((p) => (
             <div
               key={p.id}
-              className="flex items-center justify-between gap-4 rounded-xl border border-border p-4"
+              className="flex items-center justify-between gap-3 rounded-xl border border-border p-4"
             >
               <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">{p.cantidad} avisos</p>
+                <p className="text-sm font-medium text-foreground">{p.cantidad} {unidad}</p>
                 <p className="text-[13px] text-muted-foreground">{fmtARS(p.precio)}</p>
               </div>
-              <Button onClick={() => comprar(p.id)} disabled={comprando !== null} className="shrink-0">
-                {comprando === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Comprar'}
-              </Button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => generarQr(p)}
+                  disabled={generandoQr !== null || comprando !== null}
+                  title="Pagar desde el celular (QR)"
+                >
+                  {generandoQr === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                </Button>
+                <Button onClick={() => comprar(p.id)} disabled={comprando !== null || generandoQr !== null}>
+                  {comprando === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Comprar'}
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -451,13 +657,14 @@ function PlanesDisponibles({
   onDone: () => void
 }) {
   const [eligiendo, setEligiendo] = useState<number | null>(null)
+  const [ciclo, setCiclo] = useState<Ciclo>((data.ciclo as Ciclo) === 'anual' ? 'anual' : 'mensual')
 
   const elegir = async (planId: number) => {
     const token = useAuthStore.getState().token
     if (!token) return
     setEligiendo(planId)
     try {
-      const res = await planesApi.suscribir(token, planId, 'mensual')
+      const res = await planesApi.suscribir(token, planId, ciclo)
       window.location.href = res.data.url_pago
     } catch (e: any) {
       toast.error(e?.message || 'No se pudo iniciar el pago')
@@ -476,14 +683,23 @@ function PlanesDisponibles({
   if (catalogo.length === 0) return null
 
   const ordenActual = catalogo.find((p) => p.id === data.planId)?.orden ?? -1
+  const cicloActual = data.ciclo === 'anual' ? 'anual' : 'mensual'
+  const descuentoMax = Math.max(0, ...catalogo.map((p) => descuentoAnualEfectivo(p.descuentoAnual)))
 
   return (
     <div className="space-y-4">
-      <h3 className="text-base font-medium text-foreground">Planes</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-base font-medium text-foreground">Planes</h3>
+        {descuentoMax > 0 && <CicloToggle value={ciclo} onChange={setCiclo} descuentoMax={descuentoMax} />}
+      </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {catalogo.map((p) => {
-          const esActual = p.id === data.planId && data.conAccesoAPago
+          // Es "tu plan" sólo si coincide plan Y ciclo elegido; si difiere el ciclo, se ofrece cambiarlo.
+          const esActual = p.id === data.planId && data.conAccesoAPago && cicloActual === ciclo
+          const esMismoPlanOtroCiclo = p.id === data.planId && data.conAccesoAPago && cicloActual !== ciclo
           const precio = parseFloat(p.precioMensual)
+          const desc = descuentoAnualEfectivo(p.descuentoAnual)
+          const totalAnual = precioAnual(precio, desc)
           const esMejora = p.orden > ordenActual
           return (
             <div
@@ -502,10 +718,31 @@ function PlanesDisponibles({
                 )}
               </div>
 
-              <p className="mt-2 text-2xl font-semibold text-foreground">
-                {precio > 0 ? fmtARS(precio) : 'Gratis'}
-                {precio > 0 && <span className="text-sm font-normal text-muted-foreground"> /mes</span>}
-              </p>
+              {precio <= 0 ? (
+                <p className="mt-2 text-2xl font-semibold text-foreground">Gratis</p>
+              ) : ciclo === 'anual' ? (
+                <div className="mt-2">
+                  <p className="text-2xl font-semibold text-foreground">
+                    {fmtARS(totalAnual)}
+                    <span className="text-sm font-normal text-muted-foreground"> /año</span>
+                  </p>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">
+                    {fmtARS(totalAnual / 12)}/mes
+                    {desc > 0 && (
+                      <>
+                        {' · '}
+                        <span className="text-muted-foreground/70 line-through">{fmtARS(precio * 12)}</span>{' '}
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">-{desc}%</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {fmtARS(precio)}
+                  <span className="text-sm font-normal text-muted-foreground"> /mes</span>
+                </p>
+              )}
 
               {p.mensajesIlimitados ? (
                 <p className="mt-1 text-[13px] text-muted-foreground">Avisos al cliente sin tope</p>
@@ -514,6 +751,11 @@ function PlanesDisponibles({
                   {p.mensajesIncluidos} avisos al cliente / mes
                 </p>
               ) : null}
+              {p.mensajesMarketingIncluidos > 0 && (
+                <p className="mt-0.5 text-[13px] text-muted-foreground">
+                  {p.mensajesMarketingIncluidos} mensajes de campaña / mes
+                </p>
+              )}
 
               <ul className="mt-4 flex-1 space-y-2">
                 {p.orden === 0 &&
@@ -550,11 +792,13 @@ function PlanesDisponibles({
                   <Button
                     onClick={() => elegir(p.id)}
                     disabled={eligiendo !== null}
-                    variant={esMejora ? 'default' : 'outline'}
+                    variant={esMejora || esMismoPlanOtroCiclo ? 'default' : 'outline'}
                     className="w-full"
                   >
                     {eligiendo === p.id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : esMismoPlanOtroCiclo ? (
+                      ciclo === 'anual' ? 'Pasar a anual' : 'Pasar a mensual'
                     ) : esMejora ? (
                       `Mejorar a ${p.nombre}`
                     ) : (
@@ -569,7 +813,7 @@ function PlanesDisponibles({
       </div>
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Lock className="h-3 w-3" />
-        Pago seguro con Mercado Pago. Sin comisión por venta: solo la cuota mensual fija.
+        Pago seguro con Mercado Pago. Sin comisión por venta: solo la cuota fija del plan.
       </p>
     </div>
   )

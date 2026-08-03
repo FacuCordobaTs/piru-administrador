@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 import { AlertTriangle, ChevronRight } from 'lucide-react'
-import { useSuscripcion, suscripcionNecesitaAtencion } from '../hooks/useSuscripcion'
+import { useSuscripcion, suscripcionNecesitaAtencion, renovacionProxima } from '../hooks/useSuscripcion'
 
 /**
  * Banner de atención de facturación que aparece arriba de Ajustes cuando el plan o
@@ -27,6 +27,14 @@ export function PlanBanner() {
     mensaje = 'Te quedaste sin saldo de avisos. Recargá para ponerte al día.'
   } else if (data.wallet?.alerta === '95') {
     mensaje = 'Te quedan muy pocos avisos este mes. Considerá recargar.'
+  } else {
+    const renov = renovacionProxima(data)
+    if (renov) {
+      mensaje =
+        renov.diasRestantes <= 0
+          ? 'Tu plan se renueva hoy. Pagá la cuota para no perder funciones.'
+          : `Tu plan se renueva en ${renov.diasRestantes} ${renov.diasRestantes === 1 ? 'día' : 'días'}. Pagá la cuota para no perder funciones.`
+    }
   }
 
   return (

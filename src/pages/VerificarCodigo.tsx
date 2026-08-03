@@ -27,6 +27,11 @@ const VerificarCodigo = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN)
   const inputsRef = useRef<Array<HTMLInputElement | null>>([])
+  // Guard sincrónico contra doble envío: el auto-submit (al tipear el 6º dígito) y el botón/pegado
+  // pueden disparar submitCodigo dos veces casi simultáneas. Dos verify concurrentes con el mismo
+  // verificationId provocaban dos cuentas para el mismo número (bug 2.8). isLoading es asíncrono y no
+  // frena la segunda llamada a tiempo; este ref sí.
+  const submittingRef = useRef(false)
 
   // Aplicar tema del sistema
   useEffect(() => {
@@ -53,6 +58,8 @@ const VerificarCodigo = () => {
 
   const submitCodigo = useCallback(async (codigo: string) => {
     if (!verificationId || codigo.length !== CODE_LENGTH) return
+    if (submittingRef.current) return
+    submittingRef.current = true
 
     setIsLoading(true)
     try {
@@ -96,6 +103,9 @@ const VerificarCodigo = () => {
       }
     } finally {
       setIsLoading(false)
+      // Liberamos el guard para permitir reintentar tras un código incorrecto. En el camino feliz ya
+      // navegamos fuera de esta pantalla, así que no se vuelve a enviar.
+      submittingRef.current = false
     }
   }, [verificationId, setAuth, navigate, isLogin, telefono])
 

@@ -12,6 +12,7 @@ import {
   Globe,
   Copy,
   Crown,
+  Rocket,
   ExternalLink,
   type LucideIcon,
 } from 'lucide-react'
@@ -21,6 +22,7 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { SectionSkeleton } from './components/SectionSkeleton'
 import { DescargarAppBanner } from './components/DescargarAppBanner'
 import { PlanBanner } from './components/PlanBanner'
+import { useTareasPendientes } from './hooks/useTareasPendientes'
 
 // ── Detección de entorno de escritorio (Tauri) ──────────────────────────
 // La impresión automática solo existe en la app de escritorio.
@@ -37,6 +39,7 @@ interface SectionDef {
 }
 
 const SECTIONS: SectionDef[] = [
+  { id: 'tareas', label: 'Primeros pasos', Icon: Rocket, Component: lazy(() => import('./sections/Tareas')) },
   { id: 'general', label: 'General', Icon: Store, Component: lazy(() => import('./sections/General')) },
   { id: 'plan', label: 'Plan y saldo', Icon: Crown, Component: lazy(() => import('./sections/Plan')) },
   { id: 'pagos', label: 'Pagos', Icon: CreditCard, Component: lazy(() => import('./sections/Pagos')) },
@@ -54,6 +57,8 @@ const navSections = SECTIONS.filter((s) => !s.tauriOnly || isTauri)
 export default function AjustesPage() {
   const { seccion } = useParams<{ seccion: string }>()
   const restaurante = useRestauranteStore((s) => s.restaurante)
+  const { pendientes, loading: tareasLoading } = useTareasPendientes()
+  const tareasPendientes = !tareasLoading && pendientes > 0
 
   const active = SECTIONS.find((s) => s.id === seccion)
 
@@ -141,6 +146,9 @@ export default function AjustesPage() {
             >
               <Icon className="h-4 w-4" />
               {label}
+              {id === 'tareas' && tareasPendientes && (
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              )}
             </NavLink>
           ))}
         </div>
@@ -168,7 +176,12 @@ export default function AjustesPage() {
                 }
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                {label}
+                <span className="flex-1">{label}</span>
+                {id === 'tareas' && tareasPendientes && (
+                  <span className="min-w-4 rounded-full bg-amber-500/15 px-1.5 text-center text-[11px] font-semibold text-amber-600 dark:text-amber-500">
+                    {pendientes}
+                  </span>
+                )}
               </NavLink>
             ))}
           </div>

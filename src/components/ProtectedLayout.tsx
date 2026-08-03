@@ -37,9 +37,24 @@ const ProtectedLayout = () => {
   if (restaurante && !restaurante.completedOnboarding && currentPath !== '/onboarding') {
     return <Navigate to="/onboarding" replace />
   }
-  
+
   // Opcional: Si currentPath === '/onboarding' y YA COMPLETO el onboarding, lo enviamos al dashboard
   if (restaurante && restaurante.completedOnboarding && currentPath === '/onboarding') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  // Hard paywall: un local que ya completó el onboarding pero NO tiene suscripción activa
+  // (accesoPanel === false) no entra al panel — sólo a /suscribir. Cuentas grandfathered
+  // (requiereSuscripcion=false) traen accesoPanel=true, así que nunca caen acá.
+  const suscripcion = restauranteStore.suscripcion as any
+  const bloqueadoPorPaywall =
+    restaurante && restaurante.completedOnboarding && suscripcion?.accesoPanel === false
+
+  if (bloqueadoPorPaywall && currentPath !== '/suscribir') {
+    return <Navigate to="/suscribir" replace />
+  }
+  // Si ya tiene acceso pero quedó en /suscribir (p. ej. tras pagar), al panel.
+  if (currentPath === '/suscribir' && restaurante && suscripcion && suscripcion.accesoPanel !== false) {
     return <Navigate to="/dashboard" replace />
   }
 

@@ -97,8 +97,21 @@ export interface RestauranteData {
   } | null
 }
 
+// Resumen de suscripción que viene en /restaurante/profile. Fuente del hard paywall en el admin.
+export interface SuscripcionResumen {
+  estado: string | null
+  planCodigo: string | null
+  planNombre: string | null
+  conAccesoAPago: boolean
+  sinSuscripcion: boolean
+  features: string[]
+  requiereSuscripcion?: boolean
+  accesoPanel?: boolean
+}
+
 interface RestauranteState {
   restaurante: RestauranteData | null
+  suscripcion: SuscripcionResumen | null
   mesas: Mesa[]
   productos: Producto[]
   categorias: Categoria[]
@@ -124,6 +137,7 @@ interface RestauranteState {
 
 export const useRestauranteStore = create<RestauranteState>((set) => ({
   restaurante: null,
+  suscripcion: null,
   mesas: [],
   productos: [],
   categorias: [],
@@ -145,6 +159,7 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
           restaurante: RestauranteData[]
           mesas: Mesa[]
           productos: Producto[]
+          suscripcion?: SuscripcionResumen
         }
       }
 
@@ -158,6 +173,7 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
       if (response.success && response.data) {
         set({
           restaurante: response.data.restaurante[0],
+          suscripcion: response.data.suscripcion ?? null,
           mesas: response.data.mesas,
           productos: response.data.productos,
           categorias: categoriasResponse.success && categoriasResponse.categorias ? categoriasResponse.categorias : [],
@@ -228,6 +244,7 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
   reset: () =>
     set({
       restaurante: null,
+      suscripcion: null,
       mesas: [],
       productos: [],
       categorias: [],

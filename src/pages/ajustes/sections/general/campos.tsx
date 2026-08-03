@@ -4,12 +4,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import ImageUpload from '@/components/ImageUpload'
-import { restauranteApi } from '@/lib/api'
 import type { RestauranteData } from '@/store/restauranteStore'
 import { SavedIndicator } from '../../components/SavedIndicator'
 import { SucursalDialog } from '../../components/SucursalDialog'
 import { useAjuste } from '../../hooks/useAjuste'
-import { useToggleAjuste } from '../../hooks/useToggleAjuste'
 import { useOptimisticUpdate } from '../../hooks/useOptimisticUpdate'
 import { useDireccionAutocomplete } from '../../hooks/useDireccionAutocomplete'
 import { useSucursales } from '../../hooks/useSucursales'
@@ -77,72 +75,6 @@ export function SucursalJustInTime() {
       </button>
       <SucursalDialog open={dialogOpen} onOpenChange={setDialogOpen} editando={null} onSaved={recargar} />
     </div>
-  )
-}
-
-/** Selector visual del diseño del menú: dos previews clickeables. */
-export function DisenoSelector() {
-  const { checked, toggle, status } = useToggleAjuste(
-    'disenoAlternativo',
-    restauranteApi.toggleDisenoAlternativo
-  )
-  // checked === true → diseño glass (alternativo).
-  const elegir = (glass: boolean) => {
-    if (glass !== checked) toggle()
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Label className="font-medium">Diseño del menú</Label>
-        <SavedIndicator status={status} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <DisenoPreview nombre="Sólido" seleccionado={!checked} onClick={() => elegir(false)} variante="solido" />
-        <DisenoPreview nombre="Glass" seleccionado={checked} onClick={() => elegir(true)} variante="glass" />
-      </div>
-    </div>
-  )
-}
-
-function DisenoPreview({
-  nombre,
-  seleccionado,
-  onClick,
-  variante,
-}: {
-  nombre: string
-  seleccionado: boolean
-  onClick: () => void
-  variante: 'solido' | 'glass'
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={seleccionado}
-      className={cn(
-        'flex min-h-[44px] flex-col gap-2 rounded-xl border p-2 text-left transition-all',
-        seleccionado ? 'border-brand ring-2 ring-brand/40' : 'border-input hover:border-ring'
-      )}
-    >
-      <div
-        className={cn(
-          'flex h-16 items-end gap-1 overflow-hidden rounded-lg p-2',
-          variante === 'solido'
-            ? 'bg-zinc-800'
-            : 'bg-gradient-to-br from-zinc-700/60 to-zinc-900/60 backdrop-blur'
-        )}
-      >
-        <span
-          className={cn('h-6 flex-1 rounded', variante === 'solido' ? 'bg-brand' : 'bg-white/20 ring-1 ring-white/30')}
-        />
-        <span
-          className={cn('h-9 flex-1 rounded', variante === 'solido' ? 'bg-zinc-600' : 'bg-white/10 ring-1 ring-white/20')}
-        />
-      </div>
-      <span className="px-1 text-sm font-medium text-foreground">{nombre}</span>
-    </button>
   )
 }
 

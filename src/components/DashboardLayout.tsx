@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
+import { useTareasPendientes } from '@/pages/ajustes/hooks/useTareasPendientes'
 import { toast } from 'sonner'
 import {
   LayoutDashboard,
@@ -39,6 +40,10 @@ const DashboardLayout = () => {
   })
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('piru-sidebar-collapsed') === '1')
+
+  // Badge discreto de "cosas por configurar" sobre el item de Ajustes.
+  const { pendientes, loading: tareasLoading } = useTareasPendientes()
+  const tareasPendientes = !tareasLoading && pendientes > 0
 
   // Apply + persist theme
   useEffect(() => {
@@ -105,12 +110,13 @@ const DashboardLayout = () => {
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
           const active = isActive(item.path)
+          const showBadge = item.path === '/dashboard/ajustes' && tareasPendientes
           return (
             <button
               key={item.path}
               onClick={() => handleNavigation(item.path)}
               title={compact ? item.label : undefined}
-              className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
+              className={`group relative w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
                 compact ? 'justify-center px-0' : 'px-3'
               } ${
                 active
@@ -123,7 +129,25 @@ const DashboardLayout = () => {
                   active ? '' : 'text-muted-foreground group-hover:text-foreground'
                 }`}
               />
-              {!compact && item.label}
+              {!compact && <span className="flex-1 text-left">{item.label}</span>}
+              {/* Expandido: pill con la cantidad. Comprimido: puntito sobre el icono. */}
+              {showBadge && !compact && (
+                <span
+                  className={`min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold tabular-nums ${
+                    active
+                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      : 'bg-amber-500/15 text-amber-600 dark:text-amber-500'
+                  }`}
+                >
+                  {pendientes}
+                </span>
+              )}
+              {showBadge && compact && (
+                <span
+                  aria-hidden
+                  className="absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
+                />
+              )}
             </button>
           )
         })}

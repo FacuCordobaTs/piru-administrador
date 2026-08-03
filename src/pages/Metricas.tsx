@@ -383,7 +383,7 @@ function MetricasPanel() {
           </div>
         </div>
 
-        {/* 1b. Origen de las ventas: Web (con comisión) vs Manual (POS local, sin comisión) */}
+        {/* 1b. Origen de las ventas: Web (clientes) vs Manual (POS local) */}
         <div className={`${phantomCardClass} p-6 sm:p-8`}>
           <div className="flex items-center gap-2 mb-5">
             <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">Origen de las ventas</span>
@@ -399,7 +399,6 @@ function MetricasPanel() {
                   </div>
                   <span className="text-sm font-bold text-foreground">Por la web (clientes)</span>
                 </div>
-                <span className="text-[10px] bg-sky-500/10 text-sky-600 dark:text-sky-400 px-2 py-0.5 rounded-full font-bold">CON COMISIÓN</span>
               </div>
               <div className="text-3xl font-bold tracking-tight text-foreground">
                 ${ingresoWeb.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -416,7 +415,6 @@ function MetricasPanel() {
                   </div>
                   <span className="text-sm font-bold text-foreground">Anotados manualmente</span>
                 </div>
-                <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full font-bold">SIN COMISIÓN</span>
               </div>
               <div className="text-3xl font-bold tracking-tight text-foreground">
                 ${ingresoManual.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}

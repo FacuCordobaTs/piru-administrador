@@ -30,6 +30,7 @@ import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 
 // ─────────────────────────────────────────────
 // TIPOS
@@ -1574,6 +1575,9 @@ const Dashboard = () => {
                     </Button>
                 </div>
             </header>
+
+            {/* Aviso de saldo de avisos por WhatsApp bajo/agotado (sólo aparece si hace falta) */}
+            <SaldoAlertaBanner />
 
             {/* ── MAIN CONTENT ── */}
             <div className="flex-1 flex overflow-hidden">

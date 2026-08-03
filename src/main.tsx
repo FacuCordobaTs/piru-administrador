@@ -21,12 +21,19 @@ import Repartidores from './pages/Repartidores'
 import CodigosDescuento from './pages/CodigosDescuento'
 import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
+import Suscribir from './pages/Suscribir';
 import Metricas from './pages/Metricas';
 import UpdaterPrompt from './components/UpdaterPrompt';
+import PagoLink from './pages/PagoLink';
 
 
 
 const router = createBrowserRouter([
+  {
+    // Página pública de pago por link/QR (sin login): el celular paga lo que la compu muestra.
+    path: "/pago/:token",
+    element: <PagoLink />,
+  },
   {
     path: "/",
     element: <GuestLayout />,
@@ -76,6 +83,18 @@ const router = createBrowserRouter([
       {
         index: true,
         element: <Onboarding />
+      }
+    ]
+  },
+  {
+    // Hard paywall: pantalla de "elegí tu plan / pagá" a la que el gate manda a los locales
+    // nuevos que completaron el onboarding pero aún no tienen suscripción activa.
+    path: "/suscribir",
+    element: <ProtectedLayout />,
+    children: [
+      {
+        index: true,
+        element: <Suscribir />
       }
     ]
   },

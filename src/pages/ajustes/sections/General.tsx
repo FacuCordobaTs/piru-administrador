@@ -9,7 +9,6 @@ import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import {
   DireccionField,
   SucursalJustInTime,
-  DisenoSelector,
   ColorField,
   LogoField,
 } from './general/campos'
@@ -23,7 +22,6 @@ export default function General() {
   const nombre = restaurante?.nombre?.trim()
   const dirCorta = restaurante?.direccionTexto?.split(',')[0]?.trim()
   const username = restaurante?.username?.trim()
-  const diseno = restaurante?.disenoAlternativo ? 'glass' : 'sólido'
   const tieneLogo = !!(restaurante?.imagenUrl || restaurante?.imagenLightUrl)
   const avisosOn = restaurante?.whatsappEnabled === true
   const telefono = restaurante?.telefono?.trim()
@@ -52,7 +50,7 @@ export default function General() {
           titulo="Tu tienda"
           oracion={
             username
-              ? `piru.app/${username} · diseño ${diseno}`
+              ? `piru.app/${username}`
               : 'Todavía no elegiste el alias de tu link'
           }
           estado={username ? 'configurado' : 'sin-configurar'}
@@ -96,7 +94,7 @@ export default function General() {
         open={editor === 'tienda'}
         onOpenChange={(o) => !o && setEditor(null)}
         titulo="Tu tienda"
-        descripcion="Tu link público, el diseño del menú y los colores."
+        descripcion="Tu link público y los colores de tu tienda."
       >
         <div className="space-y-6">
           <AjusteInput
@@ -109,7 +107,6 @@ export default function General() {
               !v ? 'El alias no puede quedar vacío' : v.length < 3 ? 'Usá al menos 3 caracteres' : null
             }
           />
-          <DisenoSelector />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ColorField campo="colorPrimario" label="Color primario (botones)" fallback="#FF7A00" />
             <ColorField campo="colorSecundario" label="Color secundario (fondos)" fallback="#FFFFFF" />

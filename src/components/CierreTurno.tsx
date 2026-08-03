@@ -549,7 +549,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
   const total = useMemo(() => data ? parseFloat(data.totales.general) : 0, [data])
 
-  // Diferenciación origen: pedidos anotados manualmente (POS local, sin comisión) vs tomados por la web
+  // Diferenciación origen: pedidos anotados manualmente (POS local) vs tomados por la web
   const origenStats = useMemo(() => {
     const esManual = (p: CierreTurnoPedido) =>
       p.tipo !== 'mesa' && (p as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).anotadoManualmente === true
@@ -704,7 +704,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
             <HourlyChart pedidos={allPedidos} />
 
-            {/* Diferenciación: pedidos por la web (cobrados) vs anotados manualmente (sin comisión) */}
+            {/* Diferenciación: pedidos por la web vs anotados manualmente (POS local) */}
             {(origenStats.manualCount > 0 || origenStats.webCount > 0) && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-2 px-5 py-5 rounded-xl bg-muted">
@@ -716,7 +716,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
                     ${origenStats.webTotal.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {origenStats.webCount} {origenStats.webCount === 1 ? 'pedido' : 'pedidos'} · se cobra comisión
+                    {origenStats.webCount} {origenStats.webCount === 1 ? 'pedido' : 'pedidos'}
                   </p>
                 </div>
                 <div className="flex flex-col gap-2 px-5 py-5 rounded-xl bg-sky-500/10 border border-sky-500/20">
@@ -728,7 +728,7 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
                     ${origenStats.manualTotal.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                   <p className="text-xs text-sky-600/80 dark:text-sky-400/80">
-                    {origenStats.manualCount} {origenStats.manualCount === 1 ? 'pedido' : 'pedidos'} · sin comisión
+                    {origenStats.manualCount} {origenStats.manualCount === 1 ? 'pedido' : 'pedidos'}
                   </p>
                 </div>
               </div>
