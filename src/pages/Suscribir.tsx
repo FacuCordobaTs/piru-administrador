@@ -151,10 +151,15 @@ export default function Suscribir() {
                 </div>
               ) : null
             })()}
+            {(() => {
+            // El plan base es el de menor orden (el Básico se seedea con orden 1,
+            // no 0). El destacado es el siguiente (Intermedio).
+            const ordenBase = Math.min(...catalogo.map((p) => p.orden))
+            return (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               {catalogo.map((p) => {
                 const precio = parseFloat(p.precioMensual)
-                const destacado = p.orden === 1 // Intermedio: el recomendado
+                const destacado = p.orden === ordenBase + 1 // Intermedio: el recomendado
                 const desc = descuentoAnualEfectivo(p.descuentoAnual)
                 const totalAnual = precioAnual(precio, desc)
                 return (
@@ -222,7 +227,7 @@ export default function Suscribir() {
                         {' '}“en camino” y “listo para retirar” salen automáticos con tu marca (tu número,
                         nombre y logo). El cliente no tiene que escribir.
                       </p>
-                    ) : p.orden === 0 ? (
+                    ) : p.orden === ordenBase ? (
                       <p className="mt-3 rounded-lg bg-zinc-100 px-3 py-2 text-[12.5px] leading-snug text-muted-foreground dark:bg-zinc-900">
                         El pedido te entra por WhatsApp: hay un ida y vuelta corto con el cliente para
                         avisarle cómo viene. ¿Querés cero chat, con avisos automáticos? Ese es el Intermedio.
@@ -230,14 +235,14 @@ export default function Suscribir() {
                     ) : null}
 
                     <ul className="mt-5 flex-1 space-y-2">
-                      {p.orden === 0 &&
+                      {p.orden === ordenBase &&
                         FEATURES_BASE.map((f) => (
                           <li key={f} className="flex items-start gap-2 text-[13px] text-muted-foreground">
                             <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                             {f}
                           </li>
                         ))}
-                      {p.orden > 0 && (
+                      {p.orden > ordenBase && (
                         <li className="flex items-start gap-2 text-[13px] font-medium text-foreground">
                           <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                           Todo lo del plan anterior, y además:
@@ -275,6 +280,8 @@ export default function Suscribir() {
                 )
               })}
             </div>
+            )
+            })()}
             </>
           )}
         </div>

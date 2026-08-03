@@ -53,9 +53,12 @@ const FEATURE_LABELS: Record<string, string> = {
 const FEATURES_BASE = [
   'Pedidos por WhatsApp + centro de pedidos',
   'Impresión automática de comandas',
-  'Productos y categorías ilimitados',
+  'Pedidos, categorías y productos ilimitados',
+  'Galería de imágenes, variantes, extras e ingredientes',
   'Todos los métodos de pago',
   'Cupones y promociones',
+  'Estadísticas, reportes y mapa de pedidos',
+  'Horarios de atención y pedido en grupo',
 ]
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -683,6 +686,10 @@ function PlanesDisponibles({
   if (catalogo.length === 0) return null
 
   const ordenActual = catalogo.find((p) => p.id === data.planId)?.orden ?? -1
+  // El plan base es el de menor orden del catálogo (no asumir orden === 0: el
+  // Básico se seedea con orden 1). Sólo el base lista FEATURES_BASE; el resto
+  // arranca con "Todo lo del plan anterior".
+  const ordenBase = Math.min(...catalogo.map((p) => p.orden))
   const cicloActual = data.ciclo === 'anual' ? 'anual' : 'mensual'
   const descuentoMax = Math.max(0, ...catalogo.map((p) => descuentoAnualEfectivo(p.descuentoAnual)))
 
@@ -758,14 +765,14 @@ function PlanesDisponibles({
               )}
 
               <ul className="mt-4 flex-1 space-y-2">
-                {p.orden === 0 &&
+                {p.orden === ordenBase &&
                   FEATURES_BASE.map((f) => (
                     <li key={f} className="flex items-start gap-2 text-[13px] text-muted-foreground">
                       <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                       {f}
                     </li>
                   ))}
-                {p.orden > 0 && (
+                {p.orden > ordenBase && (
                   <li className="flex items-start gap-2 text-[13px] font-medium text-foreground">
                     <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                     Todo lo del plan anterior, y además:
