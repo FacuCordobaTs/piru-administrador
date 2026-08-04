@@ -25,6 +25,7 @@ import Suscribir from './pages/Suscribir';
 import Metricas from './pages/Metricas';
 import UpdaterPrompt from './components/UpdaterPrompt';
 import PagoLink from './pages/PagoLink';
+import ClaimTienda from './pages/ClaimTienda';
 
 
 
@@ -33,6 +34,12 @@ const router = createBrowserRouter([
     // Página pública de pago por link/QR (sin login): el celular paga lo que la compu muestra.
     path: "/pago/:token",
     element: <PagoLink />,
+  },
+  {
+    // Claim de tienda (onboarding outbound, sin login): el dueño reclama la tienda que Facu le
+    // armó verificando su WhatsApp. Fuera de ProtectedLayout, igual que /pago/:token.
+    path: "/mi-tienda/:token",
+    element: <ClaimTienda />,
   },
   {
     path: "/",

@@ -5,17 +5,24 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
+import { useSuscripcion } from '../hooks/useSuscripcion'
 
 type EditorId = 'amigos' | 'codigos' | 'notificaciones' | null
 
 export default function Experiencia() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
+  const { data: suscripcion } = useSuscripcion()
   const [editor, setEditor] = useState<EditorId>(null)
 
   const amigosOn = restaurante?.orderGroupEnabled !== false
   const codigosOn = restaurante?.codigoDescuentoEnabled !== false
   const avisosOn = restaurante?.notificarClientesWhatsapp !== false
   const manualOn = restaurante?.modoConfirmacionManual === true
+
+  // Los avisos automáticos al cliente por WhatsApp son feature de plan Intermedio+.
+  // En el plan Básico no se pueden usar (el backend nunca los envía), así que ocultamos
+  // toda la config de Notificaciones. Sin plan (fail-open) o Intermedio/Avanzado la ven.
+  const esBasico = suscripcion?.planCodigo === 'basico'
 
   return (
     <section className="space-y-6">
@@ -39,18 +46,20 @@ export default function Experiencia() {
           estado={codigosOn ? 'configurado' : 'sin-configurar'}
           onAccion={() => setEditor('codigos')}
         />
-        <AjusteRow
-          titulo="Notificaciones"
-          oracion={
-            avisosOn
-              ? manualOn
-                ? 'Avisás a tus clientes por WhatsApp, con confirmación manual'
-                : 'Avisás a tus clientes por WhatsApp automáticamente'
-              : 'Sin avisos automáticos a clientes'
-          }
-          estado="configurado"
-          onAccion={() => setEditor('notificaciones')}
-        />
+        {!esBasico && (
+          <AjusteRow
+            titulo="Notificaciones"
+            oracion={
+              avisosOn
+                ? manualOn
+                  ? 'Avisás a tus clientes por WhatsApp, con confirmación manual'
+                  : 'Avisás a tus clientes por WhatsApp automáticamente'
+                : 'Sin avisos automáticos a clientes'
+            }
+            estado="configurado"
+            onAccion={() => setEditor('notificaciones')}
+          />
+        )}
       </div>
 
       <AjusteEditor
@@ -82,7 +91,7 @@ export default function Experiencia() {
       </AjusteEditor>
 
       <AjusteEditor
-        open={editor === 'notificaciones'}
+        open={editor === 'notificaciones' && !esBasico}
         onOpenChange={(o) => !o && setEditor(null)}
         titulo="Notificaciones"
         descripcion="Avisos automáticos a tus clientes."

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Check, Loader2, Lock, Crown, LogOut, RefreshCw } from 'lucide-react'
+import { Check, Loader2, Lock, Crown, LogOut, RefreshCw, PauseCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { planesApi, type PlanCatalogo } from '@/lib/api'
+import { planesApi, type PlanCatalogo, type MiSuscripcion } from '@/lib/api'
 import { descuentoAnualEfectivo, precioAnual } from '@/lib/utils'
 import { CicloToggle } from '@/components/CicloToggle'
 
@@ -44,20 +44,33 @@ const FEATURES_BASE = [
   'Galería de imágenes y pedido en grupo',
 ]
 
+const fmtInt = (n: number) => new Intl.NumberFormat('es-AR').format(n)
+
 export default function Suscribir() {
   const navigate = useNavigate()
   const restauranteStore = useRestauranteStore()
   const restaurante = restauranteStore.restaurante as any
+  const suscripcion = restauranteStore.suscripcion as any
+  const [miSub, setMiSub] = useState<MiSuscripcion | null>(null)
+  // Degradación "pausada", no apagón (Claim Flow · Tarea 8): un local suspendido/cancelado NO
+  // aterriza en la fría pantalla de "elegí tu plan" sino en una de reactivación que le muestra
+  // los números que generó ("tenés $X en pedidos esperando reactivarse") y le recuerda que nada
+  // se borra. Reactivar = un pago (el mismo flujo de abajo). Distinto del alta nueva (sinSuscripcion).
+  // El estado sale del profile (store); los números (`valorPausa`) sólo de /planes/mi-suscripcion.
+  const estadoSub = miSub?.estado ?? suscripcion?.estado
+  const pausado = estadoSub === 'suspendida' || estadoSub === 'cancelada'
+  const valorPausa = miSub?.valorPausa
   const [catalogo, setCatalogo] = useState<PlanCatalogo[] | null>(null)
   const [ciclo, setCiclo] = useState<'mensual' | 'anual'>('mensual')
   const [eligiendo, setEligiendo] = useState<number | null>(null)
   const [verificando, setVerificando] = useState(false)
 
-  // Cargar catálogo de planes.
+  // Cargar catálogo de planes + suscripción (para los números de un local pausado, Tarea 8).
   useEffect(() => {
     const token = useAuthStore.getState().token
     if (!token) return
     planesApi.catalogo(token).then((r) => setCatalogo(r.data)).catch(() => setCatalogo([]))
+    planesApi.miSuscripcion(token).then((r) => setMiSub(r.data)).catch(() => {})
   }, [])
 
   // Al montar refrescamos el perfil por si volvemos de MercadoPago: el pago se acredita por
@@ -117,19 +130,42 @@ export default function Suscribir() {
           </button>
         </header>
 
-        <div className="mt-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-xs font-medium text-brand">
-            <Crown className="h-3.5 w-3.5" /> {restaurante?.nombre ? `${restaurante.nombre} está casi listo` : 'Casi listo'}
+        {pausado ? (
+          <div className="mt-10 max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <PauseCircle className="h-3.5 w-3.5" /> {restaurante?.nombre ? `${restaurante.nombre} está en pausa` : 'Tu local está en pausa'}
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">
+              Reactivá tu local
+            </h1>
+            {valorPausa && valorPausa.pedidos > 0 ? (
+              <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+                Tu local recibió <span className="font-semibold text-foreground">{fmtInt(valorPausa.pedidos)} {valorPausa.pedidos === 1 ? 'pedido' : 'pedidos'} por {fmtARS(valorPausa.monto)}</span> con Piru.
+                Tu tienda, tu menú y tus clientes están intactos, esperando que reactives.
+                Nada se borra: reactivá con un pago cuando quieras y seguís donde lo dejaste.
+              </p>
+            ) : (
+              <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+                Tu tienda, tu menú y tus clientes siguen cargados y no se borran. Reactivá tu local
+                con un pago y volvés a recibir pedidos en el panel al instante, justo donde lo dejaste.
+              </p>
+            )}
           </div>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">
-            Elegí tu plan para activar tu local
-          </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            Tu tienda y tu menú ya están cargados. Para empezar a recibir pedidos en el panel,
-            activá un plan. Es una cuota fija, sin comisión por venta: pagás mes a mes o por año
-            (con descuento). Podés cambiar o cancelar cuando quieras.
-          </p>
-        </div>
+        ) : (
+          <div className="mt-10 max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-xs font-medium text-brand">
+              <Crown className="h-3.5 w-3.5" /> {restaurante?.nombre ? `${restaurante.nombre} está casi listo` : 'Casi listo'}
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">
+              Elegí tu plan para activar tu local
+            </h1>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+              Tu tienda y tu menú ya están cargados. Para empezar a recibir pedidos en el panel,
+              activá un plan. Es una cuota fija, sin comisión por venta: pagás mes a mes o por año
+              (con descuento). Podés cambiar o cancelar cuando quieras.
+            </p>
+          </div>
+        )}
 
         <div className="mt-10">
           {catalogo === null ? (
@@ -271,7 +307,7 @@ export default function Suscribir() {
                           {eligiendo === p.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            `Activar ${p.nombre}`
+                            `${pausado ? 'Reactivar con' : 'Activar'} ${p.nombre}`
                           )}
                         </Button>
                       )}

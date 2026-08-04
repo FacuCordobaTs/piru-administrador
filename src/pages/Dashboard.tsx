@@ -31,6 +31,7 @@ import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
+import { TrialValorBanner } from '@/components/TrialValorBanner'
 
 // ─────────────────────────────────────────────
 // TIPOS
@@ -955,7 +956,11 @@ const OnboardingChecklist = ({
 const Dashboard = () => {
     const token = useAuthStore((state) => state.token)
     const restaurante = useAuthStore((state) => state.restaurante)
-    const { restaurante: restauranteStore, productos: allProductos } = useRestauranteStore()
+    const { restaurante: restauranteStore, productos: allProductos, suscripcion } = useRestauranteStore()
+
+    // Avisar al cliente por WhatsApp es exclusivo de Intermedio+ (feature avisos_whatsapp_cliente).
+    // Si el backend no devuelve suscripción (admin/backend viejo), fail-open para no romper.
+    const puedeAvisarWhatsapp = !suscripcion || (suscripcion.features?.includes('avisos_whatsapp_cliente') ?? true)
 
     const { printRaw, selectedPrinter } = usePrinter()
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
@@ -1576,6 +1581,9 @@ const Dashboard = () => {
                 </div>
             </header>
 
+            {/* Contador de valor del trial (sólo en prueba): "Recibiste X pedidos por $Y" */}
+            <TrialValorBanner />
+
             {/* Aviso de saldo de avisos por WhatsApp bajo/agotado (sólo aparece si hace falta) */}
             <SaldoAlertaBanner />
 
@@ -1705,7 +1713,7 @@ const Dashboard = () => {
                                                             </div>
 
                                                             <div className="flex items-center gap-1.5 shrink-0">
-                                                                {pedido.pagado && (
+                                                                {pedido.pagado && puedeAvisarWhatsapp && (
                                                                     <button
                                                                         className="h-7 px-2 rounded-md bg-muted border border-border flex items-center gap-1 text-muted-foreground hover:bg-accent transition-colors disabled:opacity-50 text-[10px] font-bold cursor-pointer"
                                                                         onClick={(e) => {
@@ -1829,7 +1837,7 @@ const Dashboard = () => {
                                     externalSelected={selectedUnifiedPedido}
                                     onSelectPedido={(pedido) => setSelectedUnifiedPedido(pedido)}
                                     onAprobarPago={handleAprobarPago}
-                                    onNotificar={handleNotificarCliente}
+                                    onNotificar={puedeAvisarWhatsapp ? handleNotificarCliente : undefined}
                                     onDespachar={(pedido) => handleDespachar(pedido.tipo, pedido.id)}
                                     updatingPago={updatingPago}
                                     sendingNotification={sendingNotification}
@@ -1944,7 +1952,7 @@ const Dashboard = () => {
                                             )}
 
                                             {/* Confirmar con demora — slider */}
-                                            {restauranteStore?.modoConfirmacionManual && selectedUnifiedPedido.notificarWhatsapp && selectedUnifiedPedido.telefono && selectedUnifiedPedido.estado !== 'archived' && (
+                                            {puedeAvisarWhatsapp && restauranteStore?.modoConfirmacionManual && selectedUnifiedPedido.notificarWhatsapp && selectedUnifiedPedido.telefono && selectedUnifiedPedido.estado !== 'archived' && (
                                                 <div className="mb-6 space-y-3">
                                                     <div className="flex items-center justify-between">
                                                         <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Confirmar al cliente</p>
@@ -2150,7 +2158,7 @@ const Dashboard = () => {
                                                     >
                                                         <Trash2 className="h-5 w-5" />
                                                     </button>
-                                                    {selectedUnifiedPedido.pagado && (
+                                                    {selectedUnifiedPedido.pagado && puedeAvisarWhatsapp && (
                                                         <button
                                                             onClick={() => handleNotificarCliente(selectedUnifiedPedido)}
                                                             disabled={sendingNotification === selectedUnifiedPedido.id.toString()}

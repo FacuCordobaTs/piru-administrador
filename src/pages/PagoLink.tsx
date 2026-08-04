@@ -9,10 +9,10 @@ const fmtARS = (n: number | string) =>
   )
 
 /**
- * Página pública de pago por link/QR (`/pago/:token`) — SIN login. El dueño llega acá
- * escaneando el QR que le muestra el panel en la compu. Sólo muestra el concepto y el
- * botón para pagar con MercadoPago (único medio por ahora). El saldo se acredita solo
- * cuando MP confirma el pago (webhook).
+ * Página pública de pago por link (`/pago/:token`) — SIN login. El dueño llega acá abriendo el
+ * link que recibió por WhatsApp, para pagar desde el celular. Sirve para dos cosas: recargar
+ * saldo de avisos o pagar la cuota del plan. Sólo muestra el concepto y el botón para pagar con
+ * MercadoPago (único medio por ahora). El efecto se aplica solo cuando MP confirma (webhook).
  */
 export default function PagoLink() {
   const { token = '' } = useParams()
@@ -23,6 +23,8 @@ export default function PagoLink() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pagando, setPagando] = useState(false)
+
+  const esSuscripcion = info?.tipo === 'suscripcion'
 
   useEffect(() => {
     let cancel = false
@@ -52,7 +54,9 @@ export default function PagoLink() {
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 text-brand">
           <MessageSquare className="h-5 w-5" />
-          <span className="text-sm font-semibold tracking-tight">Piru · Recarga de avisos</span>
+          <span className="text-sm font-semibold tracking-tight">
+            Piru · {esSuscripcion ? 'Pago de tu plan' : 'Recarga de avisos'}
+          </span>
         </div>
 
         {loading ? (
@@ -71,7 +75,9 @@ export default function PagoLink() {
             titulo="¡Pago recibido!"
             detalle={
               volviendoDeMp
-                ? 'Estamos acreditando tu saldo. Ya podés volver al panel — se actualiza solo.'
+                ? esSuscripcion
+                  ? 'Estamos activando tu plan. Ya podés volver al panel — se actualiza solo.'
+                  : 'Estamos acreditando tu saldo. Ya podés volver al panel — se actualiza solo.'
                 : 'Este pago ya fue realizado. Ya podés cerrar esta ventana.'
             }
           />
@@ -79,7 +85,7 @@ export default function PagoLink() {
           <Estado
             icon={<Clock className="h-10 w-10 text-amber-500" />}
             titulo="El link venció"
-            detalle="Generá uno nuevo desde el panel (Ajustes → Plan y saldo) y volvé a escanear el QR."
+            detalle="Pedí uno nuevo desde el panel (Ajustes → Plan y saldo) y volvé a abrir el link."
           />
         ) : info ? (
           <>
@@ -87,9 +93,11 @@ export default function PagoLink() {
               <p className="text-sm text-muted-foreground">{info.restauranteNombre}</p>
               <h1 className="text-lg font-semibold text-foreground">{info.concepto}</h1>
               <p className="text-3xl font-bold tracking-tight text-foreground">{fmtARS(info.monto)}</p>
-              <p className="text-[13px] text-muted-foreground">
-                {info.cantidad} {info.unidad}
-              </p>
+              {info.cantidad != null && info.unidad && (
+                <p className="text-[13px] text-muted-foreground">
+                  {info.cantidad} {info.unidad}
+                </p>
+              )}
             </div>
 
             {error && <p className="mt-4 text-[13px] text-red-500">{error}</p>}

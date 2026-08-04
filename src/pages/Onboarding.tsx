@@ -12,12 +12,12 @@ import {
   ArrowRight, ArrowLeft, Check, Camera, FileText, Link2,
   Clock, Plus, Trash2, MapPin, Sparkles, Loader2,
   Banknote, ArrowDownToLine, Store, Utensils, Target, PencilRuler, Save, X,
-  ImagePlus, Lock, RefreshCw, Pencil
+  ImagePlus, Lock, RefreshCw, Pencil, CircleDashed
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ImageUpload from '@/components/ImageUpload'
 import { toast } from 'sonner'
-import { onboardingApi, productosApi, pedidoUnificadoApi, zonasDeliveryApi, cartaIaApi } from '@/lib/api'
+import { onboardingApi, productosApi, pedidoUnificadoApi, zonasDeliveryApi, cartaIaApi, restauranteApi, type ClaimInventario } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
@@ -555,7 +555,8 @@ function ProductoRevisionCard({ p, onChange, onRemove }: {
   )
 }
 
-const Onboarding = () => {
+// ── Flujo self-serve (build): el dueño construye su tienda paso a paso desde cero. ──
+const SelfServeOnboarding = () => {
   const navigate = useNavigate()
   const { token } = useAuthStore()
   const restauranteStore = useRestauranteStore()
@@ -1594,6 +1595,285 @@ function PreparativosScreen({ formData, patch, indicator, onContinue }: {
       </Button>
     </div>
   )
+}
+
+// ─────────────────────────────── ONBOARDING OUTBOUND (CLAIM) ───────────────────────────────
+// La tienda YA está construida por el fundador. El onboarding acá no CONSTRUYE valor: lo REVELA y
+// deja que el dueño se lo apropie (efecto dotación). Dos momentos: (1) checklist "esto ya está
+// listo" (reciprocidad: mirá cuánto trabajo se te regaló), (2) primer pedido de prueba (gate real:
+// no avanza al panel hasta que exista 1 pedidoUnificado). Recién ahí marcamos completedOnboarding.
+
+type ClaimPaso = 'checklist' | 'prueba' | 'final'
+
+// Ítem del checklist de reclamo (lo que Facu completó va tildado; lo pendiente en gris).
+function ClaimCheckItem({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <li className="flex items-center gap-3 text-sm">
+      {ok ? (
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
+          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+        </span>
+      ) : (
+        <CircleDashed className="h-5 w-5 shrink-0 text-muted-foreground/50" />
+      )}
+      <span className={ok ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
+    </li>
+  )
+}
+
+const ClaimOnboarding = () => {
+  const navigate = useNavigate()
+  const { token } = useAuthStore()
+  const restauranteStore = useRestauranteStore()
+  const restaurante = restauranteStore.restaurante as any
+
+  const [inv, setInv] = useState<ClaimInventario | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [paso, setPaso] = useState<ClaimPaso>('checklist')
+  const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
+  const [pedidoOk, setPedidoOk] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  // Tema del sistema (respetar el modo del OS, igual que el resto del onboarding).
+  useEffect(() => {
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    document.documentElement.classList.toggle('dark', isDark)
+  }, [])
+
+  // Inventario ("esto ya está listo") + productos reales para el preview de la tienda.
+  useEffect(() => {
+    if (!token) return
+    let cancel = false
+    Promise.all([
+      restauranteApi.inventarioClaim(token).catch(() => null),
+      productosApi.getAll(token).catch(() => ({ productos: [] as StoreProduct[] })),
+    ])
+      .then(([invRes, prodRes]: any) => {
+        if (cancel) return
+        if (invRes?.success) setInv(invRes.inventario)
+        setStoreProducts(prodRes?.productos || [])
+      })
+      .finally(() => !cancel && setLoading(false))
+    return () => { cancel = true }
+  }, [token])
+
+  const goTo = (p: ClaimPaso) => { setPaso(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+
+  // Crea el pedido de prueba real (mismo mecanismo que el self-serve): notifica al WhatsApp del
+  // dueño y deja el primer pedidoUnificado, que es el gate para entrar al panel.
+  const hacerPedidoPrueba = async (
+    items: { productoId: number; cantidad: number }[],
+    meta: { nombreCliente: string; notas: string },
+  ) => {
+    if (!token || items.length === 0) return
+    try {
+      await pedidoUnificadoApi.create(token, {
+        tipo: 'takeaway',
+        nombreCliente: meta.nombreCliente || 'Pedido de prueba',
+        notas: meta.notas || 'Pedido de prueba generado en el onboarding',
+        anotadoManualmente: true,
+        notificarWhatsappPrueba: true,
+        items,
+      })
+      await new Promise((r) => setTimeout(r, 3500))
+      setPedidoOk(true)
+    } catch (e: any) {
+      toast.error('No se pudo crear el pedido', { description: e?.message })
+      throw e
+    }
+  }
+
+  // Cierra el reclamo: marca el onboarding completo (sin pisar datos) y entra al panel. El
+  // ProtectedLayout decide el destino real (panel si hay trial activo, /suscribir si falta plan).
+  const finalizar = async () => {
+    if (!token) return
+    setBusy(true)
+    try {
+      await onboardingApi.marcarCompletado(token)
+      await restauranteStore.fetchData()
+      navigate('/dashboard')
+    } catch (e: any) {
+      toast.error('No se pudo terminar', { description: e?.message })
+      setBusy(false)
+    }
+  }
+
+  const nombre = restaurante?.nombre || 'tu local'
+  const logo = restaurante?.imagenUrl || restaurante?.imagenLightUrl || null
+  const slug = restaurante?.username || 'tulocal'
+
+  // ── Checklist "esto ya está listo": la reciprocidad. Facu ya dejó (casi) todo cargado. ──
+  const renderChecklist = () => {
+    const productos = inv?.productos ?? 0
+    const items = [
+      { ok: productos > 0, label: productos > 0 ? `Menú con ${productos} producto${productos === 1 ? '' : 's'}` : 'Cargar el menú' },
+      { ok: !!inv?.tieneImagen, label: 'Logo y foto de portada' },
+      { ok: !!inv?.tieneCobros, label: 'Cobros activados' },
+      { ok: !!inv?.tieneLink, label: 'Tu link para compartir' },
+      { ok: (inv?.zonasDelivery ?? 0) > 0, label: 'Zona de delivery' },
+      { ok: !!inv?.primerPedido, label: 'Primer pedido de prueba' },
+    ]
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 flex flex-col items-center text-center">
+        {logo ? (
+          <img src={logo} alt={nombre} className="h-20 w-20 rounded-2xl object-cover shadow-sm ring-1 ring-border" />
+        ) : (
+          <div className="h-20 w-20 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center">
+            <Store className="h-8 w-8 text-muted-foreground" />
+          </div>
+        )}
+
+        <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">Tu tienda ya está lista</h1>
+        <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
+          Dejamos <span className="font-medium text-foreground">{nombre}</span> armada y lista para recibir pedidos. Esto es lo que ya tenés cargado:
+        </p>
+
+        <ul className="mt-6 w-full space-y-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 p-4 text-left">
+          {items.map((it, i) => <ClaimCheckItem key={i} ok={it.ok} label={it.label} />)}
+        </ul>
+
+        <Button onClick={() => (inv?.primerPedido ? finalizar() : goTo('prueba'))} disabled={busy}
+          className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
+          {busy
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : inv?.primerPedido
+              ? <>Entrar a mi panel <ArrowRight className="ml-2 h-4 w-4" /></>
+              : <>Hacé tu primer pedido de prueba <ArrowRight className="ml-2 h-4 w-4" /></>}
+        </Button>
+        {!inv?.primerPedido && (
+          <p className="text-xs text-muted-foreground mt-4 max-w-sm">
+            Es el último paso: hacé un pedido como si fueras tu cliente para ver cómo te llega.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // ── Primer pedido de prueba: el gate. El dueño recorre su tienda y hace un pedido de verdad. ──
+  const renderPrueba = () => {
+    if (pedidoOk) {
+      return (
+        <div className="text-center flex flex-col items-center animate-in fade-in duration-500 py-6">
+          <Confetti />
+          <div className="w-16 h-16 rounded-2xl bg-[#25D366] flex items-center justify-center mb-6">
+            <svg viewBox="0 0 24 24" className="h-8 w-8 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884Z" /></svg>
+          </div>
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Te llegó el pedido</h1>
+          <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">Así vas a recibir cada pedido real: al toque, en tu WhatsApp y en el panel.</p>
+
+          <Button onClick={() => goTo('final')} disabled={busy}
+            className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
+            Continuar <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+      )
+    }
+
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <button onClick={() => goTo('checklist')}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5">
+          <ArrowLeft className="h-4 w-4" /> Volver
+        </button>
+        <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Probá tu tienda</h1>
+        <p className="text-[15px] text-muted-foreground mt-3">Recorré tu tienda tal como la verán tus clientes y hacé un pedido de prueba para ver cómo te llega.</p>
+
+        <TiendaPreview
+          nombre={nombre}
+          logo={logo}
+          slug={slug}
+          direccion={restaurante?.direccion || ''}
+          deliveryPrice={restaurante?.deliveryFee || '0'}
+          metodosPago={{
+            transferenciaManual: !!restaurante?.metodosPagoConfig?.transferenciaManual,
+            efectivo: restaurante?.metodosPagoConfig?.efectivo ?? true,
+          }}
+          proveedorPago={restaurante?.proveedorPago || 'manual'}
+          productos={storeProducts}
+          onConfirmar={hacerPedidoPrueba}
+        />
+      </div>
+    )
+  }
+
+  // ── Cierre: dotación pura ("tu tienda es tuya"), botón único al panel. ──
+  const renderFinal = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 text-center flex flex-col items-center">
+      <div className="w-16 h-16 rounded-2xl bg-[#FF7A00] flex items-center justify-center mb-6">
+        <Sparkles className="h-8 w-8 text-white" />
+      </div>
+      <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Todo tuyo</h1>
+      <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
+        {nombre} quedó lista y ya recibiste tu primer pedido. Entrá al panel para gestionar todo desde acá.
+      </p>
+
+      <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 text-left">
+        <p className="text-sm font-semibold">Tu link</p>
+        <p className="font-mono text-sm mt-1 truncate">
+          <span className="text-muted-foreground/60">my.piru.app/</span>
+          <span className="font-semibold text-[#FF7A00]">{slug}</span>
+        </p>
+      </div>
+
+      <Button onClick={finalizar} disabled={busy}
+        className="w-full h-14 mt-4 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Entrar a mi panel <ArrowRight className="ml-2 h-4 w-4" /></>}
+      </Button>
+    </div>
+  )
+
+  return (
+    <div className="min-h-dvh bg-background flex flex-col items-center justify-center px-6 py-6 relative selection:bg-orange-500/10 selection:text-[#FF7A00]">
+      <div className="w-full max-w-md mx-auto">
+        <header className="pb-6">
+          <img src="/logopiru.jpeg" alt="Piru" className="h-8 w-auto rounded-lg" />
+        </header>
+        <main className="py-2">
+          {loading ? (
+            <div className="flex justify-center py-24">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : paso === 'checklist' ? renderChecklist()
+            : paso === 'prueba' ? renderPrueba()
+            : renderFinal()}
+        </main>
+      </div>
+    </div>
+  )
+}
+
+// ── Selector de flujo: outbound (tienda ya construida → reclamo) vs. self-serve (construir). ──
+// Un dueño outbound que aún no cerró su reclamo (origen='outbound' && !completedOnboarding) va al
+// flujo de claim; el resto, al build de siempre. Necesitamos el `origen` para decidir: si el store
+// aún no está hidratado (p. ej. refresh directo en /onboarding, que no pasa por DashboardLayout),
+// lo traemos acá. Mientras tanto, loader (no flashear el flujo equivocado). Si el fetch falla,
+// caemos al build self-serve (comportamiento previo).
+const Onboarding = () => {
+  const restaurante = useRestauranteStore((s) => s.restaurante) as any
+  const isLoading = useRestauranteStore((s) => s.isLoading)
+  const fetchData = useRestauranteStore((s) => s.fetchData)
+  const triedRef = useRef(false)
+
+  useEffect(() => {
+    if (!restaurante && !triedRef.current) {
+      triedRef.current = true
+      fetchData()
+    }
+  }, [restaurante, fetchData])
+
+  if (!restaurante && (isLoading || !triedRef.current)) {
+    return (
+      <div className="min-h-dvh bg-background flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (restaurante?.origen === 'outbound' && !restaurante?.completedOnboarding) {
+    return <ClaimOnboarding />
+  }
+
+  return <SelfServeOnboarding />
 }
 
 export default Onboarding

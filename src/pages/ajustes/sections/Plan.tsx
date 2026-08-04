@@ -9,11 +9,8 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronUp,
-  QrCode,
-  Copy,
-  ArrowLeft,
+  MessageCircle,
 } from 'lucide-react'
-import { QRCodeCanvas } from 'qrcode.react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -192,10 +189,12 @@ function PlanActualCard({
   onDone: () => void
 }) {
   const [pagando, setPagando] = useState(false)
+  const [enviandoLink, setEnviandoLink] = useState(false)
   const estado = data.estado
   const proximo = fmtFecha(data.fechaProximoCobro)
   const necesitaPago =
     estado === 'pago_pendiente' || estado === 'suspendida' || estado === 'cancelada'
+  const ciclo = (data.ciclo as 'mensual' | 'anual') || 'mensual'
 
   const renovar = async () => {
     if (!data.planId) {
@@ -206,12 +205,32 @@ function PlanActualCard({
     if (!token) return
     setPagando(true)
     try {
-      const res = await planesApi.suscribir(token, data.planId, (data.ciclo as any) || 'mensual')
+      const res = await planesApi.suscribir(token, data.planId, ciclo)
       window.location.href = res.data.url_pago
     } catch (e: any) {
       toast.error(e?.message || 'No se pudo iniciar el pago')
       setPagando(false)
       onDone()
+    }
+  }
+
+  // Alternativa a pagar en esta pantalla: recibir el link en el WhatsApp del dueño y pagar
+  // desde el celular (reemplaza al viejo QR).
+  const enviarLink = async () => {
+    if (!data.planId) {
+      toast.error('Elegí un plan abajo para empezar.')
+      return
+    }
+    const token = useAuthStore.getState().token
+    if (!token) return
+    setEnviandoLink(true)
+    try {
+      const res = await planesApi.enviarPagoLinkWhatsapp(token, data.planId, ciclo)
+      toast.success(`Te enviamos el link de pago a tu WhatsApp (${res.data.telefono})`)
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo enviar el link por WhatsApp')
+    } finally {
+      setEnviandoLink(false)
     }
   }
 
@@ -256,19 +275,43 @@ function PlanActualCard({
             </p>
           )}
           {proximo && !necesitaPago && (
-            <p className="text-[13px] text-muted-foreground">Próximo cobro: {proximo}</p>
+            <p className="text-[13px] text-muted-foreground">
+              {estado === 'trial' ? 'La prueba termina el' : 'Próximo cobro:'} {proximo}
+            </p>
+          )}
+          {/* Contador de valor del trial: lo que ya ganó con Piru, en el momento de decidir el pago. */}
+          {estado === 'trial' && (data.trialValor?.pedidos ?? 0) > 0 && (
+            <p className="text-[13px] font-medium text-brand">
+              Ya recibiste {data.trialValor!.pedidos}{' '}
+              {data.trialValor!.pedidos === 1 ? 'pedido' : 'pedidos'} por {fmtARS(data.trialValor!.monto)} con Piru.
+            </p>
           )}
         </div>
 
-        <Button onClick={renovar} disabled={pagando} className="shrink-0">
-          {pagando ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : necesitaPago ? (
-            'Pagar ahora'
-          ) : (
-            'Renovar'
-          )}
-        </Button>
+        <div className="flex shrink-0 flex-col items-stretch gap-1.5">
+          <Button onClick={renovar} disabled={pagando || enviandoLink}>
+            {pagando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : necesitaPago ? (
+              'Pagar ahora'
+            ) : (
+              'Renovar'
+            )}
+          </Button>
+          <button
+            onClick={enviarLink}
+            disabled={pagando || enviandoLink}
+            className="flex items-center justify-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+          >
+            {enviandoLink ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <>
+                <MessageCircle className="h-3.5 w-3.5" /> Recibir link al WhatsApp
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -519,15 +562,12 @@ function RecargaSheet({
 }) {
   const [packs, setPacks] = useState<PackRecarga[] | null>(null)
   const [comprando, setComprando] = useState<number | null>(null)
-  const [generandoQr, setGenerandoQr] = useState<number | null>(null)
-  // Vista de QR: la compu muestra, el celular paga (sin login).
-  const [qr, setQr] = useState<{ url: string; pack: PackRecarga } | null>(null)
+  const [enviandoLink, setEnviandoLink] = useState<number | null>(null)
   const esMarketing = categoria === 'marketing'
   const unidad = esMarketing ? 'mensajes de campaña' : 'avisos'
 
   useEffect(() => {
     if (!open) return
-    setQr(null)
     const token = useAuthStore.getState().token
     if (!token) return
     mensajesApi.packs(token, categoria).then((r) => setPacks(r.data)).catch(() => setPacks([]))
@@ -546,27 +586,18 @@ function RecargaSheet({
     }
   }
 
-  const generarQr = async (pack: PackRecarga) => {
+  // Envía el link de pago al WhatsApp del dueño para pagar desde el celular (reemplaza al QR).
+  const enviarLink = async (packId: number) => {
     const token = useAuthStore.getState().token
     if (!token) return
-    setGenerandoQr(pack.id)
+    setEnviandoLink(packId)
     try {
-      const res = await mensajesApi.crearPagoQr(token, pack.id)
-      setQr({ url: res.data.url, pack })
+      const res = await mensajesApi.enviarPagoLinkWhatsapp(token, packId)
+      toast.success(`Te enviamos el link de pago a tu WhatsApp (${res.data.telefono})`)
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo generar el QR')
+      toast.error(e?.message || 'No se pudo enviar el link por WhatsApp')
     } finally {
-      setGenerandoQr(null)
-    }
-  }
-
-  const copiarLink = async () => {
-    if (!qr) return
-    try {
-      await navigator.clipboard.writeText(qr.url)
-      toast.success('Link copiado')
-    } catch {
-      toast.error('No se pudo copiar')
+      setEnviandoLink(null)
     }
   }
 
@@ -574,43 +605,14 @@ function RecargaSheet({
     <AjusteEditor
       open={open}
       onOpenChange={onOpenChange}
-      titulo={
-        qr
-          ? 'Pagá desde tu celular'
-          : esMarketing
-            ? 'Comprar mensajes de campaña'
-            : 'Recargar saldo de avisos'
-      }
+      titulo={esMarketing ? 'Comprar mensajes de campaña' : 'Recargar saldo de avisos'}
       descripcion={
-        qr
-          ? 'Escaneá el QR con la cámara de tu celular para pagar sin salir de esta pantalla. El saldo se acredita solo al confirmarse el pago.'
-          : esMarketing
-            ? 'Comprá un pack de mensajes de marketing para tus campañas del Motor de Recompra. El pago es único y se acredita al instante.'
-            : 'Comprá un pack de avisos. Pagá acá o escaneá el QR con el celular. El pago es único y se acredita al instante.'
+        esMarketing
+          ? 'Comprá un pack de mensajes de marketing para tus campañas del Motor de Recompra. Pagá acá o recibí el link en tu WhatsApp para pagar desde el celular. El pago es único y se acredita al instante.'
+          : 'Comprá un pack de avisos. Pagá acá o recibí el link en tu WhatsApp para pagar desde el celular. El pago es único y se acredita al instante.'
       }
     >
-      {qr ? (
-        <div className="space-y-4">
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-border p-5">
-            <div className="rounded-lg bg-white p-3">
-              <QRCodeCanvas value={qr.url} size={200} includeMargin />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-foreground">{qr.pack.cantidad} {unidad}</p>
-              <p className="text-[13px] text-muted-foreground">{fmtARS(qr.pack.precio)}</p>
-            </div>
-          </div>
-          <Button variant="outline" onClick={copiarLink} className="w-full">
-            <Copy className="mr-2 h-4 w-4" /> Copiar link de pago
-          </Button>
-          <button
-            onClick={() => setQr(null)}
-            className="flex w-full items-center justify-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> Elegir otro pack
-          </button>
-        </div>
-      ) : packs === null ? (
+      {packs === null ? (
         <div className="flex justify-center py-10">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
@@ -619,26 +621,32 @@ function RecargaSheet({
       ) : (
         <div className="space-y-3">
           {packs.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center justify-between gap-3 rounded-xl border border-border p-4"
-            >
+            <div key={p.id} className="space-y-3 rounded-xl border border-border p-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">{p.cantidad} {unidad}</p>
                 <p className="text-[13px] text-muted-foreground">{fmtARS(p.precio)}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  onClick={() => comprar(p.id)}
+                  disabled={comprando !== null || enviandoLink !== null}
+                  className="sm:flex-1"
+                >
+                  {comprando === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Comprar'}
+                </Button>
                 <Button
                   variant="outline"
-                  size="icon"
-                  onClick={() => generarQr(p)}
-                  disabled={generandoQr !== null || comprando !== null}
-                  title="Pagar desde el celular (QR)"
+                  onClick={() => enviarLink(p.id)}
+                  disabled={comprando !== null || enviandoLink !== null}
+                  className="sm:flex-1"
                 >
-                  {generandoQr === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
-                </Button>
-                <Button onClick={() => comprar(p.id)} disabled={comprando !== null || generandoQr !== null}>
-                  {comprando === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Comprar'}
+                  {enviandoLink === p.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <MessageCircle className="mr-2 h-4 w-4" /> Recibir link de pago al WhatsApp
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
@@ -660,6 +668,7 @@ function PlanesDisponibles({
   onDone: () => void
 }) {
   const [eligiendo, setEligiendo] = useState<number | null>(null)
+  const [enviandoLink, setEnviandoLink] = useState<number | null>(null)
   const [ciclo, setCiclo] = useState<Ciclo>((data.ciclo as Ciclo) === 'anual' ? 'anual' : 'mensual')
 
   const elegir = async (planId: number) => {
@@ -673,6 +682,21 @@ function PlanesDisponibles({
       toast.error(e?.message || 'No se pudo iniciar el pago')
       setEligiendo(null)
       onDone()
+    }
+  }
+
+  // Alternativa: recibir el link de pago del plan en el WhatsApp del dueño (pagar desde el celular).
+  const enviarLink = async (planId: number) => {
+    const token = useAuthStore.getState().token
+    if (!token) return
+    setEnviandoLink(planId)
+    try {
+      const res = await planesApi.enviarPagoLinkWhatsapp(token, planId, ciclo)
+      toast.success(`Te enviamos el link de pago a tu WhatsApp (${res.data.telefono})`)
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo enviar el link por WhatsApp')
+    } finally {
+      setEnviandoLink(null)
     }
   }
 
@@ -796,22 +820,37 @@ function PlanesDisponibles({
                     Incluido
                   </Button>
                 ) : (
-                  <Button
-                    onClick={() => elegir(p.id)}
-                    disabled={eligiendo !== null}
-                    variant={esMejora || esMismoPlanOtroCiclo ? 'default' : 'outline'}
-                    className="w-full"
-                  >
-                    {eligiendo === p.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : esMismoPlanOtroCiclo ? (
-                      ciclo === 'anual' ? 'Pasar a anual' : 'Pasar a mensual'
-                    ) : esMejora ? (
-                      `Mejorar a ${p.nombre}`
-                    ) : (
-                      'Elegir'
-                    )}
-                  </Button>
+                  <div className="space-y-1.5">
+                    <Button
+                      onClick={() => elegir(p.id)}
+                      disabled={eligiendo !== null || enviandoLink !== null}
+                      variant={esMejora || esMismoPlanOtroCiclo ? 'default' : 'outline'}
+                      className="w-full"
+                    >
+                      {eligiendo === p.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : esMismoPlanOtroCiclo ? (
+                        ciclo === 'anual' ? 'Pasar a anual' : 'Pasar a mensual'
+                      ) : esMejora ? (
+                        `Mejorar a ${p.nombre}`
+                      ) : (
+                        'Elegir'
+                      )}
+                    </Button>
+                    <button
+                      onClick={() => enviarLink(p.id)}
+                      disabled={eligiendo !== null || enviandoLink !== null}
+                      className="flex w-full items-center justify-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+                    >
+                      {enviandoLink === p.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <>
+                          <MessageCircle className="h-3.5 w-3.5" /> Recibir link al WhatsApp
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

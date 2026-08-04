@@ -200,8 +200,8 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
         <div>
             {/* Hero */}
             <div className="flex items-center gap-3 mb-5">
-                <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-500/20 shrink-0">
-                    <Rocket className="w-6 h-6 text-white" />
+                <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-foreground shrink-0">
+                    <Rocket className="w-6 h-6" />
                 </div>
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight text-foreground">Motor de Recompra</h1>
@@ -210,7 +210,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
             </div>
 
             {/* El PLAN en prosa (no un formulario) */}
-            <div className="rounded-2xl border border-violet-200 dark:border-violet-900 bg-linear-to-br from-violet-50/80 to-background dark:from-violet-950/40 dark:to-background p-5 sm:p-6">
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-5 sm:p-6">
                 <p className="text-[15px] leading-relaxed text-foreground">
                     Encontré <span className="font-semibold">{plan.totalDetectados} clientes</span> que se enfriaron
                     {plan.porSegmento.length > 0 && (
@@ -248,7 +248,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                         <span>
                             Enviando hasta <span className="font-medium text-foreground">{cupo}/día</span>, primero {primer?.label.toLowerCase() ?? 'los más fáciles'}
                             {' · '}
-                            <button onClick={() => setEditandoCupo(true)} className="text-violet-600 dark:text-violet-400 hover:underline font-medium">Cambiar</button>
+                            <button onClick={() => setEditandoCupo(true)} className="text-foreground hover:underline font-medium">Cambiar</button>
                         </span>
                     )}
                 </div>
@@ -256,7 +256,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                 <Button
                     onClick={() => setConfirmOpen(true)}
                     size="lg"
-                    className="mt-5 h-12 px-8 gap-2 bg-violet-600 hover:bg-violet-700 text-white text-base w-full sm:w-auto"
+                    className="mt-5 h-12 px-8 gap-2 text-base w-full sm:w-auto"
                 >
                     <Zap className="w-5 h-5" /> Activar
                 </Button>
@@ -275,7 +275,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-violet-600" /> Encender el motor
+                            <Zap className="w-4 h-4 text-muted-foreground" /> Encender el motor
                         </DialogTitle>
                         <DialogDescription>
                             A partir de ahora el motor va a ir contactando solo a los {plan.totalContactar} clientes,
@@ -291,7 +291,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                     </div>
                     <DialogFooter className="gap-2 sm:gap-2">
                         <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={activando}>Cancelar</Button>
-                        <Button onClick={activar} disabled={activando} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
+                        <Button onClick={activar} disabled={activando} className="gap-2">
                             {activando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                             {activando ? 'Encendiendo…' : 'Activar motor'}
                         </Button>
@@ -365,7 +365,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                 {pausadaManual && (
                     <Button size="sm" disabled={accion}
                         onClick={() => doAccion(() => clientesApi.reanudarRecompra(token!), 'Motor reanudado')}
-                        className="h-8 gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 text-white">
+                        className="h-8 gap-1.5 text-xs">
                         <Play className="w-3.5 h-3.5" /> Reanudar
                     </Button>
                 )}
@@ -406,17 +406,14 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
             {/* Marcador: consumo SIEMPRE junto a retorno */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <StatCard label="Contactados" value={campana.contactados.toString()}
-                    hint={`${campana.totalEnviados} mensajes usados`} icon={<Send className="w-4 h-4" />}
-                    color="text-violet-600 dark:text-violet-400" bg="bg-violet-50 dark:bg-violet-950/50" />
+                    hint={`${campana.totalEnviados} mensajes usados`} icon={<Send className="w-4 h-4" />} />
                 <StatCard label="Volvieron a pedir" value={campana.volvieron.toString()}
                     hint={campana.contactados > 0 ? `${pct(campana.tasaContactados)} de los contactados` : 'todavía sin datos'}
-                    icon={<Repeat className="w-4 h-4" />} color="text-emerald-600 dark:text-emerald-400" bg="bg-emerald-50 dark:bg-emerald-950/50" />
+                    icon={<Repeat className="w-4 h-4" />} />
                 <StatCard label="Recuperado" value={formatCurrency(campana.plataRecuperada)}
-                    hint="facturación de los que volvieron" icon={<DollarSign className="w-4 h-4" />}
-                    color="text-blue-600 dark:text-blue-400" bg="bg-blue-50 dark:bg-blue-950/50" />
+                    hint="facturación de los que volvieron" icon={<DollarSign className="w-4 h-4" />} />
                 <StatCard label="En cola" value={campana.enCola.toString()}
-                    hint={activa ? `goteando ${campana.enviadosHoy} hoy` : 'en espera'} icon={<Users className="w-4 h-4" />}
-                    color="text-amber-600 dark:text-amber-400" bg="bg-amber-50 dark:bg-amber-950/50" />
+                    hint={activa ? `goteando ${campana.enviadosHoy} hoy` : 'en espera'} icon={<Users className="w-4 h-4" />} />
             </div>
 
             {/* Atribución honesta: contactados vs control */}
@@ -447,7 +444,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                             <span className="text-muted-foreground">Enviando hasta</span>
                             <StepperCupo value={cupo} onChange={setCupo} />
                             <span className="text-muted-foreground">por día</span>
-                            <Button size="sm" disabled={accion} onClick={guardarCupo} className="h-7 px-3 text-xs bg-violet-600 hover:bg-violet-700 text-white">
+                            <Button size="sm" disabled={accion} onClick={guardarCupo} className="h-7 px-3 text-xs">
                                 {accion ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Guardar'}
                             </Button>
                             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditandoCupo(false); setCupo(campana.cupoDiario) }}>Cancelar</Button>
@@ -456,7 +453,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                         <span className="text-muted-foreground">
                             Enviando hasta <span className="font-medium text-foreground">{campana.cupoDiario}/día</span> (máx. {CUPO_MAX} por seguridad del número)
                             {' · '}
-                            <button onClick={() => setEditandoCupo(true)} className="text-violet-600 dark:text-violet-400 hover:underline font-medium inline-flex items-center gap-1">
+                            <button onClick={() => setEditandoCupo(true)} className="text-foreground hover:underline font-medium inline-flex items-center gap-1">
                                 <Pencil className="w-3 h-3" /> Cambiar
                             </button>
                         </span>
@@ -466,7 +463,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                     <Wallet className="w-3.5 h-3.5 shrink-0" />
                     Saldo de campaña: <span className={`font-medium ${campana.saldoMarketing <= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-foreground'}`}>{campana.saldoMarketing} mensajes</span>
                     {campana.saldoMarketing <= 0 && (
-                        <button onClick={onRecargar} className="text-violet-600 dark:text-violet-400 hover:underline font-medium">· Recargar</button>
+                        <button onClick={onRecargar} className="text-foreground hover:underline font-medium">· Recargar</button>
                     )}
                 </div>
             </div>
@@ -511,12 +508,12 @@ function StepperCupo({ value, onChange }: { value: number; onChange: (v: number)
     )
 }
 
-function StatCard({ label, value, hint, icon, color, bg }: {
-    label: string; value: string; hint?: string; icon: React.ReactNode; color: string; bg: string
+function StatCard({ label, value, hint, icon }: {
+    label: string; value: string; hint?: string; icon: React.ReactNode
 }) {
     return (
         <div className="bg-background border border-border/50 rounded-xl p-4">
-            <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${bg} ${color} mb-2`}>{icon}</div>
+            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-muted text-muted-foreground mb-2">{icon}</div>
             <p className="text-lg font-bold text-foreground tabular-nums leading-tight">{value}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{label}</p>
             {hint && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{hint}</p>}
@@ -527,7 +524,7 @@ function StatCard({ label, value, hint, icon, color, bg }: {
 function ExplainCard({ icon: Icon, title, text }: { icon: typeof Users; title: string; text: string }) {
     return (
         <div className="rounded-xl border border-border/60 bg-background p-4">
-            <div className="w-9 h-9 rounded-lg bg-violet-50 dark:bg-violet-950/50 flex items-center justify-center text-violet-600 dark:text-violet-400 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground mb-3">
                 <Icon className="w-4.5 h-4.5" />
             </div>
             <p className="text-sm font-semibold text-foreground">{title}</p>
@@ -539,8 +536,8 @@ function ExplainCard({ icon: Icon, title, text }: { icon: typeof Users; title: s
 function PlanBloqueado() {
     return (
         <div className="text-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-amber-500/20">
-                <Crown className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-5 text-foreground">
+                <Crown className="w-8 h-8" />
             </div>
             <h1 className="text-xl font-semibold tracking-tight text-foreground">El Motor de Recompra es del plan Avanzado</h1>
             <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">

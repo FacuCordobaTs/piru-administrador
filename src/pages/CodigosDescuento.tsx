@@ -29,14 +29,12 @@ import {
   Tag,
   Percent,
   DollarSign,
-  Users,
   MoreVertical,
   Copy,
   Power,
   PowerOff,
   Trash2,
   Pencil,
-  Ticket,
   Loader2,
 } from 'lucide-react'
 
@@ -251,8 +249,8 @@ export default function CodigosDescuento() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       {/* TOP HEADER — KPI Strip */}
-      <div className="border-b bg-background/80 backdrop-blur-xl sticky top-0 z-20">
-        <div className="px-6 py-5">
+      <div className="border-b bg-background sticky top-0 z-20">
+        <div className="px-6 py-5 max-w-3xl mx-auto w-full">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-foreground">Códigos de Descuento</h1>
@@ -266,42 +264,18 @@ export default function CodigosDescuento() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KPICard
-              label="Total"
-              value={stats.total.toString()}
-              icon={<Tag className="w-4 h-4" />}
-              color="text-blue-600 dark:text-blue-400"
-              bgColor="bg-blue-50 dark:bg-blue-950/50"
-            />
-            <KPICard
-              label="Activos"
-              value={stats.activos.toString()}
-              icon={<Power className="w-4 h-4" />}
-              color="text-emerald-600 dark:text-emerald-400"
-              bgColor="bg-emerald-50 dark:bg-emerald-950/50"
-            />
-            <KPICard
-              label="Vigentes"
-              value={stats.vigentes.toString()}
-              icon={<Ticket className="w-4 h-4" />}
-              color="text-violet-600 dark:text-violet-400"
-              bgColor="bg-violet-50 dark:bg-violet-950/50"
-            />
-            <KPICard
-              label="Usos totales"
-              value={stats.usosTotales.toString()}
-              icon={<Users className="w-4 h-4" />}
-              color="text-amber-600 dark:text-amber-400"
-              bgColor="bg-amber-50 dark:bg-amber-950/50"
-            />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3">
+            <KPIStat label="Total" value={stats.total.toString()} />
+            <KPIStat label="Activos" value={stats.activos.toString()} />
+            <KPIStat label="Vigentes" value={stats.vigentes.toString()} />
+            <KPIStat label="Usos totales" value={stats.usosTotales.toString()} />
           </div>
         </div>
       </div>
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="flex flex-col border-r bg-background w-full max-w-2xl mx-auto lg:mx-0 lg:max-w-none shrink-0">
+        <div className="flex flex-col bg-background w-full max-w-3xl mx-auto shrink-0">
           <div className="px-4 py-3 border-b bg-muted/30">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -474,28 +448,11 @@ export default function CodigosDescuento() {
 // SUB-COMPONENTS
 // =============================================================================
 
-function KPICard({
-  label,
-  value,
-  icon,
-  color,
-  bgColor,
-}: {
-  label: string
-  value: string
-  icon: React.ReactNode
-  color: string
-  bgColor: string
-}) {
+function KPIStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 bg-background border border-border/50 rounded-xl px-4 py-3">
-      <div className={`w-9 h-9 rounded-lg ${bgColor} flex items-center justify-center ${color} shrink-0`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">{label}</p>
-        <p className="text-base font-bold text-foreground tabular-nums truncate mt-0.5">{value}</p>
-      </div>
+    <div className="min-w-0">
+      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">{label}</p>
+      <p className="text-xl font-semibold text-foreground tabular-nums truncate mt-0.5">{value}</p>
     </div>
   )
 }
@@ -518,11 +475,7 @@ function CodigoRow({
 
   return (
     <div className="w-full text-left px-4 py-3 flex items-center gap-3 border-b border-border/30 hover:bg-muted/50 transition-colors">
-      <div
-        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-          vigente ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
-        }`}
-      >
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-muted text-muted-foreground">
         {codigo.tipo === 'porcentaje' ? (
           <Percent className="w-5 h-5" />
         ) : (

@@ -176,7 +176,15 @@ export const onboardingApi = {
       },
       body: JSON.stringify(data)
     })
-  }
+  },
+  // Claim outbound (Tarea 5): cierra el onboarding de reclamo sin tocar datos de la tienda
+  // (ya construida por el fundador). Solo setea completedOnboarding=true.
+  marcarCompletado: async (token: string) => {
+    return fetchApi('/onboarding/marcar-completado', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }
 
 // Carta IA — extracción automática del menú desde imágenes con Claude
@@ -261,6 +269,15 @@ export const restauranteApi = {
       headers: {
         Authorization: `Bearer ${token}`,
       },
+    })
+  },
+
+  // Inventario del claim para la cuenta autenticada (checklist "esto ya está listo" del onboarding
+  // outbound, Tarea 5). Mismo shape que el preview público (ClaimInventario).
+  inventarioClaim: async (token: string) => {
+    return fetchApi<{ success: boolean; inventario: ClaimInventario }>('/restaurante/inventario-claim', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
     })
   },
 
@@ -1683,6 +1700,12 @@ export interface MiSuscripcion {
   requiereSuscripcion?: boolean
   accesoPanel?: boolean
   fechaProximoCobro: string | null
+  // Contador de valor del trial (Claim Flow · Tarea 6). Sólo presentes en estado 'trial'.
+  trialFin?: string | null
+  trialValor?: { pedidos: number; monto: number } | null
+  // Valor acumulado para la pantalla de reactivación de un local pausado (Claim Flow · Tarea 8).
+  // Presente sólo en estado 'suspendida'/'cancelada'.
+  valorPausa?: { pedidos: number; monto: number } | null
   graciaHasta: string | null
   fechaCancelacion: string | null
   precioMensual: string | null
@@ -1706,6 +1729,16 @@ export const planesApi = {
   suscribir: async (token: string, planId: number, ciclo: 'mensual' | 'anual' = 'mensual') =>
     fetchApi<{ success: boolean; data: { pagoId: number; url_pago: string; monto: string; ciclo: string } }>(
       '/planes/suscribir',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ planId, ciclo }),
+      },
+    ),
+  // Envía el link de pago de la cuota del plan al WhatsApp del dueño (para pagar desde el celular).
+  enviarPagoLinkWhatsapp: async (token: string, planId: number, ciclo: 'mensual' | 'anual' = 'mensual') =>
+    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>(
+      '/planes/pago-link-whatsapp',
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -1789,16 +1822,29 @@ export const mensajesApi = {
         body: JSON.stringify({ packId }),
       },
     ),
+  // Envía el link de pago del pack al WhatsApp del dueño (para pagar desde el celular).
+  enviarPagoLinkWhatsapp: async (token: string, packId: number) =>
+    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>(
+      '/mensajes/pago-link-whatsapp',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ packId }),
+      },
+    ),
 }
 
 // ── Link de pago público (/pago/:token) — SIN autenticación ───────────────
 export interface PagoLinkInfo {
+  // 'recarga' = pack de mensajes · 'suscripcion' = cuota del plan. En pagos de suscripción no hay
+  // cantidad/categoria/unidad. `tipo` puede faltar en respuestas de backends viejos (default recarga).
+  tipo?: 'recarga' | 'suscripcion'
   estado: 'pending' | 'paid' | 'expired'
   restauranteNombre: string
   concepto: string
-  cantidad: number
-  categoria: 'utility' | 'marketing'
-  unidad: string
+  cantidad?: number
+  categoria?: 'utility' | 'marketing'
+  unidad?: string
   monto: string
 }
 
@@ -1809,4 +1855,46 @@ export const pagoApi = {
     fetchApi<{ success: boolean; data: { url_pago: string } }>(`/pago/${token}/checkout`, {
       method: 'POST',
     }),
+}
+
+// ── Claim de tienda (onboarding outbound, /mi-tienda/:token) — SIN autenticación ──
+// El dueño reclama la tienda que Facu le armó verificando su WhatsApp. El número ya lo conoce el
+// backend (rest.telefono): no se lo pedimos. Endpoints públicos montados en /api/public/claim.
+export interface ClaimTienda {
+  nombre: string | null
+  username: string | null
+  imagenUrl: string | null
+  imagenLightUrl: string | null
+  telefonoEnmascarado: string | null
+}
+
+export interface ClaimInventario {
+  productos: number
+  tieneImagen: boolean
+  tieneCobros: boolean
+  zonasDelivery: number
+  primerPedido: boolean
+  tieneNombre: boolean
+  tieneLink: boolean
+}
+
+export const claimApi = {
+  // 404 con flags distintivos en err.response: { yaReclamada?: true } o { vencido?: true }.
+  preview: (token: string) =>
+    fetchApi<{ success: boolean; tienda: ClaimTienda; inventario: ClaimInventario }>(
+      `/public/claim/${token}`,
+      { method: 'GET' },
+    ),
+  start: (token: string) =>
+    fetchApi<{
+      success: boolean
+      verificationId: string
+      telefonoEnmascarado: string | null
+      expiraEnSegundos: number
+    }>(`/public/claim/${token}/start`, { method: 'POST' }),
+  verify: (token: string, verificationId: string, codigo: string) =>
+    fetchApi<{ success: boolean; token: string; restaurante: any }>(
+      `/public/claim/${token}/verify`,
+      { method: 'POST', body: JSON.stringify({ verificationId, codigo }) },
+    ),
 }

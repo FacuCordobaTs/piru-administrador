@@ -14,7 +14,7 @@ import {
     Search, MapPin, Phone, CalendarDays,
     ShoppingBag, DollarSign, ChevronRight,
     User, TrendingUp, Users,
-    MessageCircle, ExternalLink, X,
+    MessageCircle, X,
     Clock, Truck, Package, ArrowUpRight, Star, Ticket,
     Sparkles, Crown, AlertTriangle, Moon, UserX,
     Repeat, Timer, Utensils, Rocket, Gift, Loader2, Send, CheckCircle2, BellOff
@@ -230,39 +230,83 @@ const getInitials = (name: string) => {
     return name.slice(0, 2).toUpperCase()
 }
 
-const avatarColors = [
-    'from-violet-500 to-purple-600',
-    'from-blue-500 to-cyan-500',
-    'from-emerald-500 to-teal-500',
-    'from-orange-500 to-amber-500',
-    'from-rose-500 to-pink-500',
-    'from-indigo-500 to-blue-500',
-    'from-fuchsia-500 to-purple-500',
-    'from-teal-500 to-emerald-500',
+// =============================================================================
+// MAIN COMPONENT (con tabs: Clientes / Motor de Recompra / Cupones)
+// El usuario primero elige la sección en una pantalla centrada; recién ahí
+// aparece el navegador de tabs para moverse entre las 3.
+// =============================================================================
+type SeccionClientes = 'clientes' | 'motor' | 'cupones'
+
+interface SeccionMeta {
+    key: SeccionClientes
+    label: string
+    icon: typeof Users
+    descripcion: string
+}
+
+const SECCIONES: SeccionMeta[] = [
+    {
+        key: 'clientes',
+        label: 'Base de clientes',
+        icon: Users,
+        descripcion: 'Cada cliente clasificado por su propio ritmo de pedidos.',
+    },
+    {
+        key: 'motor',
+        label: 'Motor de Recompra',
+        icon: Rocket,
+        descripcion: 'Trae de vuelta, en automático, a los clientes que se enfrían.',
+    },
+    {
+        key: 'cupones',
+        label: 'Cupones',
+        icon: Ticket,
+        descripcion: 'Códigos de descuento y promociones para tu tienda.',
+    },
 ]
 
-const getAvatarColor = (id: number) => avatarColors[id % avatarColors.length]
-
-// =============================================================================
-// MAIN COMPONENT (con tabs: Clientes / Cupones)
-// =============================================================================
 export default function Clientes() {
-    const [tab, setTab] = useState<'clientes' | 'motor' | 'cupones'>('clientes')
+    // null = todavía no eligió → pantalla de selección centrada
+    const [tab, setTab] = useState<SeccionClientes | null>(null)
 
+    // ---- Pantalla de selección (paso previo al navegador) ----
+    if (tab === null) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center h-full overflow-auto bg-background px-6 py-12">
+                <div className="w-full max-w-2xl text-center">
+                    <h1 className="text-xl font-semibold tracking-tight text-foreground">
+                        ¿Qué querés gestionar?
+                    </h1>
+                    <p className="text-sm text-muted-foreground mt-1.5">
+                        Elegí una sección para empezar.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
+                        {SECCIONES.map(seccion => (
+                            <SeccionCard key={seccion.key} seccion={seccion} onClick={() => setTab(seccion.key)} />
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    // ---- Navegador + panel activo (una vez elegida la sección) ----
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
             {/* Tab switcher */}
             <div className="border-b bg-background px-4 sm:px-6 shrink-0">
                 <div className="flex items-center gap-1 h-12">
-                    <TabButton active={tab === 'clientes'} onClick={() => setTab('clientes')} icon={Users}>
-                        Clientes
-                    </TabButton>
-                    <TabButton active={tab === 'motor'} onClick={() => setTab('motor')} icon={Rocket}>
-                        Motor de Recompra
-                    </TabButton>
-                    <TabButton active={tab === 'cupones'} onClick={() => setTab('cupones')} icon={Ticket}>
-                        Cupones
-                    </TabButton>
+                    {SECCIONES.map(seccion => (
+                        <TabButton
+                            key={seccion.key}
+                            active={tab === seccion.key}
+                            onClick={() => setTab(seccion.key)}
+                            icon={seccion.icon}
+                        >
+                            {seccion.label === 'Base de clientes' ? 'Clientes' : seccion.label}
+                        </TabButton>
+                    ))}
                 </div>
             </div>
 
@@ -271,6 +315,27 @@ export default function Clientes() {
                 {tab === 'clientes' ? <ClientesPanel /> : tab === 'motor' ? <MotorRecompra /> : <CodigosDescuento />}
             </div>
         </div>
+    )
+}
+
+function SeccionCard({ seccion, onClick }: {
+    seccion: SeccionMeta
+    onClick: () => void
+}) {
+    const Icon = seccion.icon
+    return (
+        <button
+            onClick={onClick}
+            className="group flex flex-col items-center text-center gap-3 p-6 rounded-xl border border-border/60 bg-background transition-colors cursor-pointer hover:bg-muted/40 hover:border-border"
+        >
+            <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-foreground">
+                <Icon className="w-5 h-5" />
+            </div>
+            <div>
+                <h2 className="text-sm font-semibold text-foreground">{seccion.label}</h2>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{seccion.descripcion}</p>
+            </div>
+        </button>
     )
 }
 
@@ -401,58 +466,22 @@ function ClientesPanel() {
             {/* ============================================================= */}
             {/* TOP HEADER — KPIs del motor + segmentos */}
             {/* ============================================================= */}
-            <div className="border-b bg-background/80 backdrop-blur-xl sticky top-0 z-20">
-                <div className="px-6 py-5">
+            <div className="border-b bg-background sticky top-0 z-20">
+                <div className="px-6 py-5 max-w-6xl mx-auto w-full">
                     {/* Title Row */}
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h1 className="text-xl font-semibold tracking-tight text-foreground">Base de clientes</h1>
-                            <p className="text-[13px] text-muted-foreground mt-0.5">
-                                {stats.totalClients} clientes · el cerebro del motor de recompra: cada cliente clasificado por su propio ritmo de pedidos
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs font-medium gap-1.5 hidden sm:flex"
-                        >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Exportar
-                        </Button>
+                    <div className="mb-4">
+                        <h1 className="text-xl font-semibold tracking-tight text-foreground">Base de clientes</h1>
+                        <p className="text-[13px] text-muted-foreground mt-0.5">
+                            {stats.totalClients} clientes · cada uno clasificado por su propio ritmo de pedidos
+                        </p>
                     </div>
 
-                    {/* KPI Cards */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <KPICard
-                            label="Clientes"
-                            value={stats.totalClients.toString()}
-                            icon={<Users className="w-4 h-4" />}
-                            color="text-blue-600 dark:text-blue-400"
-                            bgColor="bg-blue-50 dark:bg-blue-950/50"
-                        />
-                        <KPICard
-                            label="Por recuperar"
-                            value={stats.porRecuperar.toString()}
-                            hint="en riesgo + dormidos"
-                            icon={<AlertTriangle className="w-4 h-4" />}
-                            color="text-orange-600 dark:text-orange-400"
-                            bgColor="bg-orange-50 dark:bg-orange-950/50"
-                        />
-                        <KPICard
-                            label="Facturación en juego"
-                            value={formatCurrency(stats.revenueEnJuego)}
-                            hint="lo que gastaron los que se enfrían"
-                            icon={<DollarSign className="w-4 h-4" />}
-                            color="text-violet-600 dark:text-violet-400"
-                            bgColor="bg-violet-50 dark:bg-violet-950/50"
-                        />
-                        <KPICard
-                            label="Ticket promedio"
-                            value={formatCurrency(stats.avgTicket || 0)}
-                            icon={<TrendingUp className="w-4 h-4" />}
-                            color="text-emerald-600 dark:text-emerald-400"
-                            bgColor="bg-emerald-50 dark:bg-emerald-950/50"
-                        />
+                    {/* KPIs — línea sobria, sin tarjetas de color */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3">
+                        <KPIStat label="Clientes" value={stats.totalClients.toString()} />
+                        <KPIStat label="Por recuperar" value={stats.porRecuperar.toString()} hint="en riesgo + dormidos" />
+                        <KPIStat label="Facturación en juego" value={formatCurrency(stats.revenueEnJuego)} hint="lo que gastan los que se enfrían" />
+                        <KPIStat label="Ticket promedio" value={formatCurrency(stats.avgTicket || 0)} />
                     </div>
 
                     {/* Segment filter chips */}
@@ -480,7 +509,7 @@ function ClientesPanel() {
             {/* ============================================================= */}
             {/* MAIN CONTENT — Master / Detail split */}
             {/* ============================================================= */}
-            <div className="flex-1 flex min-h-0 overflow-hidden">
+            <div className="flex-1 flex min-h-0 overflow-hidden max-w-6xl mx-auto w-full">
                 {/* ===== LEFT PANEL — Client List ===== */}
                 <div className={`
                     flex flex-col border-r bg-background
@@ -604,10 +633,7 @@ function ClienteRow({ cliente, selected, onSelect }: {
         >
             {/* Avatar con punto de segmento */}
             <div className="relative shrink-0">
-                <div className={`
-                    w-10 h-10 rounded-full bg-linear-to-br ${getAvatarColor(cliente.id)}
-                    flex items-center justify-center text-white text-sm font-semibold shadow-sm
-                `}>
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-foreground text-sm font-semibold">
                     {getInitials(cliente.nombre)}
                 </div>
                 <span
@@ -722,11 +748,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                         {/* Large avatar */}
                         <div className="relative shrink-0">
-                            <div className={`
-                                w-14 h-14 rounded-2xl bg-linear-to-br ${getAvatarColor(cliente.id)}
-                                flex items-center justify-center text-white text-lg font-bold
-                                shadow-lg shadow-black/10
-                            `}>
+                            <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center text-foreground text-lg font-bold">
                                 {getInitials(cliente.nombre)}
                             </div>
                             <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${meta.dot} ring-2 ring-background`} />
@@ -804,9 +826,9 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                     {/* ---- Motor de Recompra · playbook de recupero (4.2) ---- */}
                     {mostrarRecupero && (
-                        <div className="rounded-xl border border-violet-200 dark:border-violet-900 bg-linear-to-br from-violet-50 to-background dark:from-violet-950/40 dark:to-background overflow-hidden">
-                            <div className="px-4 py-3 border-b border-violet-100 dark:border-violet-900/60 flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center text-violet-600 dark:text-violet-400">
+                        <div className="rounded-xl border border-border/60 bg-background overflow-hidden">
+                            <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
                                     <Rocket className="w-4 h-4" />
                                 </div>
                                 <div className="min-w-0">
@@ -817,12 +839,12 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                             <div className="p-4 space-y-3">
                                 {/* Próximo escalón */}
                                 <div className="flex items-start gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-background border border-violet-200 dark:border-violet-800 flex items-center justify-center shrink-0 text-violet-600 dark:text-violet-400 text-xs font-bold tabular-nums">
+                                    <div className="w-8 h-8 rounded-lg bg-muted border border-border/60 flex items-center justify-center shrink-0 text-foreground text-xs font-bold tabular-nums">
                                         {escalon.nivel}
                                     </div>
                                     <div className="min-w-0">
                                         <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                                            {escalon.descuento > 0 && <Gift className="w-3.5 h-3.5 text-violet-500" />}
+                                            {escalon.descuento > 0 && <Gift className="w-3.5 h-3.5 text-muted-foreground" />}
                                             {escalon.titulo}
                                         </p>
                                         <p className="text-xs text-muted-foreground mt-0.5">{escalon.detalle}</p>
@@ -858,7 +880,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                                     <Button
                                         size="sm"
                                         onClick={() => setConfirmOpen(true)}
-                                        className="w-full h-9 gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                                        className="w-full h-9 gap-2"
                                     >
                                         <Send className="w-3.5 h-3.5" />
                                         {recupero && recupero.totalEnvios > 0 ? 'Enviar el siguiente toque' : 'Enviar mensaje de recupero'}
@@ -874,25 +896,21 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                             label="Pedidos"
                             value={cliente.cantidadPedidos.toString()}
                             icon={<ShoppingBag className="w-4 h-4" />}
-                            color="text-blue-600 dark:text-blue-400"
                         />
                         <MetricCard
                             label="Total gastado"
                             value={formatCurrency(cliente.totalGastado)}
                             icon={<DollarSign className="w-4 h-4" />}
-                            color="text-emerald-600 dark:text-emerald-400"
                         />
                         <MetricCard
                             label="Ticket prom."
                             value={ticket > 0 ? formatCurrency(ticket) : '$0'}
                             icon={<TrendingUp className="w-4 h-4" />}
-                            color="text-violet-600 dark:text-violet-400"
                         />
                         <MetricCard
                             label="Cadencia"
                             value={cliente.cadenciaDias != null ? `~${cliente.cadenciaDias} días` : '—'}
                             icon={<Timer className="w-4 h-4" />}
-                            color="text-orange-600 dark:text-orange-400"
                         />
                     </div>
 
@@ -995,7 +1013,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Rocket className="w-4 h-4 text-violet-600" />
+                            <Rocket className="w-4 h-4 text-muted-foreground" />
                             Enviar recupero a {cliente.nombre}
                         </DialogTitle>
                         <DialogDescription>
@@ -1007,7 +1025,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                     <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5">
                         <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                            <span className="w-5 h-5 rounded bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400 flex items-center justify-center text-[10px] font-bold">{escalon.nivel}</span>
+                            <span className="w-5 h-5 rounded bg-muted text-foreground flex items-center justify-center text-[10px] font-bold">{escalon.nivel}</span>
                             {escalon.titulo}
                         </p>
                         <p className="text-[11px] text-muted-foreground">{escalon.detalle}</p>
@@ -1020,7 +1038,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                         <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={enviando}>
                             Cancelar
                         </Button>
-                        <Button onClick={handleEnviarRecupero} disabled={enviando} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
+                        <Button onClick={handleEnviarRecupero} disabled={enviando} className="gap-2">
                             {enviando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                             {enviando ? 'Enviando…' : 'Enviar ahora'}
                         </Button>
@@ -1060,37 +1078,28 @@ function SegmentoChip({ label, count, dot, active, onClick }: {
     )
 }
 
-function KPICard({ label, value, icon, color, bgColor, hint }: {
+function KPIStat({ label, value, hint }: {
     label: string
     value: string
-    icon: React.ReactNode
-    color: string
-    bgColor: string
     hint?: string
 }) {
     return (
-        <div className="flex items-center gap-3 bg-background border border-border/50 rounded-xl px-4 py-3">
-            <div className={`w-9 h-9 rounded-lg ${bgColor} flex items-center justify-center ${color} shrink-0`}>
-                {icon}
-            </div>
-            <div className="min-w-0">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">{label}</p>
-                <p className="text-base font-bold text-foreground tabular-nums truncate mt-0.5">{value}</p>
-                {hint && <p className="text-[10px] text-muted-foreground/70 truncate -mt-0.5">{hint}</p>}
-            </div>
+        <div className="min-w-0">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">{label}</p>
+            <p className="text-xl font-semibold text-foreground tabular-nums truncate mt-0.5">{value}</p>
+            {hint && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{hint}</p>}
         </div>
     )
 }
 
-function MetricCard({ label, value, icon, color }: {
+function MetricCard({ label, value, icon }: {
     label: string
     value: string
     icon: React.ReactNode
-    color: string
 }) {
     return (
         <div className="bg-background border border-border/50 rounded-xl p-4 text-center">
-            <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg bg-muted/60 ${color} mb-2`}>
+            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-muted text-muted-foreground mb-2">
                 {icon}
             </div>
             <p className="text-base font-bold text-foreground tabular-nums">{value}</p>
