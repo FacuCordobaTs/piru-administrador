@@ -1878,10 +1878,47 @@ export interface ClaimInventario {
   tieneLink: boolean
 }
 
+// Config editable de la tienda expuesta en el preview del claim (pagos, delivery, productos).
+export interface ClaimZona {
+  id: number
+  nombre: string
+  precio: string
+  poligono: Array<{ lat: number; lng: number }>
+  color: string | null
+}
+export interface ClaimConfig {
+  pagos: {
+    efectivo: boolean
+    transferenciaManual: boolean
+    transferenciaAutomatica: boolean
+    mercadopagoCheckout: boolean
+    transferenciaAlias: string | null
+    autoTransferAvailable: boolean
+    mpConnected: boolean
+  }
+  delivery: {
+    deliveryEnabled: boolean
+    lat: number | null
+    lng: number | null
+    zonas: ClaimZona[]
+  }
+  productos: Array<{
+    id: number
+    nombre: string
+    precio: string
+    descripcion: string | null
+    imagenUrl: string | null
+    variantes: Array<{ nombre: string; precio: number }>
+    ingredientes: string[]
+    extras: Array<{ nombre: string; precio: number }>
+  }>
+}
+
 export const claimApi = {
   // 404 con flags distintivos en err.response: { yaReclamada?: true } o { vencido?: true }.
+  // `config` es aditivo: admins viejos que no lo lean siguen funcionando.
   preview: (token: string) =>
-    fetchApi<{ success: boolean; tienda: ClaimTienda; inventario: ClaimInventario }>(
+    fetchApi<{ success: boolean; tienda: ClaimTienda; inventario: ClaimInventario; config?: ClaimConfig }>(
       `/public/claim/${token}`,
       { method: 'GET' },
     ),
