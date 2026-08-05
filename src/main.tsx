@@ -6,6 +6,7 @@ import { RouterProvider } from "react-router/dom";
 import { Toaster } from 'sonner'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import RegisterEmail from './pages/RegisterEmail'
 import VerificarCodigo from './pages/VerificarCodigo'
 import CuentaCreada from './pages/CuentaCreada'
 import ProtectedLayout from './components/ProtectedLayout'
@@ -56,6 +57,12 @@ const router = createBrowserRouter([
       {
         path: "/register",
         element: <Register />,
+      },
+      {
+        // Alta por email + contraseña (sin verificar teléfono). Camino secundario para cuentas
+        // de prueba/manuales; reusa /auth/register-restaurante.
+        path: "/register-email",
+        element: <RegisterEmail />,
       },
       {
         path: "/verificar/:id",
