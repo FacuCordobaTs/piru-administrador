@@ -15,7 +15,7 @@ const RESEND_COOLDOWN = 45 // segundos
  * armó): esta pantalla no le pide "registrarse" (registrarse es de extraños; él ya tiene una tienda).
  * Es un RECLAMO en 2 pasos:
  *   1) "Esta tienda es de [Local]" — logo + nombre + inventario de lo ya cargado (efecto dotación).
- *      Un botón: le mandamos un código al WhatsApp que ya conocemos (no le pedimos el número).
+ *      SIEMPRE le pedimos su WhatsApp: le mandamos un código al número que ingresa (y con el que entra).
  *   2) Ingresa el código de 6 dígitos → guardamos el token → entra a su panel.
  */
 type Paso = 'preview' | 'codigo'
@@ -35,6 +35,9 @@ export default function ClaimTienda() {
 
   const [paso, setPaso] = useState<Paso>('preview')
   const [enviando, setEnviando] = useState(false)
+
+  // El claim SIEMPRE pide el WhatsApp: el dueño escribe dónde recibir el código (y con qué entra).
+  const [telefono, setTelefono] = useState('')
 
   // Estado del OTP (paso 2)
   const [verificationId, setVerificationId] = useState<string | null>(null)
@@ -79,10 +82,23 @@ export default function ClaimTienda() {
     return () => clearTimeout(t)
   }, [cooldown])
 
+  // Normaliza el WhatsApp tipeado: sólo dígitos + prefijo 54 si falta (igual que el registro).
+  const normalizarTelefono = (raw: string): string | null => {
+    let limpio = raw.replace(/\D/g, '')
+    if (limpio.length < 8) return null
+    if (!limpio.startsWith('54')) limpio = `54${limpio}`
+    return limpio
+  }
+
   const iniciarReclamo = async () => {
+    const tel = normalizarTelefono(telefono)
+    if (!tel) {
+      toast.error('Ingresá un número de WhatsApp válido')
+      return
+    }
     setEnviando(true)
     try {
-      const r = await claimApi.start(token)
+      const r = await claimApi.start(token, tel)
       setVerificationId(r.verificationId)
       setTelefonoEnmascarado(r.telefonoEnmascarado)
       setPaso('codigo')
@@ -161,8 +177,13 @@ export default function ClaimTienda() {
 
   const reenviar = async () => {
     if (cooldown > 0) return
+    const tel = normalizarTelefono(telefono)
+    if (!tel) {
+      toast.error('Ingresá un número de WhatsApp válido')
+      return
+    }
     try {
-      const r = await claimApi.start(token)
+      const r = await claimApi.start(token, tel)
       setVerificationId(r.verificationId)
       setTelefonoEnmascarado(r.telefonoEnmascarado)
       setCooldown(RESEND_COOLDOWN)
@@ -216,20 +237,50 @@ export default function ClaimTienda() {
 
             {inventario && <InventarioLista inv={inventario} />}
 
-            <button
-              onClick={iniciarReclamo}
-              disabled={enviando}
-              className="mt-7 flex w-full items-center justify-center gap-2 rounded-2xl h-12 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                iniciarReclamo()
+              }}
+              className="mt-7"
             >
-              {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reclamar mi tienda'}
-            </button>
-
-            {tienda?.telefonoEnmascarado && (
-              <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                <MessageCircle className="h-3.5 w-3.5" />
-                Te enviamos un código por WhatsApp al {tienda.telefonoEnmascarado}
+              <p className="mb-2 text-sm font-medium text-foreground">
+                ¿A qué WhatsApp te mandamos el código?
               </p>
-            )}
+              <label
+                htmlFor="claim-telefono"
+                className="group flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 transition-colors focus-within:bg-zinc-200/70 dark:focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-[#FF7A00]/30"
+              >
+                <span className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500 select-none">
+                  <MessageCircle className="h-4 w-4 shrink-0" />
+                  <span className="text-base">+54</span>
+                  <span className="h-5 w-px bg-zinc-300 dark:bg-zinc-700" />
+                </span>
+                <input
+                  id="claim-telefono"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  placeholder="9 351 123 4567"
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  className="flex-1 bg-transparent border-0 outline-none text-base placeholder:text-zinc-400 dark:placeholder:text-zinc-600 w-full min-w-0"
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={enviando || telefono.replace(/\D/g, '').length < 8}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl h-12 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
+              >
+                {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reclamar mi tienda'}
+              </button>
+            </form>
+
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <MessageCircle className="h-3.5 w-3.5" />
+              Te mandamos un código por WhatsApp para verificar el número.
+            </p>
           </>
         ) : (
           <>

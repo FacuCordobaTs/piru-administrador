@@ -1858,8 +1858,8 @@ export const pagoApi = {
 }
 
 // ── Claim de tienda (onboarding outbound, /mi-tienda/:token) — SIN autenticación ──
-// El dueño reclama la tienda que Facu le armó verificando su WhatsApp. El número ya lo conoce el
-// backend (rest.telefono): no se lo pedimos. Endpoints públicos montados en /api/public/claim.
+// El dueño reclama la tienda que Facu le armó verificando su WhatsApp. SIEMPRE le pedimos el número
+// (el código se manda ahí y queda como su login). Endpoints públicos montados en /api/public/claim.
 export interface ClaimTienda {
   nombre: string | null
   username: string | null
@@ -1885,13 +1885,17 @@ export const claimApi = {
       `/public/claim/${token}`,
       { method: 'GET' },
     ),
-  start: (token: string) =>
+  // El claim SIEMPRE pide el WhatsApp del dueño: el código se manda al número que ingresa.
+  start: (token: string, telefono: string) =>
     fetchApi<{
       success: boolean
       verificationId: string
       telefonoEnmascarado: string | null
       expiraEnSegundos: number
-    }>(`/public/claim/${token}/start`, { method: 'POST' }),
+    }>(`/public/claim/${token}/start`, {
+      method: 'POST',
+      body: JSON.stringify({ telefono }),
+    }),
   verify: (token: string, verificationId: string, codigo: string) =>
     fetchApi<{ success: boolean; token: string; restaurante: any }>(
       `/public/claim/${token}/verify`,
