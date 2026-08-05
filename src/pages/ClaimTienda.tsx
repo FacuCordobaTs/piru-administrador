@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import {
-  Loader2, Check, Store, MessageCircle, ArrowLeft, ArrowRight,
-  Link2, UtensilsCrossed, Image as ImageIcon, Banknote, MapPin, Pencil,
+  Loader2, Check, Store, MessageCircle, ArrowLeft,
+  UtensilsCrossed, Banknote, MapPin, Pencil, ImagePlus,
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
-import { claimApi, ApiError, type ClaimTienda as ClaimTiendaData, type ClaimInventario } from '@/lib/api'
+import { claimApi, restauranteApi, ApiError, type ClaimTienda as ClaimTiendaData, type ClaimInventario } from '@/lib/api'
 
 const CODE_LENGTH = 6
 const RESEND_COOLDOWN = 45 // segundos
@@ -21,37 +21,76 @@ const RESEND_COOLDOWN = 45 // segundos
  * A diferencia del onboarding self-serve (`Onboarding.tsx`), acá NO se le pregunta cada dato: se le
  * MUESTRA cada dato ya completado, una cosa por pantalla, con dos botones — "Continuar" (primario,
  * "está perfecto, seguí") y "Modificar" (secundario). Es el efecto dotación: recorre lo que ya
- * tiene hecho y lo aprueba. Recién al final verifica su WhatsApp para reclamar la tienda.
+ * tiene hecho y lo aprueba.
  *
- * "Modificar" no edita acá (no hay sesión todavía): recuerda qué sección quiso cambiar, manda a
- * verificar el WhatsApp y, una vez adentro, lo deja parado en esa pantalla de ajustes.
+ * "Modificar" edita el dato ahí mismo, en la tarjeta. El cambio NO se guarda contra el backend en el
+ * momento (todavía no hay sesión): queda en un borrador local (`draft`). Recién cuando el dueño
+ * confirma su WhatsApp (y tenemos su token) se persiste TODO el borrador de una sola vez.
+ *
+ * Solo son editables inline los datos de identidad que el preview trae y `restauranteApi.update`
+ * sabe guardar: nombre, link (username) y logo. El menú, los cobros y las zonas se muestran como
+ * confirmación ("ya está listo") y se afinan en detalle adentro del panel.
  *
  * Flujo:
- *   1) Recorrido de aprobación (`walk`): intro + una tarjeta por dato ya cargado.
+ *   1) Recorrido de aprobación (`walk`): intro editable + tarjetas de datos + confirmaciones.
  *   2) Verificación: ingresa su WhatsApp → le mandamos un código.
- *   3) Código (`codigo`): 6 dígitos → guardamos el token → entra a su panel (o a lo que quiso modificar).
+ *   3) Código (`codigo`): 6 dígitos → guardamos el token → persistimos el borrador → entra a su panel.
  */
 type Paso = 'walk' | 'codigo'
 
 // Motivos de link no reclamable, para mostrar el mensaje correcto (y a dónde mandar al dueño).
 type Bloqueo = { titulo: string; detalle: string; irALogin?: boolean } | null
 
-// ── Tarjeta del recorrido de aprobación ──
-// 'intro'     → portada: "esta tienda es de [Local]".
-// 'data'      → un dato ya completado, con Continuar/Modificar.
-// 'verificar' → el WhatsApp para reclamar (única pantalla que sí pide un dato).
+// ── Tarjeta del recorrido ──
+// 'intro'     → portada + nombre (editable inline).
+// 'link'      → link público (editable inline).
+// 'logo'      → logo (editable inline, subiendo una imagen).
+// 'reassure'  → dato agregado ya hecho (menú/cobros/delivery), solo confirmación.
+// 'verificar' → el WhatsApp para reclamar (única pantalla que sí pide un dato nuevo).
 type Card =
   | { kind: 'intro' }
-  | {
-      kind: 'data'
-      id: string
-      icon: LucideIcon
-      titulo: string
-      valor: string
-      mono?: boolean
-      editPath: string
-    }
+  | { kind: 'link' }
+  | { kind: 'logo' }
+  | { kind: 'reassure'; id: string; icon: LucideIcon; titulo: string; valor: string }
   | { kind: 'verificar' }
+
+// Borrador local de las ediciones. Vacío = sin cambios; se persiste al confirmar el WhatsApp.
+type Draft = { nombre?: string; username?: string; logo?: string }
+
+// Convierte un texto en slug de URL: minúsculas, sin acentos, sólo alfanumérico.
+const toSlug = (v: string) =>
+  (v || '')
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+
+// Redimensiona una imagen a máx. 800px por lado y la exporta como JPEG (mantiene liviano el borrador).
+async function fileToLogoDataUrl(file: File, maxDim = 800, quality = 0.85): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = reject
+    image.src = dataUrl
+  })
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+  const w = Math.round(img.width * scale)
+  const h = Math.round(img.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return dataUrl
+  ctx.drawImage(img, 0, 0, w, h)
+  return canvas.toDataURL('image/jpeg', quality)
+}
 
 export default function ClaimTienda() {
   const { token = '' } = useParams()
@@ -67,8 +106,13 @@ export default function ClaimTienda() {
   const [cardIdx, setCardIdx] = useState(0)
   const [enviando, setEnviando] = useState(false)
 
-  // Si el dueño tocó "Modificar" en algún dato, lo llevamos a esa pantalla apenas entre.
-  const [pendingEdit, setPendingEdit] = useState<string | null>(null)
+  // Borrador de ediciones inline (nombre/link/logo), se persiste al confirmar el WhatsApp.
+  const [draft, setDraft] = useState<Draft>({})
+  // Qué tarjeta está en modo edición (por kind: 'intro' | 'link' | 'logo'), y el buffer del editor.
+  const [editing, setEditing] = useState<string | null>(null)
+  const [tmpText, setTmpText] = useState('')
+  const [tmpLogo, setTmpLogo] = useState<string | null>(null)
+  const [subiendoLogo, setSubiendoLogo] = useState(false)
 
   // El claim SIEMPRE pide el WhatsApp: el dueño escribe dónde recibir el código (y con qué entra).
   const [telefono, setTelefono] = useState('')
@@ -116,53 +160,41 @@ export default function ClaimTienda() {
     return () => clearTimeout(t)
   }, [cooldown])
 
-  // ── Recorrido: portada + una tarjeta por dato ya cargado (solo lo que existe) + verificación ──
+  // Valores mostrados: el borrador pisa lo que vino del backend.
+  const dispNombre = draft.nombre ?? tienda?.nombre ?? ''
+  const dispUsername = draft.username ?? tienda?.username ?? ''
+  const dispLogo = draft.logo ?? tienda?.imagenUrl ?? tienda?.imagenLightUrl ?? null
+
+  // ── Recorrido: portada + link + logo + una confirmación por dato agregado + verificación ──
   const cards = useMemo<Card[]>(() => {
     if (!tienda) return []
     const inv = inventario
     const list: Card[] = [{ kind: 'intro' }]
 
-    if (inv?.tieneLink && tienda.username) {
-      list.push({
-        kind: 'data', id: 'link', icon: Link2,
-        titulo: 'Tu link para compartir',
-        valor: `my.piru.app/${tienda.username}`,
-        mono: true,
-        editPath: '/dashboard/ajustes/general',
-      })
-    }
+    if (inv?.tieneLink && tienda.username) list.push({ kind: 'link' })
+    if (inv?.tieneImagen) list.push({ kind: 'logo' })
+
     if ((inv?.productos ?? 0) > 0) {
       const n = inv!.productos
       list.push({
-        kind: 'data', id: 'menu', icon: UtensilsCrossed,
+        kind: 'reassure', id: 'menu', icon: UtensilsCrossed,
         titulo: 'Tu menú ya está cargado',
         valor: `${n} ${n === 1 ? 'producto listo' : 'productos listos'} para vender`,
-        editPath: '/dashboard/productos',
-      })
-    }
-    if (inv?.tieneImagen) {
-      list.push({
-        kind: 'data', id: 'imagen', icon: ImageIcon,
-        titulo: 'Tu logo y tu portada',
-        valor: 'Tu marca ya está puesta en la tienda',
-        editPath: '/dashboard/ajustes/general',
       })
     }
     if (inv?.tieneCobros) {
       list.push({
-        kind: 'data', id: 'cobros', icon: Banknote,
+        kind: 'reassure', id: 'cobros', icon: Banknote,
         titulo: 'Tus cobros están activados',
         valor: 'Podés cobrar online y en efectivo',
-        editPath: '/dashboard/ajustes/pagos',
       })
     }
     if ((inv?.zonasDelivery ?? 0) > 0) {
       const n = inv!.zonasDelivery
       list.push({
-        kind: 'data', id: 'delivery', icon: MapPin,
+        kind: 'reassure', id: 'delivery', icon: MapPin,
         titulo: 'Tu zona de delivery',
         valor: `${n} ${n === 1 ? 'zona de reparto' : 'zonas de reparto'} lista${n === 1 ? '' : 's'}`,
-        editPath: '/dashboard/ajustes/entregas',
       })
     }
 
@@ -170,18 +202,52 @@ export default function ClaimTienda() {
     return list
   }, [tienda, inventario])
 
-  const verificarIdx = useMemo(() => cards.findIndex((c) => c.kind === 'verificar'), [cards])
   const card = cards[cardIdx]
 
   const goCard = (i: number) => {
+    setEditing(null)
     setCardIdx(Math.max(0, Math.min(i, cards.length - 1)))
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const continuar = () => goCard(cardIdx + 1)
-  // "Modificar": recordamos a dónde llevarlo adentro y saltamos directo a verificar su WhatsApp.
-  const modificar = (editPath: string) => {
-    setPendingEdit(editPath)
-    goCard(verificarIdx)
+
+  // ── Editor inline ──
+  const abrirEditor = (kind: 'intro' | 'link' | 'logo') => {
+    if (kind === 'intro') setTmpText(dispNombre)
+    if (kind === 'link') setTmpText(dispUsername)
+    if (kind === 'logo') setTmpLogo(dispLogo)
+    setEditing(kind)
+  }
+  const cancelarEditor = () => setEditing(null)
+
+  const guardarNombre = () => {
+    const v = tmpText.trim()
+    if (v.length < 2) return toast.error('El nombre es muy corto')
+    setDraft((d) => ({ ...d, nombre: v }))
+    setEditing(null)
+  }
+  const guardarLink = () => {
+    const slug = toSlug(tmpText)
+    if (slug.length < 3) return toast.error('El link necesita al menos 3 letras o números')
+    setDraft((d) => ({ ...d, username: slug }))
+    setEditing(null)
+  }
+  const elegirLogo = async (files: FileList | null) => {
+    const f = files?.[0]
+    if (!f || !f.type.startsWith('image/')) return
+    setSubiendoLogo(true)
+    try {
+      setTmpLogo(await fileToLogoDataUrl(f))
+    } catch {
+      toast.error('No se pudo procesar la imagen')
+    } finally {
+      setSubiendoLogo(false)
+    }
+  }
+  const guardarLogo = () => {
+    if (!tmpLogo) return toast.error('Elegí una imagen')
+    setDraft((d) => ({ ...d, logo: tmpLogo }))
+    setEditing(null)
   }
 
   // Normaliza el WhatsApp tipeado: sólo dígitos + prefijo 54 si falta (igual que el registro).
@@ -220,6 +286,26 @@ export default function ClaimTienda() {
     }
   }
 
+  // Persiste el borrador de ediciones inline con el token recién obtenido. Best-effort: si algo
+  // falla igual lo dejamos entrar (puede reintentar los cambios desde Ajustes).
+  const persistirDraft = async (nuevoToken: string) => {
+    const payload: Record<string, string> = {}
+    if (draft.nombre !== undefined) payload.nombre = draft.nombre
+    if (draft.username !== undefined) payload.username = draft.username
+    if (draft.logo !== undefined) {
+      payload.image = draft.logo
+      payload.imageLight = draft.logo
+    }
+    if (Object.keys(payload).length === 0) return
+    try {
+      await restauranteApi.update(nuevoToken, payload)
+    } catch {
+      toast.error('Guardamos tu tienda, pero algún cambio no se aplicó', {
+        description: 'Revisalo desde Ajustes cuando entres.',
+      })
+    }
+  }
+
   const submitCodigo = useCallback(
     async (codigo: string) => {
       if (!verificationId || codigo.length !== CODE_LENGTH) return
@@ -229,10 +315,11 @@ export default function ClaimTienda() {
       try {
         const r = await claimApi.verify(token, verificationId, codigo)
         setAuth(r.token, r.restaurante)
-        // El token queda guardado. Si el dueño tocó "Modificar", lo dejamos parado en esa pantalla;
-        // si no, va a su panel. Copys del efecto dotación, nunca "cuenta creada".
+        // Con el token en mano, aplicamos todo lo que tocó en el recorrido, de una sola vez.
+        await persistirDraft(r.token)
+        // Copys del efecto dotación, nunca "cuenta creada".
         toast.success('¡Tu tienda es tuya! 🎉')
-        navigate(pendingEdit ?? '/dashboard', { replace: true })
+        navigate('/dashboard', { replace: true })
       } catch (e) {
         setDigits(Array(CODE_LENGTH).fill(''))
         inputsRef.current[0]?.focus()
@@ -244,7 +331,8 @@ export default function ClaimTienda() {
         submittingRef.current = false
       }
     },
-    [verificationId, token, setAuth, navigate, pendingEdit],
+    // persistirDraft depende de `draft`; lo incluimos vía closure con la referencia actual.
+    [verificationId, token, setAuth, navigate, draft],
   )
 
   const handleChange = (index: number, value: string) => {
@@ -299,9 +387,45 @@ export default function ClaimTienda() {
     }
   }
 
-  const logo = tienda?.imagenUrl || tienda?.imagenLightUrl || null
   const codigo = digits.join('')
   const progress = cards.length > 0 ? ((cardIdx + 1) / cards.length) * 100 : 0
+
+  // Botones de una tarjeta editable: Continuar (primario) + Modificar (secundario).
+  const AccionesDato = ({ onModificar, primary }: { onModificar: () => void; primary?: string }) => (
+    <>
+      <button
+        onClick={continuar}
+        className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
+      >
+        {primary ?? 'Continuar'}
+      </button>
+      <button
+        onClick={onModificar}
+        className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5"
+      >
+        <Pencil className="h-3.5 w-3.5" /> Modificar
+      </button>
+    </>
+  )
+
+  // Botones del editor inline: Guardar (primario) + Cancelar (secundario).
+  const AccionesEditor = ({ onGuardar, disabled }: { onGuardar: () => void; disabled?: boolean }) => (
+    <>
+      <button
+        onClick={onGuardar}
+        disabled={disabled}
+        className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+      >
+        <Check className="h-4 w-4" /> Guardar cambio
+      </button>
+      <button
+        onClick={cancelarEditor}
+        className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+      >
+        Cancelar
+      </button>
+    </>
+  )
 
   return (
     <div className="min-h-dvh flex items-center justify-center w-full bg-background px-6 selection:bg-orange-500/10 selection:text-[#FF7A00]">
@@ -332,12 +456,13 @@ export default function ClaimTienda() {
               </button>
             )}
 
+            {/* ── Portada + nombre (editable) ── */}
             {card?.kind === 'intro' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 text-center flex flex-col items-center">
-                {logo ? (
+                {dispLogo ? (
                   <img
-                    src={logo}
-                    alt={tienda?.nombre ?? 'Tu tienda'}
+                    src={dispLogo}
+                    alt={dispNombre || 'Tu tienda'}
                     className="h-20 w-20 rounded-2xl object-cover shadow-sm ring-1 ring-border"
                   />
                 ) : (
@@ -346,78 +471,165 @@ export default function ClaimTienda() {
                   </div>
                 )}
 
-                <p className="text-sm text-muted-foreground mt-6">Esta tienda es de</p>
-                <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-1">
-                  {tienda?.nombre ?? 'tu local'}
-                </h1>
-                <p className="text-[15px] text-muted-foreground mt-4 max-w-xs">
-                  Ya la dejamos armada y lista para vender. Mirá lo que hay hecho y, si algo no te
-                  cierra, lo cambiás.
-                </p>
-
-                <button
-                  onClick={continuar}
-                  className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
-                >
-                  Ver mi tienda <ArrowRight className="h-4 w-4" />
-                </button>
+                {editing === 'intro' ? (
+                  <div className="w-full mt-6">
+                    <p className="text-sm text-muted-foreground mb-2 text-left">El nombre de tu local</p>
+                    <input
+                      autoFocus
+                      value={tmpText}
+                      onChange={(e) => setTmpText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && guardarNombre()}
+                      placeholder="Burger Bros"
+                      className="w-full h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-0 px-4 text-lg font-semibold outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow"
+                    />
+                    <AccionesEditor onGuardar={guardarNombre} disabled={tmpText.trim().length < 2} />
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground mt-6">Esta tienda es de</p>
+                    <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-1">
+                      {dispNombre || 'tu local'}
+                    </h1>
+                    <p className="text-[15px] text-muted-foreground mt-4 max-w-xs">
+                      Ya la dejamos armada y lista para vender. Mirá lo que hay hecho y, si algo no te
+                      cierra, lo cambiás acá mismo.
+                    </p>
+                    <AccionesDato onModificar={() => abrirEditor('intro')} primary="Ver mi tienda" />
+                  </>
+                )}
               </div>
             )}
 
-            {card?.kind === 'data' && (
+            {/* ── Link público (editable) ── */}
+            {card?.kind === 'link' && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  <Check className="h-3.5 w-3.5" /> Ya está listo
+                </span>
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">
+                  Tu link para compartir
+                </h1>
+
+                {editing === 'link' ? (
+                  <div className="w-full mt-6">
+                    <div className="flex items-center h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30 transition-shadow font-mono">
+                      <span className="text-muted-foreground/60 text-base select-none">my.piru.app/</span>
+                      <input
+                        autoFocus
+                        value={tmpText}
+                        onChange={(e) => setTmpText(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && guardarLink()}
+                        placeholder="tulocal"
+                        className="flex-1 bg-transparent border-0 outline-none text-base font-semibold text-[#FF7A00] min-w-0"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2 text-left">
+                      Quedará como <span className="font-mono">my.piru.app/{toSlug(tmpText) || 'tulocal'}</span>
+                    </p>
+                    <AccionesEditor onGuardar={guardarLink} disabled={toSlug(tmpText).length < 3} />
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-4 text-base font-mono">
+                      <span className="text-muted-foreground/60">my.piru.app/</span>
+                      <span className="font-semibold text-[#FF7A00]">{dispUsername}</span>
+                    </div>
+                    <AccionesDato onModificar={() => abrirEditor('link')} />
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Logo (editable) ── */}
+            {card?.kind === 'logo' && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  <Check className="h-3.5 w-3.5" /> Ya está listo
+                </span>
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">
+                  Tu logo
+                </h1>
+
+                {editing === 'logo' ? (
+                  <div className="w-full mt-6 flex flex-col items-center">
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => { elegirLogo(e.target.files); e.currentTarget.value = '' }}
+                      />
+                      <div className="relative h-28 w-28 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 ring-1 ring-border flex items-center justify-center group">
+                        {tmpLogo ? (
+                          <img src={tmpLogo} alt="Nuevo logo" className="h-full w-full object-cover" />
+                        ) : (
+                          <ImagePlus className="h-7 w-7 text-muted-foreground" />
+                        )}
+                        {subiendoLogo && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <Loader2 className="h-5 w-5 animate-spin text-white" />
+                          </div>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[11px] py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          Cambiar
+                        </div>
+                      </div>
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-3">Tocá la imagen para elegir otra · JPG o PNG</p>
+                    <div className="w-full">
+                      <AccionesEditor onGuardar={guardarLogo} disabled={!tmpLogo || subiendoLogo} />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-6 h-28 w-28 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 ring-1 ring-border flex items-center justify-center">
+                      {dispLogo ? (
+                        <img src={dispLogo} alt="Logo" className="h-full w-full object-cover" />
+                      ) : (
+                        <Store className="h-8 w-8 text-muted-foreground" />
+                      )}
+                    </div>
+                    <p className="text-[15px] text-muted-foreground mt-4">Tu marca ya está puesta en la tienda.</p>
+                    <AccionesDato onModificar={() => abrirEditor('logo')} />
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Confirmación de datos agregados (menú/cobros/delivery) ── */}
+            {card?.kind === 'reassure' && (
               <div key={card.id} className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
                 <div className="h-14 w-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center ring-1 ring-emerald-500/15">
                   <card.icon className="h-6 w-6 text-emerald-600 dark:text-emerald-400" strokeWidth={2} />
                 </div>
-
                 <span className="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                   <Check className="h-3.5 w-3.5" /> Ya está listo
                 </span>
                 <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">
                   {card.titulo}
                 </h1>
-
-                <div
-                  className={`mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-4 text-base ${
-                    card.mono ? 'font-mono' : 'font-medium'
-                  }`}
-                >
-                  {card.mono ? (
-                    <>
-                      <span className="text-muted-foreground/60">my.piru.app/</span>
-                      <span className="font-semibold text-[#FF7A00]">
-                        {card.valor.replace('my.piru.app/', '')}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-foreground">{card.valor}</span>
-                  )}
+                <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-4 text-base font-medium text-foreground">
+                  {card.valor}
                 </div>
-
+                <p className="text-xs text-muted-foreground mt-3">Lo afinás en detalle cuando entres a tu panel.</p>
                 <button
                   onClick={continuar}
                   className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
                 >
-                  {cardIdx === verificarIdx - 1 ? 'Está perfecto, reclamar mi tienda' : 'Está perfecto, seguir'}
-                </button>
-                <button
-                  onClick={() => modificar(card.editPath)}
-                  className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Pencil className="h-3.5 w-3.5" /> Modificar
+                  Continuar
                 </button>
               </div>
             )}
 
+            {/* ── Verificación del WhatsApp ── */}
             {card?.kind === 'verificar' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
                 <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">
                   Reclamá tu tienda
                 </h1>
                 <p className="text-[15px] text-muted-foreground mt-3">
-                  {pendingEdit
-                    ? 'Verificá tu WhatsApp y te llevamos directo a cambiar lo que quieras.'
-                    : 'Poné tu WhatsApp: te mandamos un código y la tienda queda a tu nombre.'}
+                  Poné tu WhatsApp: te mandamos un código y la tienda queda a tu nombre
+                  {Object.keys(draft).length > 0 ? ', con tus cambios aplicados.' : '.'}
                 </p>
 
                 <form
