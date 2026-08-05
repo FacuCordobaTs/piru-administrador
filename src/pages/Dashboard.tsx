@@ -16,7 +16,7 @@ import PuntoDeVenta from '@/components/PuntoDeVenta'
 import {
     Loader2, Plus, Clock, Trash2,
     User, ArrowLeft, Printer, Truck, MapPin,
-    Phone, ShoppingBag, CalendarDays, Tag, Settings, CheckCircle2,
+    Phone, ShoppingBag, CalendarDays, Tag, Settings,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
     Copy, ExternalLink,
@@ -715,236 +715,64 @@ const ClienteContextoLine = ({ ctx, center = false }: { ctx: ClienteContexto; ce
 }
 
 // ─────────────────────────────────────────────
-// ONBOARDING CHECKLIST
+// PANEL: COMPARTIR LINK DE LA TIENDA
+// (se muestra cuando no hay ningún pedido seleccionado)
 // ─────────────────────────────────────────────
-const CHECKLIST_STORAGE_KEY = 'piru_onboarding_dismissed'
+const ShareLinkPanel = ({ publicUrl }: { publicUrl: string | null }) => {
+    const [copied, setCopied] = useState(false)
 
-type ChecklistItemId = 'link_bio' | 'primer_pedido' | 'conectar_mp' | 'verificar_transferencias' | '10_pedidos'
+    const displayUrl = publicUrl ? publicUrl.replace(/^https?:\/\//, '') : ''
 
-interface ChecklistItemDef {
-    id: ChecklistItemId
-    title: string
-    impact: string
-    actionLabel: string
-    actionIcon: React.ReactNode
-}
-
-const CHECKLIST_ITEMS: ChecklistItemDef[] = [
-    {
-        id: 'link_bio',
-        title: 'Compartí tu link de pedidos',
-        impact: 'Los negocios que lo ponen en su bio de Instagram reciben el doble de pedidos la primera semana.',
-        actionLabel: 'Copiar link',
-        actionIcon: <Copy className="h-3.5 w-3.5" />,
-    },
-    {
-        id: 'primer_pedido',
-        title: 'Recibí tu primer pedido',
-        impact: 'Es tu prueba de que todo funciona. Hacete un pedido a vos mismo para verificar el flujo.',
-        actionLabel: 'Abrir link',
-        actionIcon: <ExternalLink className="h-3.5 w-3.5" />,
-    },
-    {
-        id: 'conectar_mp',
-        title: 'Conectá Mercado Pago',
-        impact: 'Cobrá con tarjeta y dinero en cuenta sin tocar nada. El 70% de tus clientes prefieren pagar online.',
-        actionLabel: 'Pendiente',
-        actionIcon: <CreditCard className="h-3.5 w-3.5" />,
-    },
-    {
-        id: 'verificar_transferencias',
-        title: 'Verificá transferencias automáticamente',
-        impact: 'Con Cucuru o Talo verificás al instante. Sin verificación manual, cero errores de cobro.',
-        actionLabel: 'Pendiente',
-        actionIcon: <Zap className="h-3.5 w-3.5" />,
-    },
-    {
-        id: '10_pedidos',
-        title: '10 pedidos completados',
-        impact: 'Después de 10, ya tenés clientes que vuelven. Tu negocio online ya está funcionando.',
-        actionLabel: '',
-        actionIcon: null,
-    },
-]
-
-function getDismissedItems(restauranteId: number): Set<ChecklistItemId> {
-    try {
-        const raw = localStorage.getItem(`${CHECKLIST_STORAGE_KEY}_${restauranteId}`)
-        if (!raw) return new Set()
-        const parsed = JSON.parse(raw)
-        return new Set(Array.isArray(parsed) ? parsed : [])
-    } catch {
-        return new Set()
-    }
-}
-
-function saveDismissedItems(restauranteId: number, items: Set<ChecklistItemId>) {
-    localStorage.setItem(`${CHECKLIST_STORAGE_KEY}_${restauranteId}`, JSON.stringify([...items]))
-}
-
-const OnboardingChecklist = ({
-    totalPedidos,
-    restauranteStore,
-    restauranteId,
-    publicUrl,
-}: {
-    totalPedidos: number
-    restauranteStore: import('@/store/restauranteStore').RestauranteData | null
-    restauranteId: number
-    publicUrl: string | null
-}) => {
-    const [dismissed, setDismissed] = useState<Set<ChecklistItemId>>(() => getDismissedItems(restauranteId))
-
-    // Auto-complete checks
-    const autoCompleted = useMemo<Set<ChecklistItemId>>(() => {
-        const s = new Set<ChecklistItemId>()
-        if (totalPedidos >= 1) s.add('primer_pedido')
-        if (totalPedidos >= 10) s.add('10_pedidos')
-        if (restauranteStore?.mpConnected) s.add('conectar_mp')
-        const hasCucuru = !!restauranteStore?.cucuruConfigurado
-        const hasTalo = !!(restauranteStore?.taloClientId && restauranteStore?.taloClientSecret && restauranteStore?.taloUserId)
-        if (hasCucuru || hasTalo) s.add('verificar_transferencias')
-        return s
-    }, [totalPedidos, restauranteStore?.mpConnected, restauranteStore?.cucuruConfigurado, restauranteStore?.taloClientId, restauranteStore?.taloClientSecret, restauranteStore?.taloUserId])
-
-    // Save auto-completed items to localStorage too so they persist
-    useEffect(() => {
-        const newDismissed = new Set(dismissed)
-        let changed = false
-        autoCompleted.forEach(id => {
-            if (!newDismissed.has(id)) {
-                newDismissed.add(id)
-                changed = true
-            }
-        })
-        if (changed) {
-            setDismissed(newDismissed)
-            saveDismissedItems(restauranteId, newDismissed)
-        }
-    }, [autoCompleted, restauranteId])
-
-    const handleDismiss = (id: ChecklistItemId) => {
-        const next = new Set(dismissed)
-        next.add(id)
-        setDismissed(next)
-        saveDismissedItems(restauranteId, next)
-    }
-
-    const handleAction = (id: ChecklistItemId) => {
-        if (id === 'link_bio' && publicUrl) {
-            navigator.clipboard.writeText(publicUrl)
-            toast.success('Link copiado al portapapeles')
-        } else if (id === 'primer_pedido' && publicUrl) {
-            window.open(publicUrl, '_blank')
-        }
-        // conectar_mp and verificar_transferencias: buttons show "Pendiente" since the config page isn't available yet
-    }
-
-    // Filter out dismissed items
-    const visibleItems = CHECKLIST_ITEMS.filter(item => !dismissed.has(item.id))
-    const completedCount = CHECKLIST_ITEMS.filter(item => autoCompleted.has(item.id)).length
-
-    if (visibleItems.length === 0) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                <div className="h-20 w-20 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                    <CheckCircle2 className="h-8 w-8 text-muted-foreground/50" />
-                </div>
-                <p className="text-lg font-bold text-foreground">Operaciones al día</p>
-                <p className="text-sm mt-1">Seleccioná un pedido del panel izquierdo para ver el detalle.</p>
-            </div>
-        )
+    const handleCopy = () => {
+        if (!publicUrl) return
+        navigator.clipboard.writeText(publicUrl)
+        setCopied(true)
+        toast.success('Link copiado')
+        setTimeout(() => setCopied(false), 2000)
     }
 
     return (
-        <div className="h-full flex items-center justify-center p-6 overflow-y-auto">
-            <div className="w-full max-w-md space-y-6">
-                {/* Header */}
-                <div className="text-center space-y-2">
-                    <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
-                        {completedCount}/{CHECKLIST_ITEMS.length} completados
-                    </p>
-                    <h2 className="text-2xl font-black text-foreground tracking-tight">
-                        Prepará tu negocio para recibir pedidos
-                    </h2>
-                    {/* Progress bar */}
-                    <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mt-3">
-                        <div
-                            className="h-full bg-[#FF7A00] rounded-full transition-all duration-500 ease-out"
-                            style={{ width: `${(completedCount / CHECKLIST_ITEMS.length) * 100}%` }}
-                        />
-                    </div>
+        <div className="h-full flex items-center justify-center p-6">
+            <div className="w-full max-w-sm flex flex-col items-center text-center">
+                <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center mb-5">
+                    <Store className="h-6 w-6 text-muted-foreground" />
                 </div>
 
-                {/* Items */}
-                <div className="space-y-2">
-                    {visibleItems.map(item => {
-                        const isCompleted = autoCompleted.has(item.id)
-                        const hasAction = item.id === 'link_bio' || item.id === 'primer_pedido'
-                        const isPending = item.id === 'conectar_mp' || item.id === 'verificar_transferencias'
+                <h2 className="text-xl font-semibold text-foreground">
+                    Empezá a recibir pedidos
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                    Compartí el link de tu tienda con tus clientes. Lo abren, arman su pedido y te llega acá.
+                </p>
 
-                        return (
-                            <div
-                                key={item.id}
-                                className={cn(
-                                    "group relative rounded-xl border p-4 transition-all",
-                                    isCompleted
-                                        ? "bg-emerald-500/5 border-emerald-500/20"
-                                        : "bg-card border-border hover:border-[#FF7A00]/30"
-                                )}
+                {publicUrl && (
+                    <>
+                        <div className="w-full mt-6 flex items-center gap-2 h-11 px-3 rounded-xl border border-border bg-muted/40">
+                            <span className="flex-1 text-sm text-foreground text-left truncate">
+                                {displayUrl}
+                            </span>
+                        </div>
+
+                        <div className="w-full mt-2.5 flex items-center gap-2">
+                            <button
+                                onClick={handleCopy}
+                                className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white text-sm font-semibold transition-colors cursor-pointer"
                             >
-                                <div className="flex items-start gap-3">
-                                    {/* Check indicator */}
-                                    <div className={cn(
-                                        "h-5 w-5 rounded-full shrink-0 mt-0.5 flex items-center justify-center transition-all",
-                                        isCompleted
-                                            ? "bg-emerald-500 text-white"
-                                            : "border-2 border-border"
-                                    )}>
-                                        {isCompleted && <CheckCircle className="h-3.5 w-3.5" />}
-                                    </div>
-
-                                    {/* Content */}
-                                    <div className="flex-1 min-w-0 space-y-1.5">
-                                        <p className={cn(
-                                            "text-sm font-bold",
-                                            isCompleted ? "text-emerald-600 dark:text-emerald-400 line-through" : "text-foreground"
-                                        )}>
-                                            {item.title}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground leading-relaxed">
-                                            {item.impact}
-                                        </p>
-                                        {!isCompleted && hasAction && (
-                                            <button
-                                                onClick={() => handleAction(item.id)}
-                                                className="inline-flex items-center gap-1.5 mt-1 h-7 px-3 rounded-lg bg-[#FF7A00] hover:bg-[#E66E00] text-white text-xs font-bold transition-colors cursor-pointer"
-                                            >
-                                                {item.actionIcon}
-                                                {item.actionLabel}
-                                            </button>
-                                        )}
-                                        {!isCompleted && isPending && (
-                                            <span className="inline-flex items-center gap-1.5 mt-1 h-7 px-3 rounded-lg bg-muted border border-border text-muted-foreground text-xs font-bold">
-                                                {item.actionIcon}
-                                                {item.actionLabel}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Dismiss button */}
-                                    <button
-                                        onClick={() => handleDismiss(item.id)}
-                                        className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted transition-all opacity-0 group-hover:opacity-100 cursor-pointer shrink-0"
-                                        title="Ocultar"
-                                    >
-                                        <X className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
+                                {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                                {copied ? 'Copiado' : 'Copiar link'}
+                            </button>
+                            <a
+                                href={publicUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-sm font-semibold transition-colors cursor-pointer"
+                            >
+                                <ExternalLink className="h-4 w-4" />
+                                Abrir
+                            </a>
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     )
@@ -1495,9 +1323,8 @@ const Dashboard = () => {
     const activeOrders = unifiedPedidos.filter(p => p.estado !== 'archived')
     const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
 
-    // Onboarding checklist data
+    // Link público de la tienda (para compartir cuando no hay pedido seleccionado)
     const publicUrl = restauranteStore?.username ? `https://my.piru.app/${restauranteStore.username}` : null
-    const totalPedidos = unifiedPedidos.length
 
     if (!prefsReady) {
         const activasParaModal = sucursalesList.filter((s) => s.activo)
@@ -2256,12 +2083,7 @@ const Dashboard = () => {
                                 </div>
                                 </div>
                             ) : (
-                                <OnboardingChecklist
-                                    totalPedidos={totalPedidos}
-                                    restauranteStore={restauranteStore}
-                                    restauranteId={restaurante?.id ?? 0}
-                                    publicUrl={publicUrl}
-                                />
+                                <ShareLinkPanel publicUrl={publicUrl} />
                             )}
                         </div>
                     </>
