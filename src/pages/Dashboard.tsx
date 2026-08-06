@@ -1324,7 +1324,7 @@ const Dashboard = () => {
     const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
 
     // Link público de la tienda (para compartir cuando no hay pedido seleccionado)
-    const publicUrl = restauranteStore?.username ? `https://my.piru.app/${restauranteStore.username}` : null
+    const publicUrl = restauranteStore?.username ? `https://piru.app/${restauranteStore.username}` : null
 
     if (!prefsReady) {
         const activasParaModal = sucursalesList.filter((s) => s.activo)

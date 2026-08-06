@@ -822,7 +822,7 @@ const SelfServeOnboarding = () => {
 
         {/* Preview del link armándose en vivo */}
         <div className="mt-5 flex items-center gap-2 text-lg font-mono">
-          <span className="text-muted-foreground/60">my.piru.app/</span>
+          <span className="text-muted-foreground/60">piru.app/</span>
           <span className="relative">
             <span className="font-semibold text-[#FF7A00]">{slug || 'tulocal'}</span>
             {formData.nombre && <span className="inline-block w-0.5 h-5 bg-[#FF7A00] ml-0.5 align-middle animate-pulse" />}
@@ -855,7 +855,7 @@ const SelfServeOnboarding = () => {
         </p>
 
         <div className="mt-7 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 font-mono text-base">
-          <span className="text-muted-foreground/60">my.piru.app/</span>
+          <span className="text-muted-foreground/60">piru.app/</span>
           <span className="font-semibold text-[#FF7A00]">{slug}</span>
         </div>
 
@@ -1364,7 +1364,7 @@ const SelfServeOnboarding = () => {
         <div className="mt-4 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 text-left">
           <p className="text-sm font-semibold">Tu link</p>
           <p className="font-mono text-sm mt-1 truncate">
-            <span className="text-muted-foreground/60">my.piru.app/</span>
+            <span className="text-muted-foreground/60">piru.app/</span>
             <span className="font-semibold text-[#FF7A00]">{toSlug(formData.nombre) || 'tulocal'}</span>
           </p>
           <p className="text-[13px] text-muted-foreground mt-2">Queda activo apenas actives tu plan.</p>
@@ -1810,7 +1810,7 @@ const ClaimOnboarding = () => {
       <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 text-left">
         <p className="text-sm font-semibold">Tu link</p>
         <p className="font-mono text-sm mt-1 truncate">
-          <span className="text-muted-foreground/60">my.piru.app/</span>
+          <span className="text-muted-foreground/60">piru.app/</span>
           <span className="font-semibold text-[#FF7A00]">{slug}</span>
         </p>
       </div>

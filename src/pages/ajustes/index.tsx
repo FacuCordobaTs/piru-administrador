@@ -66,7 +66,7 @@ export default function AjustesPage() {
   }
 
   const publicUrl = restaurante?.username
-    ? `https://my.piru.app/${restaurante.username}`
+    ? `https://piru.app/${restaurante.username}`
     : null
 
   const copyLink = () => {

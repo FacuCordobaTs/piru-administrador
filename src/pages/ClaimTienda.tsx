@@ -46,7 +46,7 @@ const DEFAULT_CENTER: [number, number] = [-31.4201, -64.1888]
 type Paso = 'walk' | 'codigo' | 'prueba' | 'plan'
 
 // Base de la tienda pública del local (mismo formato que el link que ve el dueño en el recorrido).
-const STORE_BASE = 'https://my.piru.app'
+const STORE_BASE = 'https://piru.app'
 
 // Copy de cada plan para la pantalla informativa final (espejo de la landing). El precio real sale
 // de la suscripción cuando está disponible; esto es el fallback + el detalle de lo que incluye.
@@ -733,7 +733,7 @@ export default function ClaimTienda() {
                 {editing === 'link' ? (
                   <div className="w-full mt-6">
                     <div className="flex items-center h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30 transition-shadow font-mono">
-                      <span className="text-muted-foreground/60 text-base select-none">my.piru.app/</span>
+                      <span className="text-muted-foreground/60 text-base select-none">piru.app/</span>
                       <input
                         autoFocus
                         value={tmpText}
@@ -744,14 +744,14 @@ export default function ClaimTienda() {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground mt-2 text-left">
-                      Quedará como <span className="font-mono">my.piru.app/{toSlug(tmpText) || 'tulocal'}</span>
+                      Quedará como <span className="font-mono">piru.app/{toSlug(tmpText) || 'tulocal'}</span>
                     </p>
                     <AccionesEditor onGuardar={guardarLink} disabled={toSlug(tmpText).length < 3} />
                   </div>
                 ) : (
                   <>
                     <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-4 text-base font-mono">
-                      <span className="text-muted-foreground/60">my.piru.app/</span>
+                      <span className="text-muted-foreground/60">piru.app/</span>
                       <span className="font-semibold text-[#FF7A00]">{dispUsername}</span>
                     </div>
                     <AccionesDato onModificar={() => abrirEditor('link')} />
