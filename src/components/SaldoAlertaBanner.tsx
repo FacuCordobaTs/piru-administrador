@@ -56,7 +56,7 @@ export function SaldoAlertaBanner() {
       <AlertTriangle className={cn('h-4 w-4 shrink-0', critico ? 'text-red-500' : 'text-amber-500')} />
       <p className="min-w-0 flex-1 text-[13px] font-medium text-foreground">{mensaje}</p>
       <Link
-        to="/dashboard/ajustes/plan"
+        to="/dashboard/mensajes"
         className={cn(
           'shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors',
           critico ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600',

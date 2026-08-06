@@ -249,6 +249,8 @@ export default function ClaimTienda() {
   const [enviando, setEnviando] = useState(false)
   // Suscripción (plan + trial) para la pantalla informativa final; se trae tras verificar.
   const [miSusc, setMiSusc] = useState<MiSuscripcion | null>(null)
+  // Pago inmediato del plan desde el claim (opcional: saltear la prueba y pagar ya).
+  const [pagandoPlan, setPagandoPlan] = useState(false)
 
   // Borrador de ediciones inline, se persiste al confirmar el WhatsApp.
   const [draft, setDraft] = useState<Draft>({})
@@ -592,6 +594,24 @@ export default function ClaimTienda() {
       toast.error('No pudimos reenviar el código', {
         description: e instanceof ApiError ? e.message : 'Error de conexión',
       })
+    }
+  }
+
+  // Pagar el plan ahora mismo desde el claim (redirige a Checkout Pro). Si por algún motivo no
+  // tenemos el planId, caemos al panel para que pague desde "Tu plan".
+  const pagarPlanAhora = async () => {
+    const token = useAuthStore.getState().token
+    if (!token || !miSusc?.planId) {
+      navigate('/dashboard', { replace: true })
+      return
+    }
+    setPagandoPlan(true)
+    try {
+      const res = await planesApi.suscribir(token, miSusc.planId, 'mensual')
+      window.location.href = res.data.url_pago
+    } catch {
+      toast.error('No se pudo iniciar el pago', { description: 'Podés pagarlo desde tu panel.' })
+      setPagandoPlan(false)
     }
   }
 
@@ -1088,7 +1108,16 @@ export default function ClaimTienda() {
                   onClick={() => navigate('/dashboard', { replace: true })}
                   className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
                 >
-                  Entrar a mi panel <ArrowRight className="h-4 w-4" />
+                  Empezar la prueba gratis <ArrowRight className="h-4 w-4" />
+                </button>
+
+                {/* Opcional: pagar la cuota ahora y saltear la espera (sin perder los días de prueba). */}
+                <button
+                  onClick={pagarPlanAhora}
+                  disabled={pagandoPlan}
+                  className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {pagandoPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : `Pagar ${precio}/mes ahora`}
                 </button>
               </div>
             )

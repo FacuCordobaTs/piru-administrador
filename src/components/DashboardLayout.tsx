@@ -3,13 +3,14 @@ import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
-import { useRestauranteStore } from '@/store/restauranteStore'
+import { useRestauranteStore, type SuscripcionResumen } from '@/store/restauranteStore'
 import { useTareasPendientes } from '@/pages/ajustes/hooks/useTareasPendientes'
 import { toast } from 'sonner'
 import {
   LayoutDashboard,
   Package,
   Users,
+  MessageSquare,
   TrendingUp,
   Settings,
   Sun,
@@ -18,15 +19,32 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Crown,
+  ArrowUpRight,
+  ChevronRight,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
   { icon: Package, label: 'Menú', path: '/dashboard/productos' },
   { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
+  { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes' },
   { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas' },
   { icon: Settings, label: 'Ajustes', path: '/dashboard/ajustes' },
 ]
+
+// El item "Mensajes" (wallet de avisos + campañas por WhatsApp) sólo aplica a planes con avisos
+// al cliente (Intermedio+). Se detecta por el feature `avisos_whatsapp_cliente`, que además cubre
+// a las cuentas pre-planes (fail-open, con acceso total). En Básico no se muestra.
+const MENSAJES_PATH = '/dashboard/mensajes'
+const puedeVerMensajes = (suscripcion: SuscripcionResumen | null): boolean => {
+  if (!suscripcion) return false
+  return (
+    suscripcion.features?.includes('avisos_whatsapp_cliente') ||
+    suscripcion.planCodigo === 'intermedio' ||
+    suscripcion.planCodigo === 'avanzado'
+  )
+}
 
 const DashboardLayout = () => {
   const navigate = useNavigate()
@@ -89,6 +107,66 @@ const DashboardLayout = () => {
     setMenuOpen(false)
   }
 
+  // Botón de plan: el plan actual vive en el store (ya viene del profile, sin fetch extra).
+  const suscripcion = restauranteStore.suscripcion
+  const planActivoEnRuta = location.pathname.startsWith('/dashboard/plan')
+
+  // "Mensajes" sólo visible para planes con avisos al cliente (Intermedio+).
+  const navItems = NAV_ITEMS.filter(
+    (item) => item.path !== MENSAJES_PATH || puedeVerMensajes(suscripcion),
+  )
+
+  const renderPlanButton = (compact: boolean) => {
+    const sinPlan = !suscripcion || suscripcion.sinSuscripcion || !suscripcion.planNombre
+    // Hay a dónde mejorar salvo que ya estés en el tope (Avanzado). La flecha ascendente (abajo)
+    // comunica el "mejorá" por UI; el subtítulo sólo describe el estado, sin instrucción textual.
+    const puedeMejorar = !sinPlan && suscripcion?.planCodigo !== 'avanzado'
+    const ESTADO_SUB: Record<string, string> = {
+      trial: 'Prueba gratis',
+      activa: 'Al día',
+      pago_pendiente: 'Pago pendiente',
+      suspendida: 'Suspendida',
+      cancelada: 'Cancelada',
+    }
+    const titulo = sinPlan ? 'Activá tu plan' : `Plan ${suscripcion!.planNombre}`
+    const subtitulo = sinPlan
+      ? 'Sin plan activo'
+      : (suscripcion?.estado && ESTADO_SUB[suscripcion.estado]) || 'Tu plan'
+
+    return (
+      <div className="px-3 pt-2">
+        <button
+          onClick={() => handleNavigation('/dashboard/plan')}
+          title={compact ? titulo : undefined}
+          className={`group w-full flex items-center gap-3 rounded-xl transition-colors cursor-pointer ${
+            compact ? 'justify-center h-11 px-0' : 'px-2.5 py-2.5'
+          } ${planActivoEnRuta ? 'bg-muted' : 'hover:bg-muted/60'}`}
+        >
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+              sinPlan ? 'bg-amber-500/10 text-amber-600 dark:text-amber-500' : 'bg-brand/10 text-brand'
+            }`}
+          >
+            <Crown className="h-[15px] w-[15px]" />
+          </span>
+          {!compact && (
+            <>
+              <span className="flex-1 min-w-0 text-left">
+                <span className="block truncate text-[13.5px] font-medium text-foreground">{titulo}</span>
+                <span className="block truncate text-[11px] text-muted-foreground">{subtitulo}</span>
+              </span>
+              {puedeMejorar || sinPlan ? (
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-brand" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+              )}
+            </>
+          )}
+        </button>
+      </div>
+    )
+  }
+
   // `compact` = rail de solo iconos (aplica en el sidebar de escritorio)
   const renderSidebar = (compact: boolean) => (
     <div className="flex h-full flex-col">
@@ -107,7 +185,7 @@ const DashboardLayout = () => {
 
       {/* Navegación */}
       <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon
           const active = isActive(item.path)
           const showBadge = item.path === '/dashboard/ajustes' && tareasPendientes
@@ -152,6 +230,9 @@ const DashboardLayout = () => {
           )
         })}
       </nav>
+
+      {/* Botón de plan: muestra el plan actual y lleva a "Tu plan" (ver / mejorar) */}
+      {renderPlanButton(compact)}
 
       {/* Footer: tema + salir */}
       <div className="p-3 border-t space-y-1 shrink-0">

@@ -119,7 +119,7 @@ export default function MotorRecompra() {
                         <PantallaEncendido
                             campana={estado.campana}
                             onCambio={cargar}
-                            onRecargar={() => navigate('/dashboard/ajustes/plan')}
+                            onRecargar={() => navigate('/dashboard/mensajes')}
                         />
                     ) : estado?.plan ? (
                         <PantallaApagado plan={estado.plan} onActivado={cargar} />

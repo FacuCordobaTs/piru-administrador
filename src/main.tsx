@@ -18,12 +18,14 @@ import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
 import AjustesPage from './pages/ajustes'
 import Clientes from './pages/Clientes'
+import Mensajes from './pages/Mensajes'
 import Repartidores from './pages/Repartidores'
 import CodigosDescuento from './pages/CodigosDescuento'
 import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
 import Suscribir from './pages/Suscribir';
 import Metricas from './pages/Metricas';
+import MiPlan from './pages/MiPlan';
 import UpdaterPrompt from './components/UpdaterPrompt';
 import PagoLink from './pages/PagoLink';
 import ClaimTienda from './pages/ClaimTienda';
@@ -147,6 +149,14 @@ const router = createBrowserRouter([
           {
             path: "clientes",
             element: <Clientes />,
+          },
+          {
+            path: "mensajes",
+            element: <Mensajes />,
+          },
+          {
+            path: "plan",
+            element: <MiPlan />,
           },
           {
             path: "repartidores",

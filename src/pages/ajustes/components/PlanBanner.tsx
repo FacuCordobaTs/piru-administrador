@@ -1,18 +1,24 @@
 import { Link } from 'react-router'
 import { AlertTriangle, ChevronRight } from 'lucide-react'
-import { useSuscripcion, suscripcionNecesitaAtencion, renovacionProxima } from '../hooks/useSuscripcion'
+import { useSuscripcion, renovacionProxima } from '../hooks/useSuscripcion'
 
 /**
- * Banner de atención de facturación que aparece arriba de Ajustes cuando el plan o
- * el saldo necesitan acción (cobro vencido, suspensión, saldo agotado). Lleva a la
- * pantalla de Plan. Cuando todo está en orden no renderiza nada (regla 11: sin ruido).
+ * Banner de atención del plan que aparece arriba de Ajustes cuando la suscripción necesita
+ * acción (cobro vencido, suspensión, cancelación o renovación próxima). Lleva a la pantalla
+ * "Tu plan" (`/dashboard/plan`). El saldo de mensajes tiene su propio banner en la sección
+ * Mensajes. Cuando todo está en orden no renderiza nada (regla 11: sin ruido).
  */
 export function PlanBanner() {
   const { data } = useSuscripcion()
 
-  if (!suscripcionNecesitaAtencion(data) || !data) return null
+  if (!data) return null
 
-  let mensaje = 'Revisá tu plan y saldo'
+  const estadoMal =
+    data.estado === 'pago_pendiente' || data.estado === 'suspendida' || data.estado === 'cancelada'
+  const renov = renovacionProxima(data)
+  if (!estadoMal && !renov) return null
+
+  let mensaje = 'Revisá tu plan'
   let critico = false
 
   if (data.estado === 'suspendida') {
@@ -21,25 +27,17 @@ export function PlanBanner() {
   } else if (data.estado === 'pago_pendiente') {
     mensaje = 'Tenés un pago pendiente de tu plan. Pagá para no perder funciones.'
   } else if (data.estado === 'cancelada') {
-    mensaje = 'Cancelaste tu plan. Volvé a elegir uno cuando quieras.'
-  } else if (data.wallet?.utility?.negativo) {
-    critico = true
-    mensaje = 'Te quedaste sin saldo de avisos. Recargá para ponerte al día.'
-  } else if (data.wallet?.alerta === '95') {
-    mensaje = 'Te quedan muy pocos avisos este mes. Considerá recargar.'
-  } else {
-    const renov = renovacionProxima(data)
-    if (renov) {
-      mensaje =
-        renov.diasRestantes <= 0
-          ? 'Tu plan se renueva hoy. Pagá la cuota para no perder funciones.'
-          : `Tu plan se renueva en ${renov.diasRestantes} ${renov.diasRestantes === 1 ? 'día' : 'días'}. Pagá la cuota para no perder funciones.`
-    }
+    mensaje = 'Cancelaste tu plan. Volvé a activarlo cuando quieras.'
+  } else if (renov) {
+    mensaje =
+      renov.diasRestantes <= 0
+        ? 'Tu plan se renueva hoy. Pagá la cuota para no perder funciones.'
+        : `Tu plan se renueva en ${renov.diasRestantes} ${renov.diasRestantes === 1 ? 'día' : 'días'}. Pagá la cuota para no perder funciones.`
   }
 
   return (
     <Link
-      to="/dashboard/ajustes/plan"
+      to="/dashboard/plan"
       className={
         'mt-6 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ' +
         (critico
@@ -47,9 +45,7 @@ export function PlanBanner() {
           : 'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15')
       }
     >
-      <AlertTriangle
-        className={'h-4 w-4 shrink-0 ' + (critico ? 'text-red-500' : 'text-amber-500')}
-      />
+      <AlertTriangle className={'h-4 w-4 shrink-0 ' + (critico ? 'text-red-500' : 'text-amber-500')} />
       <span className="min-w-0 flex-1 text-[13px] font-medium text-foreground">{mensaje}</span>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
     </Link>

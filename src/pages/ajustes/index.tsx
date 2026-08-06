@@ -11,7 +11,6 @@ import {
   User,
   Globe,
   Copy,
-  Crown,
   Rocket,
   ExternalLink,
   type LucideIcon,
@@ -41,7 +40,6 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: 'tareas', label: 'Primeros pasos', Icon: Rocket, Component: lazy(() => import('./sections/Tareas')) },
   { id: 'general', label: 'General', Icon: Store, Component: lazy(() => import('./sections/General')) },
-  { id: 'plan', label: 'Plan y saldo', Icon: Crown, Component: lazy(() => import('./sections/Plan')) },
   { id: 'pagos', label: 'Pagos', Icon: CreditCard, Component: lazy(() => import('./sections/Pagos')) },
   { id: 'horarios', label: 'Horarios', Icon: Clock, Component: lazy(() => import('./sections/Horarios')) },
   { id: 'entregas', label: 'Entregas', Icon: Truck, Component: lazy(() => import('./sections/Entregas')) },
@@ -122,8 +120,8 @@ export default function AjustesPage() {
         </div>
       )}
 
-      {/* ── Banner de atención de plan/saldo (oculto si ya estás en Plan) ── */}
-      {active.id !== 'plan' && <PlanBanner />}
+      {/* ── Banner de atención del plan (cobro vencido / suspensión) → lleva a Tu plan ── */}
+      <PlanBanner />
 
       {/* ── Chips horizontales (sticky, <1024px) ── */}
       <nav

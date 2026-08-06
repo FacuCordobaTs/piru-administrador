@@ -40,7 +40,7 @@ export function TrialValorBanner() {
       <Sparkles className="h-4 w-4 shrink-0 text-[#FF7A00]" />
       <p className="min-w-0 flex-1 text-[13px] font-medium text-foreground">{mensaje}</p>
       <Link
-        to="/dashboard/ajustes/plan"
+        to="/dashboard/plan"
         className="shrink-0 rounded-lg bg-[#FF7A00] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#e56e00]"
       >
         Activar plan

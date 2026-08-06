@@ -1768,9 +1768,21 @@ export interface PackRecarga {
   activo: boolean
 }
 
+// Mensajes enviados por período (cada bucket = utility/marketing).
+export interface EstadisticasEnvios {
+  utility: { hoy: number; semana: number; mes: number; total: number }
+  marketing: { hoy: number; semana: number; mes: number; total: number }
+}
+
 export const mensajesApi = {
   saldo: async (token: string) =>
     fetchApi<{ success: boolean; data: WalletResumen }>('/mensajes/saldo', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  // Cantidad de mensajes enviados por período (hoy / 7d / 30d / total).
+  estadisticas: async (token: string) =>
+    fetchApi<{ success: boolean; data: EstadisticasEnvios }>('/mensajes/estadisticas', {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     }),

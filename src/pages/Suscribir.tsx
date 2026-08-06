@@ -157,12 +157,12 @@ export default function Suscribir() {
               <Crown className="h-3.5 w-3.5" /> {restaurante?.nombre ? `${restaurante.nombre} está casi listo` : 'Casi listo'}
             </div>
             <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">
-              Elegí tu plan para activar tu local
+              Activá tu local con el plan Básico
             </h1>
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-              Tu tienda y tu menú ya están cargados. Para empezar a recibir pedidos en el panel,
-              activá un plan. Es una cuota fija, sin comisión por venta: pagás mes a mes o por año
-              (con descuento). Podés cambiar o cancelar cuando quieras.
+              Tu tienda y tu menú ya están cargados. Empezá con el Básico para recibir pedidos en el
+              panel: cuota fija, sin comisión por venta, mes a mes o por año (con descuento). Después
+              podés mejorar tu plan cuando quieras desde el panel. Cancelás cuando quieras.
             </p>
           </div>
         )}
@@ -188,14 +188,20 @@ export default function Suscribir() {
               ) : null
             })()}
             {(() => {
-            // El plan base es el de menor orden (el Básico se seedea con orden 1,
-            // no 0). El destacado es el siguiente (Intermedio).
+            // El plan base es el de menor orden (el Básico se seedea con orden 1, no 0).
             const ordenBase = Math.min(...catalogo.map((p) => p.orden))
+            const base = catalogo.find((p) => p.orden === ordenBase)
+            // Un local nuevo (sin plan) arranca SIEMPRE por el Básico: no lo hacemos elegir entre
+            // tres. Después mejora desde "Tu plan" en el panel. Un local pausado reactiva el plan
+            // que ya tenía (o el Básico si no lo sabemos).
+            const suyo = miSub?.planId ? catalogo.find((p) => p.id === miSub.planId) : null
+            const planesVisibles = (pausado ? [suyo ?? base] : [base]).filter(Boolean) as PlanCatalogo[]
+            const soloUno = planesVisibles.length === 1
             return (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-              {catalogo.map((p) => {
+            <div className={cn('grid grid-cols-1 gap-4', soloUno ? 'mx-auto max-w-md' : 'lg:grid-cols-3')}>
+              {planesVisibles.map((p) => {
                 const precio = parseFloat(p.precioMensual)
-                const destacado = p.orden === ordenBase + 1 // Intermedio: el recomendado
+                const destacado = soloUno || p.orden === ordenBase + 1 // el único mostrado, o Intermedio
                 const desc = descuentoAnualEfectivo(p.descuentoAnual)
                 const totalAnual = precioAnual(precio, desc)
                 return (
