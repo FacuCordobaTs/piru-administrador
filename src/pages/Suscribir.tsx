@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Check, Loader2, Lock, Crown, LogOut, RefreshCw, PauseCircle } from 'lucide-react'
+import { Check, Loader2, Lock, Crown, LogOut, RefreshCw, PauseCircle, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -85,15 +85,19 @@ export default function Suscribir() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Pago por link único vía WhatsApp (mismo mecanismo que "Tu plan"): en lugar de redirigir a
+  // Checkout Pro, le mandamos el link de pago al WhatsApp del dueño para que pague desde el celular.
+  // El pago se acredita por webhook y el gate de ProtectedLayout lo saca de acá al panel.
   const elegir = async (planId: number) => {
     const token = useAuthStore.getState().token
     if (!token) return
     setEligiendo(planId)
     try {
-      const res = await planesApi.suscribir(token, planId, ciclo)
-      window.location.href = res.data.url_pago
+      const res = await planesApi.enviarPagoLinkWhatsapp(token, planId, ciclo)
+      toast.success(`Te enviamos el link de pago a tu WhatsApp (${res.data.telefono})`)
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo iniciar el pago')
+      toast.error(e?.message || 'No se pudo enviar el link por WhatsApp')
+    } finally {
       setEligiendo(null)
     }
   }
@@ -304,18 +308,26 @@ export default function Suscribir() {
                           No disponible
                         </Button>
                       ) : (
-                        <Button
-                          onClick={() => elegir(p.id)}
-                          disabled={eligiendo !== null}
-                          variant={destacado ? 'default' : 'outline'}
-                          className="w-full"
-                        >
-                          {eligiendo === p.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            `${pausado ? 'Reactivar con' : 'Activar'} ${p.nombre}`
-                          )}
-                        </Button>
+                        <>
+                          <Button
+                            onClick={() => elegir(p.id)}
+                            disabled={eligiendo !== null}
+                            variant={destacado ? 'default' : 'outline'}
+                            className="w-full"
+                          >
+                            {eligiendo === p.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <MessageCircle className="h-4 w-4" />
+                                {pausado ? 'Recibir link para reactivar' : `Recibir link para ${p.nombre}`}
+                              </>
+                            )}
+                          </Button>
+                          <p className="mt-2 text-center text-[12px] text-muted-foreground">
+                            Te enviamos el link al WhatsApp del local y pagás desde el celular.
+                          </p>
+                        </>
                       )}
                     </div>
                   </div>
