@@ -272,11 +272,14 @@ export default function Clientes() {
     // ---- Pantalla de selección (paso previo al navegador) ----
     if (tab === null) {
         return (
-            <div className="flex-1 flex flex-col items-center justify-center h-full overflow-auto bg-background px-6 py-12">
+            <div className="flex-1 flex flex-col items-center justify-center h-full overflow-auto bg-[#FFFBF0] dark:bg-background px-6 py-12">
                 <div className="w-full max-w-2xl text-center">
-                    <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                        ¿Qué querés gestionar?
+                    <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground mb-10">
+                        Clientes
                     </h1>
+                    <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                        ¿Qué querés gestionar?
+                    </h2>
                     <p className="text-sm text-muted-foreground mt-1.5">
                         Elegí una sección para empezar.
                     </p>
@@ -293,10 +296,10 @@ export default function Clientes() {
 
     // ---- Navegador + panel activo (una vez elegida la sección) ----
     return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
-            {/* Tab switcher */}
-            <div className="border-b bg-background px-4 sm:px-6 shrink-0">
-                <div className="flex items-center gap-1 h-12">
+        <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
+            {/* Tab switcher — botones flotantes, centrados, sin línea separadora */}
+            <div className="bg-[#FFFBF0] dark:bg-background px-4 sm:px-6 pt-6 pb-2 shrink-0">
+                <div className="flex items-center justify-center gap-2">
                     {SECCIONES.map(seccion => (
                         <TabButton
                             key={seccion.key}
@@ -326,9 +329,9 @@ function SeccionCard({ seccion, onClick }: {
     return (
         <button
             onClick={onClick}
-            className="group flex flex-col items-center text-center gap-3 p-6 rounded-xl border border-border/60 bg-background transition-colors cursor-pointer hover:bg-muted/40 hover:border-border"
+            className="group flex flex-col items-center text-center gap-3 p-6 rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background transition-colors cursor-pointer hover:bg-muted/40 hover:border-border"
         >
-            <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-foreground">
+            <div className="w-11 h-11 rounded-xl bg-white dark:bg-muted flex items-center justify-center text-foreground">
                 <Icon className="w-5 h-5" />
             </div>
             <div>
@@ -348,15 +351,14 @@ function TabButton({ active, onClick, icon: Icon, children }: {
     return (
         <button
             onClick={onClick}
-            className={`relative flex items-center gap-2 px-3 h-12 text-sm font-medium transition-colors ${
-                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            className={`inline-flex items-center gap-2 px-3.5 h-9 rounded-full text-sm font-medium transition-colors ${
+                active
+                    ? 'bg-foreground text-background shadow-sm'
+                    : "bg-white dark:bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
         >
             <Icon className="w-4 h-4" />
             {children}
-            {active && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-            )}
         </button>
     )
 }
@@ -462,11 +464,11 @@ function ClientesPanel() {
     }, [])
 
     return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
+        <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
             {/* ============================================================= */}
             {/* TOP HEADER — KPIs del motor + segmentos */}
             {/* ============================================================= */}
-            <div className="border-b bg-background sticky top-0 z-20">
+            <div className="border-b bg-[#FFFBF0] dark:bg-background sticky top-0 z-20">
                 <div className="px-6 py-5 max-w-6xl mx-auto w-full">
                     {/* Title Row */}
                     <div className="mb-4">
@@ -512,13 +514,13 @@ function ClientesPanel() {
             <div className="flex-1 flex min-h-0 overflow-hidden max-w-6xl mx-auto w-full">
                 {/* ===== LEFT PANEL — Client List ===== */}
                 <div className={`
-                    flex flex-col border-r bg-background
+                    flex flex-col border-r bg-[#FFFBF0] dark:bg-background
                     ${selectedClient ? 'hidden lg:flex' : 'flex'}
                     w-full lg:w-[420px] xl:w-[480px] lg:shrink-0
                     transition-all duration-200
                 `}>
                     {/* Search + Filter */}
-                    <div className="px-4 py-3 border-b bg-muted/30">
+                    <div className="px-4 py-3 border-b bg-white dark:bg-muted/30">
                         <div className="flex gap-2">
                             <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -554,7 +556,7 @@ function ClientesPanel() {
                             </div>
                         ) : filteredAndSorted.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                                <div className="w-12 h-12 rounded-full bg-white dark:bg-muted flex items-center justify-center mb-3">
                                     <User className="w-5 h-5 text-muted-foreground" />
                                 </div>
                                 <h3 className="text-sm font-medium text-foreground">Sin resultados</h3>
@@ -589,9 +591,9 @@ function ClientesPanel() {
                     />
                 ) : (
                     /* ===== EMPTY STATE — No client selected (desktop) ===== */
-                    <div className="hidden lg:flex flex-1 items-center justify-center bg-muted/20">
+                    <div className="hidden lg:flex flex-1 items-center justify-center bg-[#FFFBF0] dark:bg-muted/20">
                         <div className="text-center max-w-xs">
-                            <div className="w-16 h-16 rounded-2xl bg-muted/80 flex items-center justify-center mx-auto mb-4">
+                            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-muted/80 flex items-center justify-center mx-auto mb-4">
                                 <Users className="w-7 h-7 text-muted-foreground/40" />
                             </div>
                             <h3 className="text-sm font-medium text-foreground mb-1">
@@ -633,11 +635,11 @@ function ClienteRow({ cliente, selected, onSelect }: {
         >
             {/* Avatar con punto de segmento */}
             <div className="relative shrink-0">
-                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-foreground text-sm font-semibold">
+                <div className="w-10 h-10 rounded-full bg-white dark:bg-muted flex items-center justify-center text-foreground text-sm font-semibold">
                     {getInitials(cliente.nombre)}
                 </div>
                 <span
-                    className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${meta.dot} ring-2 ring-background`}
+                    className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${meta.dot} ring-2 ring-[#FFFBF0] dark:ring-background`}
                     title={meta.label}
                 />
             </div>
@@ -733,9 +735,9 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
     }
 
     return (
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-muted/20">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#FFFBF0] dark:bg-muted/20">
             {/* Detail Header */}
-            <div className="px-6 py-5 bg-background border-b">
+            <div className="px-6 py-5 bg-[#FFFBF0] dark:bg-background border-b">
                 <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
                         {/* Mobile back button */}
@@ -748,10 +750,10 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                         {/* Large avatar */}
                         <div className="relative shrink-0">
-                            <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center text-foreground text-lg font-bold">
+                            <div className="w-14 h-14 rounded-2xl bg-white dark:bg-muted flex items-center justify-center text-foreground text-lg font-bold">
                                 {getInitials(cliente.nombre)}
                             </div>
-                            <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${meta.dot} ring-2 ring-background`} />
+                            <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${meta.dot} ring-2 ring-[#FFFBF0] dark:ring-background`} />
                         </div>
 
                         <div>
@@ -807,7 +809,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                     {/* ---- Diagnóstico del ciclo de vida ---- */}
                     <div className={`rounded-xl border p-4 ${meta.bg}`}>
                         <div className="flex items-start gap-3">
-                            <div className={`w-9 h-9 rounded-lg bg-background/60 flex items-center justify-center ${meta.text} shrink-0`}>
+                            <div className={`w-9 h-9 rounded-lg bg-[#FFFBF0]/60 dark:bg-background/60 flex items-center justify-center ${meta.text} shrink-0`}>
                                 <SegIcon className="w-5 h-5" />
                             </div>
                             <div className="min-w-0">
@@ -826,9 +828,9 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                     {/* ---- Motor de Recompra · playbook de recupero (4.2) ---- */}
                     {mostrarRecupero && (
-                        <div className="rounded-xl border border-border/60 bg-background overflow-hidden">
+                        <div className="rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background overflow-hidden">
                             <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                                <div className="w-7 h-7 rounded-lg bg-white dark:bg-muted flex items-center justify-center text-muted-foreground">
                                     <Rocket className="w-4 h-4" />
                                 </div>
                                 <div className="min-w-0">
@@ -839,7 +841,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                             <div className="p-4 space-y-3">
                                 {/* Próximo escalón */}
                                 <div className="flex items-start gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-muted border border-border/60 flex items-center justify-center shrink-0 text-foreground text-xs font-bold tabular-nums">
+                                    <div className="w-8 h-8 rounded-lg bg-white dark:bg-muted border border-border/60 flex items-center justify-center shrink-0 text-foreground text-xs font-bold tabular-nums">
                                         {escalon.nivel}
                                     </div>
                                     <div className="min-w-0">
@@ -856,7 +858,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                                 {/* Historial de toques */}
                                 {recupero && recupero.totalEnvios > 0 && (
-                                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/50 rounded-lg px-2.5 py-1.5">
+                                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-white dark:bg-muted/50 rounded-lg px-2.5 py-1.5">
                                         <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
                                         Le enviaste {recupero.totalEnvios} {recupero.totalEnvios === 1 ? 'recordatorio' : 'recordatorios'}
                                         {recupero.ultimoEnvioAt && ` · último ${getTimeSince(recupero.ultimoEnvioAt).toLowerCase()}`}
@@ -865,7 +867,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                                 {/* Acción */}
                                 {optOut ? (
-                                    <div className="flex items-start gap-2 text-[11px] text-muted-foreground bg-muted/50 rounded-lg px-2.5 py-2">
+                                    <div className="flex items-start gap-2 text-[11px] text-muted-foreground bg-white dark:bg-muted/50 rounded-lg px-2.5 py-2">
                                         <BellOff className="w-3.5 h-3.5 text-orange-500 shrink-0 mt-0.5" />
                                         <span>
                                             Este cliente pidió no recibir mensajes promocionales (respondió “BAJA”).
@@ -916,7 +918,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                     {/* ---- Productos que más pide (base del "repetí tu pedido") ---- */}
                     {cliente.productosTop && cliente.productosTop.length > 0 && (
-                        <div className="bg-background rounded-xl border border-border/60 overflow-hidden">
+                        <div className="bg-[#FFFBF0] dark:bg-background rounded-xl border border-border/60 overflow-hidden">
                             <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
                                 <Utensils className="w-3.5 h-3.5 text-muted-foreground" />
                                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -927,9 +929,9 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                                 {cliente.productosTop.map((p, i) => (
                                     <span
                                         key={i}
-                                        className="inline-flex items-center gap-1.5 text-xs font-medium bg-muted/60 text-foreground px-2.5 py-1.5 rounded-lg border border-border/40"
+                                        className="inline-flex items-center gap-1.5 text-xs font-medium bg-white dark:bg-muted/60 text-foreground px-2.5 py-1.5 rounded-lg border border-border/40"
                                     >
-                                        <span className="text-[10px] font-bold text-muted-foreground bg-background w-4 h-4 rounded flex items-center justify-center tabular-nums">
+                                        <span className="text-[10px] font-bold text-muted-foreground bg-[#FFFBF0] dark:bg-background w-4 h-4 rounded flex items-center justify-center tabular-nums">
                                             {p.cantidad}
                                         </span>
                                         {p.nombre}
@@ -940,7 +942,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                     )}
 
                     {/* ---- Contact Info Card ---- */}
-                    <div className="bg-background rounded-xl border border-border/60 overflow-hidden">
+                    <div className="bg-[#FFFBF0] dark:bg-background rounded-xl border border-border/60 overflow-hidden">
                         <div className="px-4 py-3 border-b border-border/40">
                             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 Información de contacto
@@ -982,7 +984,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                     </div>
 
                     {/* ---- Order History ---- */}
-                    <div className="bg-background rounded-xl border border-border/60 overflow-hidden">
+                    <div className="bg-[#FFFBF0] dark:bg-background rounded-xl border border-border/60 overflow-hidden">
                         <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
                             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 Historial de pedidos
@@ -1023,9 +1025,9 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5">
+                    <div className="rounded-lg border bg-white dark:bg-muted/40 p-3 space-y-1.5">
                         <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                            <span className="w-5 h-5 rounded bg-muted text-foreground flex items-center justify-center text-[10px] font-bold">{escalon.nivel}</span>
+                            <span className="w-5 h-5 rounded bg-white dark:bg-muted text-foreground flex items-center justify-center text-[10px] font-bold">{escalon.nivel}</span>
                             {escalon.titulo}
                         </p>
                         <p className="text-[11px] text-muted-foreground">{escalon.detalle}</p>
@@ -1067,7 +1069,7 @@ function SegmentoChip({ label, count, dot, active, onClick }: {
                 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium border transition-all
                 ${active
                     ? 'bg-foreground text-background border-foreground'
-                    : 'bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+                    : 'bg-[#FFFBF0] dark:bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground'
                 }
             `}
         >
@@ -1098,8 +1100,8 @@ function MetricCard({ label, value, icon }: {
     icon: React.ReactNode
 }) {
     return (
-        <div className="bg-background border border-border/50 rounded-xl p-4 text-center">
-            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-muted text-muted-foreground mb-2">
+        <div className="bg-[#FFFBF0] dark:bg-background border border-border/50 rounded-xl p-4 text-center">
+            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white dark:bg-muted text-muted-foreground mb-2">
                 {icon}
             </div>
             <p className="text-base font-bold text-foreground tabular-nums">{value}</p>
@@ -1116,7 +1118,7 @@ function ContactRow({ icon, label, value, action }: {
 }) {
     return (
         <div className="px-4 py-3 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
+            <div className="w-8 h-8 rounded-lg bg-white dark:bg-muted/50 flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
                 {icon}
             </div>
             <div className="flex-1 min-w-0">
@@ -1141,7 +1143,7 @@ function OrderRow({ pedido }: { pedido: PedidoHistorial }) {
                     w-full text-left px-4 py-3.5 flex items-center gap-3
                     transition-colors duration-100
                     ${hasItems ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'}
-                    ${expanded ? 'bg-muted/20' : ''}
+                    ${expanded ? "bg-white dark:bg-muted/20" : ''}
                 `}
             >
                 {/* Order Type Icon */}
@@ -1161,7 +1163,7 @@ function OrderRow({ pedido }: { pedido: PedidoHistorial }) {
                         <span className="text-sm font-medium text-foreground">
                             {isDelivery ? 'Delivery' : 'Take Away'}
                         </span>
-                        <span className="text-[10px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                        <span className="text-[10px] font-mono text-muted-foreground bg-white dark:bg-muted/60 px-1.5 py-0.5 rounded">
                             #{pedido.id}
                         </span>
                         {hasItems && (
@@ -1192,11 +1194,11 @@ function OrderRow({ pedido }: { pedido: PedidoHistorial }) {
             {/* Expanded Items */}
             {expanded && hasItems && (
                 <div className="px-4 pb-3 pt-0 ml-[52px]">
-                    <div className="bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30 overflow-hidden">
+                    <div className="bg-white dark:bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30 overflow-hidden">
                         {pedido.items.map((item, idx) => (
                             <div key={idx} className="px-3 py-2 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-xs font-medium text-muted-foreground bg-muted/80 w-5 h-5 rounded flex items-center justify-center shrink-0 tabular-nums">
+                                    <span className="text-xs font-medium text-muted-foreground bg-white dark:bg-muted/80 w-5 h-5 rounded flex items-center justify-center shrink-0 tabular-nums">
                                         {item.cantidad}
                                     </span>
                                     <span className="text-sm text-foreground truncate">

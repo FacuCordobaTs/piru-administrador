@@ -154,7 +154,7 @@ export function LogoField({
       <div
         className={cn(
           'rounded-2xl border-2 border-dashed p-2 transition-colors',
-          dark ? 'border-zinc-700 bg-zinc-900' : 'border-input bg-muted'
+          dark ? 'border-zinc-700 bg-zinc-900' : 'border-input bg-white dark:bg-muted'
         )}
       >
         <ImageUpload onImageChange={onImageChange} currentImage={current} maxSize={5} />

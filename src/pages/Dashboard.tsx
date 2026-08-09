@@ -12,15 +12,18 @@ import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursale
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
-import PuntoDeVenta from '@/components/PuntoDeVenta'
+import PuntoDeVenta, { type PosDraft, type PuntoDeVentaHandle } from '@/components/PuntoDeVenta'
 import {
     Loader2, Plus, Clock, Trash2,
     User, ArrowLeft, Printer, Truck, MapPin,
     Phone, ShoppingBag, CalendarDays, Tag, Settings,
-    Receipt, Wallet, Zap, CreditCard, ChevronDown, CheckCircle,
+    Receipt, Wallet, Zap, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
-    Copy, ExternalLink,
+    Copy, ExternalLink, MoreVertical,
 } from 'lucide-react'
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -32,6 +35,22 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
+// Acorta una dirección: se queda con lo que hay antes de la 2ª coma
+// y elimina el código postal argentino (ej. "S3004") que puede variar.
+function formatDireccionCorta(direccion?: string | null): string {
+    if (!direccion) return ''
+    const partes = direccion.split(',')
+    let corta = partes.slice(0, 2).join(',')
+    // Elimina el CPA argentino: 1 letra opcional + 4 dígitos + hasta 3 letras (ej. S3004, S3004ABC, 3004)
+    corta = corta.replace(/\b[A-Za-z]?\d{4}[A-Za-z]{0,3}\b/g, '')
+    // Limpia comas/espacios sobrantes que pudieran quedar tras el reemplazo
+    corta = corta.replace(/\s{2,}/g, ' ').replace(/\s+,/g, ',').replace(/,\s*,/g, ',').replace(/,\s*$/,'').trim()
+    return corta
+}
 
 // ─────────────────────────────────────────────
 // TIPOS
@@ -131,6 +150,24 @@ const getDateLabel = (dateString: string) => {
     if (isSameDay(eventDate, today)) return 'Hoy'
     if (isSameDay(eventDate, yesterday)) return 'Ayer'
     return eventDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', timeZone: AR_TIMEZONE })
+}
+
+// ── Filtro por día (selector "Hoy" ▲▼) ──
+// Un "día" es una fecha calendario YYYY-MM-DD en el huso AR.
+const getArDayString = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: AR_TIMEZONE })
+const shiftDayString = (day: string, delta: number) => {
+    const [y, m, d] = day.split('-').map(Number)
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    dt.setUTCDate(dt.getUTCDate() + delta)
+    return dt.toISOString().slice(0, 10)
+}
+const formatDayTitle = (day: string): string => {
+    const today = getArDayString(new Date())
+    if (day === today) return 'Hoy'
+    if (day === shiftDayString(today, -1)) return 'Ayer'
+    const [y, m, d] = day.split('-').map(Number)
+    const label = new Date(y, m - 1, d).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
+    return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 // ── Contexto del cliente ──
@@ -328,8 +365,8 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
         : [-34.6037, -58.3816]
 
     return (
-        <div className="flex-1 flex flex-col overflow-hidden bg-background">
-            <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-background">
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
+            <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-[#FFFBF0] dark:bg-background">
                 <div className="flex items-center gap-2">
                     <MapIcon className="h-4 w-4 text-[#FF7A00]" />
                     <span className="font-bold text-sm">Mapa de pedidos</span>
@@ -377,7 +414,7 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                                                 "shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-full text-xs font-bold shadow-lg border transition-all active:scale-95",
                                                 isChipSelected
                                                     ? "bg-[#FF7A00] text-white border-[#FF7A00] shadow-[#FF7A00]/30"
-                                                    : "bg-background/95 dark:bg-background/95 text-foreground border-border backdrop-blur-sm"
+                                                    : "bg-[#FFFBF0]/95 dark:bg-background/95 text-foreground border-border backdrop-blur-sm"
                                             )}
                                         >
                                             <span className="font-black">#{pedido.id}</span>
@@ -464,7 +501,7 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                                     )}
                                     {selected.direccion && (
                                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                                            <MapPin className="h-3 w-3 shrink-0" />{selected.direccion}
+                                            <MapPin className="h-3 w-3 shrink-0" />{formatDireccionCorta(selected.direccion)}
                                         </p>
                                     )}
                                     {selected.notas && (
@@ -613,7 +650,7 @@ const OrderMiniMap = ({ orders, selected }: { orders: UnifiedPedido[]; selected?
     }, [selected?.id])
 
     if (hideMap) {
-        return <div className="h-full w-full bg-background" />
+        return <div className="h-full w-full bg-[#FFFBF0] dark:bg-background" />
     }
 
     if (ordersWithCoords.length === 0) {
@@ -779,6 +816,163 @@ const ShareLinkPanel = ({ publicUrl }: { publicUrl: string | null }) => {
 }
 
 // ─────────────────────────────────────────────
+// COMANDA DEL POS (borrador en vivo)
+// Se muestra en el panel derecho mientras el POS flotante está abierto: espeja
+// todo lo que se va anotando (datos del cliente + productos) sin tocarlo.
+// ─────────────────────────────────────────────
+const POS_METODO_LABEL: Record<string, string> = {
+    cash: 'Efectivo',
+    tarjeta: 'Tarjeta',
+    manual_transfer: 'Transferencia',
+    mercadopago: 'Mercado Pago',
+}
+
+const PosComandaPreview = ({ draft, onRemoveItem }: { draft: PosDraft | null; onRemoveItem?: (key: string) => void }) => {
+    if (!draft) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-8">
+                <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
+                    <ShoppingCart className="h-7 w-7 text-muted-foreground/60" />
+                </div>
+                <p className="text-base font-bold text-foreground">Comanda en blanco</p>
+                <p className="text-xs text-muted-foreground max-w-[260px] leading-relaxed">
+                    Anotá el pedido en el panel del medio: los productos y los datos del cliente se van reflejando acá en vivo.
+                </p>
+            </div>
+        )
+    }
+
+    const totalItems = draft.items.reduce((s, it) => s + it.cantidad, 0)
+    const metodoLabel = POS_METODO_LABEL[draft.metodoPago] || 'Sin método'
+
+    return (
+        <div className="flex h-full w-full overflow-hidden">
+            <div className="flex flex-col h-full relative flex-1 min-w-0">
+                <div className="flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6 pb-10">
+
+                        {/* Tipo + estado en curso */}
+                        <div className="flex items-center justify-between mb-6">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                {draft.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+                                {draft.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#FF7A00]">
+                                <Zap className="h-3 w-3" /> En curso
+                            </span>
+                        </div>
+
+                        {/* Identidad del cliente */}
+                        <div className="mb-6 text-left">
+                            <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">
+                                {draft.nombreCliente || 'Cliente sin nombre'}
+                            </h2>
+                            <div className="mt-2 space-y-1.5">
+                                {draft.tipo === 'delivery' ? (
+                                    draft.direccion ? (
+                                        <p className="flex items-start justify-start gap-2 text-base font-semibold text-foreground leading-snug">
+                                            <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                            <span>{draft.direccion}</span>
+                                        </p>
+                                    ) : (
+                                        <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
+                                            <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                            Falta la dirección
+                                        </p>
+                                    )
+                                ) : (
+                                    <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
+                                        <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        Retira en el local
+                                    </p>
+                                )}
+                                {draft.telefono && (
+                                    <p className="flex items-center justify-start gap-2 text-sm text-muted-foreground">
+                                        <Phone className="h-3.5 w-3.5 shrink-0" />{draft.telefono}
+                                    </p>
+                                )}
+                                <p className="flex items-center justify-start gap-2 text-sm">
+                                    {draft.pagado ? (
+                                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                                            <CheckCircle className="h-3.5 w-3.5" /> Cobrado · {metodoLabel}
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+                                            <Wallet className="h-3.5 w-3.5" /> Sin cobrar · {metodoLabel}
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+
+                        <Separator className="bg-border/60 mb-6" />
+
+                        {/* Comanda */}
+                        <div className="mb-6">
+                            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Comanda · {totalItems} ítems</h3>
+                            {draft.items.length === 0 ? (
+                                <p className="text-sm text-muted-foreground/60 py-8 text-center border border-dashed border-border rounded-xl">
+                                    Todavía no hay productos
+                                </p>
+                            ) : (
+                                <div className="space-y-0">
+                                    {draft.items.map((it, idx) => (
+                                        <div key={it.key} className={`flex items-center justify-between gap-3 py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-semibold text-base text-foreground leading-snug">
+                                                    {it.nombre}{it.varianteNombre && <span className="text-muted-foreground font-medium"> ({it.varianteNombre})</span>}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground mt-0.5">${it.precioUnitario.toLocaleString('es-AR', { minimumFractionDigits: 0 })} c/u</p>
+                                            </div>
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                <span className="font-semibold text-base tabular-nums text-foreground">
+                                                    ${(it.precioUnitario * it.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                </span>
+                                                {onRemoveItem && (
+                                                    <button
+                                                        onClick={() => onRemoveItem(it.key)}
+                                                        title="Quitar del pedido"
+                                                        className="h-10 w-10 rounded-xl bg-muted/60 border border-border/70 flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer shrink-0"
+                                                    >
+                                                        <Trash2 className="h-5 w-5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {draft.notas && (
+                            <div className="mb-6 rounded-2xl bg-muted/50 border border-border/60 p-4">
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Nota del cliente</p>
+                                <p className="text-sm text-foreground leading-snug">{draft.notas}</p>
+                            </div>
+                        )}
+
+                        {draft.tipo === 'delivery' && draft.deliveryFee > 0 && (
+                            <div className="flex items-center justify-between gap-3 py-3 border-t border-border/40 text-muted-foreground">
+                                <span className="text-sm flex items-center gap-2"><Truck className="h-4 w-4" /> Costo de envío</span>
+                                <span className="text-sm font-medium tabular-nums">${draft.deliveryFee.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
+                            </div>
+                        )}
+
+                        {/* Total */}
+                        <div className="flex items-baseline justify-between gap-3">
+                            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">Total</span>
+                            <span className="text-3xl font-black tracking-tight text-[#FF7A00]">
+                                ${draft.total.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ─────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────
 const Dashboard = () => {
@@ -789,6 +983,10 @@ const Dashboard = () => {
     // Avisar al cliente por WhatsApp es exclusivo de Intermedio+ (feature avisos_whatsapp_cliente).
     // Si el backend no devuelve suscripción (admin/backend viejo), fail-open para no romper.
     const puedeAvisarWhatsapp = !suscripcion || (suscripcion.features?.includes('avisos_whatsapp_cliente') ?? true)
+    // El plan Básico no gestiona pedidos desde el panel (mapa, repartidores, anotar pedido,
+    // despachar/cobrar). Fail-open: si el backend no devuelve suscripción (admin/backend viejo),
+    // no ocultamos nada.
+    const esPlanBasico = suscripcion?.planCodigo === 'basico'
 
     const { printRaw, selectedPrinter } = usePrinter()
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
@@ -810,14 +1008,24 @@ const Dashboard = () => {
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
     const [showOrderMap, setShowOrderMap] = useState(false)
     const [showPOS, setShowPOS] = useState(false)
+    // Borrador del pedido que se está anotando en el POS flotante: se espeja
+    // en vivo en la comanda de la derecha (PosComandaPreview).
+    const [draftPos, setDraftPos] = useState<PosDraft | null>(null)
+    // Ref al POS (desktop) para que la comanda pueda quitar ítems del borrador.
+    const posRef = useRef<PuntoDeVentaHandle>(null)
     const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
     const [showMobileOrdersSheet, setShowMobileOrdersSheet] = useState(false)
     const [showCierreTurno, setShowCierreTurno] = useState(false)
     const [showArchived, setShowArchived] = useState(false)
+    const [selectedDay, setSelectedDay] = useState<string>(() => getArDayString(new Date()))
+    const [showDayPicker, setShowDayPicker] = useState(false)
+    const [pickerDay, setPickerDay] = useState<string>(() => getArDayString(new Date()))
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
     const [demoraInputs, setDemoraInputs] = useState<Record<string, string>>({})
     const [confirmandoDemora, setConfirmandoDemora] = useState<string | null>(null)
+    // La ubicación se muestra en un mapa flotante (dialog), no inline.
+    const [showMapaDialog, setShowMapaDialog] = useState(false)
 
     const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
     const [sucursalNombre, setSucursalNombre] = useState<string>('')
@@ -927,7 +1135,17 @@ const Dashboard = () => {
     useEffect(() => {
         setPage(1)
         setHasMore(true)
-    }, [sucursalActivaId])
+    }, [sucursalActivaId, selectedDay])
+
+    // Al cambiar de pedido, cerrar el mapa flotante.
+    useEffect(() => {
+        setShowMapaDialog(false)
+    }, [selectedUnifiedPedido?.id, selectedUnifiedPedido?.tipo])
+
+    // Si el día seleccionado no es "Hoy", abrir el Historial por defecto
+    useEffect(() => {
+        setShowArchived(selectedDay !== getArDayString(new Date()))
+    }, [selectedDay])
 
     // ─────────────────────────────────────────────
     // FETCH Y WEBSOCKETS
@@ -938,8 +1156,9 @@ const Dashboard = () => {
         else setIsLoadingMore(true)
 
         try {
-            const response = await pedidoUnificadoApi.getAll(
+            const response = await pedidoUnificadoApi.getByDia(
                 token,
+                selectedDay,
                 'all',
                 pageNum,
                 50,
@@ -973,7 +1192,7 @@ const Dashboard = () => {
             setIsLoading(false)
             setIsLoadingMore(false)
         }
-    }, [token, sucursalActivaId])
+    }, [token, sucursalActivaId, selectedDay])
 
     useEffect(() => {
         if (!token || !prefsReady) return
@@ -1311,6 +1530,11 @@ const Dashboard = () => {
         setMobileView('detail')
     }
 
+    // Al salir del POS (cerrar, crear pedido o seleccionar otro pedido) se descarta el borrador.
+    useEffect(() => {
+        if (!showPOS) setDraftPos(null)
+    }, [showPOS])
+
     const handlePedidoManualCreado = (_pedidoId: number) => {
         setShowPOS(false)
         setMobileView('orders')
@@ -1320,8 +1544,21 @@ const Dashboard = () => {
     // ─────────────────────────────────────────────
     // RENDER DE LISTAS
     // ─────────────────────────────────────────────
+    // El backend ya devuelve solo los pedidos del día seleccionado (endpoint /list-dia),
+    // así que acá solo separamos activos de archivados.
     const activeOrders = unifiedPedidos.filter(p => p.estado !== 'archived')
     const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
+
+    const hoyDay = getArDayString(new Date())
+    const isDayTitle = !(mobileView === 'detail' && (showPOS || showOrderMap))
+
+    const pickDay = (day: string) => {
+        if (!day) return
+        setSelectedDay(day)
+        setSelectedUnifiedPedido(null)
+        setShowDayPicker(false)
+        setMobileView('orders')
+    }
 
     // Link público de la tienda (para compartir cuando no hay pedido seleccionado)
     const publicUrl = restauranteStore?.username ? `https://piru.app/${restauranteStore.username}` : null
@@ -1329,7 +1566,7 @@ const Dashboard = () => {
     if (!prefsReady) {
         const activasParaModal = sucursalesList.filter((s) => s.activo)
         return (
-            <div className="relative h-full flex flex-col items-center justify-center bg-background">
+            <div className="relative h-full flex flex-col items-center justify-center bg-[#FFFBF0] dark:bg-background">
                 <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
                 <SucursalSelector
                     open={showSucursalSelector && activasParaModal.length > 0}
@@ -1343,45 +1580,62 @@ const Dashboard = () => {
     }
 
     if (isLoading && unifiedPedidos.length === 0) {
-        return <div className="h-full flex items-center justify-center bg-background"><Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" /></div>
+        return <div className="h-full flex items-center justify-center bg-[#FFFBF0] dark:bg-background"><Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" /></div>
     }
 
     return (
-        <div className="h-full flex flex-col overflow-hidden bg-background">
+        <div className="h-full flex flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
 
             {/* ── HEADER PRINCIPAL ── */}
-            <header className="shrink-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between z-10">
-                <div className="flex items-center gap-3">
+            <header className="shrink-0 bg-[#FFFBF0] dark:bg-background px-4 py-3 flex items-center justify-between gap-2 z-10">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                     {mobileView === 'detail' && (
                         <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => { setMobileView('orders'); setShowOrderMap(false); setShowPOS(false) }}>
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                     )}
-                    <h1 className="text-xl font-bold tracking-tight text-foreground">
-                        {mobileView === 'detail' && showPOS
-                            ? 'Anotar pedido'
-                            : mobileView === 'detail' && showOrderMap
-                                ? 'Mapa de pedidos'
-                                : 'Hoy'}
-                    </h1>
                     {sucursalNombre ? (
                         <Badge variant="outline" className="hidden sm:flex text-xs border-[#FF7A00]/25 text-foreground">
                             <Store className="h-3 w-3 mr-1 text-[#FF7A00]" />
                             {sucursalNombre}
                         </Badge>
                     ) : null}
-                    {sucursalesList.some((s) => s.activo) ? (
-                        <button
-                            type="button"
-                            className="hidden sm:inline text-[11px] font-semibold text-muted-foreground underline-offset-4 hover:text-[#FF7A00] hover:underline cursor-pointer"
-                            onClick={() => setShowSucursalSelector(true)}
-                        >
-                            Cambiar sucursal
-                        </button>
-                    ) : null}
                 </div>
 
-                <div className="flex items-center gap-2">
+                {/* ── TÍTULO CENTRAL: día seleccionado + selector ▲▼, con el botón
+                    de anotar pedido justo debajo (centrado, entre lista y comanda) ── */}
+                <div className="flex flex-col items-center justify-center shrink-0 gap-1.5">
+                    {isDayTitle ? (
+                        <button
+                            onClick={() => setShowDayPicker(true)}
+                            className="flex items-center gap-1.5 rounded-xl px-2 py-1 -my-1 hover:bg-accent transition-colors cursor-pointer"
+                        >
+                            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                                {formatDayTitle(selectedDay)}
+                            </h1>
+                            <ChevronsUpDown className="h-5 w-5 text-muted-foreground" />
+                        </button>
+                    ) : (
+                        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                            {mobileView === 'detail' && showPOS ? 'Anotar pedido' : 'Mapa de pedidos'}
+                        </h1>
+                    )}
+                    {!esPlanBasico && isDayTitle && (
+                        <Button
+                            variant="outline"
+                            onClick={openPOS}
+                            className={cn(
+                                "h-8 rounded-full px-4 text-xs gap-1.5 flex items-center",
+                                showPOS && "border-[#FF7A00] text-[#FF7A00] bg-[#FF7A00]/10"
+                            )}
+                        >
+                            <ShoppingCart className="h-3.5 w-3.5" />
+                            Anotar pedido
+                        </Button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-1 justify-end">
                     {mobileView === 'detail' && activeOrders.length > 0 && (
                         <button
                             onClick={() => setShowMobileOrdersSheet(true)}
@@ -1391,22 +1645,108 @@ const Dashboard = () => {
                             {activeOrders.length}
                         </button>
                     )}
-                    <Button
-                        variant="outline"
-                        className={cn(
-                            "h-10 rounded-xl flex",
-                            showPOS && "border-[#FF7A00] text-[#FF7A00] bg-[#FF7A00]/10"
-                        )}
-                        onClick={openPOS}
-                    >
-                        <ShoppingCart className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Anotar pedido</span>
-                    </Button>
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
                 </div>
             </header>
+
+            {/* ── MODAL: elegir el día que se muestra (rueda estilo iOS) ── */}
+            <Dialog
+                open={showDayPicker}
+                onOpenChange={(open) => {
+                    if (open) setPickerDay(selectedDay)
+                    setShowDayPicker(open)
+                }}
+            >
+                <DialogContent className="max-w-xs">
+                    <DialogHeader>
+                        <DialogTitle className="text-center text-3xl font-bold">Elegí el día</DialogTitle>
+                        <DialogDescription className="sr-only">Se muestran solo los pedidos del día que elijas.</DialogDescription>
+                    </DialogHeader>
+
+                    {(() => {
+                        const canNewer = pickerDay < hoyDay
+                        const goNewer = () => { if (pickerDay < hoyDay) setPickerDay(shiftDayString(pickerDay, 1)) }
+                        const goOlder = () => setPickerDay(shiftDayString(pickerDay, -1))
+                        // offsets de arriba (futuro) hacia abajo (pasado): +2 .. -2
+                        const rows = [2, 1, 0, -1, -2].map((offset) => {
+                            const day = shiftDayString(pickerDay, offset)
+                            const disabled = day > hoyDay // no hay días futuros
+                            return { offset, day, disabled }
+                        })
+                        const styleFor = (offset: number) => {
+                            const abs = Math.abs(offset)
+                            if (abs === 0) return "text-3xl font-bold text-[#FF7A00] opacity-100"
+                            if (abs === 1) return "text-xl font-semibold text-foreground opacity-60"
+                            return "text-base font-medium text-foreground opacity-25"
+                        }
+                        return (
+                            <div className="flex flex-col items-center gap-3 py-2">
+                                <button
+                                    type="button"
+                                    onClick={goNewer}
+                                    disabled={!canNewer}
+                                    aria-label="Día siguiente"
+                                    className="h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                                >
+                                    <ChevronUp className="h-6 w-6" />
+                                </button>
+
+                                <div
+                                    onWheel={(e) => {
+                                        e.preventDefault()
+                                        if (e.deltaY > 0) goOlder()
+                                        else if (e.deltaY < 0) goNewer()
+                                    }}
+                                    className="relative w-full select-none overflow-hidden"
+                                    style={{ height: '13rem' }}
+                                >
+                                    {/* franja del elemento seleccionado */}
+                                    <div className="pointer-events-none absolute inset-x-3 top-1/2 h-[2.6rem] -translate-y-1/2 rounded-xl bg-[#FF7A00]/10 border-y border-[#FF7A00]/30" />
+                                    {/* degradados de desvanecido arriba/abajo */}
+                                    <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-background to-transparent z-10" />
+                                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent z-10" />
+
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                                        {rows.map(({ offset, day, disabled }) => (
+                                            <button
+                                                key={offset}
+                                                type="button"
+                                                disabled={disabled}
+                                                onClick={() => { if (!disabled) setPickerDay(day) }}
+                                                className={cn(
+                                                    "h-[2.6rem] w-full text-center leading-[2.6rem] transition-all duration-150",
+                                                    disabled ? "opacity-0 pointer-events-none" : styleFor(offset),
+                                                    offset !== 0 && !disabled && "hover:opacity-90"
+                                                )}
+                                            >
+                                                {formatDayTitle(day)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={goOlder}
+                                    aria-label="Día anterior"
+                                    className="h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                                >
+                                    <ChevronDown className="h-6 w-6" />
+                                </button>
+
+                                <Button
+                                    onClick={() => pickDay(pickerDay)}
+                                    className="mt-2 h-11 px-10 rounded-full bg-[#FF7A00] hover:bg-[#FF7A00]/90 text-white font-semibold"
+                                >
+                                    Confirmar
+                                </Button>
+                            </div>
+                        )
+                    })()}
+                </DialogContent>
+            </Dialog>
 
             {/* Contador de valor del trial (sólo en prueba): "Recibiste X pedidos por $Y" */}
             <TrialValorBanner />
@@ -1415,39 +1755,53 @@ const Dashboard = () => {
             <SaldoAlertaBanner />
 
             {/* ── MAIN CONTENT ── */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="relative flex-1 flex overflow-hidden lg:justify-center lg:gap-4 lg:p-4">
 
                 {dashboardMode === 'orders' ? (
                     <>
                         {/* ── PANEL IZQUIERDO: LISTA COMPACTA DE PEDIDOS ── */}
                         <div className={cn(
-                            "w-full lg:w-[380px] xl:w-[420px] flex-col border-r border-border shrink-0 bg-muted/10",
+                            "w-full flex-col shrink-0 bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:overflow-hidden",
+                            showPOS
+                                ? "lg:w-[280px] xl:w-[340px] 2xl:w-[400px]"
+                                : "lg:w-[400px] xl:w-[520px] 2xl:w-[600px]",
                             mobileView === 'orders' ? 'flex' : 'hidden lg:flex'
                         )}>
-                            <div className="p-3 border-b border-border flex items-center justify-between bg-background/95 backdrop-blur">
+                            <div className="p-3 flex items-center justify-between bg-[#FFFBF0]/95 dark:bg-background/95 backdrop-blur">
                                 <div className="flex items-center gap-2">
                                     <h2 className="font-bold text-base">Pedidos</h2>
                                     <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0">{activeOrders.length}</Badge>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 text-xs px-2 gap-1.5"
-                                        onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}
-                                    >
-                                        <MapIcon className="h-3.5 w-3.5" /> Mapa
-                                    </Button>
-                                    <Button variant="outline" size="sm" className="h-8 text-xs px-2 gap-1.5" onClick={openMetodosPagoModal}>
-                                        <Settings className="h-3.5 w-3.5" /> Pagos
-                                    </Button>
-                                    <Button variant="outline" size="sm" className="h-8 text-xs px-2 gap-1.5" onClick={() => setRepartidoresModalOpen(true)}>
-                                        <UserRound className="h-3.5 w-3.5" /> Repartidores
-                                    </Button>
-                                </div>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                                            <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-48">
+                                        {!esPlanBasico && (
+                                            <DropdownMenuItem onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}>
+                                                <MapIcon className="h-4 w-4 mr-2" /> Mapa
+                                            </DropdownMenuItem>
+                                        )}
+                                        <DropdownMenuItem onClick={openMetodosPagoModal}>
+                                            <Settings className="h-4 w-4 mr-2" /> Pagos
+                                        </DropdownMenuItem>
+                                        {!esPlanBasico && (
+                                            <DropdownMenuItem onClick={() => setRepartidoresModalOpen(true)}>
+                                                <UserRound className="h-4 w-4 mr-2" /> Repartidores
+                                            </DropdownMenuItem>
+                                        )}
+                                        {sucursalesList.some((s) => s.activo) ? (
+                                            <DropdownMenuItem onClick={() => setShowSucursalSelector(true)}>
+                                                <Store className="h-4 w-4 mr-2" /> Cambiar sucursal
+                                            </DropdownMenuItem>
+                                        ) : null}
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-3">
+                            <div className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                 {activeOrders.length === 0 ? (
                                     <div className="h-32 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-2xl">
                                         <Receipt className="h-6 w-6 mb-2 opacity-40" />
@@ -1467,7 +1821,6 @@ const Dashboard = () => {
                                                     {showDateSeparator && (
                                                         <div className={`flex items-center gap-3 ${index === 0 ? 'pb-1' : 'pt-3 pb-1'}`}>
                                                             <span className="text-[10px] font-bold text-muted-foreground uppercase">{dateLabel}</span>
-                                                            <Separator className="flex-1 bg-border" />
                                                         </div>
                                                     )}
                                                     <Card
@@ -1477,10 +1830,10 @@ const Dashboard = () => {
                                                             if (!showOrderMap) setMobileView('detail')
                                                         }}
                                                         className={cn(
-                                                            "p-3 rounded-xl cursor-pointer transition-all flex flex-col gap-2 border-0",
+                                                            "px-3.5 py-2.5 rounded-xl cursor-pointer transition-all flex flex-col gap-1.5 border-0",
                                                             isSelected
-                                                                ? "bg-muted/20 border-r-[3px] border-r-[#FF7A00]"
-                                                                : "bg-muted/20 hover:bg-muted/40"
+                                                                ? "bg-muted/40 border-l-[3px] border-l-[#FF7A00]"
+                                                                : "bg-white dark:bg-muted/20 hover:bg-muted/40"
                                                         )}
                                                     >
                                                         <div className="flex justify-between items-start gap-2">
@@ -1526,23 +1879,22 @@ const Dashboard = () => {
                                                             <span className="font-black text-sm">${computeOrderTotal(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                                                         </div>
 
-                                                        <div className="flex justify-between items-end">
-                                                            <div className="min-w-0">
-                                                                {pedido.nombreCliente && <p className="text-xs font-semibold text-foreground truncate max-w-[180px]">{pedido.nombreCliente}</p>}
+                                                        <div className="flex justify-between items-center gap-3">
+                                                            <div className="min-w-0 flex-1">
+                                                                {pedido.nombreCliente && <p className="text-sm font-semibold text-foreground truncate">{pedido.nombreCliente}</p>}
                                                                 {pedido.tipo === 'delivery' && pedido.direccion && (
-                                                                    <p className="text-[11px] text-muted-foreground truncate max-w-[180px] flex items-center gap-1 mt-0.5">
-                                                                        <MapPin className="h-2.5 w-2.5 shrink-0" /> {pedido.direccion}
+                                                                    <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+                                                                        <MapPin className="h-2.5 w-2.5 shrink-0" /> {formatDireccionCorta(pedido.direccion)}
                                                                     </p>
                                                                 )}
-                                                                <div className="flex items-center gap-1 mt-1">
-                                                                    <span className="text-[10px] text-muted-foreground">{formatTimeAgo(pedido.createdAt)}</span>
-                                                                </div>
                                                             </div>
 
-                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatTimeAgo(pedido.createdAt)}</span>
                                                                 {pedido.pagado && puedeAvisarWhatsapp && (
                                                                     <button
-                                                                        className="h-7 px-2 rounded-md bg-muted border border-border flex items-center gap-1 text-muted-foreground hover:bg-accent transition-colors disabled:opacity-50 text-[10px] font-bold cursor-pointer"
+                                                                        title="Avisar al cliente"
+                                                                        className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:bg-accent transition-colors disabled:opacity-50 cursor-pointer"
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             handleNotificarCliente(pedido);
@@ -1550,23 +1902,24 @@ const Dashboard = () => {
                                                                         disabled={sendingNotification === pedido.id.toString()}
                                                                     >
                                                                         {sendingNotification === pedido.id.toString()
-                                                                            ? <Loader2 className="h-3 w-3 animate-spin" />
-                                                                            : <MessageCircle className="h-3 w-3" />}
-                                                                        Notificar
+                                                                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                                                                            : <MessageCircle className="h-4 w-4" />}
                                                                     </button>
                                                                 )}
-                                                                <Button
-                                                                    size="sm"
-                                                                    className={cn("h-7 px-3 text-[10px] font-bold shrink-0", pedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00] text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white")}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        if (pedido.pagado) void handleDespachar(pedido.tipo, pedido.id);
-                                                                        else handleAprobarPago(pedido);
-                                                                    }}
-                                                                    disabled={updatingPago === pedido.id.toString()}
-                                                                >
-                                                                    {updatingPago === pedido.id.toString() ? <Loader2 className="h-3 w-3 animate-spin" /> : (pedido.pagado ? 'Despachar' : 'Cobrar')}
-                                                                </Button>
+                                                                {!esPlanBasico && (
+                                                                    <button
+                                                                        title={pedido.pagado ? 'Despachar' : 'Cobrar'}
+                                                                        className={cn("h-8 w-8 rounded-lg flex items-center justify-center text-white shrink-0 transition-colors disabled:opacity-50 cursor-pointer", pedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (pedido.pagado) void handleDespachar(pedido.tipo, pedido.id);
+                                                                            else handleAprobarPago(pedido);
+                                                                        }}
+                                                                        disabled={updatingPago === pedido.id.toString()}
+                                                                    >
+                                                                        {updatingPago === pedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin" /> : (pedido.pagado ? <ShoppingBag className="h-4 w-4" /> : <Wallet className="h-4 w-4" />)}
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </div>
 
@@ -1597,7 +1950,6 @@ const Dashboard = () => {
                                             <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-1 group-hover:text-foreground transition-colors">Historial</span>
                                             <span className="text-[10px] font-bold text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 leading-none">{archivedOrders.length}</span>
                                             <ChevronDown className={cn("h-4 w-4 text-muted-foreground group-hover:text-foreground transition-all", showArchived && "rotate-180")} />
-                                            <Separator className="flex-1 bg-border" />
                                         </button>
 
                                         {showArchived && (
@@ -1646,17 +1998,38 @@ const Dashboard = () => {
                             </div>
                         </div>
 
-                        {/* ── PANEL DERECHO: DETALLE OPERATIVO ── */}
-                        <div className={cn(
-                            "flex-1 bg-background relative overflow-hidden",
-                            mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
-                        )}>
-                            {showPOS ? (
+                        {/* ── PANEL DEL MEDIO: POS (ANOTAR PEDIDO) ──
+                            Se abre como columna entre la lista (izquierda) y la comanda
+                            (derecha), empujándolas a los costados: la lista se angosta y la
+                            comanda (PosComandaPreview) queda a la derecha llenándose con el
+                            borrador. Los tres paneles cubren todo el ancho (flex-1). */}
+                        {showPOS && (
+                            <div className="hidden lg:flex flex-col flex-1 min-w-0 rounded-2xl border border-border bg-background overflow-hidden">
                                 <PuntoDeVenta
+                                    ref={posRef}
                                     onClose={() => { setShowPOS(false); setMobileView('orders') }}
                                     onCreated={handlePedidoManualCreado}
                                     sucursalActivaId={sucursalActivaId}
+                                    onDraftChange={setDraftPos}
                                 />
+                            </div>
+                        )}
+
+                        {/* ── PANEL DERECHO: DETALLE OPERATIVO ──
+                            Ancho fijo al del ticket (≈600px) para que el panel no sea más grande
+                            que su contenido. El margen derecho en xl/2xl compensa el ensanche de la
+                            lista: mantiene el centro del detalle en el mismo punto para que NO se
+                            mueva a la derecha cuando la lista crece. Con el POS abierto los márgenes
+                            se quitan: los tres paneles ocupan todo el ancho. */}
+                        <div className={cn(
+                            "w-full bg-[#FFFBF0] dark:bg-background relative overflow-hidden lg:rounded-2xl",
+                            showPOS
+                                ? "lg:flex-1 lg:max-w-[600px]"
+                                : "lg:flex-1 lg:max-w-[600px] xl:flex-none xl:w-[600px] xl:mr-[80px] 2xl:mr-[160px]",
+                            mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+                        )}>
+                            {showPOS ? (
+                                <PosComandaPreview draft={draftPos} onRemoveItem={(key) => posRef.current?.removeItem(key)} />
                             ) : showOrderMap ? (
                                 <OrderMapView
                                     orders={activeOrders}
@@ -1673,11 +2046,11 @@ const Dashboard = () => {
                                 />
                             ) : selectedUnifiedPedido ? (
                                 <div className="flex h-full w-full overflow-hidden">
-                                <div className="flex flex-col h-full relative flex-1 min-w-0 xl:flex-none xl:w-[640px]">
+                                <div className="flex flex-col h-full relative flex-1 min-w-0">
 
                                     {/* --- DETALLE UNIFICADO: ticket angosto en una sola columna (mobile y desktop) --- */}
-                                    <div className="flex-1 overflow-y-auto">
-                                        <div className="w-full max-w-[600px] px-5 lg:px-6 pt-6 pb-40">
+                                    <div className="flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                        <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6 pb-40">
 
                                             {/* Tipo */}
                                             <div className="flex items-center justify-between mb-6">
@@ -1698,7 +2071,7 @@ const Dashboard = () => {
                                                         selectedUnifiedPedido.direccion && (
                                                             <p className="flex items-start justify-start gap-2 text-base font-semibold text-foreground leading-snug">
                                                                 <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                                                                <span>{selectedUnifiedPedido.direccion}</span>
+                                                                <span>{formatDireccionCorta(selectedUnifiedPedido.direccion)}</span>
                                                             </p>
                                                         )
                                                     ) : (
@@ -1730,9 +2103,9 @@ const Dashboard = () => {
                                                 )}
                                             </div>
 
-                                            {/* Contexto del cliente — solo hasta lg; en xl se muestra en la columna derecha, arriba del mapa */}
+                                            {/* Contexto del cliente */}
                                             {clienteContexto && (
-                                                <div className="mb-6 space-y-4 xl:hidden">
+                                                <div className="mb-6 space-y-4">
                                                     <Separator className="bg-border/60" />
                                                     <ClienteContextoLine ctx={clienteContexto} />
                                                     <Separator className="bg-border/60" />
@@ -1937,10 +2310,25 @@ const Dashboard = () => {
                                                 </div>
                                             </div>
 
+                                            {/* Ubicación — se abre en un mapa flotante (solo delivery) */}
+                                            {selectedUnifiedPedido.tipo === 'delivery' && (
+                                                <div className="mb-6">
+                                                    <button
+                                                        onClick={() => setShowMapaDialog(true)}
+                                                        className="w-full flex items-center justify-between gap-2 h-12 px-4 rounded-2xl border border-border bg-muted/30 hover:bg-muted/50 transition-colors text-sm font-bold text-foreground cursor-pointer"
+                                                    >
+                                                        <span className="flex items-center gap-2">
+                                                            <MapIcon className="h-4 w-4 text-muted-foreground" />
+                                                            Ubicación
+                                                        </span>
+                                                    </button>
+                                                </div>
+                                            )}
+
                                             {/* Reimprimir comprobante */}
                                             {selectedPrinter && (
                                                 <div className="flex justify-center">
-                                                    <Button variant="ghost" className="text-muted-foreground border border-border bg-background" onClick={() => {
+                                                    <Button variant="ghost" className="text-muted-foreground border border-border bg-[#FFFBF0] dark:bg-background" onClick={() => {
                                                         const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => ({ ...item, precioUnitario: item.precioUnitario || '0' }))
                                                         const deliveryFee = selectedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(selectedUnifiedPedido) : 0
                                                         const data = formatComanda({
@@ -1967,8 +2355,8 @@ const Dashboard = () => {
                                     </div>
 
                                     {/* Footer sticky: total (única aparición) + acción. Anclado al panel, no fixed. */}
-                                    <div className="absolute bottom-0 left-0 right-0 z-40 bg-background border-t border-border/50">
-                                        <div className="w-full max-w-[600px] px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
+                                    <div className="absolute bottom-0 left-0 right-0 z-40 bg-[#FFFBF0] dark:bg-background">
+                                        <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
                                             <div className="flex items-baseline justify-between gap-3">
                                                 <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">
                                                     {selectedUnifiedPedido.pagado ? 'Total cobrado' : 'Total a cobrar'}
@@ -1996,100 +2384,58 @@ const Dashboard = () => {
                                                                 : <MessageCircle className="h-5 w-5" />}
                                                         </button>
                                                     )}
-                                                    <Button
-                                                        className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
-                                                        onClick={() => {
-                                                            if (selectedUnifiedPedido.pagado) void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)
-                                                            else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
-                                                            else toast.error('Debes verificar el pago primero')
-                                                        }}
-                                                        disabled={
-                                                            updatingPago === selectedUnifiedPedido.id.toString()
-                                                            || (!selectedUnifiedPedido.pagado && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago))
-                                                        }
-                                                    >
-                                                        {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
-                                                        {selectedUnifiedPedido.pagado
-                                                            ? 'Despachar Pedido'
-                                                            : pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)
-                                                                ? 'Cobrar'
-                                                                : 'Pendiente de Cobro'}
-                                                    </Button>
+                                                    {!esPlanBasico && (
+                                                        <Button
+                                                            className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
+                                                            onClick={() => {
+                                                                if (selectedUnifiedPedido.pagado) void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)
+                                                                else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
+                                                                else toast.error('Debes verificar el pago primero')
+                                                            }}
+                                                            disabled={
+                                                                updatingPago === selectedUnifiedPedido.id.toString()
+                                                                || (!selectedUnifiedPedido.pagado && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago))
+                                                            }
+                                                        >
+                                                            {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
+                                                            {selectedUnifiedPedido.pagado
+                                                                ? 'Despachar Pedido'
+                                                                : pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)
+                                                                    ? 'Cobrar'
+                                                                    : 'Pendiente de Cobro'}
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
                                     </div>
 
                                 </div>
-
-                                {/* ── TERCERA COLUMNA: DETALLE DEL CLIENTE + MINI MAPA DE PEDIDOS (solo desktop amplio) ── */}
-                                <div className="hidden xl:flex flex-1 flex-col items-center justify-center p-6 bg-background">
-                                    <div className="w-full max-w-[560px]">
-                                        {/* Detalle del cliente — arriba del mapa, con borde inferior separador */}
-                                        {clienteContexto && (
-                                            <div className="mb-5 pb-5 border-b border-border/60">
-                                                <ClienteContextoLine ctx={clienteContexto} />
-                                            </div>
-                                        )}
-                                        <h3 className="flex items-center gap-2 text-lg font-bold text-foreground mb-3">
-                                            <span>📍</span> Ubicación
-                                        </h3>
-                                        <div className="w-full aspect-[16/10] rounded-2xl overflow-hidden border border-border shadow-lg relative bg-background">
-                                            <OrderMiniMap orders={activeOrders} selected={selectedUnifiedPedido} />
-                                        </div>
-
-                                        {/* Checklist de Progreso */}
-                                        <div className="mt-8">
-                                            <h3 className="flex items-center gap-2 text-lg font-bold text-foreground mb-4">
-                                                <span>📋</span> Seguimiento
-                                            </h3>
-                                            <div>
-                                                <div className="flex flex-col gap-5">
-                                                    {[
-                                                        { label: 'Pedido tomado', checked: true },
-                                                        { label: 'Pago confirmado', checked: !!selectedUnifiedPedido.pagado },
-                                                        { label: 'Cliente notificado', checked: selectedUnifiedPedido.demoraMinutos != null || selectedUnifiedPedido.estado === 'archived' },
-                                                        { label: 'Pedido despachado', checked: selectedUnifiedPedido.estado === 'archived' },
-                                                    ].map((step, idx, arr) => (
-                                                        <div key={idx} className="flex items-center gap-4 relative">
-                                                            {idx !== arr.length - 1 && (
-                                                                <div className={cn(
-                                                                    "absolute left-[13px] top-7 h-5 w-[2px]",
-                                                                    step.checked && arr[idx + 1].checked ? "bg-emerald-500" : "bg-border"
-                                                                )} />
-                                                            )}
-                                                            
-                                                            <div className={cn(
-                                                                "h-7 w-7 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 z-10",
-                                                                step.checked 
-                                                                    ? "bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]" 
-                                                                    : "bg-muted border border-border text-muted-foreground/30"
-                                                            )}>
-                                                                {step.checked ? <CheckCircle className="h-4 w-4" /> : <div className="h-1.5 w-1.5 rounded-full bg-current" />}
-                                                            </div>
-                                                            
-                                                            <span className={cn(
-                                                                "text-sm font-bold transition-colors duration-300",
-                                                                step.checked ? "text-foreground" : "text-muted-foreground"
-                                                            )}>
-                                                                {step.label}
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                                 </div>
                             ) : (
                                 <ShareLinkPanel publicUrl={publicUrl} />
                             )}
                         </div>
+
+                        {/* ── POS (solo móvil) ──
+                            En lg+ el POS es la columna inline del medio (arriba). En móvil, en
+                            cambio, cubre la pantalla como overlay y la comanda queda detrás. */}
+                        {showPOS && (
+                            <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center p-3 sm:p-6 pointer-events-none">
+                                <div className="pointer-events-auto w-full max-w-5xl h-full max-h-[860px] rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
+                                    <PuntoDeVenta
+                                        onClose={() => { setShowPOS(false); setMobileView('orders') }}
+                                        onCreated={handlePedidoManualCreado}
+                                        sucursalActivaId={sucursalActivaId}
+                                        onDraftChange={setDraftPos}
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </>
                 ) : (
                     /* ── PANTALLA NUEVO PEDIDO MANUAL ── */
-                    <div className="flex-1 p-4 flex flex-col items-center justify-center bg-background">
+                    <div className="flex-1 p-4 flex flex-col items-center justify-center bg-[#FFFBF0] dark:bg-background">
                         <div className="max-w-md w-full bg-card p-8 rounded-[32px] border border-border shadow-sm text-center">
                             <Plus className="h-12 w-12 text-[#FF7A00] mx-auto mb-4" />
                             <h2 className="text-2xl font-bold mb-2">Crear Pedido Manual</h2>
@@ -2110,7 +2456,7 @@ const Dashboard = () => {
                 <div className="fixed inset-0 z-[9999] lg:hidden" onClick={() => setShowMobileOrdersSheet(false)}>
                     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
                     <div
-                        className="absolute bottom-0 left-0 right-0 bg-background rounded-t-3xl flex flex-col"
+                        className="absolute bottom-0 left-0 right-0 bg-[#FFFBF0] dark:bg-background rounded-t-3xl flex flex-col"
                         style={{ maxHeight: '72vh' }}
                         onClick={e => e.stopPropagation()}
                     >
@@ -2152,7 +2498,7 @@ const Dashboard = () => {
                                                 "flex items-center justify-between p-3 rounded-xl border cursor-pointer active:scale-[0.99] transition-all",
                                                 isSelected
                                                     ? "bg-[#FF7A00]/10 border-[#FF7A00]/30"
-                                                    : "bg-muted/20 border-border hover:bg-muted/40"
+                                                    : "bg-white dark:bg-muted/20 border-border hover:bg-muted/40"
                                             )}
                                         >
                                             <div className="flex-1 min-w-0">
@@ -2176,7 +2522,7 @@ const Dashboard = () => {
                                                 )}
                                                 {pedido.tipo === 'delivery' && pedido.direccion && (
                                                     <p className="text-[11px] text-muted-foreground truncate max-w-[200px] flex items-center gap-1 mt-0.5">
-                                                        <MapPin className="h-2.5 w-2.5 shrink-0" />{pedido.direccion}
+                                                        <MapPin className="h-2.5 w-2.5 shrink-0" />{formatDireccionCorta(pedido.direccion)}
                                                     </p>
                                                 )}
                                             </div>
@@ -2194,6 +2540,23 @@ const Dashboard = () => {
                     </div>
                 </div>
             )}
+
+            {/* ── MAPA FLOTANTE (ubicación del pedido) ── */}
+            <Dialog open={showMapaDialog} onOpenChange={setShowMapaDialog}>
+                <DialogContent className="max-w-lg p-0 overflow-hidden rounded-[28px] border border-border bg-background">
+                    <DialogHeader className="px-5 pt-5 pb-3">
+                        <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                            <MapIcon className="h-5 w-5 text-[#FF7A00]" /> Ubicación
+                        </DialogTitle>
+                        <DialogDescription className="sr-only">Mapa con la ubicación de entrega del pedido.</DialogDescription>
+                    </DialogHeader>
+                    <div className="w-full aspect-[4/3] relative bg-background">
+                        {selectedUnifiedPedido && (
+                            <OrderMiniMap orders={activeOrders} selected={selectedUnifiedPedido} />
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {/* ── DIÁLOGO ELIMINAR ── */}
             <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
@@ -2477,7 +2840,7 @@ const Dashboard = () => {
                 </DialogContent>
             </Dialog>
 
-            <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} />
+            <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} fechaInicial={selectedDay} />
 
             <SucursalSelector
                 open={showSucursalSelector && sucursalesList.filter((s) => s.activo).length > 0 && prefsReady}

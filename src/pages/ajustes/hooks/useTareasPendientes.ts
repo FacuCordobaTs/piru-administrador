@@ -30,8 +30,8 @@ export interface TareasResumen {
 /**
  * Centro de "próximos pasos": qué le falta al local para aprovechar Piru, con estado
  * hecho/pendiente y link directo a cada cosa. Fuente de datos: el perfil del restaurante
- * (store) + conteo de productos sin foto + zonas, horarios y WhatsApp por API. Lo consumen
- * la sección "Primeros pasos" de Ajustes y el badge discreto del navbar.
+ * (store) + conteo de productos sin foto + zonas, horarios y WhatsApp por API. Lo consume
+ * el badge discreto del navbar (la portada de Ajustes usa su propio useResumenSecciones).
  */
 export function useTareasPendientes(): TareasResumen {
   const restaurante = useRestauranteStore((s) => s.restaurante)

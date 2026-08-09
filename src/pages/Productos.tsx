@@ -37,9 +37,9 @@ function formatTimeLeft(fechaFin: string | Date | null): string | null {
 // ─────────────────────────────────────────────
 // Estilos base
 // ─────────────────────────────────────────────
-const panelInputClass = "h-12 rounded-lg bg-zinc-800 border-transparent focus:border-white/20 focus:ring-2 focus:ring-white/10 transition-all text-base px-4 w-full"
-const panelLabelClass = "text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-1.5 block"
-const phantomInputClass = "h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
+const panelInputClass = "h-12 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-transparent focus:border-[#FF7A00] dark:focus:border-white/20 focus:ring-2 focus:ring-[#FF7A00]/20 dark:focus:ring-white/10 transition-all text-base px-4 w-full"
+const panelLabelClass = "text-xs font-semibold text-muted-foreground dark:text-zinc-400 uppercase tracking-wide mb-1.5 block"
+const phantomInputClass = "h-14 rounded-2xl bg-white dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
 
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
@@ -603,14 +603,14 @@ const Productos = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-[#0A0A0A]">
+      <div className="min-h-dvh flex items-center justify-center bg-[#FFFBF0] dark:bg-[#0A0A0A]">
         <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
       </div>
     )
   }
 
   return (
-    <div className="bg-[#0A0A0A] selection:bg-[#FF7A00]/20 selection:text-[#FF7A00] flex">
+    <div className="bg-[#FFFBF0] dark:bg-[#0A0A0A] selection:bg-[#FF7A00]/20 selection:text-[#FF7A00] flex">
 
       {/* ── Left: content area (shrinks when panel opens) ── */}
       <div className={cn(
@@ -620,22 +620,22 @@ const Productos = () => {
 
         {/* ── Header (not sticky — flows with document) ── */}
         <div>
-          <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-10 pb-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-56 sm:pt-72 pb-8">
             {/* Line 1: title */}
             <div className="text-center">
-              <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-white">Catálogo</h1>
-              <p className="text-sm text-zinc-500 mt-1">Gestiona el menú de tu restaurante</p>
+              <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-zinc-950 dark:text-white">Catálogo</h1>
+              <p className="text-sm text-muted-foreground dark:text-zinc-500 mt-2">Gestiona el menú de tu restaurante</p>
             </div>
 
             {/* Line 2: search + secondary actions */}
-            <div className="flex flex-col items-center gap-3 mt-4">
+            <div className="flex flex-col items-center gap-3 mt-6">
               <div className="relative w-full sm:w-1/2">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-500" />
                 <Input
                   placeholder="Buscar productos..."
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
-                  className="pl-10 h-10 rounded-lg bg-zinc-900 border-transparent focus:border-white/20 transition-colors text-white placeholder:text-zinc-500 text-sm"
+                  className="pl-10 h-10 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-transparent focus:border-[#FF7A00] dark:focus:border-white/20 transition-colors text-zinc-950 dark:text-white placeholder:text-muted-foreground dark:placeholder:text-zinc-500 text-sm"
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -648,13 +648,13 @@ const Productos = () => {
                 </button>
                 <button
                   onClick={() => setActivePanelType(activePanelType === 'extras' ? null : 'extras')}
-                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'extras' ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white")}
+                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'extras' ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
                 >
                   Extras
                 </button>
                 <button
                   onClick={() => setActivePanelType(activePanelType === 'discounts' ? null : 'discounts')}
-                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'discounts' ? "bg-zinc-700 text-white" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white")}
+                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'discounts' ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
                 >
                   Descuentos
                 </button>
@@ -662,7 +662,7 @@ const Productos = () => {
                   <button
                     onClick={backfillEtiquetas}
                     disabled={isBackfillingEtiquetas}
-                    className="h-9 px-4 rounded-lg text-sm font-medium bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    className="h-9 px-4 rounded-lg text-sm font-medium bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
                   >
                     {isBackfillingEtiquetas && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     Autocompletar ({productosSinEtiqueta})
@@ -676,12 +676,12 @@ const Productos = () => {
         {/* ── Grid ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-8 pb-24">
           {productosFiltrados.length === 0 ? (
-            <div className="bg-zinc-900 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
-              <div className="h-20 w-20 rounded-full bg-zinc-800 flex items-center justify-center mb-6">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
+              <div className="h-20 w-20 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center mb-6">
                 <UtensilsCrossed className="h-10 w-10 text-zinc-600" />
               </div>
-              <h3 className="text-xl font-bold mb-2 text-white">{busqueda ? 'No hay resultados' : 'Tu menú está vacío'}</h3>
-              <p className="text-zinc-500 mb-8 max-w-sm">
+              <h3 className="text-xl font-bold mb-2 text-zinc-950 dark:text-white">{busqueda ? 'No hay resultados' : 'Tu menú está vacío'}</h3>
+              <p className="text-muted-foreground dark:text-zinc-500 mb-8 max-w-sm">
                 {busqueda ? 'Intenta buscar con otros términos.' : 'Comienza a agregar los deliciosos platos que ofreces a tus clientes.'}
               </p>
               {!busqueda && (
@@ -711,7 +711,7 @@ const Productos = () => {
                   return (
                   <div key={categoriaNombre}>
                     <div className="flex items-center justify-between gap-3 pt-10 mb-3">
-                      <h2 className="text-[11px] font-semibold tracking-[0.12em] uppercase text-zinc-500">
+                      <h2 className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-foreground dark:text-zinc-500">
                         {categoriaNombre} <span className="text-zinc-600">{porCategoria[categoriaNombre].length}</span>
                       </h2>
                       {enReorden ? (
@@ -719,7 +719,7 @@ const Productos = () => {
                           <button
                             onClick={cancelarReorden}
                             disabled={isGuardandoOrden}
-                            className="h-7 px-3 rounded-lg text-[11px] font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                            className="h-7 px-3 rounded-lg text-[11px] font-medium text-muted-foreground dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
                           >
                             Cancelar
                           </button>
@@ -736,7 +736,7 @@ const Productos = () => {
                         !busqueda && !reordenandoCategoria && porCategoria[categoriaNombre].length > 1 && (
                           <button
                             onClick={() => iniciarReorden(categoriaNombre, porCategoria[categoriaNombre])}
-                            className="h-7 px-2.5 rounded-lg text-[11px] font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
+                            className="h-7 px-2.5 rounded-lg text-[11px] font-medium text-muted-foreground dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
                           >
                             <ArrowUpDown className="h-3.5 w-3.5" />
                             Reordenar
@@ -747,7 +747,7 @@ const Productos = () => {
 
                     {enReorden ? (
                       <>
-                        <p className="text-xs text-zinc-500 mb-3">
+                        <p className="text-xs text-muted-foreground dark:text-zinc-500 mb-3">
                           Arrastrá los platos para cambiar el orden en que se muestran a tus clientes.
                         </p>
                         <div className="space-y-2 max-w-2xl">
@@ -759,16 +759,16 @@ const Productos = () => {
                               onDragOver={(e) => handleReorderDragOver(e, index)}
                               onDragEnd={() => setDragIndex(null)}
                               className={cn(
-                                "flex items-center gap-3 p-2 pr-4 rounded-2xl bg-zinc-900 border transition-all select-none cursor-grab active:cursor-grabbing",
-                                dragIndex === index ? "border-orange-500/70 opacity-60 shadow-lg" : "border-transparent hover:bg-zinc-800/70",
+                                "flex items-center gap-3 p-2 pr-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-transparent transition-all select-none cursor-grab active:cursor-grabbing",
+                                dragIndex === index ? "border-orange-500/70 opacity-60 shadow-lg" : "border-zinc-200 dark:border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/70",
                                 !producto.activo && "opacity-50"
                               )}
                             >
                               <GripVertical className="h-5 w-5 shrink-0 text-zinc-600" />
-                              <div className="h-6 w-6 shrink-0 rounded-md bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-zinc-400">
+                              <div className="h-6 w-6 shrink-0 rounded-md bg-white dark:bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-muted-foreground dark:text-zinc-400">
                                 {index + 1}
                               </div>
-                              <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden bg-zinc-800">
+                              <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
                                 {producto.imagenUrl ? (
                                   <img src={producto.imagenUrl} alt={producto.nombre} className="w-full h-full object-cover pointer-events-none" />
                                 ) : (
@@ -777,8 +777,8 @@ const Productos = () => {
                                   </div>
                                 )}
                               </div>
-                              <span className="flex-1 text-sm font-medium text-white truncate">{producto.nombre}</span>
-                              <span className="text-sm font-bold text-zinc-400 shrink-0">${parseFloat(producto.precio).toFixed(0)}</span>
+                              <span className="flex-1 text-sm font-medium text-zinc-950 dark:text-white truncate">{producto.nombre}</span>
+                              <span className="text-sm font-bold text-muted-foreground dark:text-zinc-400 shrink-0">${parseFloat(producto.precio).toFixed(0)}</span>
                             </div>
                           ))}
                         </div>
@@ -795,13 +795,13 @@ const Productos = () => {
                             key={producto.id}
                             onClick={() => abrirPanel(producto)}
                             className={cn(
-                              "bg-zinc-900 rounded-4xl overflow-hidden cursor-pointer transition-all hover:bg-zinc-800",
+                              "bg-white dark:bg-zinc-900 rounded-4xl overflow-hidden cursor-pointer transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800",
                               isSelected && "border-l-2 border-orange-500",
                               !producto.activo && "opacity-50"
                             )}
                           >
                             {/* Imagen */}
-                            <div className="aspect-[3/2] w-full bg-zinc-800 relative overflow-hidden">
+                            <div className="aspect-[3/2] w-full bg-white dark:bg-zinc-800 relative overflow-hidden">
                               {producto.imagenUrl ? (
                                 <img
                                   src={producto.imagenUrl}
@@ -824,8 +824,8 @@ const Productos = () => {
 
                             {/* Contenido */}
                             <div className="px-3 pt-2 pb-3">
-                              <h3 className="text-xs font-semibold leading-tight pt-2 text-white truncate pl-2">{producto.nombre}</h3>
-                              <p className="text-sm font-bold text-white mt-1 pl-2 pb-2">
+                              <h3 className="text-xs font-semibold leading-tight pt-2 text-zinc-950 dark:text-white truncate pl-2">{producto.nombre}</h3>
+                              <p className="text-sm font-bold text-zinc-950 dark:text-white mt-1 pl-2 pb-2">
                                 ${producto.descuento && producto.descuento > 0
                                   ? (parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)
                                   : parseFloat(producto.precio).toFixed(0)}
@@ -858,7 +858,7 @@ const Productos = () => {
       ───────────────────────────────────────────── */}
       <div
         className={cn(
-          "fixed top-14 right-0 bottom-0 w-full md:w-[40%] z-30 bg-zinc-950 border-l border-white/5",
+          "fixed top-14 right-0 bottom-0 w-full md:w-[40%] z-30 bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-white/5",
           "transition-transform duration-300 ease-out",
           activePanelType ? "translate-x-0" : "translate-x-full"
         )}
@@ -866,20 +866,20 @@ const Productos = () => {
         {/* X button */}
         <button
           onClick={cerrarPanel}
-          className="absolute top-4 right-4 z-10 h-8 w-8 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors"
+          className="absolute top-4 right-4 z-10 h-8 w-8 rounded-full bg-white hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
         >
-          <X className="h-4 w-4 text-zinc-400" />
+          <X className="h-4 w-4 text-muted-foreground dark:text-zinc-400" />
         </button>
 
         {/* ── PANEL: PRODUCT VISTA ── */}
         {activePanelType === 'product' && panelModo === 'vista' && panelProducto && (
           <div className="h-full flex flex-col overflow-y-auto">
             {/* Image */}
-            <div className="h-48 w-full bg-zinc-800 shrink-0 overflow-hidden relative">
+            <div className="h-48 w-full bg-white dark:bg-zinc-800 shrink-0 overflow-hidden relative">
               {panelProducto.imagenUrl ? (
                 <img src={panelProducto.imagenUrl} alt={panelProducto.nombre} className="w-full h-full object-cover" />
               ) : (
-                <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
+                <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-zinc-800">
                   <ImageIcon className="h-12 w-12 text-zinc-600" />
                 </div>
               )}
@@ -887,20 +887,20 @@ const Productos = () => {
 
             <div className="p-6 flex flex-col gap-4 flex-1">
               <div>
-                <span className="text-xs text-zinc-500">{panelProducto.categoria || 'Sin categoría'}</span>
-                <h2 className="text-xl font-bold text-white mt-1">{panelProducto.nombre}</h2>
+                <span className="text-xs text-muted-foreground dark:text-zinc-500">{panelProducto.categoria || 'Sin categoría'}</span>
+                <h2 className="text-xl font-bold text-zinc-950 dark:text-white mt-1">{panelProducto.nombre}</h2>
                 {panelProducto.descripcion && (
-                  <p className="text-sm text-zinc-400 mt-1">{panelProducto.descripcion}</p>
+                  <p className="text-sm text-muted-foreground dark:text-zinc-400 mt-1">{panelProducto.descripcion}</p>
                 )}
-                <p className="text-2xl font-bold text-white mt-3">
+                <p className="text-2xl font-bold text-zinc-950 dark:text-white mt-3">
                   ${parseFloat(panelProducto.precio).toFixed(0)}
                 </p>
               </div>
 
-              <div className="border-t border-white/5" />
+              <div className="border-t border-zinc-200 dark:border-white/5" />
 
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-zinc-300">
+                <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-300">
                   {panelProducto.activo ? 'Activo' : 'Inactivo'}
                 </span>
                 <Switch
@@ -928,7 +928,7 @@ const Productos = () => {
                   </button>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <span className="text-sm text-zinc-300">¿Confirmar eliminación?</span>
+                    <span className="text-sm text-zinc-800 dark:text-zinc-300">¿Confirmar eliminación?</span>
                     <button
                       onClick={eliminarProductoDirecto}
                       disabled={isEliminando}
@@ -938,7 +938,7 @@ const Productos = () => {
                     </button>
                     <button
                       onClick={() => setConfirmandoEliminar(false)}
-                      className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                      className="text-sm text-muted-foreground dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 transition-colors"
                     >
                       Cancelar
                     </button>
@@ -953,17 +953,17 @@ const Productos = () => {
         {activePanelType === 'product' && panelModo === 'edicion' && (
           <div className="h-full flex flex-col">
             {/* Header */}
-            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-white/5">
+            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-zinc-200 dark:border-white/5">
               {!panelNuevo && (
                 <button
                   onClick={() => setPanelModo('vista')}
-                  className="flex items-center gap-1 text-sm text-zinc-400 hover:text-white transition-colors mb-3"
+                  className="flex items-center gap-1 text-sm text-muted-foreground dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors mb-3"
                 >
                   <ChevronDown className="h-4 w-4 rotate-90" />
                   Volver
                 </button>
               )}
-              <h2 className="text-lg font-bold text-white pr-8">
+              <h2 className="text-lg font-bold text-zinc-950 dark:text-white pr-8">
                 {panelNuevo ? 'Nuevo producto' : 'Editar producto'}
               </h2>
             </div>
@@ -973,19 +973,19 @@ const Productos = () => {
 
               {/* ── SECCIÓN: INFO ── */}
               <div
-                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                 onClick={() => toggleSeccion('info')}
               >
-                <span className="text-sm font-semibold text-white">Información</span>
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Información</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-xs text-muted-foreground dark:text-zinc-500">
                     {formData.nombre || 'Sin nombre'}
                   </span>
-                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('info') && "rotate-180")} />
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('info') && "rotate-180")} />
                 </div>
               </div>
               {seccionesAbiertas.has('info') && (
-                <div className="px-6 py-4 space-y-4 border-b border-white/5">
+                <div className="px-6 py-4 space-y-4 border-b border-zinc-200 dark:border-white/5">
                   <div>
                     <Label className={panelLabelClass}>Nombre <span className="text-red-500">*</span></Label>
                     <Input
@@ -1002,13 +1002,13 @@ const Productos = () => {
                       onChange={(e) => { setFormData({ ...formData, descripcion: e.target.value }); markDirty() }}
                       placeholder="Describe el plato..."
                       rows={3}
-                      className="rounded-lg bg-zinc-800 border-transparent focus:border-white/20 transition-all text-sm px-4 py-3 w-full resize-none"
+                      className="rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-transparent focus:border-[#FF7A00] dark:focus:border-white/20 transition-all text-sm px-4 py-3 w-full resize-none"
                     />
                   </div>
                   <div>
                     <Label className={panelLabelClass}>Precio ($) <span className="text-red-500">*</span></Label>
                     <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-zinc-400 text-sm">$</span>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground dark:text-zinc-400 text-sm">$</span>
                       <Input
                         type="number"
                         step="0.01"
@@ -1035,10 +1035,10 @@ const Productos = () => {
                       value={formData.categoriaId}
                       onValueChange={(value) => { setFormData({ ...formData, categoriaId: value }); markDirty() }}
                     >
-                      <SelectTrigger className="h-12 rounded-lg bg-zinc-800 border-transparent focus:ring-2 focus:ring-white/10 text-sm px-4">
+                      <SelectTrigger className="h-12 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-transparent focus:ring-2 focus:ring-[#FF7A00]/20 dark:focus:ring-white/10 text-sm px-4">
                         <SelectValue placeholder="Sin categoría" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-lg border-zinc-700 bg-zinc-900">
+                      <SelectContent className="rounded-lg border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
                         <SelectItem value="0">Sin categoría</SelectItem>
                         {categorias.map((cat) => (
                           <SelectItem key={cat.id} value={cat.id.toString()}>{cat.nombre}</SelectItem>
@@ -1051,21 +1051,21 @@ const Productos = () => {
 
               {/* ── SECCIÓN: DESCUENTO ── */}
               <div
-                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                 onClick={() => toggleSeccion('descuento')}
               >
-                <span className="text-sm font-semibold text-white">Descuento</span>
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Descuento</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">{summaryDescuento}</span>
-                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('descuento') && "rotate-180")} />
+                  <span className="text-xs text-muted-foreground dark:text-zinc-500">{summaryDescuento}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('descuento') && "rotate-180")} />
                 </div>
               </div>
               {seccionesAbiertas.has('descuento') && (
-                <div className="px-6 py-4 space-y-4 border-b border-white/5">
+                <div className="px-6 py-4 space-y-4 border-b border-zinc-200 dark:border-white/5">
                   <div>
                     <Label className={panelLabelClass}>Porcentaje (%)</Label>
                     <div className="relative">
-                      <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                      <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-400" />
                       <Input
                         type="number"
                         min="0"
@@ -1102,18 +1102,18 @@ const Productos = () => {
 
               {/* ── SECCIÓN: VARIANTES ── */}
               <div
-                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                 onClick={() => toggleSeccion('variantes')}
               >
-                <span className="text-sm font-semibold text-white">Variantes</span>
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Variantes</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">{summaryVariantes}</span>
-                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('variantes') && "rotate-180")} />
+                  <span className="text-xs text-muted-foreground dark:text-zinc-500">{summaryVariantes}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('variantes') && "rotate-180")} />
                 </div>
               </div>
               {seccionesAbiertas.has('variantes') && (
-                <div className="px-6 py-4 space-y-3 border-b border-white/5">
-                  <p className="text-xs text-zinc-500">Múltiples opciones con distinto precio (Ej: Simple, Doble).</p>
+                <div className="px-6 py-4 space-y-3 border-b border-zinc-200 dark:border-white/5">
+                  <p className="text-xs text-muted-foreground dark:text-zinc-500">Múltiples opciones con distinto precio (Ej: Simple, Doble).</p>
                   {formData.variantes.map((variante, index) => (
                     <div key={index} className="flex gap-2 items-center">
                       <Input
@@ -1128,7 +1128,7 @@ const Productos = () => {
                         className={cn(panelInputClass, "flex-1")}
                       />
                       <div className="relative flex-1">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-zinc-400 text-sm">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-muted-foreground dark:text-zinc-400 text-sm">$</span>
                         <Input
                           placeholder="Precio"
                           type="number"
@@ -1151,7 +1151,7 @@ const Productos = () => {
                           setFormData({ ...formData, variantes: nuevas })
                           markDirty()
                         }}
-                        className="h-10 w-10 shrink-0 rounded-lg bg-red-950/30 hover:bg-red-900/50 text-red-500 flex items-center justify-center transition-colors"
+                        className="h-10 w-10 shrink-0 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-500 flex items-center justify-center transition-colors"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -1169,19 +1169,19 @@ const Productos = () => {
 
               {/* ── SECCIÓN: INGREDIENTES ── */}
               <div
-                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                 onClick={() => toggleSeccion('ingredientes')}
               >
-                <span className="text-sm font-semibold text-white">Ingredientes</span>
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Ingredientes</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">{summaryIngredientes}</span>
-                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('ingredientes') && "rotate-180")} />
+                  <span className="text-xs text-muted-foreground dark:text-zinc-500">{summaryIngredientes}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('ingredientes') && "rotate-180")} />
                 </div>
               </div>
               {seccionesAbiertas.has('ingredientes') && (
-                <div className="px-6 py-4 space-y-3 border-b border-white/5">
+                <div className="px-6 py-4 space-y-3 border-b border-zinc-200 dark:border-white/5">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-zinc-500">El cliente podrá quitarlos (Ej: Sin Cebolla).</p>
+                    <p className="text-xs text-muted-foreground dark:text-zinc-500">El cliente podrá quitarlos (Ej: Sin Cebolla).</p>
                     <button
                       type="button"
                       onClick={() => setDialogIngredienteAbierto(true)}
@@ -1192,12 +1192,12 @@ const Productos = () => {
                   </div>
                   {ingredientes.length > 5 && (
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-500" />
                       <Input
                         value={busquedaIngrediente}
                         onChange={(e) => setBusquedaIngrediente(e.target.value)}
                         placeholder="Buscar ingrediente..."
-                        className="h-10 pl-9 rounded-lg bg-zinc-800 border-transparent text-sm"
+                        className="h-10 pl-9 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-transparent text-sm"
                       />
                     </div>
                   )}
@@ -1221,7 +1221,7 @@ const Productos = () => {
                             key={ing.id}
                             className={cn(
                               "flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-all",
-                              isSelected ? "bg-orange-950/20 border-orange-500/50" : "bg-zinc-800/50 border-transparent hover:border-white/10"
+                              isSelected ? "bg-orange-100 dark:bg-orange-950/20 border-orange-500/50" : "bg-white dark:bg-zinc-800/50 border-transparent hover:border-zinc-200 dark:hover:border-white/10"
                             )}
                             onClick={() => {
                               if (isSelected) setIngredientesSeleccionados(prev => prev.filter(id => id !== ing.id))
@@ -1229,7 +1229,7 @@ const Productos = () => {
                               markDirty()
                             }}
                           >
-                            <span className={cn("text-sm font-medium", isSelected ? "text-orange-400" : "text-zinc-300")}>{ing.nombre}</span>
+                            <span className={cn("text-sm font-medium", isSelected ? "text-orange-600 dark:text-orange-400" : "text-zinc-800 dark:text-zinc-300")}>{ing.nombre}</span>
                             {isSelected && <CheckCircle2 className="h-4 w-4 text-orange-500" />}
                           </div>
                         )
@@ -1241,19 +1241,19 @@ const Productos = () => {
 
               {/* ── SECCIÓN: EXTRAS ── */}
               <div
-                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                 onClick={() => toggleSeccion('extras')}
               >
-                <span className="text-sm font-semibold text-white">Extras / Agregados</span>
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Extras / Agregados</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">{summaryExtras}</span>
-                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('extras') && "rotate-180")} />
+                  <span className="text-xs text-muted-foreground dark:text-zinc-500">{summaryExtras}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('extras') && "rotate-180")} />
                 </div>
               </div>
               {seccionesAbiertas.has('extras') && (
-                <div className="px-6 py-4 space-y-3 border-b border-white/5">
+                <div className="px-6 py-4 space-y-3 border-b border-zinc-200 dark:border-white/5">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-zinc-500">Opciones con costo adicional (Ej: Extra Cheddar).</p>
+                    <p className="text-xs text-muted-foreground dark:text-zinc-500">Opciones con costo adicional (Ej: Extra Cheddar).</p>
                     <button
                       type="button"
                       onClick={() => setDialogAgregadoAbierto(true)}
@@ -1273,7 +1273,7 @@ const Productos = () => {
                             key={ag.id}
                             className={cn(
                               "flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-all",
-                              isSelected ? "bg-emerald-950/20 border-emerald-500/50" : "bg-zinc-800/50 border-transparent hover:border-white/10"
+                              isSelected ? "bg-emerald-100 dark:bg-emerald-950/20 border-emerald-500/50" : "bg-white dark:bg-zinc-800/50 border-transparent hover:border-zinc-200 dark:hover:border-white/10"
                             )}
                             onClick={() => {
                               if (isSelected) setAgregadosSeleccionados(prev => prev.filter(id => id !== ag.id))
@@ -1281,10 +1281,10 @@ const Productos = () => {
                               markDirty()
                             }}
                           >
-                            <span className={cn("text-sm font-medium", isSelected ? "text-emerald-400" : "text-zinc-300")}>
+                            <span className={cn("text-sm font-medium", isSelected ? "text-emerald-600 dark:text-emerald-400" : "text-zinc-800 dark:text-zinc-300")}>
                               {ag.nombre} <span className="opacity-60 ml-1 text-xs">+${ag.precio}</span>
                               {ag.activo === false && (
-                                <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                                <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground dark:text-zinc-400 bg-white dark:bg-white/5 border border-zinc-200 dark:border-white/10 rounded px-1.5 py-0.5">
                                   Desactivado
                                 </span>
                               )}
@@ -1300,17 +1300,17 @@ const Productos = () => {
 
               {/* ── SECCIÓN: IMAGEN ── */}
               <div
-                className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                 onClick={() => toggleSeccion('imagen')}
               >
-                <span className="text-sm font-semibold text-white">Imagen</span>
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Imagen</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">{summaryImagen}</span>
-                  <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('imagen') && "rotate-180")} />
+                  <span className="text-xs text-muted-foreground dark:text-zinc-500">{summaryImagen}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('imagen') && "rotate-180")} />
                 </div>
               </div>
               {seccionesAbiertas.has('imagen') && (
-                <div className="px-6 py-4 border-b border-white/5">
+                <div className="px-6 py-4 border-b border-zinc-200 dark:border-white/5">
                   <ImageUpload
                     onImageChange={(img) => { setImageBase64(img); markDirty() }}
                     currentImage={imageBase64}
@@ -1323,14 +1323,14 @@ const Productos = () => {
               {restaurante?.sistemaPuntos && (
                 <>
                   <div
-                    className="px-6 py-3 cursor-pointer hover:bg-white/5 flex items-center justify-between border-b border-white/5"
+                    className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                     onClick={() => toggleSeccion('puntos')}
                   >
-                    <span className="text-sm font-semibold text-white">Sistema de Puntos</span>
-                    <ChevronDown className={cn("h-4 w-4 text-zinc-500 transition-transform", seccionesAbiertas.has('puntos') && "rotate-180")} />
+                    <span className="text-sm font-semibold text-zinc-950 dark:text-white">Sistema de Puntos</span>
+                    <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('puntos') && "rotate-180")} />
                   </div>
                   {seccionesAbiertas.has('puntos') && (
-                    <div className="px-6 py-4 space-y-4 border-b border-white/5">
+                    <div className="px-6 py-4 space-y-4 border-b border-zinc-200 dark:border-white/5">
                       <div>
                         <Label className={panelLabelClass}>Puntos que otorga</Label>
                         <Input
@@ -1364,11 +1364,11 @@ const Productos = () => {
 
             {/* Sticky footer — only when dirty */}
             {isDirty && (
-              <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-zinc-950 border-t border-white/5 flex items-center justify-between gap-3">
+              <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-white/5 flex items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => { setIsDirty(false); if (panelNuevo) cerrarPanel(); else setPanelModo('vista') }}
-                  className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+                  className="text-sm text-muted-foreground dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 transition-colors"
                 >
                   Cancelar
                 </button>
@@ -1389,19 +1389,19 @@ const Productos = () => {
         {/* ── PANEL: DESCUENTOS MASIVOS ── */}
         {activePanelType === 'discounts' && (
           <div className="h-full flex flex-col">
-            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-white/5">
-              <h2 className="text-lg font-bold text-white pr-8">Descuentos masivos</h2>
-              <p className="text-xs text-zinc-500 mt-1">Aplicá un descuento a varios productos a la vez.</p>
+            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-zinc-200 dark:border-white/5">
+              <h2 className="text-lg font-bold text-zinc-950 dark:text-white pr-8">Descuentos masivos</h2>
+              <p className="text-xs text-muted-foreground dark:text-zinc-500 mt-1">Aplicá un descuento a varios productos a la vez.</p>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-32">
               {/* Configurar */}
               <div className="space-y-4">
-                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Configurar</p>
+                <p className="text-xs font-semibold text-muted-foreground dark:text-zinc-500 uppercase tracking-wide">Configurar</p>
                 <div>
                   <Label className={panelLabelClass}>Porcentaje (%) <span className="normal-case font-normal text-zinc-600">— 0 = quitar descuento</span></Label>
                   <div className="relative">
-                    <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                    <Percent className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-400" />
                     <Input type="number" min="0" max="100" step="1" value={descuentoMasivoPct} onChange={(e) => setDescuentoMasivoPct(e.target.value)} placeholder="0" className={cn(panelInputClass, "pl-10")} />
                   </div>
                 </div>
@@ -1419,7 +1419,7 @@ const Productos = () => {
                   <span className="text-zinc-600 text-xs mr-1">Presets:</span>
                   {[{ label: '1h', ms: 3600000 }, { label: '8h', ms: 28800000 }, { label: '24h', ms: 86400000 }, { label: '7 días', ms: 604800000 }].map(({ label, ms }, i, arr) => (
                     <span key={label}>
-                      <button type="button" className="text-zinc-400 hover:text-white transition-colors" onClick={() => setDescuentoMasivoFin(new Date(Date.now() + ms).toISOString().slice(0, 16))}>
+                      <button type="button" className="text-muted-foreground dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors" onClick={() => setDescuentoMasivoFin(new Date(Date.now() + ms).toISOString().slice(0, 16))}>
                         {label}
                       </button>
                       {i < arr.length - 1 && <span className="mx-1.5 text-zinc-700">·</span>}
@@ -1428,7 +1428,7 @@ const Productos = () => {
                   {descuentoMasivoFin && (
                     <>
                       <span className="mx-1.5 text-zinc-700">·</span>
-                      <button type="button" className="text-zinc-500 hover:text-white transition-colors" onClick={() => setDescuentoMasivoFin('')}>quitar</button>
+                      <button type="button" className="text-muted-foreground dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors" onClick={() => setDescuentoMasivoFin('')}>quitar</button>
                     </>
                   )}
                 </div>
@@ -1436,16 +1436,16 @@ const Productos = () => {
 
               {/* Productos */}
               <div className="space-y-3">
-                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Productos</p>
+                <p className="text-xs font-semibold text-muted-foreground dark:text-zinc-500 uppercase tracking-wide">Productos</p>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-                  <Input placeholder="Buscar producto..." value={busquedaDescuento} onChange={(e) => setBusquedaDescuento(e.target.value)} className="h-10 pl-9 rounded-lg bg-zinc-800 border-transparent text-sm" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-500" />
+                  <Input placeholder="Buscar producto..." value={busquedaDescuento} onChange={(e) => setBusquedaDescuento(e.target.value)} className="h-10 pl-9 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-transparent text-sm" />
                 </div>
                 <div className="flex items-center gap-1 text-xs">
                   <button type="button" className="text-[#FF7A00] hover:text-orange-400 transition-colors" onClick={() => setProductosDescuentoSeleccionados(productos.map(p => p.id))}>Seleccionar todos</button>
                   <span className="mx-1.5 text-zinc-700">·</span>
-                  <button type="button" className="text-zinc-500 hover:text-white transition-colors" onClick={() => setProductosDescuentoSeleccionados([])}>Deseleccionar todos</button>
-                  <span className="ml-auto text-zinc-500">{productosDescuentoSeleccionados.length} seleccionados</span>
+                  <button type="button" className="text-muted-foreground dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors" onClick={() => setProductosDescuentoSeleccionados([])}>Deseleccionar todos</button>
+                  <span className="ml-auto text-muted-foreground dark:text-zinc-500">{productosDescuentoSeleccionados.length} seleccionados</span>
                 </div>
                 <div className="space-y-1.5">
                   {productos.filter(p => p.nombre.toLowerCase().includes(busquedaDescuento.toLowerCase())).map((p) => {
@@ -1453,14 +1453,14 @@ const Productos = () => {
                     return (
                       <div
                         key={p.id}
-                        className={cn("flex items-center justify-between px-3 py-2.5 rounded-lg border cursor-pointer transition-all", isSelected ? "bg-orange-950/20 border-orange-500/50" : "bg-zinc-800/50 border-transparent hover:border-white/10")}
+                        className={cn("flex items-center justify-between px-3 py-2.5 rounded-lg border cursor-pointer transition-all", isSelected ? "bg-orange-100 dark:bg-orange-950/20 border-orange-500/50" : "bg-white dark:bg-zinc-800/50 border-transparent hover:border-zinc-200 dark:hover:border-white/10")}
                         onClick={() => setProductosDescuentoSeleccionados(prev => isSelected ? prev.filter(id => id !== p.id) : [...prev, p.id])}
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <div className={cn("h-4 w-4 rounded border flex items-center justify-center shrink-0", isSelected ? "bg-[#FF7A00] border-[#FF7A00]" : "border-zinc-600")}>
+                          <div className={cn("h-4 w-4 rounded border flex items-center justify-center shrink-0", isSelected ? "bg-[#FF7A00] border-[#FF7A00]" : "border-zinc-400 dark:border-zinc-600")}>
                             {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
                           </div>
-                          <span className={cn("text-sm font-medium truncate", isSelected ? "text-orange-400" : "text-zinc-300")}>{p.nombre}</span>
+                          <span className={cn("text-sm font-medium truncate", isSelected ? "text-orange-600 dark:text-orange-400" : "text-zinc-800 dark:text-zinc-300")}>{p.nombre}</span>
                         </div>
                         <div className="shrink-0 ml-2 flex items-center gap-1">
                           {(p as any).descuento > 0 && <Badge className="bg-emerald-500 text-white text-[10px] border-none px-1.5">-{(p as any).descuento}%</Badge>}
@@ -1476,7 +1476,7 @@ const Productos = () => {
             </div>
 
             {/* Sticky footer */}
-            <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-zinc-950 border-t border-white/5 space-y-2">
+            <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-white/5 space-y-2">
               <Button
                 disabled={productosDescuentoSeleccionados.length === 0 || descuentoMasivoPct === '' || aplicandoDescuento}
                 onClick={async () => {
@@ -1507,7 +1507,7 @@ const Productos = () => {
                 {aplicandoDescuento ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Aplicar a {productosDescuentoSeleccionados.length} producto{productosDescuentoSeleccionados.length !== 1 ? 's' : ''}
               </Button>
-              <button type="button" onClick={cerrarPanel} className="w-full text-sm text-zinc-500 hover:text-zinc-300 transition-colors text-center">
+              <button type="button" onClick={cerrarPanel} className="w-full text-sm text-muted-foreground dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 transition-colors text-center">
                 Cancelar
               </button>
             </div>
@@ -1517,9 +1517,9 @@ const Productos = () => {
         {/* ── PANEL: EXTRAS ── */}
         {activePanelType === 'extras' && (
           <div className="h-full flex flex-col">
-            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-white/5">
-              <h2 className="text-lg font-bold text-white pr-8">Gestión de Extras</h2>
-              <p className="text-xs text-zinc-500 mt-1">Los cambios se aplican a todos los productos que usen cada extra.</p>
+            <div className="px-6 pt-6 pb-4 shrink-0 border-b border-zinc-200 dark:border-white/5">
+              <h2 className="text-lg font-bold text-zinc-950 dark:text-white pr-8">Gestión de Extras</h2>
+              <p className="text-xs text-muted-foreground dark:text-zinc-500 mt-1">Los cambios se aplican a todos los productos que usen cada extra.</p>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-2 pb-28">
@@ -1527,7 +1527,7 @@ const Productos = () => {
                 <p className="text-center text-zinc-600 py-8">No hay extras creados.</p>
               ) : (
                 agregados.map((ag) => (
-                  <div key={ag.id} className="rounded-lg border border-white/5 bg-zinc-900 overflow-hidden">
+                  <div key={ag.id} className="rounded-lg border border-zinc-200 dark:border-white/5 bg-white dark:bg-zinc-900 overflow-hidden">
                     {extrasEditandoId === ag.id ? (
                       /* Inline edit form */
                       <div className="p-4 space-y-3">
@@ -1539,7 +1539,7 @@ const Productos = () => {
                           disabled={isGuardandoExtraInline}
                         />
                         <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-zinc-400 text-sm">$</span>
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground dark:text-zinc-400 text-sm">$</span>
                           <Input
                             type="number"
                             step="0.01"
@@ -1555,7 +1555,7 @@ const Productos = () => {
                           <Button onClick={guardarEditInlineExtra} disabled={isGuardandoExtraInline || !extrasEditNombre.trim()} className="flex-1 h-9 rounded-lg bg-[#FF7A00] hover:bg-[#E66E00] text-white text-sm font-bold">
                             {isGuardandoExtraInline ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar'}
                           </Button>
-                          <button type="button" onClick={() => setExtrasEditandoId(null)} className="flex-1 h-9 rounded-lg text-sm text-zinc-500 hover:text-white transition-colors">
+                          <button type="button" onClick={() => setExtrasEditandoId(null)} className="flex-1 h-9 rounded-lg text-sm text-muted-foreground dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">
                             Cancelar
                           </button>
                         </div>
@@ -1565,14 +1565,14 @@ const Productos = () => {
                       <div className="flex items-center justify-between px-4 py-3">
                         <div className={ag.activo === false ? 'opacity-50' : ''}>
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-white">{ag.nombre}</p>
+                            <p className="text-sm font-semibold text-zinc-950 dark:text-white">{ag.nombre}</p>
                             {ag.activo === false && (
-                              <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground dark:text-zinc-400 bg-white dark:bg-white/5 border border-zinc-200 dark:border-white/10 rounded px-1.5 py-0.5">
                                 Desactivado
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-zinc-500">+${ag.precio}</p>
+                          <p className="text-xs text-muted-foreground dark:text-zinc-500">+${ag.precio}</p>
                         </div>
                         <div className="flex items-center gap-3 text-sm">
                           <button
@@ -1585,7 +1585,7 @@ const Productos = () => {
                           <button
                             type="button"
                             onClick={() => iniciarEditInlineExtra(ag)}
-                            className="text-zinc-400 hover:text-white transition-colors"
+                            className="text-muted-foreground dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
                           >
                             editar
                           </button>
@@ -1605,7 +1605,7 @@ const Productos = () => {
             </div>
 
             {/* Sticky footer */}
-            <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-zinc-950 border-t border-white/5">
+            <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-white/5">
               <Button
                 onClick={() => setDialogAgregadoAbierto(true)}
                 className="w-full h-11 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white"
@@ -1660,7 +1660,7 @@ const Productos = () => {
       ───────────────────────────────────────────── */}
       <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={setDialogGestionCategoriasAbierto}>
         <DialogContent className="max-w-md max-h-[80dvh] overflow-hidden flex flex-col rounded-[32px] p-0 border-zinc-200 dark:border-zinc-800">
-          <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-zinc-50/50 dark:bg-zinc-950">
+          <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
             <DialogTitle className="text-xl font-bold">Gestión de Categorías</DialogTitle>
             <DialogDescription className="mt-1 text-sm">Organiza tu menú. Al eliminar, los productos pasan a "Sin categoría".</DialogDescription>
           </div>

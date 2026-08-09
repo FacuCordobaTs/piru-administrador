@@ -108,7 +108,7 @@ export default function MotorRecompra() {
     useEffect(() => { cargar() }, [cargar])
 
     return (
-        <div className="flex-1 min-h-0 overflow-hidden bg-background">
+        <div className="flex-1 min-h-0 overflow-hidden bg-[#FFFBF0] dark:bg-background">
             <ScrollArea className="h-full">
                 <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
                     {loading ? (
@@ -200,7 +200,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
         <div>
             {/* Hero */}
             <div className="flex items-center gap-3 mb-5">
-                <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-foreground shrink-0">
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-muted flex items-center justify-center text-foreground shrink-0">
                     <Rocket className="w-6 h-6" />
                 </div>
                 <div>
@@ -210,7 +210,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
             </div>
 
             {/* El PLAN en prosa (no un formulario) */}
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-5 sm:p-6">
+            <div className="rounded-2xl border border-border/60 bg-white dark:bg-muted/30 p-5 sm:p-6">
                 <p className="text-[15px] leading-relaxed text-foreground">
                     Encontré <span className="font-semibold">{plan.totalDetectados} clientes</span> que se enfriaron
                     {plan.porSegmento.length > 0 && (
@@ -283,7 +283,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                             grupo de control. No tenés que hacer nada más: podés pausarlo cuando quieras.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="rounded-lg border bg-muted/40 p-3">
+                    <div className="rounded-lg border bg-white dark:bg-muted/40 p-3">
                         <p className="text-[11px] text-muted-foreground">
                             Cada mensaje consume 1 crédito de <span className="font-medium">campaña (marketing)</span>. Si se agotan,
                             el motor se <span className="font-medium">pausa solo</span> (nunca genera deuda) y te avisa una vez con el resultado.
@@ -394,7 +394,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
             )}
 
             {pausadaManual && (
-                <div className="mb-5 rounded-xl border border-border bg-muted/40 p-4 flex items-start gap-3">
+                <div className="mb-5 rounded-xl border border-border bg-white dark:bg-muted/40 p-4 flex items-start gap-3">
                     <Pause className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
                     <p className="text-xs text-muted-foreground leading-relaxed">
                         El motor está pausado. No se pierde nada: los {campana.enCola} clientes en cola te esperan.
@@ -436,7 +436,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
             )}
 
             {/* Config en modo lectura: "Enviando hasta N/día · Cambiar" */}
-            <div className="mt-5 rounded-xl border border-border/60 bg-background p-4">
+            <div className="mt-5 rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background p-4">
                 <div className="flex items-center gap-2 text-sm">
                     <Gauge className="w-4 h-4 text-muted-foreground shrink-0" />
                     {editandoCupo ? (
@@ -485,7 +485,7 @@ function EstadoBadge({ estado }: { estado: EstadoCampana }) {
     const map: Record<EstadoCampana, { label: string; dot: string; cls: string }> = {
         activa: { label: 'Activa', dot: 'bg-emerald-500', cls: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800' },
         completada: { label: 'Automático', dot: 'bg-emerald-500', cls: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800' },
-        pausada_manual: { label: 'Pausado', dot: 'bg-muted-foreground', cls: 'text-muted-foreground bg-muted border-border' },
+        pausada_manual: { label: 'Pausado', dot: 'bg-muted-foreground', cls: 'text-muted-foreground bg-white dark:bg-muted border-border' },
         pausada_sin_saldo: { label: 'Pausado · sin saldo', dot: 'bg-orange-500', cls: 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/50 border-orange-200 dark:border-orange-800' },
     }
     const m = map[estado]
@@ -512,8 +512,8 @@ function StatCard({ label, value, hint, icon }: {
     label: string; value: string; hint?: string; icon: React.ReactNode
 }) {
     return (
-        <div className="bg-background border border-border/50 rounded-xl p-4">
-            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-muted text-muted-foreground mb-2">{icon}</div>
+        <div className="bg-[#FFFBF0] dark:bg-background border border-border/50 rounded-xl p-4">
+            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white dark:bg-muted text-muted-foreground mb-2">{icon}</div>
             <p className="text-lg font-bold text-foreground tabular-nums leading-tight">{value}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{label}</p>
             {hint && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{hint}</p>}
@@ -523,8 +523,8 @@ function StatCard({ label, value, hint, icon }: {
 
 function ExplainCard({ icon: Icon, title, text }: { icon: typeof Users; title: string; text: string }) {
     return (
-        <div className="rounded-xl border border-border/60 bg-background p-4">
-            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground mb-3">
+        <div className="rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background p-4">
+            <div className="w-9 h-9 rounded-lg bg-white dark:bg-muted flex items-center justify-center text-muted-foreground mb-3">
                 <Icon className="w-4.5 h-4.5" />
             </div>
             <p className="text-sm font-semibold text-foreground">{title}</p>
@@ -536,7 +536,7 @@ function ExplainCard({ icon: Icon, title, text }: { icon: typeof Users; title: s
 function PlanBloqueado() {
     return (
         <div className="text-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-5 text-foreground">
+            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-muted flex items-center justify-center mx-auto mb-5 text-foreground">
                 <Crown className="w-8 h-8" />
             </div>
             <h1 className="text-xl font-semibold tracking-tight text-foreground">El Motor de Recompra es del plan Avanzado</h1>

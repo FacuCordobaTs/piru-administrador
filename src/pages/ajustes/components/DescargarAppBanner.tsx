@@ -60,7 +60,7 @@ export function DescargarAppBanner() {
   }
 
   return (
-    <div className="rounded-2xl bg-muted/60 p-5 sm:p-6">
+    <div className="rounded-2xl bg-white dark:bg-muted/60 p-5 sm:p-6">
       {/* Encabezado: ícono + título + cerrar (fila propia, sin solaparse) */}
       <div className="flex items-start gap-3.5">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground">

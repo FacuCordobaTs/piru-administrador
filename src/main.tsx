@@ -168,7 +168,7 @@ const router = createBrowserRouter([
           },
           {
             path: "ajustes",
-            element: <Navigate to="/dashboard/ajustes/general" replace />,
+            element: <AjustesPage />,
           },
           {
             path: "ajustes/:seccion",

@@ -19,7 +19,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  Crown,
+  Sparkles,
   ArrowUpRight,
   ChevronRight,
 } from 'lucide-react'
@@ -133,34 +133,57 @@ const DashboardLayout = () => {
       ? 'Sin plan activo'
       : (suscripcion?.estado && ESTADO_SUB[suscripcion.estado]) || 'Tu plan'
 
+    // Punto de estado: verde si está al día/prueba, ámbar en cualquier otro caso (o sin plan).
+    const alDia = !sinPlan && (suscripcion?.estado === 'activa' || suscripcion?.estado === 'trial')
+    const dotColor = alDia ? 'bg-emerald-500' : 'bg-amber-500'
+    const destacar = puedeMejorar || sinPlan
+
+    if (compact) {
+      return (
+        <div className="px-3 pt-2">
+          <button
+            onClick={() => handleNavigation('/dashboard/plan')}
+            title={titulo}
+            className={`group relative w-full flex h-11 items-center justify-center rounded-xl transition-colors cursor-pointer ${
+              planActivoEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
+            }`}
+          >
+            <Sparkles
+              className={`h-[18px] w-[18px] ${
+                destacar ? 'text-brand' : 'text-muted-foreground group-hover:text-foreground'
+              }`}
+            />
+            <span
+              aria-hidden
+              className={`absolute right-2 top-2 h-2 w-2 rounded-full ring-2 ring-background ${dotColor}`}
+            />
+          </button>
+        </div>
+      )
+    }
+
     return (
       <div className="px-3 pt-2">
         <button
           onClick={() => handleNavigation('/dashboard/plan')}
-          title={compact ? titulo : undefined}
-          className={`group w-full flex items-center gap-3 rounded-xl transition-colors cursor-pointer ${
-            compact ? 'justify-center h-11 px-0' : 'px-2.5 py-2.5'
-          } ${planActivoEnRuta ? 'bg-muted' : 'hover:bg-muted/60'}`}
+          className={`group w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors cursor-pointer ${
+            planActivoEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
+          }`}
         >
-          <span
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-              sinPlan ? 'bg-amber-500/10 text-amber-600 dark:text-amber-500' : 'bg-brand/10 text-brand'
-            }`}
-          >
-            <Crown className="h-[15px] w-[15px]" />
+          <span className="flex-1 min-w-0 text-left">
+            <span className="flex items-center gap-2">
+              <span className="truncate text-[13.5px] font-semibold text-foreground">{titulo}</span>
+              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+            </span>
+            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitulo}</span>
           </span>
-          {!compact && (
-            <>
-              <span className="flex-1 min-w-0 text-left">
-                <span className="block truncate text-[13.5px] font-medium text-foreground">{titulo}</span>
-                <span className="block truncate text-[11px] text-muted-foreground">{subtitulo}</span>
-              </span>
-              {puedeMejorar || sinPlan ? (
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-brand" />
-              ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-              )}
-            </>
+          {destacar ? (
+            <span className="flex shrink-0 items-center gap-1 text-[12px] font-semibold text-brand">
+              Mejorar
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </span>
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
           )}
         </button>
       </div>
@@ -235,7 +258,7 @@ const DashboardLayout = () => {
       {renderPlanButton(compact)}
 
       {/* Footer: tema + salir */}
-      <div className="p-3 border-t space-y-1 shrink-0">
+      <div className="p-3 space-y-1 shrink-0">
         <button
           onClick={toggleTheme}
           title={compact ? (isDark ? 'Modo claro' : 'Modo oscuro') : undefined}
@@ -261,10 +284,10 @@ const DashboardLayout = () => {
   )
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen overflow-hidden bg-[#FFFBF0] dark:bg-background">
       {/* Sidebar fijo (desktop) — comprimible */}
       <aside
-        className={`hidden md:flex shrink-0 flex-col border-r bg-background transition-[width] duration-200 ${
+        className={`hidden md:flex shrink-0 flex-col bg-background transition-[width] duration-200 ${
           collapsed ? 'w-16' : 'w-64'
         }`}
       >
@@ -281,7 +304,7 @@ const DashboardLayout = () => {
       {/* Contenido principal */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Barra superior sólo en móvil (para abrir el drawer) */}
-        <div className="md:hidden flex items-center gap-2 h-14 px-3 border-b bg-background shrink-0">
+        <div className="md:hidden flex items-center gap-2 h-14 px-3 bg-[#FFFBF0] dark:bg-background shrink-0">
           <Button variant="ghost" size="icon" onClick={() => setMenuOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>

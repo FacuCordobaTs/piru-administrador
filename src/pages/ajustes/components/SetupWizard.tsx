@@ -56,7 +56,7 @@ export function SetupWizard({ steps, onComplete, finalLabel = 'Finalizar' }: Set
     <div className="flex flex-col gap-6">
       {/* Barra de progreso */}
       <div className="space-y-2">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white dark:bg-muted">
           <div
             className="h-full rounded-full bg-brand transition-all duration-300 ease-out"
             style={{ width: `${((index + 1) / total) * 100}%` }}

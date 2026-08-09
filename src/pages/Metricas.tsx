@@ -1,74 +1,117 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { metricasApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
+import { Loader2, TrendingUp, Truck, Globe, ShoppingBag } from 'lucide-react'
 import {
-  Loader2,
-  TrendingUp,
-  Wallet,
-  Package,
-  CalendarDays,
-  Globe,
-  ShoppingBag,
-  Truck,
-} from 'lucide-react'
-import { Card } from '@/components/ui/card'
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import Repartidores from './Repartidores'
 
-// ─────────────────────────────────────────────
-// Estilos base "Phantom"
-// ─────────────────────────────────────────────
-const phantomCardClass = "bg-white dark:bg-zinc-950 rounded-[32px] shadow-xl shadow-zinc-200/40 dark:shadow-none border border-zinc-100 dark:border-zinc-800/80 overflow-hidden"
+// =============================================================================
+// ESTADÍSTICAS — contenedor con pantalla de selección + tabs flotantes
+// Diseño aireado, centrado, tipográfico (estilo Apple). Acento en naranja
+// (brand) para la sección activa y las acciones principales.
+// =============================================================================
 
-interface MetricasData {
-  ingresos: {
-    mensual: number;
-    historico: number;
-    mensualManual?: number;
-    mensualWeb?: number;
-  };
-  pedidos: {
-    mensuales: number;
-    mensualesPagados: number;
-    mensualesManual?: number;
-    mensualesWeb?: number;
-    historicos: number;
-  };
-  desgloseMetodoPago: Array<{
-    metodoPago: string;
-    total: number;
-  }>;
-  topProductos: Array<{
-    productoId: number;
-    nombre: string;
-    cantidad: number;
-    totalVendido: number;
-  }>;
+type SeccionMetricas = 'estadisticas' | 'repartidores'
+
+interface SeccionMeta {
+  key: SeccionMetricas
+  label: string
+  icon: typeof TrendingUp
+  descripcion: string
 }
 
+const SECCIONES: SeccionMeta[] = [
+  {
+    key: 'estadisticas',
+    label: 'Estadísticas',
+    icon: TrendingUp,
+    descripcion: 'Facturación, medios de pago, origen de las ventas y productos.',
+  },
+  {
+    key: 'repartidores',
+    label: 'Repartidores',
+    icon: Truck,
+    descripcion: 'Pedidos entregados y total recaudado en envíos por repartidor.',
+  },
+]
+
 export default function Metricas() {
-  const [tab, setTab] = useState<'metricas' | 'repartidores'>('metricas')
+  const [tab, setTab] = useState<SeccionMetricas | null>(null)
+
+  if (tab === null) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center h-full overflow-auto bg-[#FFFBF0] dark:bg-background px-6 py-12">
+        <div className="w-full max-w-xl text-center">
+          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground mb-10">
+            Estadísticas
+          </h1>
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">
+            ¿Qué querés ver?
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1.5">
+            Elegí una sección para empezar.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8">
+            {SECCIONES.map(seccion => (
+              <SeccionCard key={seccion.key} seccion={seccion} onClick={() => setTab(seccion.key)} />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-full bg-zinc-50 dark:bg-background">
-      {/* Tab switcher */}
-      <div className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800/80 px-4 sm:px-8">
-        <div className="max-w-5xl mx-auto flex items-center gap-1 h-12">
-          <MetricasTab active={tab === 'metricas'} onClick={() => setTab('metricas')} icon={TrendingUp}>
-            Estadísticas
-          </MetricasTab>
-          <MetricasTab active={tab === 'repartidores'} onClick={() => setTab('repartidores')} icon={Truck}>
-            Repartidores
-          </MetricasTab>
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
+      {/* Tab switcher — botones flotantes, centrados */}
+      <div className="bg-[#FFFBF0] dark:bg-background px-4 sm:px-6 pt-6 pb-2 shrink-0">
+        <div className="flex items-center justify-center gap-2">
+          {SECCIONES.map(seccion => (
+            <TabButton
+              key={seccion.key}
+              active={tab === seccion.key}
+              onClick={() => setTab(seccion.key)}
+              icon={seccion.icon}
+            >
+              {seccion.label}
+            </TabButton>
+          ))}
         </div>
       </div>
 
-      {tab === 'metricas' ? <MetricasPanel /> : <Repartidores />}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {tab === 'estadisticas' ? <MetricasPanel /> : <Repartidores />}
+      </div>
     </div>
   )
 }
 
-function MetricasTab({ active, onClick, icon: Icon, children }: {
+function SeccionCard({ seccion, onClick }: {
+  seccion: SeccionMeta
+  onClick: () => void
+}) {
+  const Icon = seccion.icon
+  return (
+    <button
+      onClick={onClick}
+      className="group flex flex-col items-center text-center gap-3 p-6 rounded-2xl bg-white dark:bg-muted/40 transition-colors cursor-pointer hover:bg-muted"
+    >
+      <div className="w-12 h-12 rounded-2xl bg-[#FFFBF0] dark:bg-background flex items-center justify-center text-brand shadow-sm">
+        <Icon className="w-5 h-5" />
+      </div>
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">{seccion.label}</h2>
+        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{seccion.descripcion}</p>
+      </div>
+    </button>
+  )
+}
+
+function TabButton({ active, onClick, icon: Icon, children }: {
   active: boolean
   onClick: () => void
   icon: typeof TrendingUp
@@ -77,447 +120,356 @@ function MetricasTab({ active, onClick, icon: Icon, children }: {
   return (
     <button
       onClick={onClick}
-      className={`relative flex items-center gap-2 px-3 h-12 text-sm font-semibold transition-colors ${
-        active ? 'text-foreground' : 'text-zinc-500 hover:text-foreground'
+      className={`inline-flex items-center gap-2 px-4 h-9 rounded-full text-sm font-medium transition-colors ${
+        active
+          ? 'bg-brand text-white shadow-sm shadow-brand/25'
+          : "bg-white dark:bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
       }`}
     >
-      <Icon className={`w-4 h-4 ${active ? 'text-[#FF7A00]' : ''}`} />
+      <Icon className="w-4 h-4" />
       {children}
-      {active && (
-        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF7A00] rounded-full" />
-      )}
     </button>
   )
 }
+
+// =============================================================================
+// SELECTOR DE PERÍODO (reutilizable) — reemplaza el <input type="month"> nativo,
+// que no abre picker en el webview de escritorio (Tauri/WebKitGTK). Con Selects
+// funciona en todas las plataformas.
+// =============================================================================
+export type PeriodMode = 'month' | 'range'
+export interface PeriodValue {
+  mode: PeriodMode
+  mes: number   // 1-12
+  anio: number
+  from: string  // YYYY-MM-DD
+  to: string
+}
+
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+]
+
+export function PeriodSelector({
+  value, onChange, extraAll,
+}: {
+  value: PeriodValue
+  onChange: (v: PeriodValue) => void
+  extraAll?: { active: boolean; onSelectAll: () => void }
+}) {
+  const anioActual = new Date().getFullYear()
+  const anios = Array.from({ length: 4 }, (_, i) => anioActual - i)
+
+  return (
+    <div className="inline-flex flex-wrap items-center justify-center gap-2">
+      {extraAll && (
+        <button
+          type="button"
+          onClick={extraAll.onSelectAll}
+          className={`h-9 px-3.5 rounded-full text-xs font-medium transition-colors ${
+            extraAll.active
+              ? 'bg-brand text-white shadow-sm shadow-brand/25'
+              : "bg-white dark:bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          Todo
+        </button>
+      )}
+
+      <Select
+        value={value.mode}
+        onValueChange={(m) => onChange({ ...value, mode: m as PeriodMode })}
+      >
+        <SelectTrigger className="w-auto gap-1.5 h-9 rounded-full border-0 bg-white dark:bg-muted/60 text-xs font-medium">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="month">Por mes</SelectItem>
+          <SelectItem value="range">Por rango</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {value.mode === 'month' ? (
+        <>
+          <Select value={String(value.mes)} onValueChange={(m) => onChange({ ...value, mes: Number(m) })}>
+            <SelectTrigger className="w-auto gap-1.5 h-9 rounded-full border-0 bg-white dark:bg-muted/60 text-xs font-medium">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MESES.map((nombre, i) => (
+                <SelectItem key={i} value={String(i + 1)}>{nombre}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={String(value.anio)} onValueChange={(a) => onChange({ ...value, anio: Number(a) })}>
+            <SelectTrigger className="w-auto gap-1.5 h-9 rounded-full border-0 bg-white dark:bg-muted/60 text-xs font-medium">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {anios.map((a) => (
+                <SelectItem key={a} value={String(a)}>{a}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={value.from}
+            max={value.to || undefined}
+            onChange={(e) => onChange({ ...value, from: e.target.value })}
+            className="h-9 px-3 rounded-full bg-white dark:bg-muted/60 text-xs text-foreground border-0 outline-none"
+          />
+          <span className="text-xs text-muted-foreground">a</span>
+          <input
+            type="date"
+            value={value.to}
+            min={value.from || undefined}
+            onChange={(e) => onChange({ ...value, to: e.target.value })}
+            className="h-9 px-3 rounded-full bg-white dark:bg-muted/60 text-xs text-foreground border-0 outline-none"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function periodLabelOf(v: PeriodValue, allActive?: boolean): string {
+  if (allActive) return 'Todo el historial'
+  if (v.mode === 'range') {
+    if (v.from && v.to) return `${v.from} al ${v.to}`
+    return 'Elegí las dos fechas'
+  }
+  return `${MESES[v.mes - 1]} ${v.anio}`
+}
+
+// =============================================================================
+// PANEL DE ESTADÍSTICAS
+// =============================================================================
+interface MetricasData {
+  ingresos: { mensual: number; historico: number; mensualManual?: number; mensualWeb?: number }
+  pedidos: {
+    mensuales: number; mensualesPagados: number
+    mensualesManual?: number; mensualesWeb?: number; historicos: number
+  }
+  desgloseMetodoPago: Array<{ metodoPago: string; total: number }>
+  topProductos: Array<{ productoId: number; nombre: string; cantidad: number; totalVendido: number }>
+}
+
+const fmtMoney = (n: number) =>
+  `$${n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
 function MetricasPanel() {
   const token = useAuthStore(s => s.token)
   const [data, setData] = useState<MetricasData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [filterMode, setFilterMode] = useState<'month' | 'range'>('month')
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+
+  const [period, setPeriod] = useState<PeriodValue>(() => {
     const now = new Date()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    return `${now.getFullYear()}-${month}`
+    return { mode: 'month', mes: now.getMonth() + 1, anio: now.getFullYear(), from: '', to: '' }
   })
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
 
-  const openNativePicker = (input: HTMLInputElement) => {
-    if (typeof input.showPicker === 'function') {
-      input.showPicker()
-    }
-  }
-
-  const periodLabel = useMemo(() => {
-    if (filterMode === 'range' && fromDate && toDate) {
-      return `Rango: ${fromDate} al ${toDate}`
-    }
-    if (selectedMonth) {
-      const [year, month] = selectedMonth.split('-')
-      return `Mes: ${month}/${year}`
-    }
-    return 'Periodo actual'
-  }, [filterMode, fromDate, toDate, selectedMonth])
-
-  const fetchMetricas = async () => {
+  const fetchMetricas = useCallback(async (p: PeriodValue) => {
     if (!token) return
-
-    if (filterMode === 'range') {
-      if (!fromDate || !toDate) {
-        toast.error('Completá ambas fechas para usar rango de días')
-        return
-      }
-      if (fromDate > toDate) {
-        toast.error('La fecha "desde" no puede ser mayor que "hasta"')
-        return
-      }
-    }
-
+    if (p.mode === 'range' && (!p.from || !p.to)) return
     setLoading(true)
     try {
-      let filters: { month?: number; year?: number; from?: string; to?: string } | undefined
-
-      if (filterMode === 'range') {
-        filters = { from: fromDate, to: toDate }
-      } else if (selectedMonth) {
-        const [year, month] = selectedMonth.split('-').map(Number)
-        filters = { month, year }
-      }
-
+      const filters = p.mode === 'range' ? { from: p.from, to: p.to } : { month: p.mes, year: p.anio }
       const response = await metricasApi.get(token, filters) as { success: boolean; data: MetricasData }
-      if (response.success) {
-        setData(response.data)
-      }
+      if (response.success) setData(response.data)
     } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error('Error al cargar métricas', { description: error.message })
-      } else {
-        toast.error('Error de conexión')
-      }
+      if (error instanceof ApiError) toast.error('Error al cargar estadísticas', { description: error.message })
+      else toast.error('Error de conexión')
     } finally {
       setLoading(false)
     }
-  }
-
-  useEffect(() => {
-    fetchMetricas()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
-  if (loading) {
+  useEffect(() => {
+    fetchMetricas(period)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, period.mode, period.mes, period.anio, period.from, period.to])
+
+  const periodLabel = periodLabelOf(period)
+
+  const pagos = useMemo(() => {
+    let efectivo = 0, mp = 0, transf = 0, tarjeta = 0
+    for (const p of data?.desgloseMetodoPago ?? []) {
+      const m = p.metodoPago ? p.metodoPago.toLowerCase() : ''
+      if (m.includes('efectivo') || m.includes('cash')) efectivo += p.total
+      else if (m.includes('mercadopago') || m.includes('mp')) mp += p.total
+      else if (m.includes('transferencia') || m.includes('manual')) transf += p.total
+      else tarjeta += p.total
+    }
+    const total = efectivo + mp + transf + tarjeta || 1
+    return [
+      { label: 'Efectivo', value: efectivo, pct: (efectivo / total) * 100 },
+      { label: 'Mercado Pago', value: mp, pct: (mp / total) * 100 },
+      { label: 'Transferencias', value: transf, pct: (transf / total) * 100 },
+      { label: 'Tarjeta', value: tarjeta, pct: (tarjeta / total) * 100 },
+    ].filter(x => x.value > 0)
+  }, [data])
+
+  if (loading && !data) {
     return (
-      <div className="flex-1 flex items-center justify-center p-4 min-h-dvh bg-zinc-50 dark:bg-zinc-950">
-        <div className="text-center flex flex-col items-center gap-3">
-          <Loader2 className="h-10 w-10 animate-spin text-[#FF7A00]" />
-          <p className="text-sm text-zinc-500 font-medium">Calculando métricas del período...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-7 w-7 animate-spin text-brand" />
       </div>
     )
   }
 
   if (!data) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground p-4 bg-zinc-50 dark:bg-zinc-950 min-h-dvh">
-        No se pudieron cargar las métricas.
+      <div className="flex items-center justify-center text-muted-foreground min-h-[60vh]">
+        No se pudieron cargar las estadísticas.
       </div>
     )
   }
 
-  const { ingresos, pedidos, desgloseMetodoPago, topProductos } = data
-
-  const totalMensual = ingresos.mensual
+  const { ingresos, pedidos, topProductos } = data
+  const totalPeriodo = ingresos.mensual
+  const ticket = pedidos.mensuales > 0 ? Math.round(totalPeriodo / pedidos.mensuales) : 0
   const ingresoWeb = ingresos.mensualWeb ?? 0
   const ingresoManual = ingresos.mensualManual ?? 0
   const pedidosWeb = pedidos.mensualesWeb ?? 0
   const pedidosManual = pedidos.mensualesManual ?? 0
   const baseOrigen = (ingresoWeb + ingresoManual) > 0 ? (ingresoWeb + ingresoManual) : 1
-  const pctWeb = (ingresoWeb / baseOrigen) * 100
-  const pctManual = (ingresoManual / baseOrigen) * 100
-  
-  let pagoEfectivo = 0
-  let pagoMP = 0
-  let pagoTransf = 0
-  let pagoTarjeta = 0
-
-  desgloseMetodoPago.forEach(p => {
-    const m = p.metodoPago ? p.metodoPago.toLowerCase() : ''
-    
-    if (m.includes('efectivo') || m.includes('cash')) {
-      pagoEfectivo += p.total
-    } else if (m.includes('mercadopago') || m.includes('mp')) {
-      pagoMP += p.total
-    } else if (m.includes('transferencia') || m.includes('manual')) {
-      pagoTransf += p.total
-    } else {
-      pagoTarjeta += p.total
-    }
-  })
-
-  const sumaMediosDePago = pagoEfectivo + pagoMP + pagoTransf + pagoTarjeta;
-  // Para los porcentajes usamos la suma total de los medios de pago para que la barra siempre sume 100% de lo reportado
-  // (es posible que algunos ingresos totales tengan pequeñas diferencias decimales con el agrupado)
-  const basePorcentaje = sumaMediosDePago > 0 ? sumaMediosDePago : 1;
-
-  const pctEfectivo = (pagoEfectivo / basePorcentaje) * 100
-  const pctMP = (pagoMP / basePorcentaje) * 100
-  const pctTransf = (pagoTransf / basePorcentaje) * 100
-  const pctTarjeta = (pagoTarjeta / basePorcentaje) * 100
+  const pctWeb = Math.round((ingresoWeb / baseOrigen) * 100)
+  const pctManual = Math.round((ingresoManual / baseOrigen) * 100)
 
   return (
-    <div className="min-h-dvh bg-zinc-50 dark:bg-background pb-24 selection:bg-[#FF7A00]/20 selection:text-[#FF7A00] overflow-x-hidden">
-      
-      {/* ── Header ── */}
-      <div className="bg-white dark:bg-zinc-950/50 border-b border-zinc-200 dark:border-zinc-800/80 pb-6 relative overflow-hidden">
-        {/* Decorative background */}
-        <div className="absolute top-0 inset-x-0 h-40 bg-linear-to-b from-[#FF7A00]/20 to-transparent pointer-events-none" />
-        <div className="absolute top-[-50px] right-[-50px] opacity-10 dark:opacity-5 pointer-events-none">
-          <TrendingUp size={250} className="text-[#FF7A00]" />
-        </div>
+    <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 py-8 space-y-5">
 
-        <div className="max-w-5xl mx-auto px-4 sm:px-8 mt-12 relative z-10">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-linear-to-r from-zinc-900 to-zinc-600 dark:from-white dark:to-zinc-400">
-            Métricas
-          </h1>
-          <p className="text-muted-foreground mt-2 font-medium">Rendimiento financiero y operativo por período.</p>
-        </div>
+      {/* Selector de período, centrado */}
+      <div className="flex justify-center">
+        <PeriodSelector value={period} onChange={setPeriod} />
       </div>
 
-      {/* ── Main Content ── */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-8 mt-8 space-y-6">
-        <div className={`${phantomCardClass} p-4 sm:p-5`}>
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-300">
-              <CalendarDays className="w-4 h-4 text-[#FF7A00]" />
-              Filtro de período
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setFilterMode('month')}
-                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filterMode === 'month'
-                  ? 'bg-[#FF7A00] text-white border-[#FF7A00]'
-                  : 'bg-white dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                  }`}
-              >
-                Mes específico
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode('range')}
-                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filterMode === 'range'
-                  ? 'bg-[#FF7A00] text-white border-[#FF7A00]'
-                  : 'bg-white dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                  }`}
-              >
-                Rango de días
-              </button>
-            </div>
-
-            {filterMode === 'month' ? (
-              <div className="flex items-end gap-2">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-zinc-500">Mes</label>
-                  <input
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    onFocus={(e) => openNativePicker(e.currentTarget)}
-                    onClick={(e) => openNativePicker(e.currentTarget)}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Tab') e.preventDefault()
-                    }}
-                    className="h-10 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-zinc-500">Desde</label>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
-                    onFocus={(e) => openNativePicker(e.currentTarget)}
-                    onClick={(e) => openNativePicker(e.currentTarget)}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Tab') e.preventDefault()
-                    }}
-                    className="h-10 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-zinc-500">Hasta</label>
-                  <input
-                    type="date"
-                    value={toDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                    onFocus={(e) => openNativePicker(e.currentTarget)}
-                    onClick={(e) => openNativePicker(e.currentTarget)}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Tab') e.preventDefault()
-                    }}
-                    className="h-10 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm"
-                  />
-                </div>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={fetchMetricas}
-              className="h-10 px-4 rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              Aplicar
-            </button>
-          </div>
-        </div>
-
-        {/* 1. Tarjeta Principal (Facturado este mes) Phantom Style */}
-        <div className={`${phantomCardClass} p-6 sm:p-8 relative overflow-hidden bg-linear-to-br from-white to-zinc-50 dark:from-zinc-950 dark:to-black`}>
-          {/* Subtle Orange accent line */}
-          <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-[#FF7A00]/50 via-[#FF7A00] to-[#FF7A00]/50" />
-          
-          <div className="flex flex-col mb-8 relative z-10">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Facturado en período seleccionado</span>
-              <span className="text-[10px] bg-[#FF7A00]/10 text-[#FF7A00] px-2 py-0.5 rounded-full border border-[#FF7A00]/20 font-bold">ACTUAL</span>
-            </div>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">{periodLabel}</span>
-            <h2 className="text-5xl sm:text-6xl font-extrabold text-foreground tracking-tight drop-shadow-xs">
-              ${totalMensual.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              <span className="text-2xl sm:text-3xl text-zinc-400 dark:text-zinc-600 font-medium ml-1">,{(totalMensual % 1).toFixed(2).split('.')[1]}</span>
-            </h2>
-          </div>
-
-          {/* Barra de Distribución de Medios de Pago */}
-          <div className="relative z-10">
-            <div className="flex justify-between items-end mb-2">
-              <span className="text-xs font-semibold text-zinc-500 uppercase">Medios de Pago</span>
-            </div>
-            
-            <div className="h-5 w-full flex rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800/80 mb-3 shadow-inner">
-              {pctEfectivo > 0 && (
-                <div style={{ width: `${pctEfectivo}%` }} className="bg-emerald-500 hover:brightness-110 transition-all duration-700" title={`Efectivo: ${pctEfectivo.toFixed(1)}%`} />
-              )}
-              {pctTarjeta > 0 && (
-                <div style={{ width: `${pctTarjeta}%` }} className="bg-pink-500 hover:brightness-110 transition-all duration-700" title={`Tarjeta: ${pctTarjeta.toFixed(1)}%`} />
-              )}
-              {pctMP > 0 && (
-                <div style={{ width: `${pctMP}%` }} className="bg-sky-500 hover:brightness-110 transition-all duration-700" title={`MercadoPago: ${pctMP.toFixed(1)}%`} />
-              )}
-              {pctTransf > 0 && (
-                <div style={{ width: `${pctTransf}%` }} className="bg-violet-500 hover:brightness-110 transition-all duration-700" title={`Transferencia: ${pctTransf.toFixed(1)}%`} />
-              )}
-            </div>
-
-            {/* Leyenda inteligente */}
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-zinc-600 dark:text-zinc-400 font-medium">
-              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs"></div>Efectivo ({Math.round(pctEfectivo)}%) - ${pagoEfectivo.toLocaleString('es-AR')}</div>
-              {pctTarjeta > 0 && <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-pink-500 shadow-xs"></div>Tarjeta ({Math.round(pctTarjeta)}%) - ${pagoTarjeta.toLocaleString('es-AR')}</div>}
-              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-xs"></div>Mercado Pago ({Math.round(pctMP)}%) - ${pagoMP.toLocaleString('es-AR')}</div>
-              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-violet-500 shadow-xs"></div>Transferencias ({Math.round(pctTransf)}%) - ${pagoTransf.toLocaleString('es-AR')}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* 1b. Origen de las ventas: Web (clientes) vs Manual (POS local) */}
-        <div className={`${phantomCardClass} p-6 sm:p-8`}>
-          <div className="flex items-center gap-2 mb-5">
-            <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">Origen de las ventas</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Web */}
-            <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800/80 p-5 bg-zinc-50/50 dark:bg-zinc-900/20">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-sky-500/10 rounded-xl">
-                    <Globe className="w-4 h-4 text-sky-500" />
-                  </div>
-                  <span className="text-sm font-bold text-foreground">Por la web (clientes)</span>
-                </div>
-              </div>
-              <div className="text-3xl font-bold tracking-tight text-foreground">
-                ${ingresoWeb.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </div>
-              <div className="text-xs mt-1 font-medium text-zinc-400">{pedidosWeb} pedidos · {Math.round(pctWeb)}% del total</div>
-            </div>
-
-            {/* Manual */}
-            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/40 p-5 bg-emerald-50/50 dark:bg-emerald-900/10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-emerald-500/10 rounded-xl">
-                    <ShoppingBag className="w-4 h-4 text-emerald-500" />
-                  </div>
-                  <span className="text-sm font-bold text-foreground">Anotados manualmente</span>
-                </div>
-              </div>
-              <div className="text-3xl font-bold tracking-tight text-foreground">
-                ${ingresoManual.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </div>
-              <div className="text-xs mt-1 font-medium text-zinc-400">{pedidosManual} pedidos · {Math.round(pctManual)}% del total</div>
-            </div>
-          </div>
-
-          {/* Barra comparativa */}
-          <div className="h-3 w-full flex rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800/80 mt-5 shadow-inner">
-            {pctWeb > 0 && <div style={{ width: `${pctWeb}%` }} className="bg-sky-500" title={`Web: ${pctWeb.toFixed(1)}%`} />}
-            {pctManual > 0 && <div style={{ width: `${pctManual}%` }} className="bg-emerald-500" title={`Manual: ${pctManual.toFixed(1)}%`} />}
-          </div>
-        </div>
-
-        {/* 2. Grid de KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-          
-          <Card className={`${phantomCardClass} p-5 flex flex-col justify-between hover:border-[#FF7A00]/30 transition-colors group cursor-default`}>
-            <div className="flex justify-between items-start mb-4">
-              <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Total Histórico</span>
-              <div className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-xl group-hover:bg-[#FF7A00]/10 transition-colors">
-                <Wallet className="w-4 h-4 text-zinc-600 dark:text-zinc-400 group-hover:text-[#FF7A00] transition-colors" />
-              </div>
-            </div>
-            <div>
-              <div className="text-3xl font-bold tracking-tight text-foreground">
-                ${ingresos.historico.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </div>
-              <div className="text-xs mt-1 font-medium text-zinc-400">Desde el inicio de los tiempos</div>
-            </div>
-          </Card>
-
-          <Card className={`${phantomCardClass} p-5 flex flex-col justify-between hover:border-[#FF7A00]/30 transition-colors group cursor-default`}>
-            <div className="flex justify-between items-start mb-4">
-              <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Cantidad de pedidos</span>
-              <div className="p-2 bg-zinc-100 dark:bg-zinc-900 rounded-xl group-hover:bg-[#FF7A00]/10 transition-colors">
-                <Package className="w-4 h-4 text-zinc-600 dark:text-zinc-400 group-hover:text-[#FF7A00] transition-colors" />
-              </div>
-            </div>
-            <div className="flex items-end justify-between">
-              <div>
-                <div className="text-3xl font-bold tracking-tight text-foreground">
-                  {pedidos.mensuales}
-                </div>
-                <div className="text-xs mt-1 font-medium text-zinc-400">Pedidos en período</div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-bold tracking-tight text-zinc-600 dark:text-zinc-300">
-                  {pedidos.historicos}
-                </div>
-                <div className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Históricos</div>
-              </div>
-            </div>
-          </Card>
-
-        </div>
-
-        {/* 3. Top Productos */}
-        <div className={`${phantomCardClass} p-6 sm:p-8 mt-6`}>
-          <div className="flex items-center justify-between mb-6">
-            <div className="text-lg font-bold flex items-center gap-2 tracking-tight text-foreground">
-              <TrendingUp className="w-5 h-5 text-[#FF7A00]" />
-              Top Productos del Período
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {topProductos.length === 0 ? (
-              <div className="text-sm text-muted-foreground col-span-full py-8 text-center bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
-                Aún no hay ventas registradas este mes.
-              </div>
-            ) : topProductos.map((tp, idx) => {
-              const percentage = totalMensual > 0 ? (tp.totalVendido / totalMensual) * 100 : 0
-              return (
-                <div key={idx} className="rounded-2xl border border-zinc-100 dark:border-zinc-800/80 p-4 bg-zinc-50/50 dark:bg-zinc-900/20 hover:shadow-md hover:bg-white dark:hover:bg-zinc-900 transition-all flex flex-col justify-between group">
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-xs font-black text-zinc-300 dark:text-zinc-700 bg-white dark:bg-zinc-950 px-2 py-0.5 rounded-full shadow-xs border border-zinc-100 dark:border-zinc-800">#{idx + 1}</span>
-                      <span className="text-sm font-mono font-bold text-foreground">
-                        ${tp.totalVendido.toLocaleString('es-AR')}
-                      </span>
-                    </div>
-                    <div className="font-semibold text-sm truncate text-foreground group-hover:text-[#FF7A00] transition-colors" title={tp.nombre}>
-                      {tp.nombre}
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <div className="flex justify-between text-xs text-zinc-500 font-medium mb-1.5">
-                      <span>{tp.cantidad} unid.</span>
-                      <span>{percentage.toFixed(1)}%</span>
-                    </div>
-                    <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden shadow-inner">
-                      <div style={{ width: `${Math.max(3, percentage)}%` }} className="h-full bg-linear-to-r from-orange-400 to-[#FF7A00]" />
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
+      {/* Hero: facturación del período */}
+      <div className="text-center pt-3 pb-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Facturado · {periodLabel}
+        </p>
+        <h1 className="text-5xl sm:text-6xl font-semibold tracking-tight text-foreground tabular-nums mt-3">
+          {fmtMoney(totalPeriodo)}
+        </h1>
+        <p className="text-sm text-muted-foreground mt-3">
+          {pedidos.mensuales} {pedidos.mensuales === 1 ? 'pedido' : 'pedidos'}
+          {ticket > 0 && <> · ticket promedio <span className="text-foreground font-medium">{fmtMoney(ticket)}</span></>}
+        </p>
       </div>
+
+      {/* Medios de pago + Origen — dos paneles lado a lado */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Cómo te pagaron */}
+        <Panel title="Cómo te pagaron">
+          {pagos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin cobros en el período.</p>
+          ) : (
+            <div className="space-y-3">
+              {pagos.map((it) => (
+                <div key={it.label} className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-foreground">{it.label}</span>
+                  <div className="flex items-baseline gap-2.5">
+                    <span className="text-sm font-semibold tabular-nums text-foreground">{fmtMoney(it.value)}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums w-9 text-right">{Math.round(it.pct)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        {/* Origen de las ventas */}
+        <Panel title="Origen de las ventas">
+          <div className="space-y-4">
+            <OrigenRow
+              icon={<Globe className="w-4 h-4" />}
+              titulo="Por la web"
+              monto={ingresoWeb}
+              hint={`${pedidosWeb} ped · ${pctWeb}%`}
+            />
+            <OrigenRow
+              icon={<ShoppingBag className="w-4 h-4" />}
+              titulo="Anotados a mano"
+              monto={ingresoManual}
+              hint={`${pedidosManual} ped · ${pctManual}%`}
+            />
+          </div>
+        </Panel>
+      </div>
+
+      {/* Productos más vendidos */}
+      <Panel title="Los más pedidos">
+        {topProductos.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aún no hay ventas registradas en el período.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {topProductos.map((tp, idx) => (
+              <div key={idx} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                <span className="text-sm font-semibold tabular-nums text-muted-foreground w-5 shrink-0">
+                  {idx + 1}
+                </span>
+                <span className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">
+                  {tp.nombre}
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">{tp.cantidad} u</span>
+                <span className="text-sm font-semibold tabular-nums text-foreground w-24 text-right shrink-0">
+                  {fmtMoney(tp.totalVendido)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {/* Acumulado histórico */}
+      <Panel title="Acumulado histórico">
+        <div className="flex divide-x divide-border">
+          <div className="flex-1 pr-4">
+            <div className="text-2xl font-semibold text-foreground tabular-nums">{fmtMoney(ingresos.historico)}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Facturación total</div>
+          </div>
+          <div className="flex-1 pl-4">
+            <div className="text-2xl font-semibold text-foreground tabular-nums">{pedidos.historicos.toLocaleString('es-AR')}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Pedidos históricos</div>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+// Panel suave "flotante": blanco en light, relleno gris sin borde duro en dark.
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl bg-white dark:bg-muted/40 p-5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-4">
+        {title}
+      </h3>
+      {children}
+    </div>
+  )
+}
+
+function OrigenRow({ icon, titulo, monto, hint }: {
+  icon: React.ReactNode
+  titulo: string
+  monto: number
+  hint: string
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-9 h-9 rounded-full bg-[#FFFBF0] dark:bg-background flex items-center justify-center text-brand shrink-0">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-foreground">{titulo}</div>
+        <div className="text-xs text-muted-foreground tabular-nums">{hint}</div>
+      </div>
+      <div className="text-base font-semibold text-foreground tabular-nums shrink-0">{fmtMoney(monto)}</div>
     </div>
   )
 }

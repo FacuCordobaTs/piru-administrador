@@ -23,6 +23,7 @@ export default function PagoLink() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pagando, setPagando] = useState(false)
+  const [elegido, setElegido] = useState<number | null>(null)
 
   const esSuscripcion = info?.tipo === 'suscripcion'
 
@@ -46,6 +47,20 @@ export default function PagoLink() {
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'No se pudo iniciar el pago')
       setPagando(false)
+    }
+  }
+
+  // Link ABIERTO: el dueño elige el pack acá y, sin pedir confirmación, se arma el pago de
+  // MercadoPago al toque. El precio siempre sale del servidor (nunca de esta página).
+  const pagarPack = async (packId: number) => {
+    setElegido(packId)
+    setError(null)
+    try {
+      const res = await pagoApi.checkout(token, packId)
+      window.location.href = res.data.url_pago
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'No se pudo iniciar el pago')
+      setElegido(null)
     }
   }
 
@@ -87,12 +102,56 @@ export default function PagoLink() {
             titulo="El link venció"
             detalle="Pedí uno nuevo desde el panel (Ajustes → Plan y saldo) y volvé a abrir el link."
           />
+        ) : info?.requiereSeleccionPack && info.packs?.length ? (
+          <>
+            <div className="mt-6 space-y-1">
+              <p className="text-sm text-muted-foreground">{info.restauranteNombre}</p>
+              <h1 className="text-lg font-semibold text-foreground">{info.concepto}</h1>
+              <p className="text-[13px] text-muted-foreground">Elegí el pack que querés comprar</p>
+            </div>
+
+            {error && <p className="mt-4 text-[13px] text-red-500">{error}</p>}
+
+            <div className="mt-5 space-y-2.5">
+              {info.packs.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => pagarPack(p.id)}
+                  disabled={elegido !== null}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-4 py-3 text-left transition-colors hover:border-brand/40 disabled:opacity-60"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground">
+                      {p.cantidad} {info.unidad ?? 'avisos por WhatsApp'}
+                    </span>
+                    {p.nombre && (
+                      <span className="block text-[13px] text-muted-foreground">{p.nombre}</span>
+                    )}
+                  </span>
+                  {elegido === p.id ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                  ) : (
+                    <span className="shrink-0 text-sm font-semibold text-foreground">
+                      {fmtARS(p.precio)}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Pago seguro · el saldo se acredita al confirmarse
+            </p>
+          </>
         ) : info ? (
           <>
             <div className="mt-6 space-y-1">
               <p className="text-sm text-muted-foreground">{info.restauranteNombre}</p>
               <h1 className="text-lg font-semibold text-foreground">{info.concepto}</h1>
-              <p className="text-3xl font-bold tracking-tight text-foreground">{fmtARS(info.monto)}</p>
+              {info.monto != null && (
+                <p className="text-3xl font-bold tracking-tight text-foreground">{fmtARS(info.monto)}</p>
+              )}
               {info.cantidad != null && info.unidad && (
                 <p className="text-[13px] text-muted-foreground">
                   {info.cantidad} {info.unidad}

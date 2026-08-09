@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidoUnificadoApi, type PedidoUnificadoItemInput } from '@/lib/api'
@@ -28,10 +27,40 @@ interface CartItem {
     cantidad: number
 }
 
+export interface PosDraftItem {
+    key: string
+    nombre: string
+    varianteNombre?: string
+    cantidad: number
+    precioUnitario: number
+}
+
+export interface PosDraft {
+    tipo: 'delivery' | 'takeaway'
+    nombreCliente: string
+    telefono: string
+    direccion: string
+    notas: string
+    metodoPago: string
+    pagado: boolean
+    deliveryFee: number
+    items: PosDraftItem[]
+    subtotal: number
+    total: number
+}
+
+/** Handle expuesto al padre (Dashboard) para operar el borrador del POS desde la comanda. */
+export interface PuntoDeVentaHandle {
+    /** Quita un ítem del borrador por su key. */
+    removeItem: (key: string) => void
+}
+
 interface PuntoDeVentaProps {
     onClose: () => void
     onCreated: (pedidoId: number) => void
     sucursalActivaId: number | null
+    /** El padre (Dashboard) espeja este borrador en la comanda de la derecha en vivo. */
+    onDraftChange?: (draft: PosDraft | null) => void
 }
 
 const METODOS_PAGO: Array<{ id: string; label: string; icon: React.ElementType }> = [
@@ -44,7 +73,10 @@ const METODOS_PAGO: Array<{ id: string; label: string; icon: React.ElementType }
 const itemUnitPrice = (it: CartItem) =>
     it.precioBase + it.agregados.reduce((s, a) => s + (parseFloat(String(a.precio)) || 0), 0)
 
-export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: PuntoDeVentaProps) {
+const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
+    { onClose, onCreated, sucursalActivaId, onDraftChange },
+    ref
+) {
     const token = useAuthStore((s) => s.token)
     const { productos } = useRestauranteStore()
 
@@ -62,7 +94,8 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
     const [lng, setLng] = useState<number | null>(null)
     const [notas, setNotas] = useState('')
     const [metodoPago, setMetodoPago] = useState<string>('cash')
-    const [pagado, setPagado] = useState(true)
+    // El pedido anotado a mano siempre nace cobrado: no hay selección de "pagado".
+    const pagado = true
     const [deliveryFee, setDeliveryFee] = useState('')
     const [submitting, setSubmitting] = useState(false)
 
@@ -99,6 +132,32 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
     const totalItems = useMemo(() => cart.reduce((s, it) => s + it.cantidad, 0), [cart])
     const deliveryFeeNum = tipo === 'delivery' ? parseFloat(deliveryFee) || 0 : 0
     const totalFinal = cartTotal + deliveryFeeNum
+
+    // ── Borrador en vivo ──
+    // Reporta al padre (Dashboard) todo lo anotado hasta ahora para espejarlo
+    // en la comanda de la derecha mientras se carga el pedido.
+    useEffect(() => {
+        if (!onDraftChange) return
+        onDraftChange({
+            tipo,
+            nombreCliente: nombre.trim(),
+            telefono: telefono.trim(),
+            direccion: direccion.trim(),
+            notas: notas.trim(),
+            metodoPago,
+            pagado,
+            deliveryFee: deliveryFeeNum,
+            items: cart.map((it) => ({
+                key: it.key,
+                nombre: it.nombre,
+                varianteNombre: it.varianteNombre,
+                cantidad: it.cantidad,
+                precioUnitario: itemUnitPrice(it),
+            })),
+            subtotal: cartTotal,
+            total: totalFinal,
+        })
+    }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFeeNum, cart, cartTotal, totalFinal])
 
     const buildKey = (productoId: number, varianteId: number | undefined, agregados: CartItem['agregados']) =>
         `${productoId}-${varianteId ?? 0}-${agregados.map((a) => a.id).sort((x, y) => x - y).join(',')}`
@@ -151,9 +210,12 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
 
     const removeItem = (key: string) => setCart((prev) => prev.filter((it) => it.key !== key))
 
+    // La comanda del Dashboard (panel derecho) quita ítems del borrador a través de este handle.
+    useImperativeHandle(ref, () => ({ removeItem }))
+
     const resetForm = () => {
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
-        setNotas(''); setMetodoPago('cash'); setPagado(true); setDeliveryFee(''); setTipo('takeaway')
+        setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo('takeaway')
         setQuery(''); setMobileStep('productos')
     }
 
@@ -214,8 +276,9 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
     const CheckoutPanel = (
         <div className="flex flex-col h-full">
             <div className="flex-1 overflow-y-auto p-4 space-y-5">
-                {/* Carrito */}
-                <div>
+                {/* Carrito — solo mobile. En desktop el borrador vive en la comanda del
+                    panel derecho (Dashboard), donde también se quitan ítems. */}
+                <div className="lg:hidden">
                     <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
                             <ShoppingCart className="h-3.5 w-3.5" /> Pedido ({totalItems})
@@ -341,10 +404,6 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
                             )
                         })}
                     </div>
-                    <div className="flex items-center justify-between mt-3 px-1">
-                        <span className="text-sm font-medium text-foreground">Pedido pagado</span>
-                        <Switch checked={pagado} onCheckedChange={setPagado} />
-                    </div>
                 </div>
             </div>
 
@@ -397,34 +456,40 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
                             <Input
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    // Enter agrega el primer producto del resultado filtrado directamente al pedido.
+                                    if (e.key === 'Enter' && productosFiltrados.length > 0) {
+                                        e.preventDefault()
+                                        handleProductClick(productosFiltrados[0])
+                                    }
+                                }}
                                 placeholder="Buscar producto o tag..."
                                 className="h-10 pl-10 rounded-xl"
                             />
                         </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-3">
+                    {/* Scroll con scrollbar nunca visible: el scroll entre productos sigue funcionando. */}
+                    <div className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {productosFiltrados.length === 0 ? (
                             <p className="text-sm text-muted-foreground/60 py-12 text-center">No se encontraron productos.</p>
                         ) : (
                             porCategoria.map(([cat, items]) => (
                                 <div key={cat} className="mb-5">
                                     <h4 className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-foreground mb-2">{cat}</h4>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                                         {items.map((p) => (
                                             <button
                                                 key={p.id}
                                                 onClick={() => handleProductClick(p)}
-                                                className="text-left rounded-xl border border-border bg-muted/30 hover:bg-muted/60 hover:border-[#FF7A00]/40 transition-all p-2.5 active:scale-[0.98]"
+                                                className="text-left rounded-xl bg-muted/60 hover:bg-muted/80 transition-colors p-2.5 active:scale-[0.98]"
                                             >
                                                 <p className="text-xs font-semibold text-foreground leading-tight line-clamp-2 min-h-[2rem]">{p.nombre}</p>
                                                 <div className="flex items-center justify-between mt-1.5">
                                                     <span className="text-sm font-bold text-[#FF7A00]">
                                                         ${parseFloat(p.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                     </span>
-                                                    {((p.variantes?.length ?? 0) > 0 || (p.agregados?.length ?? 0) > 0) ? (
+                                                    {((p.variantes?.length ?? 0) > 0 || (p.agregados?.length ?? 0) > 0) && (
                                                         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                                                    ) : (
-                                                        <Plus className="h-3.5 w-3.5 text-muted-foreground" />
                                                     )}
                                                 </div>
                                             </button>
@@ -442,8 +507,9 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
                     </div>
                 </div>
 
-                {/* ── Checkout (sidebar desktop / paso mobile) ── */}
-                <div className={cn('w-full lg:w-[380px] xl:w-[420px] shrink-0 lg:border-l border-border bg-muted/10',
+                {/* ── Checkout (sidebar desktop / paso mobile) ──
+                    Angosto a propósito: libera ancho para una columna más en el grid de productos. */}
+                <div className={cn('w-full lg:w-[300px] xl:w-[340px] shrink-0 lg:border-l border-border bg-muted/10',
                     mobileStep === 'checkout' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col')}>
                     <div className="lg:hidden shrink-0 p-2 border-b border-border">
                         <button onClick={() => setMobileStep('productos')} className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground px-2 py-1">
@@ -464,7 +530,9 @@ export default function PuntoDeVenta({ onClose, onCreated, sucursalActivaId }: P
             )}
         </div>
     )
-}
+})
+
+export default PuntoDeVenta
 
 // ─────────────────────────────────────────────
 // OVERLAY: selección de variante + agregados

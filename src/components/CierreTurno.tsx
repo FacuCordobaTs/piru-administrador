@@ -33,7 +33,7 @@ interface CierreTurnoData {
   productosVendidos: ProductoVendido[]
   fechasDisponibles: string[]
 }
-interface CierreTurnoProps { open: boolean; onClose: () => void }
+interface CierreTurnoProps { open: boolean; onClose: () => void; fechaInicial?: string }
 
 /* ==========================================================================
    HELPERS
@@ -469,7 +469,7 @@ function HourlyChart({ pedidos }: { pedidos: CierreTurnoPedido[] }) {
 /* ==========================================================================
    MAIN COMPONENT
    ========================================================================== */
-export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
+export default function CierreTurnoSimple({ open, onClose, fechaInicial }: CierreTurnoProps) {
   const token = useAuthStore(s => s.token)
   const [data, setData] = useState<CierreTurnoData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -498,8 +498,8 @@ export default function CierreTurnoSimple({ open, onClose }: CierreTurnoProps) {
 
   useEffect(() => {
     if (!open) return
-    setQuery(''); setExpanded(new Set()); setSelectedFecha(''); setFilterTipo(null); setFilterOrigen(null)
-    fetchCierreTurno()
+    setQuery(''); setExpanded(new Set()); setSelectedFecha(fechaInicial || ''); setFilterTipo(null); setFilterOrigen(null)
+    fetchCierreTurno(fechaInicial)
     if (token) {
       facturacionApi.getEstado(token)
         .then((res: any) => { if (res.success) setAfipHabilitado(res.data.habilitado) })

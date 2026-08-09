@@ -48,7 +48,7 @@ export function HorariosGrid({
                 <span className="text-sm text-muted-foreground sm:pt-2">Cerrado</span>
               ) : (
                 turnos.map((turno, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-lg bg-muted p-1.5">
+                  <div key={i} className="flex items-center gap-2 rounded-lg bg-white dark:bg-muted p-1.5">
                     <Input
                       type="time"
                       value={turno.horaApertura}

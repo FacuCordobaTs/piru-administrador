@@ -247,9 +247,9 @@ export default function CodigosDescuento() {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
       {/* TOP HEADER — KPI Strip */}
-      <div className="border-b bg-background sticky top-0 z-20">
+      <div className="border-b bg-[#FFFBF0] dark:bg-background sticky top-0 z-20">
         <div className="px-6 py-5 max-w-3xl mx-auto w-full">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -275,8 +275,8 @@ export default function CodigosDescuento() {
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="flex flex-col bg-background w-full max-w-3xl mx-auto shrink-0">
-          <div className="px-4 py-3 border-b bg-muted/30">
+        <div className="flex flex-col bg-[#FFFBF0] dark:bg-background w-full max-w-3xl mx-auto shrink-0">
+          <div className="px-4 py-3 border-b bg-white dark:bg-muted/30">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <input
@@ -297,7 +297,7 @@ export default function CodigosDescuento() {
               </div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-white dark:bg-muted flex items-center justify-center mb-3">
                   <Tag className="w-5 h-5 text-muted-foreground" />
                 </div>
                 <h3 className="text-sm font-medium text-foreground">Sin códigos</h3>
@@ -475,7 +475,7 @@ function CodigoRow({
 
   return (
     <div className="w-full text-left px-4 py-3 flex items-center gap-3 border-b border-border/30 hover:bg-muted/50 transition-colors">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-muted text-muted-foreground">
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-white dark:bg-muted text-muted-foreground">
         {codigo.tipo === 'porcentaje' ? (
           <Percent className="w-5 h-5" />
         ) : (
@@ -486,7 +486,7 @@ function CodigoRow({
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold font-mono text-foreground">{codigo.codigo}</span>
           {!codigo.activo && (
-            <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground">
+            <Badge variant="outline" className="text-[10px] bg-white dark:bg-muted text-muted-foreground">
               Inactivo
             </Badge>
           )}

@@ -1277,6 +1277,29 @@ export const pedidoUnificadoApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+  // Pedidos de un solo día (día calendario AR YYYY-MM-DD). Endpoint aparte de /list.
+  getByDia: async (
+    token: string,
+    dia: string,
+    tipo: 'delivery' | 'takeaway' | 'all' = 'all',
+    page = 1,
+    limit = 50,
+    estado?: string,
+    sucursalId?: number | null,
+  ) => {
+    const params = new URLSearchParams({
+      dia,
+      page: page.toString(),
+      limit: limit.toString(),
+      tipo,
+    })
+    if (estado) params.append('estado', estado)
+    if (sucursalId != null) params.append('sucursalId', String(sucursalId))
+    return fetchApi(`/pedido-unificado/list-dia?${params}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
   getById: async (token: string, id: number) => {
     return fetchApi(`/pedido-unificado/${id}`, {
       method: 'GET',
@@ -1857,15 +1880,22 @@ export interface PagoLinkInfo {
   cantidad?: number
   categoria?: 'utility' | 'marketing'
   unidad?: string
-  monto: string
+  monto?: string
+  // Link ABIERTO (aviso de saldo bajo por WhatsApp): todavía no se eligió pack. La página
+  // muestra `packs` y recién al tocar uno se arma el pago (sin monto resuelto todavía).
+  requiereSeleccionPack?: boolean
+  packs?: PackRecarga[]
 }
 
 export const pagoApi = {
   info: async (token: string) =>
     fetchApi<{ success: boolean; data: PagoLinkInfo }>(`/pago/${token}`, { method: 'GET' }),
-  checkout: async (token: string) =>
+  // En los links ABIERTOS (requiereSeleccionPack) hay que pasar el packId elegido; en los
+  // resueltos (pack ya definido) no se manda body.
+  checkout: async (token: string, packId?: number) =>
     fetchApi<{ success: boolean; data: { url_pago: string } }>(`/pago/${token}/checkout`, {
       method: 'POST',
+      ...(packId != null ? { body: JSON.stringify({ packId }) } : {}),
     }),
 }
 

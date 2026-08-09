@@ -250,7 +250,7 @@ function ZonasFullScreen({ onClose }: { onClose: () => void }) {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#FFFBF0] dark:bg-background">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         <Button variant="ghost" size="icon" className="h-10 w-10" onClick={onClose}>
           <ArrowLeft className="h-5 w-5" />
