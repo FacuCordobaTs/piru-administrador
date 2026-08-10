@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore, type SuscripcionResumen } from '@/store/restauranteStore'
 import { useTareasPendientes } from '@/pages/ajustes/hooks/useTareasPendientes'
@@ -22,6 +21,7 @@ import {
   Sparkles,
   ArrowUpRight,
   ChevronRight,
+  X,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -77,6 +77,16 @@ const DashboardLayout = () => {
   useEffect(() => {
     localStorage.setItem('piru-sidebar-collapsed', collapsed ? '1' : '0')
   }, [collapsed])
+
+  // Escape cierra el drawer móvil (reemplaza el esc del Sheet overlay viejo).
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
 
   // Fetch restaurante data on mount
   useEffect(() => {
@@ -190,19 +200,20 @@ const DashboardLayout = () => {
     )
   }
 
-  // `compact` = rail de solo iconos (aplica en el sidebar de escritorio)
-  const renderSidebar = (compact: boolean) => (
+  // `compact` = rail de solo iconos (aplica en el sidebar de escritorio).
+  // `drawer` = versión móvil (push): el botón de cabecera cierra el drawer.
+  const renderSidebar = (compact: boolean, drawer = false) => (
     <div className="flex h-full flex-col">
       {/* Cabecera: botón para colapsar/expandir */}
       <div className={`flex items-center h-16 shrink-0 ${compact ? 'justify-center px-2' : 'justify-end px-3'}`}>
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => setCollapsed((v) => !v)}
-          title={compact ? 'Expandir menú' : 'Comprimir menú'}
+          onClick={() => (drawer ? setMenuOpen(false) : setCollapsed((v) => !v))}
+          title={drawer ? 'Cerrar menú' : compact ? 'Expandir menú' : 'Comprimir menú'}
           className="text-muted-foreground hover:text-foreground"
         >
-          {compact ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          {drawer ? <X className="h-5 w-5" /> : compact ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
         </Button>
       </div>
 
@@ -294,23 +305,31 @@ const DashboardLayout = () => {
         {renderSidebar(collapsed)}
       </aside>
 
-      {/* Sidebar móvil (drawer) — siempre expandido */}
-      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-        <SheetContent side="left" className="w-64 p-0 bg-background">
-          {renderSidebar(false)}
-        </SheetContent>
-      </Sheet>
+      {/* Sidebar móvil (push) — en el flujo flex: se extiende a la misma altura que el
+          contenido y lo comprime hacia la derecha, en vez de abrirse por encima (el viejo
+          Sheet era un overlay fixed). Se abre/cierra animando el ancho w-0 ↔ w-64. */}
+      <aside
+        className={`md:hidden flex shrink-0 flex-col bg-background border-r border-border transition-[width] duration-200 overflow-hidden ${
+          menuOpen ? 'w-64' : 'w-0'
+        }`}
+      >
+        {renderSidebar(false, true)}
+      </aside>
 
       {/* Contenido principal */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Barra superior sólo en móvil (para abrir el drawer) */}
+        {/* Barra superior sólo en móvil (para abrir/cerrar el drawer push) */}
         <div className="md:hidden flex items-center gap-2 h-14 px-3 bg-[#FFFBF0] dark:bg-background shrink-0">
-          <Button variant="ghost" size="icon" onClick={() => setMenuOpen(true)}>
+          <Button variant="ghost" size="icon" onClick={() => setMenuOpen((v) => !v)}>
             <Menu className="h-5 w-5" />
           </Button>
         </div>
 
-        <main className="flex-1 min-h-0 overflow-y-auto">
+        {/* Tocar el contenido cierra el drawer (sin scrim: el contenido queda visible). */}
+        <main
+          className="flex-1 min-h-0 overflow-y-auto"
+          onClick={() => menuOpen && setMenuOpen(false)}
+        >
           <Outlet />
         </main>
       </div>

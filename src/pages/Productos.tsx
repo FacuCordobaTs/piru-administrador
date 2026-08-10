@@ -610,12 +610,14 @@ const Productos = () => {
   }
 
   return (
-    <div className="bg-[#FFFBF0] dark:bg-[#0A0A0A] selection:bg-[#FF7A00]/20 selection:text-[#FF7A00] flex">
+    <div className="h-full flex overflow-hidden bg-[#FFFBF0] dark:bg-[#0A0A0A] selection:bg-[#FF7A00]/20 selection:text-[#FF7A00]">
 
-      {/* ── Left: content area (shrinks when panel opens) ── */}
+      {/* ── Left: content area (shrinks when panel opens). En móvil se oculta
+          (el panel full-width la reemplaza en el flujo); en md+ se comprime a
+          60% — nunca queda debajo de un overlay. ── */}
       <div className={cn(
-        "transition-all duration-300 ease-out overflow-y-auto",
-        activePanelType ? "w-full md:w-[60%]" : "w-full"
+        "h-full transition-[width] duration-300 ease-out overflow-y-auto min-w-0",
+        activePanelType ? "hidden md:block md:w-[60%]" : "w-full"
       )}>
 
         {/* ── Header (not sticky — flows with document) ── */}
@@ -845,9 +847,9 @@ const Productos = () => {
         </div>
       </div>
 
-      {/* FAB (Mobile Only) */}
+      {/* FAB (Mobile Only) — oculto mientras el panel full-width está abierto */}
       <Button
-        className="sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50"
+        className={cn("sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50", activePanelType && "hidden")}
         onClick={abrirPanelNuevo}
       >
         <Plus className="h-6 w-6" />
@@ -855,12 +857,15 @@ const Productos = () => {
 
       {/* ─────────────────────────────────────────────
           SIDE PANEL (shared container)
+          En el flujo flex (no fixed): se extiende a la misma altura que el
+          contenido y lo desplaza a la izquierda, como el sidebar del layout.
+          Cerrado = w-0; abierto = full-width en móvil / 40% en md+.
       ───────────────────────────────────────────── */}
       <div
         className={cn(
-          "fixed top-14 right-0 bottom-0 w-full md:w-[40%] z-30 bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-white/5",
-          "transition-transform duration-300 ease-out",
-          activePanelType ? "translate-x-0" : "translate-x-full"
+          "relative h-full shrink-0 bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-white/5 overflow-hidden",
+          "transition-[width] duration-300 ease-out",
+          activePanelType ? "w-full md:w-[40%]" : "w-0"
         )}
       >
         {/* X button */}

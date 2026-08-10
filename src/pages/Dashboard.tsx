@@ -39,17 +39,17 @@ import { TrialValorBanner } from '@/components/TrialValorBanner'
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
-// Acorta una dirección: se queda con lo que hay antes de la 2ª coma
-// y elimina el código postal argentino (ej. "S3004") que puede variar.
+// Acorta una dirección: calle + número (1ª parte, se conserva siempre) y
+// localidad (2ª parte) eliminando el código postal argentino (ej. "S3000BV0") que puede variar.
+// El CPA solo se busca en la localidad: jamás en la calle, para no borrar la altura.
 function formatDireccionCorta(direccion?: string | null): string {
     if (!direccion) return ''
     const partes = direccion.split(',')
-    let corta = partes.slice(0, 2).join(',')
-    // Elimina el CPA argentino: 1 letra opcional + 4 dígitos + hasta 3 letras (ej. S3004, S3004ABC, 3004)
-    corta = corta.replace(/\b[A-Za-z]?\d{4}[A-Za-z]{0,3}\b/g, '')
-    // Limpia comas/espacios sobrantes que pudieran quedar tras el reemplazo
-    corta = corta.replace(/\s{2,}/g, ' ').replace(/\s+,/g, ',').replace(/,\s*,/g, ',').replace(/,\s*$/,'').trim()
-    return corta
+    const calle = partes[0].trim()
+    if (!partes[1]) return calle
+    // Elimina el CPA argentino: 1 letra opcional + 4 dígitos + hasta 3 caracteres (ej. S3000BV0, 3000)
+    const localidad = partes[1].replace(/\b[A-Za-z]?\d{4}[A-Za-z0-9]{0,3}\b/g, '').replace(/\s{2,}/g, ' ').trim()
+    return localidad ? `${calle}, ${localidad}` : calle
 }
 
 // ─────────────────────────────────────────────
@@ -1648,6 +1648,11 @@ const Dashboard = () => {
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
+                    {!esPlanBasico && (
+                        <Button variant="outline" className="h-10 rounded-xl" onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}>
+                            <MapIcon className="mr-2 h-4 w-4" /> Mapa
+                        </Button>
+                    )}
                 </div>
             </header>
 
@@ -1779,11 +1784,6 @@ const Dashboard = () => {
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-48">
-                                        {!esPlanBasico && (
-                                            <DropdownMenuItem onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}>
-                                                <MapIcon className="h-4 w-4 mr-2" /> Mapa
-                                            </DropdownMenuItem>
-                                        )}
                                         <DropdownMenuItem onClick={openMetodosPagoModal}>
                                             <Settings className="h-4 w-4 mr-2" /> Pagos
                                         </DropdownMenuItem>
