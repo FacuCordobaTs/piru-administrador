@@ -384,7 +384,7 @@ function ProductoRevisionCard({ p, onChange, onRemove }: {
   if (!editing) {
     const hr = <div className="h-px bg-black/[0.06] dark:bg-white/[0.08] my-4" />
     return (
-      <div className="relative rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-5 py-5 text-center transition-colors">
+      <div className="relative rounded-2xl bg-white dark:bg-zinc-900 px-5 py-5 text-center shadow-sm transition-colors">
         <button
           onClick={() => setEditing(true)}
           aria-label="Editar producto"
@@ -1807,7 +1807,7 @@ const ClaimOnboarding = () => {
         {nombre} quedó lista y ya recibiste tu primer pedido. Entrá al panel para gestionar todo desde acá.
       </p>
 
-      <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 text-left">
+      <div className="mt-6 w-full rounded-2xl bg-white dark:bg-zinc-900 p-4 text-left shadow-sm">
         <p className="text-sm font-semibold">Tu link</p>
         <p className="font-mono text-sm mt-1 truncate">
           <span className="text-muted-foreground/60">piru.app/</span>

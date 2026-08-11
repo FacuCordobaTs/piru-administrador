@@ -114,6 +114,7 @@ type Card =
   | { kind: 'productos' }
   | { kind: 'pagos' }
   | { kind: 'delivery' }
+  | { kind: 'mensaje' }
   | { kind: 'reassure'; id: string; icon: LucideIcon; titulo: string; valor: string }
   | { kind: 'verificar' }
 
@@ -327,7 +328,7 @@ export default function ClaimTienda() {
     return DEFAULT_CENTER
   }, [config])
 
-  // ── Recorrido: intro + link + logo + productos + pagos + delivery + verificación ──
+  // ── Recorrido: intro + link + logo + productos + pagos + delivery + ejemplo de pedido + verificación ──
   const cards = useMemo<Card[]>(() => {
     if (!tienda) return []
     const inv = inventario
@@ -354,6 +355,9 @@ export default function ClaimTienda() {
       }
     }
 
+    // Después de revisar la configuración, mostramos el resultado concreto: cómo le llega un pedido
+    // al WhatsApp del local. Queda antes del claim para que el dueño entienda qué está activando.
+    list.push({ kind: 'mensaje' })
     list.push({ kind: 'verificar' })
     return list
   }, [tienda, inventario, config])
@@ -927,6 +931,54 @@ export default function ClaimTienda() {
               </div>
             )}
 
+            {/* ── Ejemplo del pedido que recibe el local por WhatsApp ── */}
+            {card?.kind === 'mensaje' && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                <div className="h-14 w-14 rounded-2xl bg-[#25D366]/10 ring-1 ring-[#25D366]/20 flex items-center justify-center">
+                  <MessageCircle className="h-6 w-6 text-[#20B957]" strokeWidth={2} />
+                </div>
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">Tus pedidos, claros y al instante</h1>
+                <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
+                  Cada compra te llega por WhatsApp con el detalle completo, para que puedas prepararla sin ir y venir con el cliente.
+                </p>
+
+                <div className="relative mt-6 w-full overflow-hidden rounded-[1.7rem] border border-[#25D366]/20 bg-gradient-to-b from-[#effbf3] to-white p-3 shadow-[0_16px_42px_-24px_rgba(20,185,87,0.5)] dark:from-[#10261a] dark:to-zinc-900">
+                  <div className="absolute inset-x-8 top-0 h-20 rounded-full bg-[#25D366]/10 blur-2xl" />
+                  <div className="relative flex items-center justify-between px-1 pb-3">
+                    <div className="flex items-center gap-2 text-left">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#25D366] text-[11px] font-bold text-white">✓</span>
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">Así se ve en tu WhatsApp</p>
+                        <p className="text-[11px] text-muted-foreground">Listo para preparar</p>
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-[#25D366]/10 px-2.5 py-1 text-[10px] font-semibold text-[#168a40] dark:text-[#5ce58d]">Pedido nuevo</span>
+                  </div>
+                  <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-sm dark:border-white/[0.08] dark:bg-zinc-800">
+                    <img
+                      src="/Ejemplo_mensaje_basico.png"
+                      alt="Ejemplo de un pedido recibido por WhatsApp"
+                      className="block w-full"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 flex w-full items-start gap-3 rounded-2xl bg-zinc-100/80 px-4 py-3.5 text-left dark:bg-zinc-900">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#FF7A00]" strokeWidth={2.5} />
+                  <p className="text-[13px] leading-relaxed text-muted-foreground">
+                    Producto, extras, pago, dirección y datos de entrega: todo junto en un solo mensaje.
+                  </p>
+                </div>
+
+                <button
+                  onClick={continuar}
+                  className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
+                >
+                  Entendido, continuar
+                </button>
+              </div>
+            )}
+
             {/* ── Verificación del WhatsApp ── */}
             {card?.kind === 'verificar' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
@@ -1072,7 +1124,7 @@ export default function ClaimTienda() {
                 </div>
 
                 {/* Plan y precio */}
-                <div className="mt-6 rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-5">
+                <div className="mt-6 rounded-2xl bg-white shadow-sm dark:bg-zinc-900 dark:shadow-none p-5">
                   <div className="flex items-baseline justify-between">
                     <span className="text-sm font-semibold text-muted-foreground">Plan {info.nombre}</span>
                     <span className="text-[1.6rem] font-semibold tracking-tight tabular-nums">
@@ -1095,7 +1147,7 @@ export default function ClaimTienda() {
                 </div>
 
                 {/* Ajustes */}
-                <div className="mt-4 flex items-start gap-3 rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4">
+                <div className="mt-4 flex items-start gap-3 rounded-2xl bg-white shadow-sm dark:bg-zinc-900 dark:shadow-none p-4">
                   <div className="h-9 w-9 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center shrink-0">
                     <Settings className="h-4 w-4 text-muted-foreground" />
                   </div>
