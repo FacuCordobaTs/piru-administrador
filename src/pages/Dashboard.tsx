@@ -983,9 +983,9 @@ const Dashboard = () => {
     // Avisar al cliente por WhatsApp es exclusivo de Intermedio+ (feature avisos_whatsapp_cliente).
     // Si el backend no devuelve suscripción (admin/backend viejo), fail-open para no romper.
     const puedeAvisarWhatsapp = !suscripcion || (suscripcion.features?.includes('avisos_whatsapp_cliente') ?? true)
-    // El plan Básico no gestiona pedidos desde el panel (mapa, repartidores, anotar pedido,
-    // despachar/cobrar). Fail-open: si el backend no devuelve suscripción (admin/backend viejo),
-    // no ocultamos nada.
+    // El plan Básico no incluye repartidores ni carga manual. Sí puede despachar y usar el mapa,
+    // pedidos, sin exponer la gestión ni el estado de cobro. Fail-open: si el backend no
+    // devuelve suscripción (admin/backend viejo), no ocultamos nada.
     const esPlanBasico = suscripcion?.planCodigo === 'basico'
 
     const { printRaw, selectedPrinter } = usePrinter()
@@ -1366,7 +1366,8 @@ const Dashboard = () => {
     }, [token, loadRepartidores])
 
     const handleDespachar = async (tipo: 'delivery' | 'takeaway', id: number) => {
-        if (tipo === 'delivery') {
+        // Básico despacha directamente: no muestra el flujo de asignación de repartidor.
+        if (!esPlanBasico && tipo === 'delivery') {
             const activos = repartidoresList.filter(r => r.estado === 'activo')
             if (activos.length >= 2) {
                 setPendingDispatchPedido({ tipo, id })
@@ -1648,11 +1649,9 @@ const Dashboard = () => {
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
-                    {!esPlanBasico && (
-                        <Button variant="outline" className="h-10 rounded-xl" onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}>
-                            <MapIcon className="mr-2 h-4 w-4" /> Mapa
-                        </Button>
-                    )}
+                    <Button variant="outline" className="h-10 rounded-xl" onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}>
+                        <MapIcon className="mr-2 h-4 w-4" /> Mapa
+                    </Button>
                 </div>
             </header>
 
@@ -1853,10 +1852,10 @@ const Dashboard = () => {
                                                                         <ShoppingCart className="h-2.5 w-2.5 shrink-0" />Manual
                                                                     </Badge>
                                                                 )}
-                                                                {!pedido.pagado && (
+                                                                {!esPlanBasico && !pedido.pagado && (
                                                                     <Badge className="bg-muted text-muted-foreground text-[9px] px-1 border border-border hover:bg-muted/80">Pendiente</Badge>
                                                                 )}
-                                                                {pagoBadge && (
+                                                                {!esPlanBasico && pagoBadge && (
                                                                     <Badge variant="outline" className={cn("text-[9px] px-1 py-0 h-4 border-none", pagoBadge.className)}>
                                                                         {pagoBadge.icon && <span className="mr-1">{pagoBadge.icon}</span>}{pagoBadge.label}
                                                                     </Badge>
@@ -1906,20 +1905,20 @@ const Dashboard = () => {
                                                                             : <MessageCircle className="h-4 w-4" />}
                                                                     </button>
                                                                 )}
-                                                                {!esPlanBasico && (
-                                                                    <button
-                                                                        title={pedido.pagado ? 'Despachar' : 'Cobrar'}
-                                                                        className={cn("h-8 w-8 rounded-lg flex items-center justify-center text-white shrink-0 transition-colors disabled:opacity-50 cursor-pointer", pedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            if (pedido.pagado) void handleDespachar(pedido.tipo, pedido.id);
-                                                                            else handleAprobarPago(pedido);
-                                                                        }}
-                                                                        disabled={updatingPago === pedido.id.toString()}
-                                                                    >
-                                                                        {updatingPago === pedido.id.toString() ? <Loader2 className="h-4 w-4 animate-spin" /> : (pedido.pagado ? <ShoppingBag className="h-4 w-4" /> : <Wallet className="h-4 w-4" />)}
-                                                                    </button>
-                                                                )}
+                                                                <button
+                                                                    title={esPlanBasico || pedido.pagado ? 'Despachar' : 'Cobrar'}
+                                                                    className={cn("h-8 w-8 rounded-lg flex items-center justify-center text-white shrink-0 transition-colors disabled:opacity-50 cursor-pointer", esPlanBasico || pedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (esPlanBasico || pedido.pagado) void handleDespachar(pedido.tipo, pedido.id);
+                                                                        else handleAprobarPago(pedido);
+                                                                    }}
+                                                                    disabled={!esPlanBasico && updatingPago === pedido.id.toString()}
+                                                                >
+                                                                    {!esPlanBasico && updatingPago === pedido.id.toString()
+                                                                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                                                                        : esPlanBasico || pedido.pagado ? <ShoppingBag className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                                                                </button>
                                                             </div>
                                                         </div>
 
@@ -2114,7 +2113,7 @@ const Dashboard = () => {
 
                                             {/* Cobro (si no está pagado). El botón "Cobrar" para métodos ya elegidos vive
                                                 solo en el footer; acá quedan únicamente las opciones de verificación manual. */}
-                                            {!selectedUnifiedPedido.pagado && selectedUnifiedPedido.estado !== 'archived' && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago) && (
+                                            {!esPlanBasico && !selectedUnifiedPedido.pagado && selectedUnifiedPedido.estado !== 'archived' && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago) && (
                                                 <div className="mb-6">
                                                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">
                                                         Verificar y cobrar
@@ -2359,7 +2358,7 @@ const Dashboard = () => {
                                         <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
                                             <div className="flex items-baseline justify-between gap-3">
                                                 <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">
-                                                    {selectedUnifiedPedido.pagado ? 'Total cobrado' : 'Total a cobrar'}
+                                                    {esPlanBasico ? 'Total' : selectedUnifiedPedido.pagado ? 'Total cobrado' : 'Total a cobrar'}
                                                 </span>
                                                 <span className="text-3xl font-black tracking-tight text-[#FF7A00]">
                                                     ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
@@ -2384,27 +2383,27 @@ const Dashboard = () => {
                                                                 : <MessageCircle className="h-5 w-5" />}
                                                         </button>
                                                     )}
-                                                    {!esPlanBasico && (
-                                                        <Button
-                                                            className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98]", selectedUnifiedPedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
-                                                            onClick={() => {
-                                                                if (selectedUnifiedPedido.pagado) void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)
-                                                                else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
-                                                                else toast.error('Debes verificar el pago primero')
-                                                            }}
-                                                            disabled={
-                                                                updatingPago === selectedUnifiedPedido.id.toString()
-                                                                || (!selectedUnifiedPedido.pagado && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago))
-                                                            }
-                                                        >
-                                                            {updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
-                                                            {selectedUnifiedPedido.pagado
+                                                    <Button
+                                                        className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98]", esPlanBasico || selectedUnifiedPedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
+                                                        onClick={() => {
+                                                            if (esPlanBasico || selectedUnifiedPedido.pagado) void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)
+                                                            else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
+                                                            else toast.error('Debes verificar el pago primero')
+                                                        }}
+                                                        disabled={!esPlanBasico && (
+                                                            updatingPago === selectedUnifiedPedido.id.toString()
+                                                            || (!selectedUnifiedPedido.pagado && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago))
+                                                        )}
+                                                    >
+                                                        {!esPlanBasico && updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
+                                                        {esPlanBasico
+                                                            ? 'Despachar Pedido'
+                                                            : selectedUnifiedPedido.pagado
                                                                 ? 'Despachar Pedido'
                                                                 : pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)
                                                                     ? 'Cobrar'
                                                                     : 'Pendiente de Cobro'}
-                                                        </Button>
-                                                    )}
+                                                    </Button>
                                                 </div>
                                             )}
                                         </div>
@@ -2508,10 +2507,10 @@ const Dashboard = () => {
                                                         {pedido.tipo === 'delivery' ? <Truck className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
                                                         {pedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
                                                     </span>
-                                                    {!pedido.pagado && (
+                                                    {!esPlanBasico && !pedido.pagado && (
                                                         <span className="text-[9px] font-semibold text-amber-600 dark:text-amber-400">Sin cobrar</span>
                                                     )}
-                                                    {pagoBadge && (
+                                                    {!esPlanBasico && pagoBadge && (
                                                         <Badge variant="outline" className={cn("text-[9px] px-1 py-0 h-4 border-none", pagoBadge.className)}>
                                                             {pagoBadge.icon && <span className="mr-0.5">{pagoBadge.icon}</span>}{pagoBadge.label}
                                                         </Badge>
