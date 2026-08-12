@@ -224,9 +224,35 @@ function SaldoCard({ data, onDone }: { data: Sub; onDone: () => void }) {
         <AutoRecargaToggle inicial={w.autoRecarga.habilitada} onDone={onDone} />
       </div>
 
+      <BotonRecargaDebug />
+
       <RecargaSheet open={recargaOpen} onOpenChange={setRecargaOpen} />
     </div>
   )
+}
+
+// TEMPORAL: eliminar después de probar el webhook de acreditación de recargas.
+function BotonRecargaDebug() {
+  const [enviando, setEnviando] = useState(false)
+  const enviarLink = async () => {
+    const token = useAuthStore.getState().token
+    if (!token) return
+    setEnviando(true)
+    try {
+      const res = await mensajesApi.enviarPagoDebugLinkWhatsapp(token)
+      toast.success(`Link DEBUG de $10 para 200 avisos enviado a WhatsApp (${res.data.telefono})`)
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo enviar el link DEBUG')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return <div className="mt-4 border-t border-dashed border-amber-500/40 pt-4">
+    <Button onClick={enviarLink} disabled={enviando} variant="outline" className="border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400">
+      {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <><MessageCircle className="mr-2 h-4 w-4" />DEBUG: 200 avisos por $10</>}
+    </Button>
+  </div>
 }
 
 function SaldoIlimitadoCard() {

@@ -1768,6 +1768,12 @@ export const planesApi = {
         body: JSON.stringify({ planId, ciclo }),
       },
     ),
+  // DEBUG TEMPORAL: renueva el plan actual por $10. El backend ignora cualquier plan del cliente.
+  enviarPagoDebugLinkWhatsapp: async (token: string) =>
+    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>('/planes/debug/pago-link-whatsapp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
   cancelar: async (token: string) =>
     fetchApi<{ success: boolean; message: string }>('/planes/cancelar', {
       method: 'POST',
@@ -1867,6 +1873,12 @@ export const mensajesApi = {
         body: JSON.stringify({ packId }),
       },
     ),
+  // DEBUG TEMPORAL: acredita 200 avisos utility por $10.
+  enviarPagoDebugLinkWhatsapp: async (token: string) =>
+    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>('/mensajes/debug/pago-link-whatsapp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
 }
 
 // ── Link de pago público (/pago/:token) — SIN autenticación ───────────────

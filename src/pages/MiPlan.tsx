@@ -151,9 +151,35 @@ function PlanActual({ data, ultimoPago }: { data: Sub; ultimoPago: string | null
         {esTrial ? <p>{trialDias && trialDias > 0 ? `Prueba gratis hasta el ${finTrial} · quedan ${trialDias} días.` : `Prueba gratis${finTrial ? ` hasta el ${finTrial}` : ''}.`}</p> : <>{ultimoPago && <p>Último pago: {fmtFecha(ultimoPago)}</p>}{data.fechaProximoCobro && !necesitaPago && <p>Próximo pago: {fmtFecha(data.fechaProximoCobro)}</p>}</>}
         {(data.trialValor?.pedidos ?? 0) > 0 && <p>Ya recibiste {data.trialValor!.pedidos} pedidos por {fmtARS(data.trialValor!.monto)} con Piru.</p>}
       </div>
-      <div className="shrink-0"><BotonPagoWhatsapp planId={data.planId} ciclo={ciclo} label={cta} /><p className="mt-2 text-center text-xs text-muted-foreground">El link llega al WhatsApp del local.</p></div>
+      <div className="shrink-0 space-y-2">
+        <BotonPagoWhatsapp planId={data.planId} ciclo={ciclo} label={cta} />
+        <BotonPagoDebug />
+        <p className="text-center text-xs text-muted-foreground">El link llega al WhatsApp del local.</p>
+      </div>
     </div>
   </section>
+}
+
+// TEMPORAL: eliminar después de probar el webhook de acreditación de suscripciones.
+function BotonPagoDebug() {
+  const [enviando, setEnviando] = useState(false)
+  const enviarLink = async () => {
+    const token = useAuthStore.getState().token
+    if (!token) return
+    setEnviando(true)
+    try {
+      const res = await planesApi.enviarPagoDebugLinkWhatsapp(token)
+      toast.success(`Link DEBUG de $10 enviado a WhatsApp (${res.data.telefono})`)
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo enviar el link DEBUG')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return <Button onClick={enviarLink} disabled={enviando} variant="outline" className="w-full border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400 sm:w-auto">
+    {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <><MessageCircle className="h-4 w-4" />DEBUG: renovar por $10</>}
+  </Button>
 }
 
 function PlanVisual({ codigo, compact = false }: { codigo: string; compact?: boolean }) {
