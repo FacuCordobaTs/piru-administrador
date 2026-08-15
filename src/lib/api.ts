@@ -1328,6 +1328,8 @@ export const pedidoUnificadoApi = {
           pagado?: boolean
           metodoPago?: string
           sucursalId?: number
+          mesaLocalId?: number
+          consumoEnLocal?: boolean
           notificarWhatsappPrueba?: boolean
           items: Array<PedidoUnificadoItemInput>
         }
@@ -1340,6 +1342,8 @@ export const pedidoUnificadoApi = {
           pagado?: boolean
           metodoPago?: string
           sucursalId?: number
+          mesaLocalId?: number
+          consumoEnLocal?: boolean
           notificarWhatsappPrueba?: boolean
           items: Array<PedidoUnificadoItemInput>
         }
@@ -1487,6 +1491,29 @@ export const sucursalesApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+}
+
+export interface MesaLocal {
+  id: number
+  restauranteId: number
+  sucursalId: number | null
+  nombre: string
+  posicionX: number
+  posicionY: number
+  ancho: number
+  alto: number
+  capacidad: number
+  estadoManual: string | null
+  activo: boolean
+  orden: number
+}
+
+export const mesasLocalesApi = {
+  list: (token: string, incluirInactivas = true) => fetchApi<{ success: boolean; data: MesaLocal[] }>(`/mesas-locales?incluirInactivas=${incluirInactivas}`, { headers: { Authorization: `Bearer ${token}` } }),
+  create: (token: string, data: Partial<Omit<MesaLocal, 'id' | 'restauranteId'>>) => fetchApi<{ success: boolean; data: MesaLocal }>('/mesas-locales', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  update: (token: string, id: number, data: Partial<Omit<MesaLocal, 'id' | 'restauranteId'>>) => fetchApi<{ success: boolean; data: MesaLocal }>(`/mesas-locales/${id}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  guardarLayout: (token: string, mesas: Array<Pick<MesaLocal, 'id' | 'posicionX' | 'posicionY' | 'ancho' | 'alto' | 'orden'>>) => fetchApi<{ success: boolean }>('/mesas-locales/layout', { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ mesas }) }),
+  desactivar: (token: string, id: number) => fetchApi<{ success: boolean }>(`/mesas-locales/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }),
 }
 
 // Códigos de Descuento API

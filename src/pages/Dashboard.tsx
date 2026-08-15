@@ -9,11 +9,12 @@ import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
-import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi } from '@/lib/api'
+import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi, mesasLocalesApi, type MesaLocal } from '@/lib/api'
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
-import PuntoDeVenta, { type PosDraft, type PuntoDeVentaHandle } from '@/components/PuntoDeVenta'
+import PuntoDeVenta, { type PosDraft, type PosDraftUpdate, type PuntoDeVentaHandle } from '@/components/PuntoDeVenta'
+import { MesasOperativas } from '@/components/MesasOperativas'
 import {
     Loader2, Plus, Clock, Trash2,
     User, ArrowLeft, Printer, Truck, MapPin,
@@ -72,6 +73,7 @@ interface UnifiedPedido {
     horarioProgramado?: string | null; latitud?: string | null; longitud?: string | null;
     deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null;
     grupal?: boolean | null; creadoPorIa?: boolean | null; anotadoManualmente?: boolean | null;
+    mesaLocalId?: number | null; consumoEnLocal?: boolean | null;
 }
 interface Repartidor { id: number; nombre: string; estado: 'activo' | 'inactivo'; restauranteId: number }
 interface ClienteContexto {
@@ -92,6 +94,22 @@ function readStoredSucursalId(): number | null {
     } catch {
         return null
     }
+}
+
+function useDesktopViewport() {
+    const [isDesktop, setIsDesktop] = useState(() =>
+        typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+    )
+
+    useEffect(() => {
+        const media = window.matchMedia('(min-width: 1024px)')
+        const sync = () => setIsDesktop(media.matches)
+        sync()
+        media.addEventListener('change', sync)
+        return () => media.removeEventListener('change', sync)
+    }, [])
+
+    return isDesktop
 }
 
 // ─────────────────────────────────────────────
@@ -828,7 +846,21 @@ const POS_METODO_LABEL: Record<string, string> = {
     mercadopago: 'Mercado Pago',
 }
 
-const PosComandaPreview = ({ draft, onRemoveItem }: { draft: PosDraft | null; onRemoveItem?: (key: string) => void }) => {
+const PosComandaPreview = ({
+    draft,
+    onEditItem,
+    onUpdate,
+    mesasActivas = false,
+    mesasDisponibles = [],
+    onMesaChange,
+}: {
+    draft: PosDraft | null
+    onEditItem?: (key: string) => void
+    onUpdate?: (changes: PosDraftUpdate) => void
+    mesasActivas?: boolean
+    mesasDisponibles?: Array<Pick<MesaLocal, 'id' | 'nombre'>>
+    onMesaChange?: (mesa: Pick<MesaLocal, 'id' | 'nombre'> | null) => void
+}) => {
     if (!draft) {
         return (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-8">
@@ -852,57 +884,67 @@ const PosComandaPreview = ({ draft, onRemoveItem }: { draft: PosDraft | null; on
                 <div className="flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6 pb-10">
 
-                        {/* Tipo + estado en curso */}
+                        {/* Modalidad y cobro: se eligen en la comanda, cerca del total. */}
                         <div className="flex items-center justify-between mb-6">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                                {draft.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-                                {draft.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
-                            </span>
+                            <div className="flex rounded-xl bg-muted/60 p-1 gap-1">
+                                <button onClick={() => onUpdate?.({ tipo: 'takeaway' })} className={cn('h-8 px-3 rounded-lg text-xs font-bold transition-colors', draft.tipo === 'takeaway' ? 'bg-background text-[#FF7A00] shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+                                    <Store className="h-3.5 w-3.5 inline mr-1" />Consumo en el local
+                                </button>
+                                <button onClick={() => onUpdate?.({ tipo: 'delivery' })} className={cn('h-8 px-3 rounded-lg text-xs font-bold transition-colors', draft.tipo === 'delivery' ? 'bg-background text-[#FF7A00] shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+                                    <Truck className="h-3.5 w-3.5 inline mr-1" />Delivery
+                                </button>
+                            </div>
                             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#FF7A00]">
                                 <Zap className="h-3 w-3" /> En curso
                             </span>
                         </div>
 
-                        {/* Identidad del cliente */}
+                        {/* Datos inline: no hay un segundo formulario separado de la comanda. */}
                         <div className="mb-6 text-left">
-                            <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">
-                                {draft.nombreCliente || 'Cliente sin nombre'}
-                            </h2>
-                            <div className="mt-2 space-y-1.5">
+                            <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 px-0 border-0 border-b rounded-none text-2xl font-black tracking-tight focus-visible:ring-0 focus-visible:border-[#FF7A00]" />
+                            <div className="mt-3 space-y-2">
+                                <div className="flex items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
+                                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                    <Input value={draft.telefono} onChange={(event) => onUpdate?.({ telefono: event.target.value })} placeholder="Celular" inputMode="tel" className="h-9 px-0 border-0 rounded-none focus-visible:ring-0" />
+                                </div>
                                 {draft.tipo === 'delivery' ? (
-                                    draft.direccion ? (
-                                        <p className="flex items-start justify-start gap-2 text-base font-semibold text-foreground leading-snug">
-                                            <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                                            <span>{draft.direccion}</span>
-                                        </p>
-                                    ) : (
-                                        <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
+                                    <>
+                                        <div className="flex items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
                                             <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                            Falta la dirección
-                                        </p>
-                                    )
+                                            <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 px-0 border-0 rounded-none focus-visible:ring-0" />
+                                        </div>
+                                        <div className="flex items-center gap-2 w-40 border-b border-border/60 focus-within:border-[#FF7A00]">
+                                            <span className="text-sm font-bold text-muted-foreground">$</span>
+                                            <Input value={draft.deliveryFee || ''} onChange={(event) => onUpdate?.({ deliveryFee: Number(event.target.value.replace(/\D/g, '')) || 0 })} placeholder="Envío" inputMode="numeric" className="h-9 px-0 border-0 rounded-none focus-visible:ring-0" />
+                                        </div>
+                                    </>
                                 ) : (
-                                    <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
-                                        <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                        Retira en el local
-                                    </p>
+                                    <div className="space-y-2">
+                                        <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
+                                            <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                            Consumo en el local
+                                        </p>
+                                        {mesasActivas && (
+                                            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                                                <span className="shrink-0 font-medium">Mesa</span>
+                                                <select
+                                                    value={draft.mesaLocalId ?? ''}
+                                                    onChange={(event) => onMesaChange?.(mesasDisponibles.find((mesa) => mesa.id === Number(event.target.value)) ?? null)}
+                                                    className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 text-sm text-foreground"
+                                                >
+                                                    <option value="">Sin mesa</option>
+                                                    {mesasDisponibles.map((mesa) => <option key={mesa.id} value={mesa.id}>{mesa.nombre}</option>)}
+                                                </select>
+                                            </label>
+                                        )}
+                                    </div>
                                 )}
-                                {draft.telefono && (
-                                    <p className="flex items-center justify-start gap-2 text-sm text-muted-foreground">
-                                        <Phone className="h-3.5 w-3.5 shrink-0" />{draft.telefono}
-                                    </p>
-                                )}
-                                <p className="flex items-center justify-start gap-2 text-sm">
-                                    {draft.pagado ? (
-                                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
-                                            <CheckCircle className="h-3.5 w-3.5" /> Cobrado · {metodoLabel}
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
-                                            <Wallet className="h-3.5 w-3.5" /> Sin cobrar · {metodoLabel}
-                                        </span>
-                                    )}
-                                </p>
+                                <div className="flex flex-wrap gap-1 pt-1">
+                                    {Object.entries(POS_METODO_LABEL).map(([id, label]) => <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors', draft.metodoPago === id ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00]' : 'border-border text-muted-foreground hover:bg-muted')}>
+                                        {label}
+                                    </button>)}
+                                </div>
+                                <p className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle className="h-3.5 w-3.5" /> Cobrado · {metodoLabel}</p>
                             </div>
                         </div>
 
@@ -918,7 +960,7 @@ const PosComandaPreview = ({ draft, onRemoveItem }: { draft: PosDraft | null; on
                             ) : (
                                 <div className="space-y-0">
                                     {draft.items.map((it, idx) => (
-                                        <div key={it.key} className={`flex items-center justify-between gap-3 py-3 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                                        <button key={it.key} onClick={() => onEditItem?.(it.key)} className={`w-full flex items-center justify-between gap-3 py-3 text-left rounded-lg transition-colors hover:bg-muted/50 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-semibold text-base text-foreground leading-snug">
                                                     {it.nombre}{it.varianteNombre && <span className="text-muted-foreground font-medium"> ({it.varianteNombre})</span>}
@@ -929,28 +971,17 @@ const PosComandaPreview = ({ draft, onRemoveItem }: { draft: PosDraft | null; on
                                                 <span className="font-semibold text-base tabular-nums text-foreground">
                                                     ${(it.precioUnitario * it.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                 </span>
-                                                {onRemoveItem && (
-                                                    <button
-                                                        onClick={() => onRemoveItem(it.key)}
-                                                        title="Quitar del pedido"
-                                                        className="h-10 w-10 rounded-xl bg-muted/60 border border-border/70 flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer shrink-0"
-                                                    >
-                                                        <Trash2 className="h-5 w-5" />
-                                                    </button>
-                                                )}
                                             </div>
-                                        </div>
+                                        </button>
                                     ))}
                                 </div>
                             )}
                         </div>
 
-                        {draft.notas && (
-                            <div className="mb-6 rounded-2xl bg-muted/50 border border-border/60 p-4">
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Nota del cliente</p>
-                                <p className="text-sm text-foreground leading-snug">{draft.notas}</p>
-                            </div>
-                        )}
+                        <div className="mb-6">
+                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Nota</Label>
+                            <Input value={draft.notas} onChange={(event) => onUpdate?.({ notas: event.target.value })} placeholder="Aclaraciones del pedido" className="h-10 rounded-xl" />
+                        </div>
 
                         {draft.tipo === 'delivery' && draft.deliveryFee > 0 && (
                             <div className="flex items-center justify-between gap-3 py-3 border-t border-border/40 text-muted-foreground">
@@ -981,15 +1012,16 @@ const Dashboard = () => {
     const restaurante = useAuthStore((state) => state.restaurante)
     const { restaurante: restauranteStore, productos: allProductos, suscripcion } = useRestauranteStore()
     const posActivo = useModuloActivo('pos')
+    const mesasActivo = useModuloActivo('mesas')
     const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
     const puedeAvisarWhatsapp = useModuloActivo('avisos_automaticos_whatsapp')
 
-    // El plan Básico no incluye repartidores ni carga manual. Sí puede despachar y usar el mapa,
-    // pedidos, sin exponer la gestión ni el estado de cobro. Fail-open: si el backend no
-    // devuelve suscripción (admin/backend viejo), no ocultamos nada.
+    // Compatibilidad temporal de la UI de cobro. Gestión de cadetes se resuelve
+    // exclusivamente con su módulo y no depende de este alias legacy.
     const esPlanBasico = suscripcion?.planCodigo === 'basico'
 
     const { printRaw, selectedPrinter } = usePrinter()
+    const isDesktopViewport = useDesktopViewport()
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
     const initialLoadDoneRef = useRef(false)
     const { lastUpdate } = useAdminContext()
@@ -1009,6 +1041,9 @@ const Dashboard = () => {
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
     const [showOrderMap, setShowOrderMap] = useState(false)
     const [showPOS, setShowPOS] = useState(false)
+    const [mesaPosAsignada, setMesaPosAsignada] = useState<Pick<MesaLocal, 'id' | 'nombre'> | null>(null)
+    const [mesasPosDisponibles, setMesasPosDisponibles] = useState<Array<Pick<MesaLocal, 'id' | 'nombre'>>>([])
+    const [posContext, setPosContext] = useState<'borrador' | 'pedidoExistente'>('borrador')
     // Borrador del pedido que se está anotando en el POS flotante: se espeja
     // en vivo en la comanda de la derecha (PosComandaPreview).
     const [draftPos, setDraftPos] = useState<PosDraft | null>(null)
@@ -1034,6 +1069,20 @@ const Dashboard = () => {
     const [sucursalesList, setSucursalesList] = useState<SucursalListRow[]>([])
     const [sucursalesLoaded, setSucursalesLoaded] = useState(false)
     const [prefsReady, setPrefsReady] = useState(false)
+
+    useEffect(() => {
+        if (!token || !mesasActivo) { setMesasPosDisponibles([]); return }
+        let vigente = true
+        void mesasLocalesApi.list(token, false)
+            .then((respuesta) => {
+                if (!vigente) return
+                setMesasPosDisponibles(respuesta.data
+                    .filter((mesa) => sucursalActivaId == null || mesa.sucursalId == null || mesa.sucursalId === sucursalActivaId)
+                    .map(({ id, nombre }) => ({ id, nombre })))
+            })
+            .catch(() => { if (vigente) setMesasPosDisponibles([]) })
+        return () => { vigente = false }
+    }, [token, mesasActivo, sucursalActivaId])
 
     const sucursalNombrePorId = useMemo(() => {
         const m = new Map<number, string>()
@@ -1359,16 +1408,24 @@ const Dashboard = () => {
     }, [token])
 
     useEffect(() => {
-        if (repartidoresModalOpen) loadRepartidores()
-    }, [repartidoresModalOpen, loadRepartidores])
+        if (gestionCadetesActiva && repartidoresModalOpen) loadRepartidores()
+    }, [gestionCadetesActiva, repartidoresModalOpen, loadRepartidores])
 
     useEffect(() => {
-        if (token) loadRepartidores()
-    }, [token, loadRepartidores])
+        if (token && gestionCadetesActiva) {
+            loadRepartidores()
+        } else if (!gestionCadetesActiva) {
+            setRepartidoresList([])
+            setRepartidoresModalOpen(false)
+            setRepartidorSelectorOpen(false)
+            setPendingDispatchPedido(null)
+        }
+    }, [token, gestionCadetesActiva, loadRepartidores])
 
     const handleDespachar = async (tipo: 'delivery' | 'takeaway', id: number) => {
-        // Básico despacha directamente: no muestra el flujo de asignación de repartidor.
-        if (!esPlanBasico && tipo === 'delivery') {
+        // Sin Gestión de Cadetes el pedido se despacha directamente. Con el
+        // módulo activo se ofrece asignación cuando hay equipo para elegir.
+        if (gestionCadetesActiva && tipo === 'delivery') {
             const activos = repartidoresList.filter(r => r.estado === 'activo')
             if (activos.length >= 2) {
                 setPendingDispatchPedido({ tipo, id })
@@ -1529,17 +1586,45 @@ const Dashboard = () => {
         if (!posActivo) return
         setShowOrderMap(false)
         setSelectedUnifiedPedido(null)
+        setMesaPosAsignada(null)
+        setPosContext('borrador')
         setShowPOS(true)
         setMobileView('detail')
     }
 
-    // Al salir del POS (cerrar, crear pedido o seleccionar otro pedido) se descarta el borrador.
+    const closePOS = () => {
+        setShowPOS(false)
+        setMesaPosAsignada(null)
+        setPosContext('borrador')
+        setMobileView('orders')
+    }
+
+    const requestClosePOS = () => {
+        if (posRef.current) posRef.current.requestClose()
+        else closePOS()
+    }
+
+    const openPedidoInPOS = (pedido: UnifiedPedido) => {
+        setMesaPosAsignada(null)
+        setSelectedUnifiedPedido(pedido)
+        if (showPOS) setPosContext('pedidoExistente')
+        if (!showOrderMap) setMobileView('detail')
+    }
+
+    const volverAlBorrador = () => {
+        setSelectedUnifiedPedido(null)
+        setPosContext('borrador')
+        setMobileView('detail')
+    }
+
     useEffect(() => {
         if (!showPOS) setDraftPos(null)
     }, [showPOS])
 
     const handlePedidoManualCreado = (_pedidoId: number) => {
         setShowPOS(false)
+        setMesaPosAsignada(null)
+        setPosContext('borrador')
         setMobileView('orders')
         fetchPedidos(1, false)
     }
@@ -1553,6 +1638,25 @@ const Dashboard = () => {
     const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
 
     const hoyDay = getArDayString(new Date())
+    const abrirMesaLibre = (mesa: MesaLocal) => {
+        if (!posActivo) return
+        setShowOrderMap(false)
+        setSelectedUnifiedPedido(null)
+        setMesaPosAsignada({ id: mesa.id, nombre: mesa.nombre })
+        setPosContext('borrador')
+        setShowPOS(true)
+        setMobileView('detail')
+    }
+    const abrirPedidoMesa = (pedidoMesa: { id: number }) => {
+        const pedido = activeOrders.find((candidato) => candidato.id === pedidoMesa.id)
+        if (!pedido) return
+        setMesaPosAsignada(null)
+        setShowOrderMap(false)
+        setSelectedUnifiedPedido(pedido)
+        setPosContext('pedidoExistente')
+        setShowPOS(true)
+        setMobileView('detail')
+    }
     const isDayTitle = !(mobileView === 'detail' && (showPOS || showOrderMap))
 
     const pickDay = (day: string) => {
@@ -1593,7 +1697,10 @@ const Dashboard = () => {
             <header className="shrink-0 bg-[#FFFBF0] dark:bg-background px-4 py-3 flex items-center justify-between gap-2 z-10">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                     {mobileView === 'detail' && (
-                        <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => { setMobileView('orders'); setShowOrderMap(false); setShowPOS(false) }}>
+                        <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => {
+                            if (showPOS) requestClosePOS()
+                            else { setMobileView('orders'); setShowOrderMap(false) }
+                        }}>
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                     )}
@@ -1651,7 +1758,10 @@ const Dashboard = () => {
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
-                    <Button variant="outline" className="h-10 rounded-xl" onClick={() => { setShowOrderMap(true); setShowPOS(false); setMobileView('detail') }}>
+                    <Button variant="outline" className="h-10 rounded-xl" onClick={() => {
+                        if (showPOS) { requestClosePOS(); return }
+                        setShowOrderMap(true); setMobileView('detail')
+                    }}>
                         <MapIcon className="mr-2 h-4 w-4" /> Mapa
                     </Button>
                 </div>
@@ -1803,6 +1913,18 @@ const Dashboard = () => {
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                {mesasActivo && selectedDay === hoyDay && (
+                                    <div className="mb-4">
+                                        <MesasOperativas
+                                            token={token}
+                                            sucursalId={sucursalActivaId}
+                                            pedidos={activeOrders}
+                                            refreshKey={lastUpdate?.timestamp}
+                                            onMesaLibre={abrirMesaLibre}
+                                            onMesaOcupada={abrirPedidoMesa}
+                                        />
+                                    </div>
+                                )}
                                 {activeOrders.length === 0 ? (
                                     <div className="h-32 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-2xl">
                                         <Receipt className="h-6 w-6 mb-2 opacity-40" />
@@ -1825,11 +1947,7 @@ const Dashboard = () => {
                                                         </div>
                                                     )}
                                                     <Card
-                                                        onClick={() => {
-                                                            setSelectedUnifiedPedido(pedido)
-                                                            setShowPOS(false)
-                                                            if (!showOrderMap) setMobileView('detail')
-                                                        }}
+                                                        onClick={() => openPedidoInPOS(pedido)}
                                                         className={cn(
                                                             "px-3.5 py-2.5 rounded-xl cursor-pointer transition-all flex flex-col gap-1.5 border-0",
                                                             isSelected
@@ -1968,7 +2086,7 @@ const Dashboard = () => {
                                                                 </div>
                                                             )}
                                                             <div
-                                                                onClick={() => { setSelectedUnifiedPedido(pedido); setShowPOS(false); setMobileView('detail'); }}
+                                                                onClick={() => openPedidoInPOS(pedido)}
                                                                 className="flex items-center justify-between p-3 rounded-xl bg-card border border-border opacity-60 hover:opacity-100 cursor-pointer active:scale-[0.99] transition-all"
                                                             >
                                                                 <div className="flex items-center gap-2">
@@ -2004,14 +2122,17 @@ const Dashboard = () => {
                             (derecha), empujándolas a los costados: la lista se angosta y la
                             comanda (PosComandaPreview) queda a la derecha llenándose con el
                             borrador. Los tres paneles cubren todo el ancho (flex-1). */}
-                        {showPOS && (
+                        {showPOS && isDesktopViewport && (
                             <div className="hidden lg:flex flex-col flex-1 min-w-0 rounded-2xl border border-border bg-background overflow-hidden">
                                 <PuntoDeVenta
+                                    key="pos-activo"
                                     ref={posRef}
-                                    onClose={() => { setShowPOS(false); setMobileView('orders') }}
+                                    onClose={closePOS}
                                     onCreated={handlePedidoManualCreado}
                                     sucursalActivaId={sucursalActivaId}
                                     onDraftChange={setDraftPos}
+                                    onStartDraft={volverAlBorrador}
+                                    mesaAsignada={mesaPosAsignada}
                                 />
                             </div>
                         )}
@@ -2029,8 +2150,15 @@ const Dashboard = () => {
                                 : "lg:flex-1 lg:max-w-[600px] xl:flex-none xl:w-[600px] xl:mr-[80px] 2xl:mr-[160px]",
                             mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
                         )}>
-                            {showPOS ? (
-                                <PosComandaPreview draft={draftPos} onRemoveItem={(key) => posRef.current?.removeItem(key)} />
+                            {showPOS && posContext === 'borrador' ? (
+                                <PosComandaPreview
+                                    draft={draftPos}
+                                    onEditItem={(key) => posRef.current?.editItem(key)}
+                                    onUpdate={(changes) => posRef.current?.updateDraft(changes)}
+                                    mesasActivas={mesasActivo}
+                                    mesasDisponibles={mesasPosDisponibles}
+                                    onMesaChange={setMesaPosAsignada}
+                                />
                             ) : showOrderMap ? (
                                 <OrderMapView
                                     orders={activeOrders}
@@ -2059,6 +2187,11 @@ const Dashboard = () => {
                                                     {selectedUnifiedPedido.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
                                                     {selectedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
                                                 </span>
+                                                {showPOS && posContext === 'pedidoExistente' && (
+                                                    <Button variant="outline" size="sm" className="h-8 rounded-lg text-xs font-bold" onClick={volverAlBorrador}>
+                                                        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Volver al borrador
+                                                    </Button>
+                                                )}
                                             </div>
 
                                             {/* Identidad: quién y dónde — orden de lectura del ticket */}
@@ -2421,14 +2554,18 @@ const Dashboard = () => {
                         {/* ── POS (solo móvil) ──
                             En lg+ el POS es la columna inline del medio (arriba). En móvil, en
                             cambio, cubre la pantalla como overlay y la comanda queda detrás. */}
-                        {showPOS && (
+                        {showPOS && !isDesktopViewport && (
                             <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center p-3 sm:p-6 pointer-events-none">
                                 <div className="pointer-events-auto w-full max-w-5xl h-full max-h-[860px] rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
                                     <PuntoDeVenta
-                                        onClose={() => { setShowPOS(false); setMobileView('orders') }}
+                                        key="pos-activo"
+                                        ref={posRef}
+                                        onClose={closePOS}
                                         onCreated={handlePedidoManualCreado}
                                         sucursalActivaId={sucursalActivaId}
                                         onDraftChange={setDraftPos}
+                                        onStartDraft={volverAlBorrador}
+                                        mesaAsignada={mesaPosAsignada}
                                     />
                                 </div>
                             </div>
@@ -2492,7 +2629,7 @@ const Dashboard = () => {
                                         <div
                                             key={`sheet-${pedido.tipo}-${pedido.id}`}
                                             onClick={() => {
-                                                setSelectedUnifiedPedido(pedido)
+                                                openPedidoInPOS(pedido)
                                                 setShowMobileOrdersSheet(false)
                                             }}
                                             className={cn(

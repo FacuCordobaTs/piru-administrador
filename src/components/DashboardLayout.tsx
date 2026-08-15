@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
-import { useTareasPendientes } from '@/pages/ajustes/hooks/useTareasPendientes'
-import { toast } from 'sonner'
 import {
   LayoutDashboard,
   Package,
@@ -13,14 +10,10 @@ import {
   MessageSquare,
   TrendingUp,
   Settings,
-  Sun,
-  Moon,
-  LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles,
-  ChevronRight,
   X,
   Blocks,
 } from 'lucide-react'
@@ -28,11 +21,9 @@ import {
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
   { icon: Package, label: 'Menú', path: '/dashboard/productos' },
-  { icon: Blocks, label: 'Módulos', path: '/dashboard/modulos' },
   { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
   { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes' },
   { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas' },
-  { icon: Settings, label: 'Ajustes', path: '/dashboard/ajustes' },
 ]
 
 const MENSAJES_PATH = '/dashboard/mensajes'
@@ -40,31 +31,25 @@ const MENSAJES_PATH = '/dashboard/mensajes'
 const DashboardLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const logout = useAuthStore((state) => state.logout)
   const restauranteStore = useRestauranteStore()
   const avisosAutomaticosActivos = useModuloActivo('avisos_automaticos_whatsapp')
   const motorRecompraActivo = useModuloActivo('motor_recompra')
-  const [isDark, setIsDark] = useState(() => {
-    const stored = localStorage.getItem('piru-theme')
-    if (stored) return stored === 'dark'
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-  })
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('piru-sidebar-collapsed') === '1')
 
-  // Badge discreto de "cosas por configurar" sobre el item de Ajustes.
-  const { pendientes, loading: tareasLoading } = useTareasPendientes()
-  const tareasPendientes = !tareasLoading && pendientes > 0
-
-  // Apply + persist theme
+  // Aplicar el tema guardado al iniciar. El cambio de tema vive en Ajustes > Cuenta.
   useEffect(() => {
+    const stored = localStorage.getItem('piru-theme')
+    const isDark = stored
+      ? stored === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches
+
     if (isDark) {
       document.documentElement.classList.add('dark')
     } else {
       document.documentElement.classList.remove('dark')
     }
-    localStorage.setItem('piru-theme', isDark ? 'dark' : 'light')
-  }, [isDark])
+  }, [])
 
   // Persist collapse state
   useEffect(() => {
@@ -88,16 +73,6 @@ const DashboardLayout = () => {
     }
   }, [])
 
-  const toggleTheme = () => setIsDark((v) => !v)
-
-  const handleLogout = () => {
-    logout()
-    restauranteStore.reset()
-    toast.success('Sesión cerrada exitosamente')
-    navigate('/login')
-    setMenuOpen(false)
-  }
-
   const isActive = (path: string) => {
     if (path === '/dashboard/') {
       return location.pathname === '/dashboard' || location.pathname === '/dashboard/'
@@ -110,8 +85,6 @@ const DashboardLayout = () => {
     setMenuOpen(false)
   }
 
-  // Botón de plan: el plan actual vive en el store (ya viene del profile, sin fetch extra).
-  const suscripcion = restauranteStore.suscripcion
   const suscripcionActivaEnRuta = location.pathname.startsWith('/dashboard/suscripcion')
 
   // Mensajes concentra los cupos de Avisos y Motor; sólo aparece si alguno está activo.
@@ -120,64 +93,35 @@ const DashboardLayout = () => {
   )
 
   const renderPlanButton = (compact: boolean) => {
-    const sinPlan = !suscripcion || suscripcion.sinSuscripcion || !suscripcion.planNombre
-    const ESTADO_SUB: Record<string, string> = {
-      trial: 'Prueba gratis',
-      activa: 'Al día',
-      pago_pendiente: 'Pago pendiente',
-      suspendida: 'Suspendida',
-      cancelada: 'Cancelada',
-    }
-    const titulo = sinPlan ? 'Activá tu suscripción' : 'Mi suscripción'
-    const subtitulo = sinPlan
-      ? 'Sin suscripción activa'
-      : (suscripcion?.estado && ESTADO_SUB[suscripcion.estado]) || 'Suscripción Piru'
-
-    // Punto de estado: verde si está al día/prueba, ámbar en cualquier otro caso (o sin plan).
-    const alDia = !sinPlan && (suscripcion?.estado === 'activa' || suscripcion?.estado === 'trial')
-    const dotColor = alDia ? 'bg-emerald-500' : 'bg-amber-500'
-    const destacar = sinPlan
-
-    if (compact) {
-      return (
-        <div className="px-3 pt-2">
-          <button
-            onClick={() => handleNavigation('/dashboard/suscripcion')}
-            title={titulo}
-            className={`group relative w-full flex h-11 items-center justify-center rounded-xl transition-colors cursor-pointer ${
-              suscripcionActivaEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
-            }`}
-          >
-            <Sparkles
-              className={`h-[18px] w-[18px] ${
-                destacar ? 'text-brand' : 'text-muted-foreground group-hover:text-foreground'
-              }`}
-            />
-            <span
-              aria-hidden
-              className={`absolute right-2 top-2 h-2 w-2 rounded-full ring-2 ring-background ${dotColor}`}
-            />
-          </button>
-        </div>
-      )
-    }
-
     return (
-      <div className="px-3 pt-2">
+      <div className="px-3 pt-2 space-y-1">
         <button
           onClick={() => handleNavigation('/dashboard/suscripcion')}
-          className={`group w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors cursor-pointer ${
-            suscripcionActivaEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
+          title={compact ? 'Mi suscripción' : undefined}
+          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
+            compact ? 'justify-center px-0' : 'px-3'
+          } ${
+            suscripcionActivaEnRuta
+              ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
           }`}
         >
-          <span className="flex-1 min-w-0 text-left">
-            <span className="flex items-center gap-2">
-              <span className="truncate text-[13.5px] font-semibold text-foreground">{titulo}</span>
-              <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
-            </span>
-            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitulo}</span>
-          </span>
-          <ChevronRight className={`h-4 w-4 shrink-0 ${destacar ? 'text-brand' : 'text-muted-foreground/50'}`} />
+          <Sparkles className={`h-[18px] w-[18px] shrink-0 ${suscripcionActivaEnRuta ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
+          {!compact && <span className="flex-1 text-left">Mi suscripción</span>}
+        </button>
+        <button
+          onClick={() => handleNavigation('/dashboard/modulos')}
+          title={compact ? 'Módulos' : undefined}
+          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
+            compact ? 'justify-center px-0' : 'px-3'
+          } ${
+            isActive('/dashboard/modulos')
+              ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          }`}
+        >
+          <Blocks className={`h-[18px] w-[18px] shrink-0 ${isActive('/dashboard/modulos') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
+          {!compact && <span className="flex-1 text-left">Módulos</span>}
         </button>
       </div>
     )
@@ -205,7 +149,6 @@ const DashboardLayout = () => {
         {navItems.map((item) => {
           const Icon = item.icon
           const active = isActive(item.path)
-          const showBadge = item.path === '/dashboard/ajustes' && tareasPendientes
           return (
             <button
               key={item.path}
@@ -225,24 +168,6 @@ const DashboardLayout = () => {
                 }`}
               />
               {!compact && <span className="flex-1 text-left">{item.label}</span>}
-              {/* Expandido: pill con la cantidad. Comprimido: puntito sobre el icono. */}
-              {showBadge && !compact && (
-                <span
-                  className={`min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold tabular-nums ${
-                    active
-                      ? 'bg-primary-foreground/20 text-primary-foreground'
-                      : 'bg-amber-500/15 text-amber-600 dark:text-amber-500'
-                  }`}
-                >
-                  {pendientes}
-                </span>
-              )}
-              {showBadge && compact && (
-                <span
-                  aria-hidden
-                  className="absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
-                />
-              )}
             </button>
           )
         })}
@@ -251,27 +176,21 @@ const DashboardLayout = () => {
       {/* Botón de plan: muestra el plan actual y lleva a "Tu plan" (ver / mejorar) */}
       {renderPlanButton(compact)}
 
-      {/* Footer: tema + salir */}
+      {/* Footer: ajustes */}
       <div className="p-3 space-y-1 shrink-0">
         <button
-          onClick={toggleTheme}
-          title={compact ? (isDark ? 'Modo claro' : 'Modo oscuro') : undefined}
-          className={`w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-all cursor-pointer ${
+          onClick={() => handleNavigation('/dashboard/ajustes')}
+          title={compact ? 'Ajustes' : undefined}
+          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
             compact ? 'justify-center px-0' : 'px-3'
+          } ${
+            isActive('/dashboard/ajustes')
+              ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
           }`}
         >
-          {isDark ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
-          {!compact && (isDark ? 'Modo claro' : 'Modo oscuro')}
-        </button>
-        <button
-          onClick={handleLogout}
-          title={compact ? 'Cerrar sesión' : undefined}
-          className={`w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium text-destructive hover:bg-destructive/10 transition-all cursor-pointer ${
-            compact ? 'justify-center px-0' : 'px-3'
-          }`}
-        >
-          <LogOut className="h-[18px] w-[18px]" />
-          {!compact && 'Cerrar sesión'}
+          <Settings className={`h-[18px] w-[18px] ${isActive('/dashboard/ajustes') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
+          {!compact && 'Ajustes'}
         </button>
       </div>
     </div>

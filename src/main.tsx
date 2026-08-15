@@ -30,6 +30,7 @@ import UpdaterPrompt from './components/UpdaterPrompt';
 import PagoLink from './pages/PagoLink';
 import ClaimTienda from './pages/ClaimTienda';
 import Modulos from './pages/Modulos';
+import Mesas from './pages/Mesas';
 
 
 
@@ -158,6 +159,10 @@ const router = createBrowserRouter([
           {
             path: "modulos",
             element: <Modulos />,
+          },
+          {
+            path: "mesas",
+            element: <Mesas />,
           },
           {
             path: "suscripcion",

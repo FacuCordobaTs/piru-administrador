@@ -45,16 +45,6 @@ export default function Repartidores() {
   const [creando, setCreando] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
-  if (!gestionCadetesActiva) {
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-16 text-center">
-        <h1 className="text-xl font-semibold text-foreground">Gestión de cadetes</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Activala desde Módulos para administrar tu equipo de reparto.</p>
-        <button onClick={() => navigate('/dashboard/modulos')} className="mt-6 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-white">Ver módulos</button>
-      </div>
-    )
-  }
-
   const fetchStats = useCallback(async (todo: boolean, p: PeriodValue) => {
     if (!token) return
     let filters: { from?: string; to?: string } | undefined
@@ -79,9 +69,9 @@ export default function Repartidores() {
   }, [token])
 
   useEffect(() => {
-    fetchStats(verTodo, period)
+    if (gestionCadetesActiva) fetchStats(verTodo, period)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, verTodo, period.mode, period.mes, period.anio, period.from, period.to])
+  }, [token, gestionCadetesActiva, verTodo, period.mode, period.mes, period.anio, period.from, period.to])
 
   const handleCrear = async () => {
     if (!token) return
@@ -136,6 +126,16 @@ export default function Repartidores() {
   }, [stats])
 
   const periodLabel = periodLabelOf(period, verTodo)
+
+  if (!gestionCadetesActiva) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-16 text-center">
+        <h1 className="text-xl font-semibold text-foreground">Gestión de cadetes</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Activala desde Módulos para administrar tu equipo de reparto.</p>
+        <button onClick={() => navigate('/dashboard/modulos')} className="mt-6 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-white">Ver módulos</button>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-2xl mx-auto w-full px-6 py-8 space-y-14">

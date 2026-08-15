@@ -13,11 +13,24 @@ export default function Cuenta() {
   const reset = useRestauranteStore((s) => s.reset)
   const email = useRestauranteStore((s) => s.restaurante?.email)
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [isDark, setIsDark] = useState(() => {
+    const stored = localStorage.getItem('piru-theme')
+    return stored ? stored === 'dark' : document.documentElement.classList.contains('dark')
+  })
 
   const cerrarSesion = () => {
     logout()
     reset()
     navigate('/login')
+  }
+
+  const toggleTheme = () => {
+    setIsDark((current) => {
+      const next = !current
+      document.documentElement.classList.toggle('dark', next)
+      localStorage.setItem('piru-theme', next ? 'dark' : 'light')
+      return next
+    })
   }
 
   return (
@@ -41,6 +54,13 @@ export default function Cuenta() {
           estado="configurado"
           accionLabel="Cambiar"
           onAccion={() => setPasswordOpen(true)}
+        />
+        <AjusteRow
+          titulo="Tema"
+          oracion={isDark ? 'Estás usando el modo oscuro' : 'Estás usando el modo claro'}
+          estado="configurado"
+          accionLabel={isDark ? 'Modo claro' : 'Modo oscuro'}
+          onAccion={toggleTheme}
         />
       </div>
 

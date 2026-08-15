@@ -23,8 +23,20 @@ interface CartItem {
     varianteId?: number
     varianteNombre?: string
     precioBase: number
+    ingredientesExcluidos: number[]
     agregados: Array<{ id: number; nombre: string; precio: string }>
     cantidad: number
+}
+
+interface PersistedPosDraft {
+    cart: CartItem[]
+    tipo: 'delivery' | 'takeaway'
+    nombre: string
+    telefono: string
+    direccion: string
+    notas: string
+    metodoPago: string
+    deliveryFee: string
 }
 
 export interface PosDraftItem {
@@ -47,12 +59,24 @@ export interface PosDraft {
     items: PosDraftItem[]
     subtotal: number
     total: number
+    mesaLocalId?: number
+    mesaNombre?: string
 }
+
+export type PosDraftUpdate = Partial<Pick<PosDraft,
+    'tipo' | 'nombreCliente' | 'telefono' | 'direccion' | 'notas' | 'metodoPago' | 'deliveryFee'
+>>
 
 /** Handle expuesto al padre (Dashboard) para operar el borrador del POS desde la comanda. */
 export interface PuntoDeVentaHandle {
     /** Quita un ítem del borrador por su key. */
     removeItem: (key: string) => void
+    /** Abre la edición de una fila concreta, sin mezclarla con otra igual. */
+    editItem: (key: string) => void
+    /** Actualiza los datos que se editan inline en la comanda desktop. */
+    updateDraft: (changes: PosDraftUpdate) => void
+    /** Pide descartar el borrador actual antes de cerrar el POS. */
+    requestClose: () => void
 }
 
 interface PuntoDeVentaProps {
@@ -61,6 +85,9 @@ interface PuntoDeVentaProps {
     sucursalActivaId: number | null
     /** El padre (Dashboard) espeja este borrador en la comanda de la derecha en vivo. */
     onDraftChange?: (draft: PosDraft | null) => void
+    /** Volver al grid desde un pedido existente conserva el borrador. */
+    onStartDraft?: () => void
+    mesaAsignada?: { id: number; nombre: string } | null
 }
 
 const METODOS_PAGO: Array<{ id: string; label: string; icon: React.ElementType }> = [
@@ -74,7 +101,7 @@ const itemUnitPrice = (it: CartItem) =>
     it.precioBase + it.agregados.reduce((s, a) => s + (parseFloat(String(a.precio)) || 0), 0)
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, sucursalActivaId, onDraftChange },
+    { onClose, onCreated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -82,7 +109,12 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const [query, setQuery] = useState('')
     const [cart, setCart] = useState<CartItem[]>([])
-    const [configProducto, setConfigProducto] = useState<Producto | null>(null)
+    const [configProducto, setConfigProducto] = useState<{
+        producto: Producto
+        anchor: DOMRect
+        editKey?: string
+        initialItem?: CartItem
+    } | null>(null)
     const [mobileStep, setMobileStep] = useState<'productos' | 'checkout'>('productos')
 
     // Datos del cliente
@@ -98,6 +130,50 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const pagado = true
     const [deliveryFee, setDeliveryFee] = useState('')
     const [submitting, setSubmitting] = useState(false)
+    const storageKey = `piru:pos-draft:${sucursalActivaId ?? 'sin-sucursal'}:${mesaAsignada?.id ?? 'sin-mesa'}`
+    const [hydratedStorageKey, setHydratedStorageKey] = useState<string | null>(null)
+
+    // El borrador sobrevive una recarga accidental dentro de la misma pestaña. Se
+    // separa por sucursal para no cruzar comandas entre locales del mismo negocio.
+    useEffect(() => {
+        try {
+            const saved = sessionStorage.getItem(storageKey)
+            if (saved) {
+                const parsed = JSON.parse(saved) as Partial<PersistedPosDraft>
+                setCart(Array.isArray(parsed.cart) ? parsed.cart : [])
+                setTipo(parsed.tipo === 'delivery' ? 'delivery' : 'takeaway')
+                setNombre(typeof parsed.nombre === 'string' ? parsed.nombre : '')
+                setTelefono(typeof parsed.telefono === 'string' ? parsed.telefono : '')
+                setDireccion(typeof parsed.direccion === 'string' ? parsed.direccion : '')
+                setNotas(typeof parsed.notas === 'string' ? parsed.notas : '')
+                setMetodoPago(typeof parsed.metodoPago === 'string' ? parsed.metodoPago : 'cash')
+                setDeliveryFee(typeof parsed.deliveryFee === 'string' ? parsed.deliveryFee : '')
+            } else {
+                setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
+                setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo('takeaway')
+            }
+        } catch {
+            sessionStorage.removeItem(storageKey)
+        } finally {
+            setHydratedStorageKey(storageKey)
+        }
+    }, [storageKey])
+
+    useEffect(() => {
+        if (mesaAsignada) setTipo('takeaway')
+    }, [mesaAsignada])
+
+    useEffect(() => {
+        if (hydratedStorageKey !== storageKey) return
+        const persisted: PersistedPosDraft = { cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee }
+        const hasContent = cart.length > 0 || [nombre, telefono, direccion, notas, deliveryFee].some((value) => value.trim() !== '')
+        try {
+            if (hasContent) sessionStorage.setItem(storageKey, JSON.stringify(persisted))
+            else sessionStorage.removeItem(storageKey)
+        } catch {
+            // sessionStorage puede estar deshabilitado; el POS sigue funcionando en memoria.
+        }
+    }, [hydratedStorageKey, storageKey, cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee])
 
     // ── Productos filtrados por búsqueda (nombre, descripción o etiquetas/tags) ──
     const productosFiltrados = useMemo(() => {
@@ -156,45 +232,41 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             })),
             subtotal: cartTotal,
             total: totalFinal,
+            mesaLocalId: mesaAsignada?.id,
+            mesaNombre: mesaAsignada?.nombre,
         })
-    }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFeeNum, cart, cartTotal, totalFinal])
-
-    const buildKey = (productoId: number, varianteId: number | undefined, agregados: CartItem['agregados']) =>
-        `${productoId}-${varianteId ?? 0}-${agregados.map((a) => a.id).sort((x, y) => x - y).join(',')}`
+    }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, pagado, deliveryFeeNum, cart, cartTotal, totalFinal, mesaAsignada?.nombre])
 
     const addToCart = (
         producto: Producto,
         variante?: { id: number; nombre: string; precio: string },
-        agregados: CartItem['agregados'] = []
+        agregados: CartItem['agregados'] = [],
+        ingredientesExcluidos: number[] = []
     ) => {
         const precioBase = variante ? parseFloat(variante.precio) : parseFloat(producto.precio)
-        const key = buildKey(producto.id, variante?.id, agregados)
-        setCart((prev) => {
-            const existing = prev.find((it) => it.key === key)
-            if (existing) {
-                return prev.map((it) => (it.key === key ? { ...it, cantidad: it.cantidad + 1 } : it))
-            }
-            return [
-                ...prev,
-                {
-                    key,
-                    productoId: producto.id,
-                    nombre: producto.nombre,
-                    varianteId: variante?.id,
-                    varianteNombre: variante?.nombre,
-                    precioBase,
-                    agregados,
-                    cantidad: 1,
-                },
-            ]
-        })
+        // Cada toque es una fila independiente: dos pedidos iguales pueden requerir
+        // cambios distintos después y no deben fusionarse silenciosamente.
+        const key = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+        setCart((prev) => [...prev, {
+            key,
+            productoId: producto.id,
+            nombre: producto.nombre,
+            varianteId: variante?.id,
+            varianteNombre: variante?.nombre,
+            precioBase,
+            ingredientesExcluidos,
+            agregados,
+            cantidad: 1,
+        }])
     }
 
-    const handleProductClick = (producto: Producto) => {
+    const handleProductClick = (producto: Producto, anchor: DOMRect) => {
+        onStartDraft?.()
         const tieneVariantes = !!producto.variantes && producto.variantes.length > 0
         const tieneAgregados = !!producto.agregados && producto.agregados.length > 0
-        if (tieneVariantes || tieneAgregados) {
-            setConfigProducto(producto)
+        const tieneIngredientes = !!producto.ingredientes && producto.ingredientes.length > 0
+        if (tieneVariantes || tieneAgregados || tieneIngredientes) {
+            setConfigProducto({ producto, anchor })
         } else {
             addToCart(producto)
         }
@@ -210,14 +282,46 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const removeItem = (key: string) => setCart((prev) => prev.filter((it) => it.key !== key))
 
-    // La comanda del Dashboard (panel derecho) quita ítems del borrador a través de este handle.
-    useImperativeHandle(ref, () => ({ removeItem }))
+    const editItem = (key: string) => {
+        const item = cart.find((candidate) => candidate.key === key)
+        const producto = item && productos.find((candidate) => candidate.id === item.productoId)
+        if (!item || !producto) return
+        const centerX = typeof window === 'undefined' ? 0 : window.innerWidth / 2
+        const centerY = typeof window === 'undefined' ? 0 : window.innerHeight / 3
+        setConfigProducto({
+            producto,
+            anchor: new DOMRect(centerX, centerY, 0, 0),
+            editKey: key,
+            initialItem: item,
+        })
+    }
+
+    const updateDraft = (changes: PosDraftUpdate) => {
+        if (changes.tipo) setTipo(mesaAsignada ? 'takeaway' : changes.tipo)
+        if (changes.nombreCliente !== undefined) setNombre(changes.nombreCliente)
+        if (changes.telefono !== undefined) setTelefono(changes.telefono.replace(/\D/g, ''))
+        if (changes.direccion !== undefined) { setDireccion(changes.direccion); setLat(null); setLng(null) }
+        if (changes.notas !== undefined) setNotas(changes.notas)
+        if (changes.metodoPago !== undefined) setMetodoPago(changes.metodoPago)
+        if (changes.deliveryFee !== undefined) setDeliveryFee(String(changes.deliveryFee))
+    }
 
     const resetForm = () => {
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
         setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo('takeaway')
         setQuery(''); setMobileStep('productos')
+        try { sessionStorage.removeItem(storageKey) } catch { /* noop */ }
     }
+
+    const requestClose = () => {
+        const hasContent = cart.length > 0 || [nombre, telefono, direccion, notas, deliveryFee].some((value) => value.trim() !== '')
+        if (hasContent && !window.confirm('¿Descartar este borrador? Los productos y datos cargados se perderán.')) return
+        resetForm()
+        onClose()
+    }
+
+    // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
+    useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose }))
 
     const handleSubmit = async () => {
         if (!token) return
@@ -228,6 +332,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             productoId: it.productoId,
             varianteId: it.varianteId,
             cantidad: it.cantidad,
+            ingredientesExcluidos: it.ingredientesExcluidos.length ? it.ingredientesExcluidos : undefined,
             agregados: it.agregados.length ? it.agregados : undefined,
         }))
 
@@ -241,10 +346,12 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 pagado,
                 metodoPago,
                 sucursalId: sucursalActivaId ?? undefined,
+                mesaLocalId: mesaAsignada?.id,
+                consumoEnLocal: !!mesaAsignada,
                 items,
             }
             const data =
-                tipo === 'delivery'
+                tipo === 'delivery' && !mesaAsignada
                     ? {
                           tipo: 'delivery' as const,
                           direccion: direccion.trim(),
@@ -255,7 +362,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                       }
                     : { tipo: 'takeaway' as const, ...common }
 
-            const res: any = await pedidoUnificadoApi.create(token, data)
+            const res = await pedidoUnificadoApi.create(token, data) as { success?: boolean; data?: { id?: number }; message?: string }
             if (res.success) {
                 toast.success('Pedido anotado correctamente')
                 const newId = res.data?.id
@@ -265,8 +372,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             } else {
                 toast.error(res.message || 'No se pudo crear el pedido')
             }
-        } catch (e: any) {
-            toast.error('Error al crear el pedido', { description: e?.message })
+        } catch (error: unknown) {
+            toast.error('Error al crear el pedido', { description: error instanceof Error ? error.message : undefined })
         } finally {
             setSubmitting(false)
         }
@@ -329,8 +436,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     )}
                 </div>
 
-                {/* Tipo de pedido */}
-                <div>
+                {/* En desktop estos controles viven en la comanda; en mobile este panel es la comanda. */}
+                <div className="lg:hidden">
                     <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Tipo</Label>
                     <div className="grid grid-cols-2 gap-2">
                         <button
@@ -351,7 +458,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 </div>
 
                 {/* Datos del cliente */}
-                <div className="space-y-3">
+                <div className="space-y-3 lg:hidden">
                     <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
                         <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl" />
@@ -386,7 +493,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 </div>
 
                 {/* Método de pago */}
-                <div>
+                <div className="lg:hidden">
                     <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Método de pago</Label>
                     <div className="grid grid-cols-2 gap-2">
                         {METODOS_PAGO.map((m) => {
@@ -441,8 +548,9 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 <div className="flex items-center gap-2">
                     <ShoppingCart className="h-4 w-4 text-[#FF7A00]" />
                     <span className="font-bold text-sm">Anotar pedido (POS)</span>
+                    {mesaAsignada && <span className="rounded-full bg-[#FF7A00]/10 px-2 py-0.5 text-xs font-semibold text-[#FF7A00]">{mesaAsignada.nombre}</span>}
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={requestClose}>
                     <X className="h-4 w-4" />
                 </Button>
             </div>
@@ -460,7 +568,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     // Enter agrega el primer producto del resultado filtrado directamente al pedido.
                                     if (e.key === 'Enter' && productosFiltrados.length > 0) {
                                         e.preventDefault()
-                                        handleProductClick(productosFiltrados[0])
+                                        handleProductClick(productosFiltrados[0], e.currentTarget.getBoundingClientRect())
                                     }
                                 }}
                                 placeholder="Buscar producto o tag..."
@@ -476,20 +584,21 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                             porCategoria.map(([cat, items]) => (
                                 <div key={cat} className="mb-5">
                                     <h4 className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-foreground mb-2">{cat}</h4>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                                         {items.map((p) => (
                                             <button
                                                 key={p.id}
-                                                onClick={() => handleProductClick(p)}
-                                                className="text-left rounded-xl bg-muted/60 hover:bg-muted/80 transition-colors p-2.5 active:scale-[0.98]"
+                                                onClick={(event) => handleProductClick(p, event.currentTarget.getBoundingClientRect())}
+                                                className="group min-h-28 text-left rounded-2xl border border-border/70 bg-card p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#FF7A00]/45 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00] active:translate-y-0 active:scale-[0.98]"
                                             >
-                                                <p className="text-xs font-semibold text-foreground leading-tight line-clamp-2 min-h-[2rem]">{p.nombre}</p>
-                                                <div className="flex items-center justify-between mt-1.5">
-                                                    <span className="text-sm font-bold text-[#FF7A00]">
+                                                <p className="text-sm font-semibold text-foreground leading-tight line-clamp-2 min-h-[2.5rem]">{p.nombre}</p>
+                                                {p.descripcion && <p className="mt-1 text-xs leading-snug text-muted-foreground line-clamp-1">{p.descripcion}</p>}
+                                                <div className="flex items-center justify-between mt-3">
+                                                    <span className="text-base font-bold text-[#FF7A00]">
                                                         ${parseFloat(p.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                     </span>
-                                                    {((p.variantes?.length ?? 0) > 0 || (p.agregados?.length ?? 0) > 0) && (
-                                                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                                    {((p.variantes?.length ?? 0) > 0 || (p.agregados?.length ?? 0) > 0 || (p.ingredientes?.length ?? 0) > 0) && (
+                                                        <span className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">Configurar <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
                                                     )}
                                                 </div>
                                             </button>
@@ -523,9 +632,22 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             {/* ── Overlay configuración de producto (variantes / agregados) ── */}
             {configProducto && (
                 <ProductConfigOverlay
-                    producto={configProducto}
+                    producto={configProducto.producto}
+                    anchor={configProducto.anchor}
                     onClose={() => setConfigProducto(null)}
-                    onConfirm={(variante, agregados) => { addToCart(configProducto, variante, agregados); setConfigProducto(null) }}
+                    initialItem={configProducto.initialItem}
+                    onDelete={configProducto.editKey ? () => { removeItem(configProducto.editKey!); setConfigProducto(null) } : undefined}
+                    onConfirm={(variante, agregados, ingredientesExcluidos) => {
+                        if (configProducto.editKey) {
+                            const precioBase = variante ? parseFloat(variante.precio) : parseFloat(configProducto.producto.precio)
+                            setCart((prev) => prev.map((item) => item.key === configProducto.editKey ? {
+                                ...item, varianteId: variante?.id, varianteNombre: variante?.nombre, precioBase, agregados, ingredientesExcluidos,
+                            } : item))
+                        } else {
+                            addToCart(configProducto.producto, variante, agregados, ingredientesExcluidos)
+                        }
+                        setConfigProducto(null)
+                    }}
                 />
             )}
         </div>
@@ -535,35 +657,73 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 export default PuntoDeVenta
 
 // ─────────────────────────────────────────────
-// OVERLAY: selección de variante + agregados
+// Popover de configuración: queda anclado a la card en desktop y pasa a hoja inferior
+// en touch/viewport chico para que nunca dependa de hover.
 // ─────────────────────────────────────────────
 function ProductConfigOverlay({
     producto,
+    anchor,
     onClose,
+    initialItem,
+    onDelete,
     onConfirm,
 }: {
     producto: Producto
+    anchor: DOMRect
     onClose: () => void
+    initialItem?: CartItem
+    onDelete?: () => void
     onConfirm: (
         variante: { id: number; nombre: string; precio: string } | undefined,
-        agregados: Array<{ id: number; nombre: string; precio: string }>
+        agregados: Array<{ id: number; nombre: string; precio: string }>,
+        ingredientesExcluidos: number[]
     ) => void
 }) {
     const variantes = producto.variantes ?? []
+    const ingredientes = producto.ingredientes ?? []
     const agregadosDisp = producto.agregados ?? []
-    const [varianteId, setVarianteId] = useState<number | null>(variantes.length > 0 ? variantes[0].id : null)
-    const [agregadosSel, setAgregadosSel] = useState<number[]>([])
+    const [varianteId, setVarianteId] = useState<number | null>(initialItem?.varianteId ?? (variantes.length > 0 ? variantes[0].id : null))
+    const [ingredientesExcluidos, setIngredientesExcluidos] = useState<number[]>(initialItem?.ingredientesExcluidos ?? [])
+    const [agregadosSel, setAgregadosSel] = useState<number[]>(initialItem?.agregados.map((agregado) => agregado.id) ?? [])
+    const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640)
+
+    useEffect(() => {
+        const syncViewport = () => setIsCompact(window.innerWidth < 640)
+        syncViewport()
+        window.addEventListener('resize', syncViewport)
+        return () => window.removeEventListener('resize', syncViewport)
+    }, [])
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [onClose])
 
     const variante = variantes.find((v) => v.id === varianteId)
     const precioBase = variante ? parseFloat(variante.precio) : parseFloat(producto.precio)
     const agregadosObj = agregadosDisp.filter((a) => agregadosSel.includes(a.id))
     const precioTotal = precioBase + agregadosObj.reduce((s, a) => s + (parseFloat(a.precio) || 0), 0)
 
+    const width = 360
+    const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12))
+    const top = Math.max(12, Math.min(anchor.bottom + 10, window.innerHeight - 480))
+    const panelClass = isCompact
+        ? 'fixed inset-x-0 bottom-0 max-h-[82vh] rounded-t-3xl border-x border-t'
+        : 'fixed max-h-[min(480px,calc(100vh-24px))] rounded-2xl border'
+    const panelStyle = isCompact ? undefined : { left, top, width }
+
     return (
-        <div className="absolute inset-0 z-[1002] bg-background/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-            <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className={cn('fixed inset-0 z-[1002]', isCompact && 'bg-background/60 backdrop-blur-sm')} onClick={onClose}>
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Configurar ${producto.nombre}`}
+                className={cn('flex w-full flex-col overflow-hidden bg-card shadow-2xl', panelClass)}
+                style={panelStyle}
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                    <span className="font-bold text-sm truncate">{producto.nombre}</span>
+                    <div className="min-w-0"><span className="block font-bold text-sm truncate">{producto.nombre}</span><span className="text-xs text-muted-foreground">Personalizá antes de agregar</span></div>
                     <button onClick={onClose} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground">
                         <X className="h-4 w-4" />
                     </button>
@@ -587,9 +747,27 @@ function ProductConfigOverlay({
                             </div>
                         </div>
                     )}
+                    {ingredientes.length > 0 && (
+                        <div>
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Ingredientes</Label>
+                            <p className="mb-2 text-xs text-muted-foreground">Tocá los que querés quitar.</p>
+                            <div className="space-y-1.5">
+                                {ingredientes.map((ingrediente) => {
+                                    const excluido = ingredientesExcluidos.includes(ingrediente.id)
+                                    return <button
+                                        key={ingrediente.id}
+                                        onClick={() => setIngredientesExcluidos((prev) => excluido ? prev.filter((id) => id !== ingrediente.id) : [...prev, ingrediente.id])}
+                                        className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors', excluido ? 'border-red-400 bg-red-500/10 text-red-600 dark:text-red-400' : 'border-border hover:bg-accent')}
+                                    >
+                                        <span>{ingrediente.nombre}</span><span className="text-xs font-medium">{excluido ? 'Sin' : 'Incluir'}</span>
+                                    </button>
+                                })}
+                            </div>
+                        </div>
+                    )}
                     {agregadosDisp.length > 0 && (
                         <div>
-                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Agregados</Label>
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Extras</Label>
                             <div className="space-y-1.5">
                                 {agregadosDisp.map((a) => {
                                     const sel = agregadosSel.includes(a.id)
@@ -615,12 +793,12 @@ function ProductConfigOverlay({
                     )}
                 </div>
                 <div className="p-4 border-t border-border">
-                    <Button
-                        onClick={() => onConfirm(variante, agregadosObj)}
-                        className="w-full h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold"
-                    >
-                        Agregar · ${precioTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                    </Button>
+                    <div className="flex gap-2">
+                        {onDelete && <Button variant="outline" onClick={onDelete} className="h-11 rounded-xl text-red-600 hover:text-red-700 hover:bg-red-50">Eliminar</Button>}
+                        <Button onClick={() => onConfirm(variante, agregadosObj, ingredientesExcluidos)} className="flex-1 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold">
+                            {initialItem ? 'Guardar cambios' : 'Agregar'} · ${precioTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                        </Button>
+                    </div>
                 </div>
             </div>
         </div>

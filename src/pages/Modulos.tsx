@@ -12,17 +12,20 @@ import {
   Loader2,
   MessageCircle,
   Wrench,
+  ChevronRight,
+  CircleCheck,
+  CircleAlert,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { useModulosStore } from '@/store/modulosStore'
 import type { Modulo } from '@/lib/api'
 
-const fmtARS = (monto: string) =>
+const fmtARS = (monto: string | number) =>
   new Intl.NumberFormat('es-AR', {
     style: 'currency',
     currency: 'ARS',
@@ -46,38 +49,6 @@ const ICONOS: Record<string, typeof Blocks> = {
   motor_recompra: Sparkles,
 }
 
-function ModuloIcono({ modulo }: { modulo: Modulo }) {
-  const Icon = ICONOS[modulo.codigo] ?? Blocks
-  return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
-      <Icon className="h-5 w-5" />
-    </span>
-  )
-}
-
-function EstadoModulo({ modulo }: { modulo: Modulo }) {
-  if (modulo.estadoProducto === 'proximamente') {
-    return <Badge variant="outline" className="border-muted-foreground/25 text-muted-foreground">Próximamente</Badge>
-  }
-  if (modulo.estado === 'activo') {
-    if (modulo.origen === 'legacy' && Number(modulo.precioMensualCongelado) === 0) {
-      return <Badge className="bg-emerald-600 hover:bg-emerald-600">Bonificado</Badge>
-    }
-    return <Badge className="bg-emerald-600 hover:bg-emerald-600">Activo</Badge>
-  }
-  if (modulo.estado === 'cancelacion_programada') {
-    return <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">Baja programada</Badge>
-  }
-  if (modulo.estado === 'pendiente_pago') {
-    return <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">Pago pendiente</Badge>
-  }
-  if (modulo.estado === 'suspendido') {
-    return <Badge variant="outline" className="border-destructive/30 text-destructive">Suspendido</Badge>
-  }
-  if (modulo.estadoProducto === 'beta') return <Badge variant="outline">Beta</Badge>
-  return <Badge variant="secondary">Inactivo</Badge>
-}
-
 function requisitoConfiguracion(modulo: Modulo) {
   if (modulo.estadoProducto === 'proximamente') return 'Configuración en preparación'
   if (!modulo.activable) return 'Configuración en preparación'
@@ -90,6 +61,7 @@ function requisitoConfiguracion(modulo: Modulo) {
 }
 
 const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
+  mesas: '/dashboard/mesas',
   codigos_descuento: '/dashboard/codigos-descuento',
   mercadopago: '/dashboard/ajustes/pagos?config=mercadopago',
   talo: '/dashboard/ajustes/pagos?config=talo',
@@ -106,7 +78,7 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
  * esperar acreditación, programar baja o revertirla. La activación real sigue
  * dependiendo exclusivamente del webhook aprobado.
  */
-function CtaModulo({
+function AccionModulo({
   modulo,
   procesando,
   onActivar,
@@ -133,10 +105,10 @@ function CtaModulo({
       return <Button className="w-full" variant="ghost" disabled={procesando} onClick={onDesactivar}>{procesando ? 'Guardando…' : 'Desactivar al finalizar el período'}</Button>
     }
     return (
-      <div className="grid grid-cols-2 gap-2">
+      <div className={cn('grid gap-2', RUTAS_CONFIGURACION[modulo.codigo] && 'grid-cols-2')}>
         {RUTAS_CONFIGURACION[modulo.codigo] ? (
           <Button variant="outline" onClick={onConfigurar}>Configurar</Button>
-        ) : <Button variant="outline" disabled>Activo</Button>}
+        ) : null}
         <Button variant="ghost" disabled={procesando} onClick={onDesactivar}>
           {procesando ? 'Guardando…' : 'Desactivar'}
         </Button>
@@ -159,65 +131,74 @@ function CtaModulo({
 
 function CardModulo({
   modulo,
-  pago,
-  procesando,
-  onActivar,
-  onDesactivar,
-  onActivarPago,
-  onReactivarPago,
-  onActualizarPago,
-  onConfigurar,
+  onSeleccionar,
 }: {
   modulo: Modulo
-  pago?: boolean
-  procesando: boolean
-  onActivar: () => void
-  onDesactivar: () => void
-  onActivarPago: () => void
-  onReactivarPago: () => void
-  onActualizarPago: () => void
-  onConfigurar: () => void
+  onSeleccionar: () => void
 }) {
   const requisito = requisitoConfiguracion(modulo)
+  const proximamente = modulo.estadoProducto === 'proximamente' || !modulo.activable
+  const activo = modulo.estado === 'activo'
+  const pagoDisponible = modulo.tipo === 'pago' && !activo && !proximamente
+
   return (
-    <article className={cn(
-      'flex min-h-[255px] flex-col rounded-2xl border bg-card p-5 shadow-sm',
-      pago && 'border-brand/30 bg-gradient-to-br from-card via-card to-brand/[0.045]',
-    )}>
+    <button
+      type="button"
+      onClick={onSeleccionar}
+      className={cn(
+        'group flex min-h-[238px] w-full flex-col rounded-3xl p-5 text-left transition-[transform,background-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-2 hover:-translate-y-0.5',
+        proximamente
+          ? 'bg-muted/55 text-muted-foreground hover:bg-muted/75'
+          : activo
+            ? 'bg-emerald-50/80 dark:bg-emerald-950/30 hover:bg-emerald-100/80 dark:hover:bg-emerald-950/45'
+            : pagoDisponible
+              ? 'bg-zinc-950 text-white shadow-sm hover:bg-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'
+              : 'bg-white dark:bg-muted/40 hover:bg-muted/60',
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
-        <ModuloIcono modulo={modulo} />
-        <EstadoModulo modulo={modulo} />
+        <span className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl',
+          proximamente
+            ? 'bg-muted-foreground/10 text-muted-foreground'
+            : activo
+              ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+              : pagoDisponible
+                ? 'bg-white/12 text-white'
+                : 'bg-brand/10 text-brand',
+        )}>
+          {(() => {
+            const Icon = ICONOS[modulo.codigo] ?? Blocks
+            return <Icon className="h-5 w-5" />
+          })()}
+        </span>
+        <ChevronRight className={cn(
+          'mt-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5',
+          pagoDisponible ? 'text-white/55' : 'text-muted-foreground/55',
+        )} />
       </div>
       <div className="mt-4">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h2 className="text-base font-semibold tracking-tight text-foreground">{modulo.nombre}</h2>
-          {modulo.tipo === 'incluido' ? (
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Incluido</span>
-          ) : (
-            <span className="text-xs font-medium text-brand">+{fmtARS(modulo.precioMensual)}/mes</span>
-          )}
+          <h2 className={cn('text-base font-semibold tracking-tight', pagoDisponible ? 'text-white' : 'text-foreground')}>{modulo.nombre}</h2>
+          {modulo.tipo === 'pago' && <span className={cn('text-xs font-medium', pagoDisponible ? 'text-white/70' : 'text-brand')}>+{fmtARS(modulo.precioMensual)}/mes</span>}
         </div>
-        <p className="mt-1.5 min-h-10 text-sm leading-relaxed text-muted-foreground">
+        <p className={cn('mt-1.5 min-h-10 text-sm leading-relaxed', pagoDisponible ? 'text-white/65' : 'text-muted-foreground')}>
           {modulo.descripcion || 'Sumá esta capacidad a la operación de tu local.'}
         </p>
       </div>
-      <div className="mt-4 min-h-9">
-        {requisito && (
-          <p className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
-            <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {requisito}
-          </p>
-        )}
-        {modulo.activoAhora && !requisito && (
-          <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
-            <Check className="h-3.5 w-3.5" /> Disponible para usar
-          </p>
+      <div className="mt-auto pt-5">
+        {activo ? (
+          <div className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+            <CircleCheck className="h-4 w-4" />
+            <span>{requisito ? 'Activo · falta configurar' : 'Listo para usar'}</span>
+          </div>
+        ) : proximamente ? (
+          <p className="text-sm font-medium text-muted-foreground">En preparación</p>
+        ) : (
+          <p className={cn('text-sm font-medium', pagoDisponible ? 'text-white/85' : 'text-muted-foreground')}>Ver detalles</p>
         )}
       </div>
-      <div className="mt-auto pt-4">
-        <CtaModulo modulo={modulo} procesando={procesando} onActivar={onActivar} onDesactivar={onDesactivar} onActivarPago={onActivarPago} onReactivarPago={onReactivarPago} onActualizarPago={onActualizarPago} onConfigurar={onConfigurar} />
-      </div>
-    </article>
+    </button>
   )
 }
 
@@ -250,6 +231,7 @@ export default function Modulos() {
   const enviarPagoLinkModulo = useModulosStore((state) => state.enviarPagoLinkModulo)
   const reactivar = useModulosStore((state) => state.reactivar)
   const [procesandoCodigo, setProcesandoCodigo] = useState<string | null>(null)
+  const [moduloSeleccionado, setModuloSeleccionado] = useState<Modulo | null>(null)
   const [moduloPagoSeleccionado, setModuloPagoSeleccionado] = useState<Modulo | null>(null)
   const [confirmandoBaja, setConfirmandoBaja] = useState<Modulo | null>(null)
   const vieneDeActivarSuscripcion = new URLSearchParams(location.search).get('origen') === 'suscripcion'
@@ -380,11 +362,10 @@ export default function Modulos() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-9">
-      <header className="mb-9 max-w-2xl">
-        <p className="text-sm font-medium text-brand">Personalizá Piru para tu local</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">Módulos</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
+      <header className="mx-auto mb-12 max-w-2xl text-center">
+        <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">Módulos</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
           Activá sólo las herramientas que necesitás. Los módulos incluidos no suman costo; los pagos se agregan a tu suscripción.
         </p>
       </header>
@@ -415,15 +396,7 @@ export default function Modulos() {
                 </div>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {modulos.map((modulo) => (
-                    <CardModulo key={modulo.codigo} modulo={modulo}
-                      procesando={procesandoCodigo === modulo.codigo}
-                      onActivar={() => void activarIncluido(modulo)}
-                      onDesactivar={() => void desactivarIncluido(modulo)}
-                      onActivarPago={() => undefined}
-                      onReactivarPago={() => undefined}
-                      onActualizarPago={() => void cargar(true)}
-                      onConfigurar={() => configurarModulo(modulo)}
-                    />
+                    <CardModulo key={modulo.codigo} modulo={modulo} onSeleccionar={() => setModuloSeleccionado(modulo)} />
                   ))}
                 </div>
               </section>
@@ -431,9 +404,9 @@ export default function Modulos() {
           })}
 
           {pagos.length > 0 && (
-            <section aria-labelledby="modulos-pagos" className="rounded-3xl border border-brand/20 bg-brand/[0.035] p-4 sm:p-6">
+            <section aria-labelledby="modulos-pagos">
               <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white"><Sparkles className="h-5 w-5" /></span>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950"><Sparkles className="h-5 w-5" /></span>
                 <div>
                   <h2 id="modulos-pagos" className="text-lg font-semibold tracking-tight text-foreground">Módulos pagos</h2>
                   <p className="mt-1 text-sm text-muted-foreground">Se suman a tu suscripción mensual. Elegís cuáles activar.</p>
@@ -441,15 +414,7 @@ export default function Modulos() {
               </div>
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 {pagos.map((modulo) => (
-                  <CardModulo key={modulo.codigo} modulo={modulo} pago
-                    procesando={procesandoCodigo === modulo.codigo}
-                    onActivar={() => undefined}
-                    onDesactivar={() => setConfirmandoBaja(modulo)}
-                    onActivarPago={() => setModuloPagoSeleccionado(modulo)}
-                    onReactivarPago={() => void reactivarPago(modulo)}
-                    onActualizarPago={() => void cargar(true)}
-                    onConfigurar={() => configurarModulo(modulo)}
-                  />
+                  <CardModulo key={modulo.codigo} modulo={modulo} onSeleccionar={() => setModuloSeleccionado(modulo)} />
                 ))}
               </div>
             </section>
@@ -458,6 +423,94 @@ export default function Modulos() {
           {error && <p className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><Clock3 className="h-4 w-4" /> Mostramos la última información disponible. {error}</p>}
         </div>
       )}
+
+      <Sheet open={Boolean(moduloSeleccionado)} onOpenChange={(abierto) => !abierto && setModuloSeleccionado(null)}>
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+          {moduloSeleccionado && (() => {
+            const requisito = requisitoConfiguracion(moduloSeleccionado)
+            const configuracion = requisito ?? (RUTAS_CONFIGURACION[moduloSeleccionado.codigo]
+              ? 'Podés dejar este módulo listo desde su pantalla de configuración.'
+              : null)
+            const proximamente = moduloSeleccionado.estadoProducto === 'proximamente' || !moduloSeleccionado.activable
+            const activo = moduloSeleccionado.estado === 'activo'
+            const estadoTexto = proximamente
+              ? 'Este módulo está en preparación'
+              : activo
+                ? requisito ? 'Está activo y necesita una configuración final' : 'Está activo y listo para usar'
+                : moduloSeleccionado.estado === 'cancelacion_programada'
+                  ? 'La baja está programada al finalizar el período'
+                  : moduloSeleccionado.estado === 'pendiente_pago'
+                    ? 'Estamos esperando la acreditación del pago'
+                    : moduloSeleccionado.estado === 'suspendido'
+                      ? 'Este módulo está suspendido'
+                      : 'Todavía no está activo'
+
+            return <>
+              <SheetHeader className="border-b px-6 py-6 pr-12 text-left">
+                <div className="flex items-center gap-3">
+                  <span className={cn(
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                    proximamente ? 'bg-muted text-muted-foreground' : activo ? 'bg-emerald-600 text-white' : moduloSeleccionado.tipo === 'pago' ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950' : 'bg-brand/10 text-brand',
+                  )}>
+                    {(() => { const Icon = ICONOS[moduloSeleccionado.codigo] ?? Blocks; return <Icon className="h-5 w-5" /> })()}
+                  </span>
+                  <div>
+                    <SheetTitle className="text-xl font-semibold tracking-tight">{moduloSeleccionado.nombre}</SheetTitle>
+                    {moduloSeleccionado.tipo === 'pago' && <p className="mt-0.5 text-sm font-medium text-muted-foreground">+{fmtARS(moduloSeleccionado.precioMensual)}/mes</p>}
+                  </div>
+                </div>
+                <SheetDescription className="pt-3 text-sm leading-relaxed">
+                  {moduloSeleccionado.descripcion || 'Sumá esta capacidad a la operación de tu local.'}
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+                <div className={cn(
+                  'rounded-2xl p-4',
+                  proximamente ? 'bg-muted/70' : activo ? 'bg-emerald-50 dark:bg-emerald-950/25' : 'bg-muted/55',
+                )}>
+                  <div className="flex items-start gap-3">
+                    {activo ? <CircleCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /> : <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />}
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{estadoTexto}</p>
+                      {moduloSeleccionado.origen === 'legacy' && Number(moduloSeleccionado.precioMensualCongelado) === 0 && <p className="mt-1 text-xs text-muted-foreground">Conservás este módulo sin costo como beneficio histórico.</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {configuracion && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Configuración</p>
+                    <div className="flex gap-3 rounded-2xl bg-muted/55 p-4">
+                      <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <p className="text-sm leading-relaxed text-muted-foreground">{configuracion}</p>
+                    </div>
+                  </div>
+                )}
+
+                {moduloSeleccionado.tipo === 'pago' && !proximamente && moduloSeleccionado.estado === 'inactivo' && (
+                  <div className="rounded-2xl bg-muted/55 p-4 text-sm text-muted-foreground">
+                    El primer cargo se prorratea hasta tu próxima renovación. Luego se integra a tu factura mensual.
+                  </div>
+                )}
+              </div>
+
+              <SheetFooter className="border-t px-6 py-5">
+                <AccionModulo
+                  modulo={moduloSeleccionado}
+                  procesando={procesandoCodigo === moduloSeleccionado.codigo}
+                  onActivar={() => void activarIncluido(moduloSeleccionado)}
+                  onDesactivar={() => moduloSeleccionado.tipo === 'pago' ? setConfirmandoBaja(moduloSeleccionado) : void desactivarIncluido(moduloSeleccionado)}
+                  onActivarPago={() => setModuloPagoSeleccionado(moduloSeleccionado)}
+                  onReactivarPago={() => void reactivarPago(moduloSeleccionado)}
+                  onActualizarPago={() => void cargar(true)}
+                  onConfigurar={() => configurarModulo(moduloSeleccionado)}
+                />
+              </SheetFooter>
+            </>
+          })()}
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={Boolean(moduloPagoSeleccionado)} onOpenChange={(abierto) => !procesandoCodigo && !abierto && setModuloPagoSeleccionado(null)}>
         <DialogContent className="sm:max-w-md">

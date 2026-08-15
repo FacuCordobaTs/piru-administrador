@@ -4,7 +4,7 @@ import { AlertTriangle, Check, CreditCard, Loader2, ReceiptText, RotateCcw, XCir
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { CicloToggle, type Ciclo } from '@/components/CicloToggle'
-import { descuentoAnualEfectivo, precioAnual } from '@/lib/utils'
+import { cn, descuentoAnualEfectivo, precioAnual } from '@/lib/utils'
 import { suscripcionApi, type PagoSuscripcionResumen } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useModulosStore } from '@/store/modulosStore'
@@ -23,6 +23,8 @@ const ESTADOS: Record<string, string> = {
   trial: 'Prueba gratis', activa: 'Al día', pago_pendiente: 'Pago pendiente',
   suspendida: 'Suspendida', cancelada: 'Cancelada',
 }
+
+type Suscripcion = NonNullable<ReturnType<typeof useSuscripcion>['data']>
 
 export default function MiSuscripcion() {
   const { data, loading, refetch } = useSuscripcion()
@@ -44,17 +46,13 @@ export default function MiSuscripcion() {
   }
 
   useEffect(() => { void cargarPagos() }, [])
-  useEffect(() => {
-    if (!data?.ciclo) return
-    setCiclo(data.ciclo === 'anual' ? 'anual' : 'mensual')
-  }, [data?.ciclo])
+  useEffect(() => { if (data?.ciclo) setCiclo(data.ciclo === 'anual' ? 'anual' : 'mensual') }, [data?.ciclo])
   useEffect(() => {
     if (searchParams.get('plan') !== 'success') return
     toast.success('Pago recibido. Estamos actualizando tu suscripción…')
     setSearchParams({}, { replace: true })
     const timers = [1500, 4000, 8000].map((ms) => setTimeout(() => { void refetch(); void cargarPagos() }, ms))
     return () => timers.forEach(clearTimeout)
-  // El polling se crea sólo al volver desde Mercado Pago.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
@@ -74,10 +72,8 @@ export default function MiSuscripcion() {
 
   const iniciarCheckout = async () => {
     setProcesando('checkout')
-    try {
-      const checkout = await checkoutSuscripcion(ciclo)
-      window.location.assign(checkout.url_pago)
-    } catch (error: any) { toast.error(error?.message || 'No se pudo iniciar el pago') }
+    try { window.location.assign((await checkoutSuscripcion(ciclo)).url_pago) }
+    catch (error: any) { toast.error(error?.message || 'No se pudo iniciar el pago') }
     finally { setProcesando(null) }
   }
   const cancelar = async () => {
@@ -99,55 +95,92 @@ export default function MiSuscripcion() {
   }
 
   return <main className="mx-auto w-full max-w-4xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20">
-    <header className="mx-auto mb-10 max-w-xl text-center">
+    <header className="mx-auto mb-12 max-w-xl text-center">
       <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">Mi suscripción</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Tu operación base y los módulos que elegiste para tu local.</p>
+      <p className="mt-3 text-sm text-muted-foreground">Gestioná tu suscripción y pagos de Piru.</p>
     </header>
 
-    <div className="mx-auto max-w-3xl space-y-8">
-      <EstadoSuscripcion data={data} />
-      <section className="rounded-2xl border border-border bg-card p-5 sm:p-7">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <div><p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Suscripción Piru</p><h2 className="mt-1 text-2xl font-semibold">{data.suscripcionBase?.nombre ?? 'Suscripción Piru'}</h2><p className="mt-2 text-sm text-muted-foreground">{data.suscripcionBase?.descripcion ?? 'Todo lo necesario para recibir y gestionar pedidos.'}</p></div>
-          <span className="inline-flex items-center gap-2 text-sm text-muted-foreground"><span className={`h-2 w-2 rounded-full ${necesitaCheckout ? 'bg-amber-500' : 'bg-emerald-500'}`} />{ESTADOS[data.estado ?? ''] ?? 'Sin suscripción'}</span>
-        </div>
-        <p className="mt-4 text-sm text-muted-foreground">{data.estado === 'trial' ? `Prueba gratis${fmtFecha(data.trialFin ?? data.fechaProximoCobro) ? ` hasta el ${fmtFecha(data.trialFin ?? data.fechaProximoCobro)}` : ''}.` : data.graciaHasta && data.estado === 'pago_pendiente' ? `Período de gracia hasta el ${fmtFecha(data.graciaHasta)}.` : data.fechaProximoCobro ? `Próximo pago: ${fmtFecha(data.fechaProximoCobro)}.` : 'Sin próximo pago programado.'}</p>
-        <div className="mt-7 border-t border-border pt-5">
-          <div className="flex flex-wrap items-center justify-between gap-4"><span className="font-medium">Elegí cómo pagar</span><CicloToggle value={ciclo} onChange={setCiclo} descuentoMax={descuento} /></div>
-          <ResumenImporte titulo="Suscripción base" importe={precioBase} ciclo={ciclo} descuento={descuento} />
-          {modulosPagos.map((modulo) => <ResumenImporte key={modulo.codigo} titulo={modulo.nombre} importe={Number(modulo.precioMensualCongelado ?? modulo.precioMensual)} ciclo={ciclo} descuento={descuento} nota={modulo.origen === 'legacy' ? 'Bonificado' : modulo.estado === 'cancelacion_programada' ? `Finaliza el ${fmtFecha(modulo.vigenteHasta) ?? 'fin del período'}` : undefined} />)}
-          <div className="mt-5 flex items-baseline justify-between border-t border-border pt-5"><span className="font-semibold">Total {ciclo === 'anual' ? 'anual' : 'mensual'}</span><span className="text-2xl font-semibold">{fmtARS(totalCiclo)}<span className="ml-1 text-sm font-normal text-muted-foreground">/{ciclo === 'anual' ? 'año' : 'mes'}</span></span></div>
-          {ciclo === 'anual' && <p className="mt-2 text-right text-xs text-muted-foreground">Equivale a {fmtARS(totalCiclo / 12)}/mes{descuento > 0 ? ` · ahorrás ${descuento}%` : ''}</p>}
-        </div>
-        <div className="mt-7 flex flex-wrap gap-3">
-          {necesitaCheckout && <Button onClick={iniciarCheckout} disabled={!!procesando}>{procesando === 'checkout' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}{sinSuscripcion ? 'Activar suscripción' : 'Reactivar con un pago'}</Button>}
-          {cancelacionProgramada && <Button variant="outline" onClick={reactivar} disabled={!!procesando}>{procesando === 'reactivar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}Continuar suscripción</Button>}
-          {!sinSuscripcion && !cancelacionProgramada && !necesitaCheckout && <Button variant="outline" onClick={cancelar} disabled={!!procesando}>{procesando === 'cancelar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Cancelar al final del período</Button>}
-        </div>
-      </section>
+    <div className="mx-auto max-w-3xl space-y-10">
+      <Atencion data={data} />
+      <SuscripcionActual
+        data={data}
+        ciclo={ciclo}
+        descuento={descuento}
+        precioBase={precioBase}
+        totalCiclo={totalCiclo}
+        sinSuscripcion={sinSuscripcion}
+        necesitaCheckout={necesitaCheckout}
+        cancelacionProgramada={cancelacionProgramada}
+        procesando={procesando}
+        onCiclo={setCiclo}
+        onCheckout={iniciarCheckout}
+        onCancelar={cancelar}
+        onReactivar={reactivar}
+      />
+      <ModulosPagos modulos={modulosPagos} ciclo={ciclo} descuento={descuento} />
       <Historial pagos={pagos} cargando={cargandoPagos} />
     </div>
   </main>
 }
 
-function EstadoSuscripcion({ data }: { data: NonNullable<ReturnType<typeof useSuscripcion>['data']> }) {
+function Atencion({ data }: { data: Suscripcion }) {
   const renovacion = renovacionProxima(data)
-  const fecha = data.fechaCancelacion ?? data.trialFin ?? data.fechaProximoCobro
-  let texto: string | null = null
-  if (data.fechaCancelacion && new Date(data.fechaCancelacion) > new Date()) texto = `La baja está programada para el ${fmtFecha(data.fechaCancelacion)}. Tus módulos y la suscripción siguen activos hasta entonces.`
-  else if (data.estado === 'trial') texto = `Tu prueba incluye la suscripción base${fecha ? ` hasta el ${fmtFecha(fecha)}` : ''}. Los módulos pagos se activan por separado desde Módulos.`
-  else if (data.estado === 'pago_pendiente') texto = data.graciaHasta ? `Tu pago está pendiente. Tenés hasta el ${fmtFecha(data.graciaHasta)} para regularizarlo.` : 'Tu pago está pendiente.'
-  else if (data.estado === 'suspendida' || data.estado === 'cancelada') texto = 'Tus datos se conservan. Reactivá con un pago para volver a operar.'
-  else if (renovacion) texto = renovacion.diasRestantes <= 0 ? 'Tu suscripción se renueva hoy.' : `Tu próxima renovación es en ${renovacion.diasRestantes} días.`
-  if (!texto) return null
-  return <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />{texto}</div>
+  let mensaje: string | null = null
+  if (data.fechaCancelacion && new Date(data.fechaCancelacion) > new Date()) mensaje = `La baja está programada para el ${fmtFecha(data.fechaCancelacion)}. Vas a conservar el servicio hasta entonces.`
+  else if (data.estado === 'suspendida') mensaje = 'Tu suscripción está suspendida por falta de pago. Reactivala para volver a operar.'
+  else if (data.estado === 'pago_pendiente') mensaje = data.graciaHasta ? `Tu pago está pendiente. Tenés hasta el ${fmtFecha(data.graciaHasta)} para regularizarlo.` : 'Tu pago está pendiente.'
+  else if (data.estado === 'cancelada') mensaje = 'Tus datos siguen guardados. Reactivá tu suscripción para volver a operar.'
+  else if (renovacion) mensaje = renovacion.diasRestantes <= 0 ? 'Tu suscripción se renueva hoy.' : `Tu suscripción se renueva el ${fmtFecha(data.fechaProximoCobro) ?? `en ${renovacion.diasRestantes} días`}.`
+  return mensaje ? <div className="flex items-start gap-3 border-b border-amber-200 pb-4 text-sm text-foreground dark:border-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />{mensaje}</div> : null
 }
 
-function ResumenImporte({ titulo, importe, ciclo, descuento, nota }: { titulo: string; importe: number; ciclo: Ciclo; descuento: number; nota?: string }) {
-  const total = ciclo === 'anual' ? precioAnual(importe, descuento) : importe
-  return <div className="mt-4 flex items-start justify-between gap-4 text-sm"><div><p>{titulo}</p>{nota && <p className="mt-0.5 text-xs text-muted-foreground">{nota}</p>}</div><span className="shrink-0 font-medium">{fmtARS(total)}</span></div>
+function SuscripcionActual({ data, ciclo, descuento, precioBase, totalCiclo, sinSuscripcion, necesitaCheckout, cancelacionProgramada, procesando, onCiclo, onCheckout, onCancelar, onReactivar }: {
+  data: Suscripcion; ciclo: Ciclo; descuento: number; precioBase: number; totalCiclo: number; sinSuscripcion: boolean; necesitaCheckout: boolean; cancelacionProgramada: boolean; procesando: string | null
+  onCiclo: (ciclo: Ciclo) => void; onCheckout: () => void; onCancelar: () => void; onReactivar: () => void
+}) {
+  const esTrial = data.estado === 'trial'
+  const fecha = esTrial ? data.trialFin ?? data.fechaProximoCobro : data.fechaProximoCobro
+  const detalleFecha = esTrial
+    ? `Prueba gratis${fmtFecha(fecha) ? ` hasta el ${fmtFecha(fecha)}` : ''}.`
+    : data.graciaHasta && data.estado === 'pago_pendiente'
+      ? `Período de gracia hasta el ${fmtFecha(data.graciaHasta)}.`
+      : fecha ? `Próximo pago: ${fmtFecha(fecha)}.` : 'Sin próximo pago programado.'
+  return <section className="border-y border-border py-7 sm:px-2">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Tu suscripción</p><h2 className="mt-1 text-3xl font-semibold tracking-tight">{data.suscripcionBase?.nombre ?? 'Suscripción Piru'}</h2></div>
+      <p className="inline-flex items-center gap-2 text-sm text-muted-foreground"><span className={`h-2 w-2 rounded-full ${necesitaCheckout ? 'bg-amber-500' : 'bg-emerald-500'}`} />{ESTADOS[data.estado ?? ''] ?? 'Sin suscripción'}</p>
+    </div>
+    <div className="mt-6 flex flex-col gap-5 border-t border-border pt-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-2 text-sm text-muted-foreground">
+        <p className="text-base font-medium text-foreground">{fmtARS(totalCiclo)} <span className="font-normal text-muted-foreground">/ {ciclo === 'anual' ? 'año' : 'mes'}</span></p>
+        {ciclo === 'anual' && <p>Equivale a {fmtARS(totalCiclo / 12)}/mes{descuento > 0 ? ` · ahorrás ${descuento}%` : ''}.</p>}
+        <p>{detalleFecha}</p>
+        {data.suscripcionBase?.descripcion && <p>{data.suscripcionBase.descripcion}</p>}
+        <p className="text-xs">Base: {fmtARS(ciclo === 'anual' ? precioAnual(precioBase, descuento) : precioBase)}{ciclo === 'anual' ? ' / año' : ' / mes'}.</p>
+      </div>
+      <div className="shrink-0 space-y-2">
+        {necesitaCheckout && <Button onClick={onCheckout} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'checkout' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}{sinSuscripcion ? 'Activar suscripción' : 'Reactivar con un pago'}</Button>}
+        {cancelacionProgramada && <Button variant="outline" onClick={onReactivar} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'reactivar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}Continuar suscripción</Button>}
+        {!sinSuscripcion && !cancelacionProgramada && !necesitaCheckout && <Button variant="outline" onClick={onCancelar} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'cancelar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Cancelar al final del período</Button>}
+      </div>
+    </div>
+    <div className="mt-6"><CicloToggle value={ciclo} onChange={onCiclo} descuentoMax={descuento} /></div>
+  </section>
+}
+
+function ModulosPagos({ modulos, ciclo, descuento }: { modulos: ReturnType<typeof useModulosStore.getState>['categorias'][number]['modulos']; ciclo: Ciclo; descuento: number }) {
+  return <section className="border-t border-border pt-8 text-center">
+    <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Módulos pagos</p>
+    <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Tu suscripción, a tu medida</h2>
+    <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">Los módulos que activaste se cobran junto a la suscripción base. Podés administrarlos desde Módulos.</p>
+    {modulos.length === 0 ? <p className="mt-6 text-sm text-muted-foreground">Todavía no tenés módulos pagos activos.</p> : <div className="mt-8 grid gap-8 text-left sm:grid-cols-2">{modulos.map((modulo) => {
+      const importe = Number(modulo.precioMensualCongelado ?? modulo.precioMensual)
+      const total = ciclo === 'anual' ? precioAnual(importe, descuento) : importe
+      return <article key={modulo.codigo} className="border-t pt-5"><div className="flex items-baseline justify-between gap-3"><h3 className="text-xl font-semibold">{modulo.nombre}</h3><span className={cn('text-xs font-medium', modulo.estado === 'cancelacion_programada' ? 'text-amber-600' : 'text-emerald-600')}>{modulo.estado === 'cancelacion_programada' ? 'Baja programada' : modulo.origen === 'legacy' ? 'Bonificado' : 'Activo'}</span></div><p className="mt-2 text-2xl font-semibold">{modulo.origen === 'legacy' ? fmtARS(0) : fmtARS(total)}<span className="text-sm font-normal text-muted-foreground"> {modulo.origen === 'legacy' ? '' : ciclo === 'anual' ? '/ año' : '/ mes'}</span></p>{modulo.descripcion && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{modulo.descripcion}</p>}{modulo.estado === 'cancelacion_programada' && <p className="mt-3 text-xs text-muted-foreground">Activo hasta el {fmtFecha(modulo.vigenteHasta) ?? 'fin del período'}.</p>}<p className="mt-5 flex items-center gap-1.5 text-sm text-muted-foreground"><Check className="h-4 w-4 text-emerald-500" />Incluido en tu factura</p></article>
+    })}</div>}
+  </section>
 }
 
 function Historial({ pagos, cargando }: { pagos: PagoSuscripcionResumen[]; cargando: boolean }) {
-  return <section className="rounded-2xl border border-border bg-card p-5 sm:p-7"><div className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-muted-foreground" /><h2 className="text-lg font-semibold">Historial de pagos</h2></div>{cargando ? <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : pagos.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">Todavía no hay pagos registrados.</p> : <div className="mt-4 divide-y divide-border">{[...pagos].reverse().map((pago) => <div key={pago.id} className="flex items-center justify-between gap-4 py-3 text-sm"><div><p className="font-medium">{pago.estado === 'paid' ? 'Pago acreditado' : pago.estado === 'pending' ? 'Pago pendiente' : `Pago ${pago.estado}`}</p><p className="mt-0.5 text-xs text-muted-foreground">{fmtFecha(pago.paidAt ?? pago.createdAt) ?? 'Sin fecha'} · {pago.ciclo === 'anual' ? 'Anual' : 'Mensual'}</p></div><span className="font-medium">{fmtARS(pago.montoTotal ?? pago.monto)}</span></div>)}</div>}</section>
+  return <section className="border-t border-border pt-8"><div className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-muted-foreground" /><h2 className="text-xl font-semibold">Historial de pagos</h2></div>{cargando ? <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : pagos.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">Todavía no hay pagos registrados.</p> : <div className="mt-4 divide-y divide-border">{[...pagos].reverse().map((pago) => <div key={pago.id} className="flex items-center justify-between gap-4 py-3 text-sm"><div><p className="font-medium">{pago.estado === 'paid' ? 'Pago acreditado' : pago.estado === 'pending' ? 'Pago pendiente' : `Pago ${pago.estado}`}</p><p className="mt-0.5 text-xs text-muted-foreground">{fmtFecha(pago.paidAt ?? pago.createdAt) ?? 'Sin fecha'} · {pago.ciclo === 'anual' ? 'Anual' : 'Mensual'}</p></div><span className="font-medium">{fmtARS(pago.montoTotal ?? pago.monto)}</span></div>)}</div>}</section>
 }

@@ -32,6 +32,7 @@ interface Producto {
   descuento?: number | null
   tieneVariantes?: boolean | null
   etiquetas?: Array<{ id: number; nombre: string }>
+  ingredientes?: Array<{ id: number; nombre: string }>
   agregados?: Array<{ id: number; nombre: string; precio: string }>
   variantes?: Array<{ id: number; nombre: string; precio: string }>
 }
