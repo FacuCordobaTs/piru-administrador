@@ -59,7 +59,7 @@ export default function AvisosAutomaticos() {
   )
 }
 
-function ToggleConExplicacion({
+export function ToggleConExplicacion({
   campo,
   apiFn,
   titulo,
