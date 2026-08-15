@@ -797,7 +797,7 @@ const SelfServeOnboarding = () => {
   const finalizar = async () => {
     localStorage.removeItem('piru_onboarding_data')
     // Sincronizamos el store (completedOnboarding=true + suscripción). Como el local nuevo aún
-    // no tiene plan pago, el hard paywall lo lleva a /suscribir a elegir y pagar antes del panel.
+    // no tiene una suscripción activa, el hard paywall lo lleva a /suscribir antes del panel.
     await restauranteStore.fetchData()
     navigate('/suscribir')
   }
@@ -1340,24 +1340,20 @@ const SelfServeOnboarding = () => {
         </div>
         <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Tu local está listo</h1>
         <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
-          Tu tienda, tu menú y tus medios de pago quedaron cargados. Activá un plan para salir a
-          recibir pedidos: es una cuota fija sin comisión por venta, y podés pagarla mes a mes o
-          por año con descuento.
+          Tu tienda, tu menú y tus medios de pago quedaron cargados. Activá tu suscripción para
+          salir a recibir pedidos: es una cuota fija sin comisión por venta, y podés pagarla mes
+          a mes o por año con descuento.
         </p>
 
-        {/* Explicamos qué trae cada plan ANTES de mandarlo a /suscribir: que el Básico no es
-            "pelado" (ya recibís y gestionás todo) y que la diferencia real con el Intermedio es
-            el chat con el cliente, no "más features". (Roadmap 2.7) */}
         <div className="mt-6 w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left">
-          <p className="text-sm font-semibold">Con el Básico ya recibís y gestionás todo</p>
+          <p className="text-sm font-semibold">Tu suscripción incluye toda la operación base</p>
           <p className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
             Pedidos por WhatsApp, comandas automáticas, productos ilimitados, todos los medios de
             pago, cupones, estadísticas, horarios y mapa de pedidos. Cuota fija, sin comisión por venta.
           </p>
           <p className="mt-3 text-[13px] text-muted-foreground leading-relaxed">
-            <span className="font-medium text-foreground">¿Querés cero chat con el cliente?</span>{' '}
-            Con el Intermedio los avisos “en camino” y “listo para retirar” salen solos con tu marca,
-            sin que nadie tenga que escribir.
+            Después de activar, podés elegir módulos incluidos o sumar módulos pagos desde Módulos.
+            <span className="font-medium text-foreground"> No activamos ninguno automáticamente.</span>
           </p>
         </div>
 
@@ -1367,11 +1363,11 @@ const SelfServeOnboarding = () => {
             <span className="text-muted-foreground/60">piru.app/</span>
             <span className="font-semibold text-[#FF7A00]">{toSlug(formData.nombre) || 'tulocal'}</span>
           </p>
-          <p className="text-[13px] text-muted-foreground mt-2">Queda activo apenas actives tu plan.</p>
+          <p className="text-[13px] text-muted-foreground mt-2">Queda activo apenas actives tu suscripción.</p>
         </div>
 
         <Button onClick={finalizar} disabled={busy} className="w-full h-14 mt-4 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Elegir mi plan <ArrowRight className="ml-2 h-4 w-4" /></>}
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Activar mi suscripción <ArrowRight className="ml-2 h-4 w-4" /></>}
         </Button>
       </div>
     )
@@ -1684,7 +1680,7 @@ const ClaimOnboarding = () => {
   }
 
   // Cierra el reclamo: marca el onboarding completo (sin pisar datos) y entra al panel. El
-  // ProtectedLayout decide el destino real (panel si hay trial activo, /suscribir si falta plan).
+  // ProtectedLayout decide el destino real (panel si hay trial activo, /suscribir si falta suscripción).
   const finalizar = async () => {
     if (!token) return
     setBusy(true)

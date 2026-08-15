@@ -1735,6 +1735,88 @@ export interface MiSuscripcion {
   ciclo: string | null
   features: string[]
   wallet: WalletResumen
+  // Contrato de suscripción única. Los campos `plan*` anteriores se conservan
+  // arriba para compatibilidad con admins instalados.
+  suscripcionBase?: ConfiguracionSuscripcion | null
+  suscripcionId?: number | null
+  precioBaseMensual?: string | null
+  montoModulosMensual?: string | null
+  montoTotalMensual?: string | null
+}
+
+export interface ConfiguracionSuscripcion {
+  id: number
+  codigo: string
+  nombre: string
+  descripcion: string | null
+  precioMensual: string
+  descuentoAnual: number
+  activo: boolean
+}
+
+export type EstadoModulo = 'inactivo' | 'pendiente_pago' | 'activo' | 'cancelacion_programada' | 'suspendido' | null
+export type OrigenModulo = 'usuario' | 'interno' | 'migracion' | 'trial' | 'legacy' | null
+
+export interface Modulo {
+  id: number
+  codigo: string
+  categoriaId: number
+  nombre: string
+  descripcion: string | null
+  tipo: 'incluido' | 'pago'
+  precioMensual: string
+  mensajesUtilityIncluidos: number
+  mensajesMarketingIncluidos: number
+  estadoProducto: 'disponible' | 'beta' | 'proximamente'
+  activable: boolean
+  activoCatalogo: boolean
+  icono?: string | null
+  orden?: number
+  estado: EstadoModulo
+  origen: OrigenModulo
+  precioMensualCongelado: string | null
+  vigenteHasta: string | null
+  activoAhora: boolean
+}
+
+export interface CategoriaModulo {
+  id: number
+  codigo: string
+  nombre: string
+  descripcion: string | null
+  orden: number
+  activo: boolean
+  modulos: Modulo[]
+}
+
+export interface CheckoutSuscripcion {
+  pagoId: number
+  url_pago: string
+  preference_id?: string
+  monto: string
+  montoBase?: string
+  montoModulos?: string
+  items: Array<{
+    tipo: 'base' | 'modulo'
+    codigo?: string | null
+    descripcion: string
+    monto: string | number
+    desde?: string | null
+    hasta?: string | null
+  }>
+  ciclo?: 'mensual' | 'anual'
+}
+
+export interface PagoSuscripcionResumen {
+  id: number
+  estado: 'pending' | 'paid' | 'failed' | 'expired' | string
+  monto?: string | null
+  montoBase?: string | null
+  montoModulos?: string | null
+  montoTotal?: string | null
+  ciclo?: 'mensual' | 'anual' | string | null
+  createdAt?: string | null
+  paidAt?: string | null
 }
 
 export const planesApi = {
@@ -1768,12 +1850,6 @@ export const planesApi = {
         body: JSON.stringify({ planId, ciclo }),
       },
     ),
-  // DEBUG TEMPORAL: renueva el plan actual por $10. El backend ignora cualquier plan del cliente.
-  enviarPagoDebugLinkWhatsapp: async (token: string) =>
-    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>('/planes/debug/pago-link-whatsapp', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    }),
   cancelar: async (token: string) =>
     fetchApi<{ success: boolean; message: string }>('/planes/cancelar', {
       method: 'POST',
@@ -1782,6 +1858,90 @@ export const planesApi = {
   pagos: async (token: string) =>
     fetchApi<{ success: boolean; data: any[] }>('/planes/pagos', {
       method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+}
+
+// Dominio canónico de suscripción. `/planes` se mantiene como alias para las
+// versiones instaladas anteriores del admin.
+export const suscripcionApi = {
+  // Catálogo canónico: contiene una única suscripción base. `/planes/catalogo`
+  // queda disponible únicamente para admins instalados durante la transición.
+  catalogo: async (token: string) =>
+    fetchApi<{ success: boolean; data: PlanCatalogo[] }>('/suscripcion/catalogo', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  miSuscripcion: async (token: string) =>
+    fetchApi<{ success: boolean; data: MiSuscripcion }>('/suscripcion/mi-suscripcion', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  checkout: async (token: string, ciclo: 'mensual' | 'anual' = 'mensual') =>
+    fetchApi<{ success: boolean; data: CheckoutSuscripcion }>('/suscripcion/checkout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ciclo }),
+    }),
+  enviarPagoLinkWhatsapp: async (token: string, ciclo: 'mensual' | 'anual' = 'mensual') =>
+    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>('/suscripcion/pago-link-whatsapp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ciclo }),
+    }),
+  cancelar: async (token: string) =>
+    fetchApi<{ success: boolean; message: string }>('/suscripcion/cancelar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  reactivar: async (token: string) =>
+    fetchApi<{ success: boolean; message: string }>('/suscripcion/reactivar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  pagos: async (token: string) =>
+    fetchApi<{ success: boolean; data: PagoSuscripcionResumen[] }>('/suscripcion/pagos', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+}
+
+export const modulosApi = {
+  catalogo: async (token: string) =>
+    fetchApi<{ success: boolean; data: CategoriaModulo[] }>('/modulos/catalogo', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  misModulos: async (token: string) =>
+    fetchApi<{ success: boolean; data: CategoriaModulo[] }>('/modulos/mis-modulos', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  activar: async (token: string, codigo: string) =>
+    fetchApi<{ success: boolean; idempotent?: boolean; data?: Modulo; paymentRequired?: boolean; module?: string }>(`/modulos/${codigo}/activar`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  desactivar: async (token: string, codigo: string) =>
+    fetchApi<{ success: boolean; idempotent?: boolean; data?: Modulo }>(`/modulos/${codigo}/desactivar`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  checkout: async (token: string, codigo: string, ciclo?: 'mensual' | 'anual') =>
+    fetchApi<{ success: boolean; data: CheckoutSuscripcion }>(`/modulos/${codigo}/checkout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(ciclo ? { ciclo } : {}),
+    }),
+  enviarPagoLinkWhatsapp: async (token: string, codigo: string, ciclo?: 'mensual' | 'anual') =>
+    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string; pagoId: number; monto: string } }>(`/modulos/${codigo}/pago-link-whatsapp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(ciclo ? { ciclo } : {}),
+    }),
+  reactivar: async (token: string, codigo: string) =>
+    fetchApi<{ success: boolean; idempotent?: boolean; data?: Modulo | CheckoutSuscripcion }>(`/modulos/${codigo}/reactivar`, {
+      method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     }),
 }
@@ -1873,12 +2033,6 @@ export const mensajesApi = {
         body: JSON.stringify({ packId }),
       },
     ),
-  // DEBUG TEMPORAL: acredita 200 avisos utility por $10.
-  enviarPagoDebugLinkWhatsapp: async (token: string) =>
-    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>('/mensajes/debug/pago-link-whatsapp', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    }),
 }
 
 // ── Link de pago público (/pago/:token) — SIN autenticación ───────────────

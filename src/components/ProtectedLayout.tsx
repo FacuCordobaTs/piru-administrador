@@ -53,9 +53,10 @@ const ProtectedLayout = () => {
   if (bloqueadoPorPaywall && currentPath !== '/suscribir') {
     return <Navigate to="/suscribir" replace />
   }
-  // Si ya tiene acceso pero quedó en /suscribir (p. ej. tras pagar), al panel.
+  // Tras acreditar una alta self-serve, mostramos Módulos como siguiente paso
+  // informativo. No activa ningún entitlement: las elecciones siguen siendo explícitas.
   if (currentPath === '/suscribir' && restaurante && suscripcion && suscripcion.accesoPanel !== false) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/dashboard/modulos?checkout=success&origen=suscripcion" replace />
   }
 
   return (

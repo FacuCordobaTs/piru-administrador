@@ -4,6 +4,8 @@ import { repartidoresApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import { Loader2, UserRound, Plus, X } from 'lucide-react'
 import { PeriodSelector, periodLabelOf, type PeriodValue } from './Metricas'
+import { useModuloActivo } from '@/store/modulosStore'
+import { useNavigate } from 'react-router'
 
 interface RepartidorStat {
   id: number
@@ -26,6 +28,8 @@ const rangoDeMes = (mes: number, anio: number) => {
 }
 
 export default function Repartidores() {
+  const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
+  const navigate = useNavigate()
   const token = useAuthStore(s => s.token)
   const [stats, setStats] = useState<RepartidorStat[]>([])
   const [loading, setLoading] = useState(true)
@@ -40,6 +44,16 @@ export default function Repartidores() {
   const [nuevoNombre, setNuevoNombre] = useState('')
   const [creando, setCreando] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
+
+  if (!gestionCadetesActiva) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-16 text-center">
+        <h1 className="text-xl font-semibold text-foreground">Gestión de cadetes</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Activala desde Módulos para administrar tu equipo de reparto.</p>
+        <button onClick={() => navigate('/dashboard/modulos')} className="mt-6 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-white">Ver módulos</button>
+      </div>
+    )
+  }
 
   const fetchStats = useCallback(async (todo: boolean, p: PeriodValue) => {
     if (!token) return

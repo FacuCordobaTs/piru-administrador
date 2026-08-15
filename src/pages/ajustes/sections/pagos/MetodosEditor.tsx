@@ -11,13 +11,19 @@ export function MetodosEditor({
   mpOk,
   cucuruOk,
   taloOk,
+  mercadoPagoActivo,
+  taloActivo,
   irA,
+  irAModulo,
 }: {
   metodos: ReturnType<typeof useMetodosPago>
   mpOk: boolean
   cucuruOk: boolean
   taloOk: boolean
+  mercadoPagoActivo: boolean
+  taloActivo: boolean
   irA: (id: PagosEditorId) => void
+  irAModulo: (codigo: 'mercadopago' | 'talo') => void
 }) {
   const { config, setMetodo, alias, setAlias, proveedor, setProveedor } = metodos
   const [aliasDraft, setAliasDraft] = useState(alias)
@@ -26,7 +32,9 @@ export function MetodosEditor({
   return (
     <div className="space-y-2">
       {/* Mercado Pago: requiere integración conectada */}
-      {mpOk ? (
+      {!mercadoPagoActivo ? (
+        <RequiereConectar texto="Activá Mercado Pago desde Módulos" onClick={() => irAModulo('mercadopago')} />
+      ) : mpOk ? (
         <>
           <MetodoFila
             titulo="Mercado Pago"
@@ -69,7 +77,10 @@ export function MetodosEditor({
           )}
         </div>
       ) : (
-        <RequiereConectar texto="Requiere conectar Cucuru o Talo" onClick={() => irA('cucuru')} />
+        <RequiereConectar
+          texto={taloActivo ? 'Requiere conectar Talo' : 'Activá Talo desde Módulos'}
+          onClick={() => taloActivo ? irA('talo') : irAModulo('talo')}
+        />
       )}
 
       {/* Transferencia manual + alias solo si está activa */}

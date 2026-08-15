@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { Loader2, List, Printer, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -13,15 +15,40 @@ import { usePrinter } from '@/context/PrinterContext'
 import { commandsToBytes } from '@/utils/printerUtils'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
+import { useModuloActivo } from '@/store/modulosStore'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
 const DOWNLOAD_URL = 'https://piru.app'
 
 export default function Impresion() {
   const [editor, setEditor] = useState(false)
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const impresionActiva = useModuloActivo('impresion_comandas')
   const { selectedPrinter } = usePrinter()
 
+  useEffect(() => {
+    if (searchParams.get('config') === 'impresion' && impresionActiva) setEditor(true)
+  }, [impresionActiva, searchParams])
+
   // En web la impresión automática no existe: una línea + link de descarga.
+  if (!impresionActiva) {
+    return (
+      <section className="space-y-6">
+        <header className="space-y-1">
+          <h2 className="text-lg font-medium text-foreground">Impresión</h2>
+        </header>
+        <AjusteRow
+          titulo="Impresión de comandas"
+          oracion="Activala desde Módulos para elegir una impresora"
+          estado="sin-configurar"
+          accionLabel="Ver módulos"
+          onAccion={() => navigate('/dashboard/modulos')}
+        />
+      </section>
+    )
+  }
+
   if (!isTauri) {
     return (
       <section className="space-y-6">
@@ -62,7 +89,7 @@ export default function Impresion() {
       </div>
 
       <AjusteEditor
-        open={editor}
+        open={editor && impresionActiva}
         onOpenChange={setEditor}
         titulo="Impresora"
         descripcion="Elegí la impresora térmica y probá una comanda."

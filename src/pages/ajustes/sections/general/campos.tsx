@@ -11,6 +11,7 @@ import { useAjuste } from '../../hooks/useAjuste'
 import { useOptimisticUpdate } from '../../hooks/useOptimisticUpdate'
 import { useDireccionAutocomplete } from '../../hooks/useDireccionAutocomplete'
 import { useSucursales } from '../../hooks/useSucursales'
+import { useModuloActivo } from '@/store/modulosStore'
 
 /** Dirección con autocomplete de Google + autosave onBlur. */
 export function DireccionField() {
@@ -62,8 +63,9 @@ export function DireccionField() {
 export function SucursalJustInTime() {
   const { sucursales, loaded, recargar } = useSucursales()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const multisucursalActiva = useModuloActivo('multisucursal')
 
-  if (!loaded || sucursales.length >= 2) return null
+  if (!loaded || sucursales.length >= 2 || !multisucursalActiva) return null
 
   return (
     <div className="border-t border-border pt-4">

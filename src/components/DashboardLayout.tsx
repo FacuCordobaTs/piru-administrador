@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/store/authStore'
-import { useRestauranteStore, type SuscripcionResumen } from '@/store/restauranteStore'
+import { useRestauranteStore } from '@/store/restauranteStore'
+import { useModuloActivo } from '@/store/modulosStore'
 import { useTareasPendientes } from '@/pages/ajustes/hooks/useTareasPendientes'
 import { toast } from 'sonner'
 import {
@@ -19,38 +20,30 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles,
-  ArrowUpRight,
   ChevronRight,
   X,
+  Blocks,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
   { icon: Package, label: 'Menú', path: '/dashboard/productos' },
+  { icon: Blocks, label: 'Módulos', path: '/dashboard/modulos' },
   { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
   { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes' },
   { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas' },
   { icon: Settings, label: 'Ajustes', path: '/dashboard/ajustes' },
 ]
 
-// El item "Mensajes" (wallet de avisos + campañas por WhatsApp) sólo aplica a planes con avisos
-// al cliente (Intermedio+). Se detecta por el feature `avisos_whatsapp_cliente`, que además cubre
-// a las cuentas pre-planes (fail-open, con acceso total). En Básico no se muestra.
 const MENSAJES_PATH = '/dashboard/mensajes'
-const puedeVerMensajes = (suscripcion: SuscripcionResumen | null): boolean => {
-  if (!suscripcion) return false
-  return (
-    suscripcion.features?.includes('avisos_whatsapp_cliente') ||
-    suscripcion.planCodigo === 'intermedio' ||
-    suscripcion.planCodigo === 'avanzado'
-  )
-}
 
 const DashboardLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const logout = useAuthStore((state) => state.logout)
   const restauranteStore = useRestauranteStore()
+  const avisosAutomaticosActivos = useModuloActivo('avisos_automaticos_whatsapp')
+  const motorRecompraActivo = useModuloActivo('motor_recompra')
   const [isDark, setIsDark] = useState(() => {
     const stored = localStorage.getItem('piru-theme')
     if (stored) return stored === 'dark'
@@ -119,18 +112,15 @@ const DashboardLayout = () => {
 
   // Botón de plan: el plan actual vive en el store (ya viene del profile, sin fetch extra).
   const suscripcion = restauranteStore.suscripcion
-  const planActivoEnRuta = location.pathname.startsWith('/dashboard/plan')
+  const suscripcionActivaEnRuta = location.pathname.startsWith('/dashboard/suscripcion')
 
-  // "Mensajes" sólo visible para planes con avisos al cliente (Intermedio+).
+  // Mensajes concentra los cupos de Avisos y Motor; sólo aparece si alguno está activo.
   const navItems = NAV_ITEMS.filter(
-    (item) => item.path !== MENSAJES_PATH || puedeVerMensajes(suscripcion),
+    (item) => item.path !== MENSAJES_PATH || avisosAutomaticosActivos || motorRecompraActivo,
   )
 
   const renderPlanButton = (compact: boolean) => {
     const sinPlan = !suscripcion || suscripcion.sinSuscripcion || !suscripcion.planNombre
-    // Hay a dónde mejorar salvo que ya estés en el tope (Avanzado). La flecha ascendente (abajo)
-    // comunica el "mejorá" por UI; el subtítulo sólo describe el estado, sin instrucción textual.
-    const puedeMejorar = !sinPlan && suscripcion?.planCodigo !== 'avanzado'
     const ESTADO_SUB: Record<string, string> = {
       trial: 'Prueba gratis',
       activa: 'Al día',
@@ -138,24 +128,24 @@ const DashboardLayout = () => {
       suspendida: 'Suspendida',
       cancelada: 'Cancelada',
     }
-    const titulo = sinPlan ? 'Activá tu plan' : `Plan ${suscripcion!.planNombre}`
+    const titulo = sinPlan ? 'Activá tu suscripción' : 'Mi suscripción'
     const subtitulo = sinPlan
-      ? 'Sin plan activo'
-      : (suscripcion?.estado && ESTADO_SUB[suscripcion.estado]) || 'Tu plan'
+      ? 'Sin suscripción activa'
+      : (suscripcion?.estado && ESTADO_SUB[suscripcion.estado]) || 'Suscripción Piru'
 
     // Punto de estado: verde si está al día/prueba, ámbar en cualquier otro caso (o sin plan).
     const alDia = !sinPlan && (suscripcion?.estado === 'activa' || suscripcion?.estado === 'trial')
     const dotColor = alDia ? 'bg-emerald-500' : 'bg-amber-500'
-    const destacar = puedeMejorar || sinPlan
+    const destacar = sinPlan
 
     if (compact) {
       return (
         <div className="px-3 pt-2">
           <button
-            onClick={() => handleNavigation('/dashboard/plan')}
+            onClick={() => handleNavigation('/dashboard/suscripcion')}
             title={titulo}
             className={`group relative w-full flex h-11 items-center justify-center rounded-xl transition-colors cursor-pointer ${
-              planActivoEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
+              suscripcionActivaEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
             }`}
           >
             <Sparkles
@@ -175,9 +165,9 @@ const DashboardLayout = () => {
     return (
       <div className="px-3 pt-2">
         <button
-          onClick={() => handleNavigation('/dashboard/plan')}
+          onClick={() => handleNavigation('/dashboard/suscripcion')}
           className={`group w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors cursor-pointer ${
-            planActivoEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
+            suscripcionActivaEnRuta ? 'bg-accent' : 'bg-white dark:bg-muted/50 hover:bg-accent'
           }`}
         >
           <span className="flex-1 min-w-0 text-left">
@@ -187,14 +177,7 @@ const DashboardLayout = () => {
             </span>
             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitulo}</span>
           </span>
-          {destacar ? (
-            <span className="flex shrink-0 items-center gap-1 text-[12px] font-semibold text-brand">
-              Mejorar
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            </span>
-          ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-          )}
+          <ChevronRight className={`h-4 w-4 shrink-0 ${destacar ? 'text-brand' : 'text-muted-foreground/50'}`} />
         </button>
       </div>
     )

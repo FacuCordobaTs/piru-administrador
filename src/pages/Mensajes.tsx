@@ -18,6 +18,7 @@ import { mensajesApi, type PackRecarga, type EstadisticasEnvios } from '@/lib/ap
 import { AjusteEditor } from './ajustes/components/AjusteEditor'
 import { SectionSkeleton } from './ajustes/components/SectionSkeleton'
 import { useSuscripcion } from './ajustes/hooks/useSuscripcion'
+import { useModuloActivo } from '@/store/modulosStore'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmtARS = (n: number | string) =>
@@ -29,6 +30,8 @@ type Sub = NonNullable<ReturnType<typeof useSuscripcion>['data']>
 
 export default function MensajesPage() {
   const { data, loading, refetch } = useSuscripcion()
+  const avisosActivos = useModuloActivo('avisos_automaticos_whatsapp')
+  const motorActivo = useModuloActivo('motor_recompra')
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Volver de MercadoPago tras una recarga: el saldo se acredita por webhook (unos segundos).
@@ -58,10 +61,10 @@ export default function MensajesPage() {
       ) : (
         <section className="space-y-8">
           <SaldoBanner data={data} />
-          <EnviadosCard mostrarMarketing={mostrarMarketing(data)} />
-          {!data.wallet?.ilimitado && data.wallet && <SaldoCard data={data} onDone={refetch} />}
+          <EnviadosCard mostrarMarketing={mostrarMarketing(data, motorActivo)} />
+          {!data.wallet?.ilimitado && data.wallet && <SaldoCard data={data} avisosActivos={avisosActivos} onDone={refetch} />}
           {data.wallet?.ilimitado && <SaldoIlimitadoCard />}
-          {data.wallet && mostrarMarketing(data) && <SaldoMarketingCard data={data} />}
+          {data.wallet && mostrarMarketing(data, motorActivo) && <SaldoMarketingCard data={data} />}
           <Movimientos />
         </section>
       )}
@@ -156,15 +159,14 @@ function SaldoBanner({ data }: { data: Sub }) {
 }
 
 // ── Card de saldo de mensajes (utility) ─────────────────────────────────────
-function SaldoCard({ data, onDone }: { data: Sub; onDone: () => void }) {
+function SaldoCard({ data, avisosActivos, onDone }: { data: Sub; avisosActivos: boolean; onDone: () => void }) {
   const w = data.wallet
   const [recargaOpen, setRecargaOpen] = useState(false)
   const disponible = w.utility.disponible
   const cupo = w.utility.cupoPlan
   const pct = Math.min(100, Math.round((w.utility.pctConsumido || 0) * 100))
 
-  // El Básico no incluye avisos al cliente: no tiene sentido mostrar cupo.
-  const tieneAvisos = cupo > 0 || w.utility.recargaSaldo !== 0 || data.features.includes('avisos_whatsapp_cliente')
+  const tieneAvisos = avisosActivos || cupo > 0 || w.utility.recargaSaldo !== 0
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -212,7 +214,7 @@ function SaldoCard({ data, onDone }: { data: Sub; onDone: () => void }) {
         </div>
       ) : (
         <p className="mt-4 text-sm text-muted-foreground">
-          Los avisos automáticos al cliente se incluyen desde el plan Intermedio.
+          Activá Avisos automáticos por WhatsApp desde Módulos para enviar notificaciones a tus clientes.
         </p>
       )}
 
@@ -224,35 +226,9 @@ function SaldoCard({ data, onDone }: { data: Sub; onDone: () => void }) {
         <AutoRecargaToggle inicial={w.autoRecarga.habilitada} onDone={onDone} />
       </div>
 
-      <BotonRecargaDebug />
-
       <RecargaSheet open={recargaOpen} onOpenChange={setRecargaOpen} />
     </div>
   )
-}
-
-// TEMPORAL: eliminar después de probar el webhook de acreditación de recargas.
-function BotonRecargaDebug() {
-  const [enviando, setEnviando] = useState(false)
-  const enviarLink = async () => {
-    const token = useAuthStore.getState().token
-    if (!token) return
-    setEnviando(true)
-    try {
-      const res = await mensajesApi.enviarPagoDebugLinkWhatsapp(token)
-      toast.success(`Link DEBUG de $10 para 200 avisos enviado a WhatsApp (${res.data.telefono})`)
-    } catch (e: any) {
-      toast.error(e?.message || 'No se pudo enviar el link DEBUG')
-    } finally {
-      setEnviando(false)
-    }
-  }
-
-  return <div className="mt-4 border-t border-dashed border-amber-500/40 pt-4">
-    <Button onClick={enviarLink} disabled={enviando} variant="outline" className="border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400">
-      {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <><MessageCircle className="mr-2 h-4 w-4" />DEBUG: 200 avisos por $10</>}
-    </Button>
-  </div>
 }
 
 function SaldoIlimitadoCard() {
@@ -271,12 +247,11 @@ function SaldoIlimitadoCard() {
   )
 }
 
-// Mostrar el saldo de marketing sólo si el plan tiene el Motor de Recompra o ya hay saldo
-// de campaña (cupo del plan o recargas). En Básico/Intermedio no se muestra.
-function mostrarMarketing(data: Sub): boolean {
+// Mostrar el saldo de marketing sólo si Motor está activo o ya hay saldo de campaña.
+function mostrarMarketing(data: Sub, motorActivo: boolean): boolean {
   const w = data.wallet
   if (!w?.marketing) return false
-  return data.features.includes('motor_recompra') || w.marketing.cupoPlan > 0 || w.marketing.recargaSaldo !== 0
+  return motorActivo || w.marketing.cupoPlan > 0 || w.marketing.recargaSaldo !== 0
 }
 
 // ── Card de saldo de mensajes de MARKETING (Motor de Recompra) ──────────────

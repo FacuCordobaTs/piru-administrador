@@ -5,7 +5,7 @@ import { useSuscripcion, renovacionProxima } from '../hooks/useSuscripcion'
 /**
  * Banner de atención del plan que aparece arriba de Ajustes cuando la suscripción necesita
  * acción (cobro vencido, suspensión, cancelación o renovación próxima). Lleva a la pantalla
- * "Tu plan" (`/dashboard/plan`). El saldo de mensajes tiene su propio banner en la sección
+ * "Mi suscripción" (`/dashboard/suscripcion`). El saldo de mensajes tiene su propio banner en la sección
  * Mensajes. Cuando todo está en orden no renderiza nada (regla 11: sin ruido).
  */
 export function PlanBanner() {
@@ -18,7 +18,7 @@ export function PlanBanner() {
   const renov = renovacionProxima(data)
   if (!estadoMal && !renov) return null
 
-  let mensaje = 'Revisá tu plan'
+  let mensaje = 'Revisá tu suscripción'
   let critico = false
 
   if (data.estado === 'suspendida') {
@@ -37,7 +37,7 @@ export function PlanBanner() {
 
   return (
     <Link
-      to="/dashboard/plan"
+      to="/dashboard/suscripcion"
       className={
         'mt-6 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ' +
         (critico

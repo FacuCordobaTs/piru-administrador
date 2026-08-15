@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { Plus, Loader2, Edit, Store, ArrowLeft, Truck, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -11,6 +12,7 @@ import { AjusteEditor } from '../components/AjusteEditor'
 import { SucursalDialog } from '../components/SucursalDialog'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import { useSucursales, type Sucursal } from '../hooks/useSucursales'
+import { useModuloActivo } from '@/store/modulosStore'
 
 // El mapa (Leaflet, ~25KB) se carga solo al entrar a su editor.
 const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
@@ -20,6 +22,8 @@ type EditorId = 'tipos' | 'sucursales' | null
 export default function Entregas() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const [editor, setEditor] = useState<EditorId>(null)
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [zonasOpen, setZonasOpen] = useState(false)
   const { sucursales, loaded: sucLoaded, recargar } = useSucursales()
 
@@ -30,6 +34,13 @@ export default function Entregas() {
   const { texto: zonasOracion, estado: zonasEstado } = useZonasResumen()
 
   const mostrarSucursales = sucLoaded && sucursales.length >= 2
+  const multisucursalActiva = useModuloActivo('multisucursal')
+  const rapiboyActivo = useModuloActivo('rapiboy')
+
+  useEffect(() => {
+    const config = searchParams.get('config')
+    if ((config === 'sucursales' || config === 'rapiboy') && multisucursalActiva) setEditor('sucursales')
+  }, [multisucursalActiva, searchParams])
 
   return (
     <section className="space-y-6">
@@ -53,12 +64,21 @@ export default function Entregas() {
           estado={zonasEstado}
           onAccion={() => setZonasOpen(true)}
         />
-        {mostrarSucursales && (
+        {multisucursalActiva && mostrarSucursales && (
           <AjusteRow
             titulo="Sucursales"
             oracion={`${sucursales.length} sucursales`}
             estado="configurado"
             onAccion={() => setEditor('sucursales')}
+          />
+        )}
+        {!multisucursalActiva && (
+          <AjusteRow
+            titulo="Múltiples sucursales"
+            oracion="Activá el módulo para administrar más de un local"
+            estado="sin-configurar"
+            accionLabel="Ver módulos"
+            onAccion={() => navigate('/dashboard/modulos')}
           />
         )}
       </div>
@@ -80,7 +100,7 @@ export default function Entregas() {
         titulo="Sucursales"
         descripcion="Tus locales y su ruteo de pedidos."
       >
-        <SucursalesLista sucursales={sucursales} onChanged={recargar} />
+        <SucursalesLista sucursales={sucursales} onChanged={recargar} rapiboyActivo={rapiboyActivo} />
       </AjusteEditor>
 
       {/* Zonas: pantalla propia con el mapa lazy */}
@@ -187,9 +207,11 @@ function ToggleFila({
 function SucursalesLista({
   sucursales,
   onChanged,
+  rapiboyActivo,
 }: {
   sucursales: Sucursal[]
   onChanged: () => void
+  rapiboyActivo: boolean
 }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editando, setEditando] = useState<Sucursal | null>(null)
@@ -234,6 +256,7 @@ function SucursalesLista({
         onOpenChange={setDialogOpen}
         editando={editando}
         onSaved={onChanged}
+        rapiboyActivo={rapiboyActivo}
       />
     </div>
   )

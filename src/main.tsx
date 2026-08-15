@@ -25,10 +25,11 @@ import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
 import Suscribir from './pages/Suscribir';
 import Metricas from './pages/Metricas';
-import MiPlan from './pages/MiPlan';
+import MiSuscripcion from './pages/MiSuscripcion';
 import UpdaterPrompt from './components/UpdaterPrompt';
 import PagoLink from './pages/PagoLink';
 import ClaimTienda from './pages/ClaimTienda';
+import Modulos from './pages/Modulos';
 
 
 
@@ -155,8 +156,17 @@ const router = createBrowserRouter([
             element: <Mensajes />,
           },
           {
+            path: "modulos",
+            element: <Modulos />,
+          },
+          {
+            path: "suscripcion",
+            element: <MiSuscripcion />,
+          },
+          {
+            // Ruta temporal para admins instalados y enlaces previos.
             path: "plan",
-            element: <MiPlan />,
+            element: <Navigate to="/dashboard/suscripcion" replace />,
           },
           {
             path: "repartidores",

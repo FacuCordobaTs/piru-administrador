@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useAuthStore } from '@/store/authStore'
+import { useModuloActivo } from '@/store/modulosStore'
 import { metricasApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import { Loader2, TrendingUp, Truck, Globe, ShoppingBag } from 'lucide-react'
@@ -39,7 +40,17 @@ const SECCIONES: SeccionMeta[] = [
 ]
 
 export default function Metricas() {
+  const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
   const [tab, setTab] = useState<SeccionMetricas | null>(null)
+  const secciones = gestionCadetesActiva
+    ? SECCIONES
+    : SECCIONES.filter((seccion) => seccion.key !== 'repartidores')
+
+  // La estadística general continúa disponible; la de cadetes no queda abierta
+  // si el módulo se desactiva durante la sesión.
+  useEffect(() => {
+    if (!gestionCadetesActiva && tab === 'repartidores') setTab('estadisticas')
+  }, [gestionCadetesActiva, tab])
 
   if (tab === null) {
     return (
@@ -56,7 +67,7 @@ export default function Metricas() {
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8">
-            {SECCIONES.map(seccion => (
+            {secciones.map(seccion => (
               <SeccionCard key={seccion.key} seccion={seccion} onClick={() => setTab(seccion.key)} />
             ))}
           </div>
@@ -70,7 +81,7 @@ export default function Metricas() {
       {/* Tab switcher — botones flotantes, centrados */}
       <div className="bg-[#FFFBF0] dark:bg-background px-4 sm:px-6 pt-6 pb-2 shrink-0">
         <div className="flex items-center justify-center gap-2">
-          {SECCIONES.map(seccion => (
+          {secciones.map(seccion => (
             <TabButton
               key={seccion.key}
               active={tab === seccion.key}
@@ -84,7 +95,7 @@ export default function Metricas() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {tab === 'estadisticas' ? <MetricasPanel /> : <Repartidores />}
+        {tab === 'estadisticas' ? <MetricasPanel /> : gestionCadetesActiva ? <Repartidores /> : <MetricasPanel />}
       </div>
     </div>
   )

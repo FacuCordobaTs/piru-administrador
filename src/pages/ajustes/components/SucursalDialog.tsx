@@ -20,6 +20,7 @@ interface SucursalDialogProps {
   /** Sucursal a editar; null = crear nueva. */
   editando: Sucursal | null
   onSaved: () => void
+  rapiboyActivo?: boolean
 }
 
 const vacio = {
@@ -34,7 +35,7 @@ const vacio = {
 const apiBase = () => import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 /** Crear/editar sucursal. Transaccional: conserva Guardar/Cancelar. */
-export function SucursalDialog({ open, onOpenChange, editando, onSaved }: SucursalDialogProps) {
+export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyActivo = false }: SucursalDialogProps) {
   const [form, setForm] = useState(vacio)
   const [guardando, setGuardando] = useState(false)
 
@@ -47,6 +48,8 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved }: Sucurs
             direccion: editando.direccion || '',
             whatsappEnabled: editando.whatsappEnabled,
             whatsappNumber: editando.whatsappNumber || '',
+            // Una credencial ya existente se conserva aunque el módulo esté
+            // apagado; sólo se permite editar con Rapiboy activo.
             rapiboyToken: editando.rapiboyToken || '',
             activo: editando.activo,
           }
@@ -70,7 +73,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved }: Sucurs
         ...form,
         direccion: form.direccion || null,
         whatsappNumber: form.whatsappNumber || null,
-        rapiboyToken: form.rapiboyToken || null,
+        ...(rapiboyActivo ? { rapiboyToken: form.rapiboyToken || null } : {}),
       }
       const url = editando ? `${apiBase()}/sucursales/${editando.id}` : `${apiBase()}/sucursales/create`
       const res = await fetch(url, {
@@ -164,7 +167,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved }: Sucurs
               />
             </div>
           )}
-          <div className="space-y-1.5">
+          {rapiboyActivo && <div className="space-y-1.5">
             <Label className="font-medium">
               Token Rapiboy <span className="font-normal text-muted-foreground">(opcional)</span>
             </Label>
@@ -175,7 +178,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved }: Sucurs
               placeholder="Si esta sucursal usa Rapiboy propio"
               className="h-11"
             />
-          </div>
+          </div>}
           {editando && (
             <div className="flex items-center justify-between gap-4 rounded-xl border border-border p-4">
               <div className="min-w-0">

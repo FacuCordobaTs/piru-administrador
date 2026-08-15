@@ -8,6 +8,7 @@ import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { useAuthStore } from '@/store/authStore'
+import { useModuloActivo } from '@/store/modulosStore'
 import { clientesApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
 import {
@@ -266,8 +267,18 @@ const SECCIONES: SeccionMeta[] = [
 ]
 
 export default function Clientes() {
+    const motorRecompraActivo = useModuloActivo('motor_recompra')
     // null = todavía no eligió → pantalla de selección centrada
     const [tab, setTab] = useState<SeccionClientes | null>(null)
+    const secciones = motorRecompraActivo
+        ? SECCIONES
+        : SECCIONES.filter((seccion) => seccion.key !== 'motor')
+
+    // Si el módulo se desactiva mientras esta vista está abierta, volvemos a la
+    // base de clientes sin dejar acciones del Motor expuestas.
+    useEffect(() => {
+        if (!motorRecompraActivo && tab === 'motor') setTab('clientes')
+    }, [motorRecompraActivo, tab])
 
     // ---- Pantalla de selección (paso previo al navegador) ----
     if (tab === null) {
@@ -285,7 +296,7 @@ export default function Clientes() {
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
-                        {SECCIONES.map(seccion => (
+                        {secciones.map(seccion => (
                             <SeccionCard key={seccion.key} seccion={seccion} onClick={() => setTab(seccion.key)} />
                         ))}
                     </div>
@@ -300,7 +311,7 @@ export default function Clientes() {
             {/* Tab switcher — botones flotantes, centrados, sin línea separadora */}
             <div className="bg-[#FFFBF0] dark:bg-background px-4 sm:px-6 pt-6 pb-2 shrink-0">
                 <div className="flex items-center justify-center gap-2">
-                    {SECCIONES.map(seccion => (
+                    {secciones.map(seccion => (
                         <TabButton
                             key={seccion.key}
                             active={tab === seccion.key}
@@ -315,7 +326,7 @@ export default function Clientes() {
 
             {/* Panel activo */}
             <div className="flex-1 min-h-0 flex flex-col">
-                {tab === 'clientes' ? <ClientesPanel /> : tab === 'motor' ? <MotorRecompra /> : <CodigosDescuento />}
+                {tab === 'clientes' ? <ClientesPanel /> : tab === 'motor' && motorRecompraActivo ? <MotorRecompra /> : <CodigosDescuento />}
             </div>
         </div>
     )

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
+import { useModuloActivo } from '@/store/modulosStore'
 import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi } from '@/lib/api'
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
@@ -979,10 +980,10 @@ const Dashboard = () => {
     const token = useAuthStore((state) => state.token)
     const restaurante = useAuthStore((state) => state.restaurante)
     const { restaurante: restauranteStore, productos: allProductos, suscripcion } = useRestauranteStore()
+    const posActivo = useModuloActivo('pos')
+    const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
+    const puedeAvisarWhatsapp = useModuloActivo('avisos_automaticos_whatsapp')
 
-    // Avisar al cliente por WhatsApp es exclusivo de Intermedio+ (feature avisos_whatsapp_cliente).
-    // Si el backend no devuelve suscripción (admin/backend viejo), fail-open para no romper.
-    const puedeAvisarWhatsapp = !suscripcion || (suscripcion.features?.includes('avisos_whatsapp_cliente') ?? true)
     // El plan Básico no incluye repartidores ni carga manual. Sí puede despachar y usar el mapa,
     // pedidos, sin exponer la gestión ni el estado de cobro. Fail-open: si el backend no
     // devuelve suscripción (admin/backend viejo), no ocultamos nada.
@@ -1525,6 +1526,7 @@ const Dashboard = () => {
     // POS (anotar pedido manual)
     // ─────────────────────────────────────────────
     const openPOS = () => {
+        if (!posActivo) return
         setShowOrderMap(false)
         setSelectedUnifiedPedido(null)
         setShowPOS(true)
@@ -1621,7 +1623,7 @@ const Dashboard = () => {
                             {mobileView === 'detail' && showPOS ? 'Anotar pedido' : 'Mapa de pedidos'}
                         </h1>
                     )}
-                    {!esPlanBasico && isDayTitle && (
+                    {posActivo && isDayTitle && (
                         <Button
                             variant="outline"
                             onClick={openPOS}
@@ -1786,7 +1788,7 @@ const Dashboard = () => {
                                         <DropdownMenuItem onClick={openMetodosPagoModal}>
                                             <Settings className="h-4 w-4 mr-2" /> Pagos
                                         </DropdownMenuItem>
-                                        {!esPlanBasico && (
+                                        {gestionCadetesActiva && (
                                             <DropdownMenuItem onClick={() => setRepartidoresModalOpen(true)}>
                                                 <UserRound className="h-4 w-4 mr-2" /> Repartidores
                                             </DropdownMenuItem>

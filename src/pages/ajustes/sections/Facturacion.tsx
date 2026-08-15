@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import FacturacionAfipSection from '@/components/FacturacionAfipSection'
 import { facturacionApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
+import { useModuloActivo } from '@/store/modulosStore'
 
 export default function Facturacion() {
   const [editor, setEditor] = useState(false)
   const [habilitada, setHabilitada] = useState<boolean | null>(null)
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const facturacionActiva = useModuloActivo('facturacion_arca')
+
+  useEffect(() => {
+    if (searchParams.get('config') === 'arca' && facturacionActiva) setEditor(true)
+  }, [facturacionActiva, searchParams])
 
   // Solo para la oración de la fila; el formulario vive dentro del editor.
   useEffect(() => {
@@ -33,7 +42,17 @@ export default function Facturacion() {
         </p>
       </header>
 
-      <div>
+      {!facturacionActiva ? (
+        <div>
+          <AjusteRow
+            titulo="Facturación electrónica"
+            oracion="Activala desde Módulos para configurar ARCA"
+            estado="sin-configurar"
+            accionLabel="Ver módulos"
+            onAccion={() => navigate('/dashboard/modulos')}
+          />
+        </div>
+      ) : <div>
         <AjusteRow
           titulo="Facturación electrónica"
           oracion={
@@ -43,10 +62,10 @@ export default function Facturacion() {
           accionLabel={configurada ? 'Cambiar' : 'Configurar'}
           onAccion={() => setEditor(true)}
         />
-      </div>
+      </div>}
 
       <AjusteEditor
-        open={editor}
+        open={editor && facturacionActiva}
         onOpenChange={setEditor}
         titulo="Facturación electrónica"
         descripcion="Conectá tu CUIT y clave fiscal de ARCA para emitir comprobantes."

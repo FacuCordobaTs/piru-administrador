@@ -36,6 +36,7 @@ interface SectionDef {
   Icon: LucideIcon
   Component: ComponentType
   tauriOnly?: boolean
+  visibleInNav?: boolean
 }
 
 const SECTIONS: SectionDef[] = [
@@ -90,6 +91,14 @@ const SECTIONS: SectionDef[] = [
     tauriOnly: true,
   },
   {
+    id: 'avisos',
+    label: 'Avisos automáticos',
+    descripcion: 'Configuración del módulo de avisos por WhatsApp.',
+    Icon: Sparkles,
+    Component: lazy(() => import('./sections/AvisosAutomaticos')),
+    visibleInNav: false,
+  },
+  {
     id: 'cuenta',
     label: 'Cuenta',
     descripcion: 'Tu email, contraseña y sesión.',
@@ -99,7 +108,7 @@ const SECTIONS: SectionDef[] = [
 ]
 
 // Secciones visibles (impresión solo en escritorio).
-const navSections = SECTIONS.filter((s) => !s.tauriOnly || isTauri)
+const navSections = SECTIONS.filter((s) => s.visibleInNav !== false && (!s.tauriOnly || isTauri))
 
 export default function AjustesPage() {
   const { seccion } = useParams<{ seccion: string }>()

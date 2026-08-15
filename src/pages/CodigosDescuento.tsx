@@ -23,6 +23,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuthStore } from '@/store/authStore'
 import { codigosDescuentoApi } from '@/lib/api'
 import { toast } from 'sonner'
+import { useModuloActivo } from '@/store/modulosStore'
+import { useNavigate } from 'react-router'
 import {
   Search,
   Plus,
@@ -98,6 +100,8 @@ const defaultForm: {
 // MAIN COMPONENT
 // =============================================================================
 export default function CodigosDescuento() {
+  const codigosActivos = useModuloActivo('codigos_descuento')
+  const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
   const [codigos, setCodigos] = useState<CodigoDescuento[]>([])
   const [loading, setLoading] = useState(true)
@@ -244,6 +248,16 @@ export default function CodigosDescuento() {
   const copyCodigo = (codigo: string) => {
     navigator.clipboard.writeText(codigo)
     toast.success('Código copiado')
+  }
+
+  if (!codigosActivos) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        <h1 className="text-xl font-semibold text-foreground">Códigos de descuento</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Activalos desde Módulos para crear y administrar promociones.</p>
+        <Button className="mt-6 rounded-full" onClick={() => navigate('/dashboard/modulos')}>Ver módulos</Button>
+      </div>
+    )
   }
 
   return (

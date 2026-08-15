@@ -1,36 +1,23 @@
-import { useCallback, useEffect, useState } from 'react'
-import { planesApi, type MiSuscripcion } from '@/lib/api'
-import { useAuthStore } from '@/store/authStore'
+import { useEffect } from 'react'
+import { type MiSuscripcion } from '@/lib/api'
+import { useModulosStore } from '@/store/modulosStore'
 
 /**
  * Suscripción vigente + wallet del local. Fuente de verdad para la pantalla de Plan
  * y para el banner de atención en Ajustes. Una sola llamada (`/planes/mi-suscripcion`).
  */
 export function useSuscripcion() {
-  const [data, setData] = useState<MiSuscripcion | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const refetch = useCallback(async () => {
-    const token = useAuthStore.getState().token
-    if (!token) {
-      setLoading(false)
-      return
-    }
-    try {
-      const res = await planesApi.miSuscripcion(token)
-      setData(res.data)
-    } catch {
-      // silencioso: el banner/pantalla simplemente no muestra nada si falla
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const data = useModulosStore((state) => state.suscripcion)
+  const loading = useModulosStore((state) => state.cargando)
+  const cargar = useModulosStore((state) => state.cargar)
 
   useEffect(() => {
-    refetch()
-  }, [refetch])
+    // Silencioso para mantener el comportamiento previo del banner: la
+    // pantalla sigue usable si este resumen auxiliar no está disponible.
+    void cargar().catch(() => {})
+  }, [cargar])
 
-  return { data, loading, refetch }
+  return { data, loading, refetch: () => cargar(true) }
 }
 
 /** Días de anticipación con los que empezamos a recordar el próximo cobro (manual). */

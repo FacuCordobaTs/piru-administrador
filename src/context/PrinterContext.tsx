@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useModuloActivo } from '@/store/modulosStore';
 
 const STORAGE_KEY = 'tauri_printer_name';
 
@@ -14,6 +15,7 @@ interface PrinterContextType {
 const PrinterContext = createContext<PrinterContextType | undefined>(undefined);
 
 export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const impresionComandasActiva = useModuloActivo('impresion_comandas');
     const [printers, setPrinters] = useState<string[]>([]);
 
     // Recuperar impresora guardada de localStorage al iniciar
@@ -39,6 +41,9 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     /** Bytes ESC/POS (p. ej. `commandsToBytes(formatComanda(...))`). Cupón/descuento van en `printerUtils`. */
     const printRaw = useCallback(async (data: number[]) => {
+        if (!impresionComandasActiva) {
+            throw new Error('Activá el módulo Impresión de comandas para imprimir');
+        }
         if (!selectedPrinter) {
             throw new Error('No hay impresora seleccionada');
         }
@@ -52,7 +57,7 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
             console.error('Error al imprimir:', error);
             throw error;
         }
-    }, [selectedPrinter]);
+    }, [impresionComandasActiva, selectedPrinter]);
 
     // Cargar impresoras al montar el componente
     useEffect(() => {

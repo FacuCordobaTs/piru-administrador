@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import {
-  claimApi, restauranteApi, zonasDeliveryApi, planesApi, ApiError,
+  claimApi, restauranteApi, zonasDeliveryApi, suscripcionApi, ApiError,
   type ClaimTienda as ClaimTiendaData, type ClaimInventario, type ClaimConfig, type MiSuscripcion,
 } from '@/lib/api'
 
@@ -41,53 +41,21 @@ const DEFAULT_CENTER: [number, number] = [-31.4201, -64.1888]
  * (se editan en detalle adentro).
  *
  * Flujo: recorrido (`walk`) → verificación de WhatsApp → código (`codigo`) → persistir borrador →
- * pedido de prueba (`prueba`) → info del plan y prueba gratis (`plan`) → panel.
+ * pedido de prueba (`prueba`) → info de la suscripción y prueba gratis (`plan`) → panel.
  */
 type Paso = 'walk' | 'codigo' | 'prueba' | 'plan'
 
 // Base de la tienda pública del local (mismo formato que el link que ve el dueño en el recorrido).
 const STORE_BASE = 'https://piru.app'
 
-// Copy de cada plan para la pantalla informativa final (espejo de la landing). El precio real sale
-// de la suscripción cuando está disponible; esto es el fallback + el detalle de lo que incluye.
-const PLAN_INFO: Record<string, { nombre: string; desc: string; precio: string; incluye: string[] }> = {
-  basico: {
-    nombre: 'Básico',
-    precio: '$20.000',
-    desc: 'Todo para vender online, con tu marca.',
-    incluye: [
-      'Pedidos por WhatsApp + centro de pedidos',
-      'Impresión automática de comandas',
-      'Productos, categorías y fotos ilimitados',
-      'Todos los métodos de pago',
-      'Cupones, promociones y horarios',
-      'Múltiples sucursales y dominio propio',
-    ],
-  },
-  intermedio: {
-    nombre: 'Intermedio',
-    precio: '$50.000',
-    desc: 'Cero chat con el cliente: los avisos salen solos, con tu marca.',
-    incluye: [
-      'Todo lo del Básico',
-      'Avisos automáticos al cliente por WhatsApp (200/mes)',
-      'Facturación electrónica ARCA',
-      'Integración con Rapiboy (cadetes)',
-      'Estadísticas avanzadas',
-    ],
-  },
-  avanzado: {
-    nombre: 'Avanzado',
-    precio: '$120.000',
-    desc: 'Todo lo del Intermedio, más la máquina de recompra.',
-    incluye: [
-      'Todo lo del Intermedio',
-      '200 avisos + 100 mensajes de campaña/mes',
-      'Motor de Recompra (CRM gastronómico)',
-      'Recupero de clientes dormidos y carritos',
-    ],
-  },
-}
+// La suscripción base es única. El importe se obtiene del backend; los módulos se eligen después
+// desde el panel y no se activan durante el claim ni el trial.
+const SUSCRIPCION_BASE_INCLUYE = [
+  'Tu tienda online y centro de pedidos',
+  'Productos, categorías, fotos y horarios',
+  'Cobros y gestión diaria del local',
+  'Soporte para delivery, retiro y pedidos en grupo',
+]
 
 // Motivos de link no reclamable, para mostrar el mensaje correcto (y a dónde mandar al dueño).
 type Bloqueo = { titulo: string; detalle: string; irALogin?: boolean } | null
@@ -248,10 +216,10 @@ export default function ClaimTienda() {
   const [paso, setPaso] = useState<Paso>('walk')
   const [cardIdx, setCardIdx] = useState(0)
   const [enviando, setEnviando] = useState(false)
-  // Suscripción (plan + trial) para la pantalla informativa final; se trae tras verificar.
+  // Suscripción base + trial para la pantalla informativa final; se trae tras verificar.
   const [miSusc, setMiSusc] = useState<MiSuscripcion | null>(null)
-  // Pago inmediato del plan desde el claim (opcional: saltear la prueba y pagar ya).
-  const [pagandoPlan, setPagandoPlan] = useState(false)
+  // Pago inmediato de la suscripción base desde el claim (opcional: saltear la prueba y pagar ya).
+  const [pagandoSuscripcion, setPagandoSuscripcion] = useState(false)
 
   // Borrador de ediciones inline, se persiste al confirmar el WhatsApp.
   const [draft, setDraft] = useState<Draft>({})
@@ -528,10 +496,10 @@ export default function ClaimTienda() {
         setAuth(r.token, r.restaurante)
         // Con el token en mano, aplicamos todo lo que tocó en el recorrido, de una sola vez.
         await persistirDraft(r.token)
-        // Traemos el plan + trial para la pantalla informativa final (best-effort, no bloquea).
-        planesApi.miSuscripcion(r.token).then((res) => setMiSusc(res.data)).catch(() => {})
+        // Traemos la suscripción base + trial para la pantalla final (best-effort, no bloquea).
+        suscripcionApi.miSuscripcion(r.token).then((res) => setMiSusc(res.data)).catch(() => {})
         toast.success('¡Tu tienda es tuya! 🎉')
-        // No vamos directo al panel: primero el pedido de prueba y la info del plan.
+        // No vamos directo al panel: primero el pedido de prueba y la info de la suscripción.
         setPaso('prueba')
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } catch (e) {
@@ -601,21 +569,21 @@ export default function ClaimTienda() {
     }
   }
 
-  // Pagar el plan ahora mismo desde el claim (redirige a Checkout Pro). Si por algún motivo no
-  // tenemos el planId, caemos al panel para que pague desde "Tu plan".
-  const pagarPlanAhora = async () => {
+  // Pagar la suscripción base desde el claim (redirige a Checkout Pro). El checkout resuelve el
+  // importe en el servidor y no puede activar módulos por este recorrido.
+  const pagarSuscripcionAhora = async () => {
     const token = useAuthStore.getState().token
-    if (!token || !miSusc?.planId) {
+    if (!token) {
       navigate('/dashboard', { replace: true })
       return
     }
-    setPagandoPlan(true)
+    setPagandoSuscripcion(true)
     try {
-      const res = await planesApi.suscribir(token, miSusc.planId, 'mensual')
+      const res = await suscripcionApi.checkout(token, 'mensual')
       window.location.href = res.data.url_pago
     } catch {
-      toast.error('No se pudo iniciar el pago', { description: 'Podés pagarlo desde tu panel.' })
-      setPagandoPlan(false)
+      toast.error('No se pudo iniciar el pago', { description: 'Podés activar tu suscripción desde el panel.' })
+      setPagandoSuscripcion(false)
     }
   }
 
@@ -1101,11 +1069,10 @@ export default function ClaimTienda() {
             </button>
           </div>
         ) : (
-          // ── Último paso: info del período de prueba, precio del plan y qué incluye ──
+          // ── Último paso: info del período de prueba y suscripción base ──
           (() => {
-            const codigoPlan = miSusc?.planCodigo ?? 'basico'
-            const info = PLAN_INFO[codigoPlan] ?? PLAN_INFO.basico
-            const precio = miSusc?.precioMensual ? `$${fmtPrecio(miSusc.precioMensual)}` : info.precio
+            const precioBase = miSusc?.precioBaseMensual ?? miSusc?.suscripcionBase?.precioMensual ?? miSusc?.precioMensual
+            const precio = precioBase ? `$${fmtPrecio(precioBase)}` : null
             const trialDias = miSusc?.trialFin
               ? Math.max(0, Math.ceil((new Date(miSusc.trialFin).getTime() - Date.now()) / 86_400_000))
               : null
@@ -1119,22 +1086,22 @@ export default function ClaimTienda() {
                     {trialDias != null ? `Tenés ${trialDias} días de prueba gratis` : 'Empezás con tu prueba gratis'}
                   </h1>
                   <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-                    Usá todo el sistema sin pagar nada. {trialDias != null ? 'Cuando termine' : 'Cuando termine la prueba'}, tu plan {info.nombre} sale {precio} por mes.
+                    Usá toda la operación base sin pagar nada. {trialDias != null ? 'Cuando termine' : 'Cuando termine la prueba'}, activás tu suscripción y elegís los módulos que te sirvan.
                   </p>
                 </div>
 
-                {/* Plan y precio */}
+                {/* Suscripción base y precio */}
                 <div className="mt-6 rounded-2xl bg-white shadow-sm dark:bg-zinc-900 dark:shadow-none p-5">
                   <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-semibold text-muted-foreground">Plan {info.nombre}</span>
-                    <span className="text-[1.6rem] font-semibold tracking-tight tabular-nums">
+                    <span className="text-sm font-semibold text-muted-foreground">Suscripción Piru</span>
+                    {precio && <span className="text-[1.6rem] font-semibold tracking-tight tabular-nums">
                       {precio}<span className="text-sm font-medium text-muted-foreground">/mes</span>
-                    </span>
+                    </span>}
                   </div>
-                  <p className="text-[13.5px] text-muted-foreground mt-1.5">{info.desc}</p>
+                  <p className="text-[13.5px] text-muted-foreground mt-1.5">Todo para vender online, con tu marca.</p>
                   <div className="h-px bg-black/[0.06] dark:bg-white/[0.08] my-4" />
                   <ul className="space-y-2.5">
-                    {info.incluye.map((f, i) => (
+                    {SUSCRIPCION_BASE_INCLUYE.map((f, i) => (
                       <li key={i} className="flex items-start gap-2.5 text-[13.5px]">
                         <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FF7A00]/15">
                           <Check className="h-3 w-3 text-[#FF7A00]" />
@@ -1146,13 +1113,17 @@ export default function ClaimTienda() {
                   <p className="text-xs text-muted-foreground mt-4">Cuota fija · sin comisión por venta.</p>
                 </div>
 
+                <p className="mt-4 text-center text-xs text-muted-foreground">
+                  Avisos automáticos, Motor de Recompra y otras capacidades se activan sólo si las elegís desde Módulos.
+                </p>
+
                 {/* Ajustes */}
                 <div className="mt-4 flex items-start gap-3 rounded-2xl bg-white shadow-sm dark:bg-zinc-900 dark:shadow-none p-4">
                   <div className="h-9 w-9 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center shrink-0">
                     <Settings className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <p className="text-[13.5px] text-muted-foreground leading-relaxed">
-                    Todo lo demás lo configurás desde el ícono de <span className="font-semibold text-foreground">Ajustes</span> en tu panel: horarios, sucursales, facturación y más.
+                    Desde el panel configurás tu tienda y elegís los módulos que quieras activar, sin cambiar de suscripción.
                   </p>
                 </div>
 
@@ -1163,14 +1134,14 @@ export default function ClaimTienda() {
                   Empezar la prueba gratis <ArrowRight className="h-4 w-4" />
                 </button>
 
-                {/* Opcional: pagar la cuota ahora y saltear la espera (sin perder los días de prueba). */}
-                <button
-                  onClick={pagarPlanAhora}
-                  disabled={pagandoPlan}
+                {/* Opcional: pagar la base ahora y conservar los días de prueba. */}
+                {precio && <button
+                  onClick={pagarSuscripcionAhora}
+                  disabled={pagandoSuscripcion}
                   className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
-                  {pagandoPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : `Pagar ${precio}/mes ahora`}
-                </button>
+                  {pagandoSuscripcion ? <Loader2 className="h-4 w-4 animate-spin" /> : `Activar ${precio}/mes ahora`}
+                </button>}
               </div>
             )
           })()
