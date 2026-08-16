@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { descuentoAnualEfectivo, precioAnual } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { suscripcionApi, type MiSuscripcion, type PlanCatalogo } from '@/lib/api'
+import { mensajesApi, suscripcionApi, type MiSuscripcion, type PackRecarga, type PlanCatalogo } from '@/lib/api'
 import { CicloToggle, type Ciclo } from '@/components/CicloToggle'
+import { CheckoutSuscripcionOpciones } from '@/components/CheckoutSuscripcionOpciones'
 
 const fmtARS = (n: number | string) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(typeof n === 'string' ? parseFloat(n) : n)
 const fmtInt = (n: number) => new Intl.NumberFormat('es-AR').format(n)
@@ -19,8 +20,9 @@ const FEATURES_BASE = [
   'Estadísticas y reportes', 'Galería de imágenes y pedido en grupo',
 ]
 
-// El paywall self-serve sólo ofrece la suscripción base. Los módulos se eligen
-// después de acreditar el pago, desde su catálogo, y nunca se activan por defecto.
+// El paywall muestra la cotización resuelta por el backend. En general es sólo
+// la base; si ya existe un módulo pago migrado, debe incluirse en este primer
+// checkout para no presentar un precio distinto al que Mercado Pago cobrará.
 export default function Suscribir() {
   const navigate = useNavigate()
   const restauranteStore = useRestauranteStore()
@@ -31,6 +33,10 @@ export default function Suscribir() {
   const [ciclo, setCiclo] = useState<Ciclo>('mensual')
   const [activando, setActivando] = useState(false)
   const [verificando, setVerificando] = useState(false)
+  const [packs, setPacks] = useState<PackRecarga[]>([])
+  const [packId, setPackId] = useState<number | null>(null)
+  const [usarOtroTelefono, setUsarOtroTelefono] = useState(false)
+  const [otroTelefono, setOtroTelefono] = useState('')
   const estado = miSub?.estado ?? suscripcion?.estado
   const pausado = estado === 'suspendida' || estado === 'cancelada'
 
@@ -38,7 +44,11 @@ export default function Suscribir() {
     const token = useAuthStore.getState().token
     if (!token) return
     suscripcionApi.catalogo(token).then((r) => setCatalogo(r.data)).catch(() => setCatalogo([]))
-    suscripcionApi.miSuscripcion(token).then((r) => setMiSub(r.data)).catch(() => {})
+    suscripcionApi.miSuscripcion(token).then((r) => {
+      setMiSub(r.data)
+      if (!r.data.telefonoPago) setUsarOtroTelefono(true)
+    }).catch(() => {})
+    mensajesApi.packs(token, 'utility').then((r) => setPacks(r.data)).catch(() => setPacks([]))
   }, [])
 
   useEffect(() => {
@@ -53,7 +63,14 @@ export default function Suscribir() {
     if (!token) return
     setActivando(true)
     try {
-      const res = await suscripcionApi.enviarPagoLinkWhatsapp(token, ciclo)
+      if (usarOtroTelefono && otroTelefono.replace(/\D/g, '').length < 8) {
+        toast.error('Ingresá un número de WhatsApp válido')
+        return
+      }
+      const res = await suscripcionApi.enviarPagoLinkWhatsapp(token, ciclo, {
+        ...(packId ? { packId } : {}),
+        ...(usarOtroTelefono ? { telefonoDestino: otroTelefono } : {}),
+      })
       toast.success(`Te enviamos el link de pago a tu WhatsApp (${res.data.telefono})`)
     } catch (e: any) { toast.error(e?.message || 'No se pudo enviar el link por WhatsApp') }
     finally { setActivando(false) }
@@ -78,6 +95,7 @@ export default function Suscribir() {
   const base = catalogo ? [...catalogo].sort((a, b) => a.orden - b.orden)[0] : undefined
   const suscripcionBase = pausado ? suscripcionActual ?? base : base
   const descuentoMax = Math.max(0, ...(catalogo ?? []).map((p) => descuentoAnualEfectivo(p.descuentoAnual)))
+  const cotizacion = miSub?.cotizacionProximaFactura
 
   return <main className="min-h-dvh bg-background px-5 pb-12 pt-6 sm:px-8">
     <header className="mx-auto flex max-w-5xl items-center justify-between">
@@ -104,26 +122,42 @@ export default function Suscribir() {
       : !suscripcionBase ? <p className="text-center text-sm text-muted-foreground">La suscripción no está disponible por ahora. Escribinos y lo resolvemos.</p>
       : <>
         {descuentoMax > 0 && <div className="mb-8 text-center"><CicloToggle value={ciclo} onChange={setCiclo} descuentoMax={descuentoMax} /><p className="mt-2 text-xs text-muted-foreground">Pagá por año y ahorrá hasta {descuentoMax}%.</p></div>}
-        <SuscripcionInicio suscripcion={suscripcionBase} ciclo={ciclo} activando={activando} onActivar={activarSuscripcion} pausado={pausado} />
+        <SuscripcionInicio suscripcion={suscripcionBase} cotizacion={cotizacion} ciclo={ciclo} activando={activando} onActivar={activarSuscripcion} pausado={pausado}
+          packs={packs} packId={packId} onPackId={setPackId} telefonoCuenta={miSub?.telefonoPago ?? restaurante?.telefono}
+          usarOtroTelefono={usarOtroTelefono} onUsarOtroTelefono={setUsarOtroTelefono} otroTelefono={otroTelefono} onOtroTelefono={setOtroTelefono} />
       </>}
       <div className="mt-10 flex flex-col items-center gap-4"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Lock className="h-3 w-3" />Pago seguro con Mercado Pago. Sin comisión por venta.</p><button onClick={verificarPago} disabled={verificando} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50">{verificando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}Ya pagué, verificar</button></div>
     </section>
   </main>
 }
 
-function SuscripcionInicio({ suscripcion, ciclo, activando, onActivar, pausado }: { suscripcion: PlanCatalogo; ciclo: Ciclo; activando: boolean; onActivar: () => void; pausado: boolean }) {
+function SuscripcionInicio({ suscripcion, cotizacion, ciclo, activando, onActivar, pausado, packs, packId, onPackId, telefonoCuenta, usarOtroTelefono, onUsarOtroTelefono, otroTelefono, onOtroTelefono }: {
+  suscripcion: PlanCatalogo
+  cotizacion?: MiSuscripcion['cotizacionProximaFactura']
+  ciclo: Ciclo
+  activando: boolean
+  onActivar: () => void
+  pausado: boolean
+  packs: PackRecarga[]; packId: number | null; onPackId: (id: number | null) => void
+  telefonoCuenta?: string | null; usarOtroTelefono: boolean; onUsarOtroTelefono: (value: boolean) => void
+  otroTelefono: string; onOtroTelefono: (value: string) => void
+}) {
   const [detalles, setDetalles] = useState(false)
-  const precio = parseFloat(suscripcion.precioMensual)
+  const precioBase = parseFloat(suscripcion.precioMensual)
+  const precio = cotizacion?.montoTotalMensual ?? precioBase
   const desc = descuentoAnualEfectivo(suscripcion.descuentoAnual)
   const total = precioAnual(precio, desc)
+  const modulos = cotizacion?.modulosFacturables ?? []
   return <article className="border-y border-border py-7 text-center">
     <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Tu suscripción</p>
     <h2 className="mt-2 text-3xl font-semibold tracking-tight">{suscripcion.nombre}</h2>
     <p className="mt-3 text-3xl font-semibold">{ciclo === 'anual' ? fmtARS(total) : fmtARS(precio)}<span className="text-base font-normal text-muted-foreground"> {ciclo === 'anual' ? '/ año' : '/ mes'}</span></p>
     {ciclo === 'anual' && <p className="mt-1 text-xs text-muted-foreground">Equivale a {fmtARS(total / 12)}/mes{desc > 0 ? ` · ahorrás ${desc}%` : ''}</p>}
+    {modulos.length > 0 && <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">Incluye suscripción base ({fmtARS(cotizacion?.montoBaseMensual ?? precioBase)}) + {modulos.map((modulo) => `${modulo.codigo === 'avisos_automaticos_whatsapp' ? 'Avisos automáticos por WhatsApp' : modulo.codigo} (${fmtARS(modulo.montoMensual)})`).join(', ')}.</p>}
     <p className="mx-auto mt-5 max-w-sm text-sm leading-relaxed text-muted-foreground">Todo lo necesario para vender directo: recibí pedidos, cobralos y organizá la cocina desde un solo lugar.</p>
     <button onClick={() => setDetalles(!detalles)} className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">{detalles ? 'Ocultar lo que incluye' : 'Ver qué incluye'}{detalles ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
     {detalles && <ul className="mx-auto mt-4 grid max-w-sm gap-2 border-l border-border pl-4 text-left text-sm text-muted-foreground">{FEATURES_BASE.map((f) => <li key={f} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />{f}</li>)}</ul>}
-    <div className="mt-7"><Button onClick={onActivar} disabled={activando} className="w-full">{activando ? <Loader2 className="h-4 w-4 animate-spin" /> : <><MessageCircle className="h-4 w-4" />{pausado ? 'Reactivar mi suscripción' : 'Activar mi suscripción'}</>}</Button><p className="mt-2 text-xs text-muted-foreground">Te enviamos el link de pago al WhatsApp del local.</p></div>
+    <CheckoutSuscripcionOpciones habilitarPack={modulos.some((modulo) => modulo.codigo === 'avisos_automaticos_whatsapp')} packs={packs} packId={packId} onPackId={onPackId} totalSuscripcion={ciclo === 'anual' ? total : precio} telefonoCuenta={telefonoCuenta} usarOtroTelefono={usarOtroTelefono} onUsarOtroTelefono={onUsarOtroTelefono} otroTelefono={otroTelefono} onOtroTelefono={onOtroTelefono} />
+    <div className="mt-7"><Button onClick={onActivar} disabled={activando} className="w-full">{activando ? <Loader2 className="h-4 w-4 animate-spin" /> : <><MessageCircle className="h-4 w-4" />{pausado ? 'Reactivar mi suscripción' : `Activar por ${fmtARS(ciclo === 'anual' ? total : precio)}`}</>}</Button><p className="mt-2 text-xs text-muted-foreground">Te enviamos el link de pago al WhatsApp del local.</p></div>
   </article>
 }

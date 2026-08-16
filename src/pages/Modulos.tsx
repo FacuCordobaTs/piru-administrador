@@ -473,7 +473,6 @@ export default function Modulos() {
                     {activo ? <CircleCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /> : <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />}
                     <div>
                       <p className="text-sm font-medium text-foreground">{estadoTexto}</p>
-                      {moduloSeleccionado.origen === 'legacy' && Number(moduloSeleccionado.precioMensualCongelado) === 0 && <p className="mt-1 text-xs text-muted-foreground">Conservás este módulo sin costo como beneficio histórico.</p>}
                     </div>
                   </div>
                 </div>

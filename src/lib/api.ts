@@ -1749,6 +1749,7 @@ export interface MiSuscripcion {
   // Hard paywall: si requiereSuscripcion y no hay acceso, el panel se bloquea (→ /suscribir).
   requiereSuscripcion?: boolean
   accesoPanel?: boolean
+  telefonoPago?: string | null
   fechaProximoCobro: string | null
   // Contador de valor del trial (Claim Flow · Tarea 6). Sólo presentes en estado 'trial'.
   trialFin?: string | null
@@ -1769,6 +1770,14 @@ export interface MiSuscripcion {
   precioBaseMensual?: string | null
   montoModulosMensual?: string | null
   montoTotalMensual?: string | null
+  // Cotización actual del backend: refleja los entitlements facturables aun
+  // antes de que exista una primera factura/snapshot de suscripción.
+  cotizacionProximaFactura?: {
+    montoBaseMensual: number
+    montoModulosMensual: number
+    montoTotalMensual: number
+    modulosFacturables: Array<{ codigo: string; montoMensual: number }>
+  }
 }
 
 export interface ConfiguracionSuscripcion {
@@ -1823,8 +1832,9 @@ export interface CheckoutSuscripcion {
   monto: string
   montoBase?: string
   montoModulos?: string
+  montoRecarga?: string
   items: Array<{
-    tipo: 'base' | 'modulo'
+    tipo: 'base' | 'modulo' | 'pack_mensajes'
     codigo?: string | null
     descripcion: string
     monto: string | number
@@ -1840,6 +1850,7 @@ export interface PagoSuscripcionResumen {
   monto?: string | null
   montoBase?: string | null
   montoModulos?: string | null
+  montoRecarga?: string | null
   montoTotal?: string | null
   ciclo?: 'mensual' | 'anual' | string | null
   createdAt?: string | null
@@ -1904,17 +1915,17 @@ export const suscripcionApi = {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     }),
-  checkout: async (token: string, ciclo: 'mensual' | 'anual' = 'mensual') =>
+  checkout: async (token: string, ciclo: 'mensual' | 'anual' = 'mensual', packId?: number) =>
     fetchApi<{ success: boolean; data: CheckoutSuscripcion }>('/suscripcion/checkout', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ciclo }),
+      body: JSON.stringify({ ciclo, ...(packId ? { packId } : {}) }),
     }),
-  enviarPagoLinkWhatsapp: async (token: string, ciclo: 'mensual' | 'anual' = 'mensual') =>
-    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>('/suscripcion/pago-link-whatsapp', {
+  enviarPagoLinkWhatsapp: async (token: string, ciclo: 'mensual' | 'anual' = 'mensual', opciones?: { packId?: number; telefonoDestino?: string }) =>
+    fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string; pagoId: number; monto: string } }>('/suscripcion/pago-link-whatsapp', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ciclo }),
+      body: JSON.stringify({ ciclo, ...opciones }),
     }),
   cancelar: async (token: string) =>
     fetchApi<{ success: boolean; message: string }>('/suscripcion/cancelar', {
