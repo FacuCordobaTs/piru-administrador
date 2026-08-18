@@ -291,7 +291,7 @@ export default function Mozos() {
                         {sucursales.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.nombre}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs font-normal text-muted-foreground">La app de mozos necesita una sucursal asignada para operar.</p>
+                    <p className="text-xs font-normal text-muted-foreground">Sin sucursal, el mozo opera sobre todo el restaurante.</p>
                   </div>
                 )}
                 <div className="space-y-1.5">
