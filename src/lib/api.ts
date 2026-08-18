@@ -321,6 +321,7 @@ export const restauranteApi = {
       username?: string
       colorPrimario?: string
       colorSecundario?: string
+      usarColorUnico?: boolean
       direccionTexto?: string | null
       direccionLat?: number | null
       direccionLng?: number | null

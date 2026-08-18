@@ -72,6 +72,7 @@ export interface RestauranteData {
   sistemaPuntos: boolean | null
   colorPrimario: string | null
   colorSecundario: string | null
+  usarColorUnico: boolean | null
   disenoAlternativo: boolean | null
   direccionTexto?: string | null
   direccionLat?: string | null

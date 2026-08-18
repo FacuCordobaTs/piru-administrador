@@ -25,6 +25,7 @@ export default function General() {
   const tieneLogo = !!(restaurante?.imagenUrl || restaurante?.imagenLightUrl)
   const avisosOn = restaurante?.whatsappEnabled === true
   const telefono = restaurante?.telefono?.trim()
+  const colorUnico = restaurante?.usarColorUnico === true
 
   return (
     <section className="space-y-6">
@@ -107,10 +108,15 @@ export default function General() {
               !v ? 'El alias no puede quedar vacío' : v.length < 3 ? 'Usá al menos 3 caracteres' : null
             }
           />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <ColorField campo="colorPrimario" label="Color primario (botones)" fallback="#FF7A00" />
-            <ColorField campo="colorSecundario" label="Color secundario (fondos)" fallback="#FFFFFF" />
-          </div>
+          <ModoColorField />
+          {colorUnico ? (
+            <ColorField campo="colorPrimario" label="Color de botones y detalles" fallback="#FF7A00" />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <ColorField campo="colorPrimario" label="Color primario (botones)" fallback="#FF7A00" />
+              <ColorField campo="colorSecundario" label="Color secundario (fondos)" fallback="#FFFFFF" />
+            </div>
+          )}
         </div>
       </AjusteEditor>
 
@@ -145,6 +151,26 @@ export default function General() {
         </div>
       </AjusteEditor>
     </section>
+  )
+}
+
+function ModoColorField() {
+  const { valor, guardar, status } = useAjuste('usarColorUnico')
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-foreground">Usar un solo color</p>
+          <span className="text-xs text-muted-foreground">
+            {status === 'saving' ? 'Guardando…' : status === 'saved' ? 'Guardado' : ''}
+          </span>
+        </div>
+        <p className="text-[13px] font-normal text-muted-foreground">
+          Se aplica a botones y detalles; los fondos y textos siguen en blanco y negro.
+        </p>
+      </div>
+      <Switch checked={valor === true} onCheckedChange={(checked) => void guardar(checked)} />
+    </div>
   )
 }
 
