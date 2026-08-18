@@ -96,11 +96,14 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
     }
     setGuardando(true)
     try {
+      // Omitir la credencial por completo cuando Rapiboy está apagado. Así una
+      // edición normal conserva el valor existente sin disparar el gate.
+      const { rapiboyToken, ...formSinRapiboy } = form
       const body = {
-        ...form,
+        ...formSinRapiboy,
         direccion: form.direccion || null,
         whatsappNumber: form.whatsappNumber || null,
-        ...(rapiboyActivo ? { rapiboyToken: form.rapiboyToken || null } : {}),
+        ...(rapiboyActivo ? { rapiboyToken: rapiboyToken.trim() || null } : {}),
       }
       const url = editando ? `${apiBase()}/sucursales/${editando.id}` : `${apiBase()}/sucursales/create`
       const res = await fetch(url, {
