@@ -26,7 +26,7 @@ import { useResumenSecciones } from './hooks/useResumenSecciones'
 
 // ── Detección de entorno de escritorio (Tauri) ──────────────────────────
 // La impresión automática solo existe en la app de escritorio.
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 // ── Registro de secciones ────────────────────────────────────────────────
 // Cada sección se carga con React.lazy: solo se monta la activa (code split).

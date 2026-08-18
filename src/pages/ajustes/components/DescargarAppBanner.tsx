@@ -3,7 +3,7 @@ import { Printer, Download, X, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 // La impresión automática de comandas solo existe en la app de escritorio (Tauri).
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 const LATEST_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 // Fallback por si latest.json no responde: la página de descarga.

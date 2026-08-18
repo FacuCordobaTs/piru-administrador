@@ -6,7 +6,7 @@ import { usePrinter } from '@/context/PrinterContext'
 import { resumirHorarios, type Horarios } from '../sections/horarios/resumirHorarios'
 
 const apiBase = () => import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 /**
  * Resumen por sección para la portada de Ajustes: una oración que describe lo ya

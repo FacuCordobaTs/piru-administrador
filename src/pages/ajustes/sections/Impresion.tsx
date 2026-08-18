@@ -17,7 +17,7 @@ import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { useModuloActivo } from '@/store/modulosStore'
 
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 const DOWNLOAD_URL = 'https://piru.app'
 
 export default function Impresion() {
