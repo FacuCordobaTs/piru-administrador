@@ -33,6 +33,7 @@ export function useResumenSecciones(): {
   const [waConectado, setWaConectado] = useState<boolean | null>(null)
   const [waVencido, setWaVencido] = useState(false)
   const [facturacionOk, setFacturacionOk] = useState<boolean | null>(null)
+  const [staffCount, setStaffCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -43,13 +44,16 @@ export function useResumenSecciones(): {
     }
     let cancel = false
     ;(async () => {
-      const [hRes, zRes, wRes, fRes] = await Promise.allSettled([
+      const [hRes, zRes, wRes, fRes, staffRes] = await Promise.allSettled([
         restauranteApi.getHorarios(token),
         zonasDeliveryApi.getAll(token),
         fetch(`${apiBase()}/whatsapp-oauth/status`, {
           headers: { Authorization: `Bearer ${token}` },
         }).then((r) => r.json()),
         facturacionApi.getEstado(token),
+        fetch(`${apiBase()}/staff/usuarios`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then((r) => r.json()),
       ])
       if (cancel) return
 
@@ -88,6 +92,12 @@ export function useResumenSecciones(): {
         fRes.status === 'fulfilled'
           ? !!(fRes.value as { data?: { habilitado?: boolean } })?.data?.habilitado
           : false
+      )
+
+      setStaffCount(
+        staffRes.status === 'fulfilled'
+          ? ((staffRes.value as { success?: boolean; data?: unknown[] })?.data?.length ?? 0)
+          : 0
       )
 
       setLoading(false)
@@ -169,6 +179,14 @@ export function useResumenSecciones(): {
     const impresionResumen = selectedPrinter || 'Sin impresora seleccionada'
     const impresionFaltan = isTauri && !selectedPrinter ? ['Seleccioná tu impresora'] : []
 
+    // ── Mozos ──
+    const mozosResumen = staffCount == null
+      ? 'Cargando…'
+      : staffCount === 1
+        ? '1 usuario de staff'
+        : `${staffCount} usuarios de staff`
+    const mozosFaltan = staffCount === 0 ? ['Creá el primer código de acceso'] : []
+
     // ── Cuenta ──
     const cuentaResumen = restaurante?.email || 'Tu email y contraseña'
 
@@ -185,6 +203,7 @@ export function useResumenSecciones(): {
       experiencia: { resumen: experienciaResumen, faltan: [] },
       facturacion: { resumen: facturacionResumen, faltan: [] },
       impresion: { resumen: impresionResumen, faltan: impresionFaltan },
+      mozos: { resumen: mozosResumen, faltan: mozosFaltan },
       cuenta: { resumen: cuentaResumen, faltan: [] },
     }
   }, [
@@ -194,6 +213,7 @@ export function useResumenSecciones(): {
     waConectado,
     waVencido,
     facturacionOk,
+    staffCount,
     selectedPrinter,
   ])
 

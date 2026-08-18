@@ -13,6 +13,7 @@ import {
   Copy,
   ChevronRight,
   ExternalLink,
+  UtensilsCrossed,
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -81,6 +82,13 @@ const SECTIONS: SectionDef[] = [
     descripcion: 'Facturación electrónica con AFIP/ARCA.',
     Icon: FileText,
     Component: lazy(() => import('./sections/Facturacion')),
+  },
+  {
+    id: 'mozos',
+    label: 'Mozos',
+    descripcion: 'Códigos de acceso y usuarios para la app de mozos.',
+    Icon: UtensilsCrossed,
+    Component: lazy(() => import('./sections/Mozos')),
   },
   {
     id: 'impresion',

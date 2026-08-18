@@ -2210,6 +2210,38 @@ export interface ClaimConfig {
   }>
 }
 
+// Usuarios de staff para la PWA de mozos (T37). El backend genera el código de
+// acceso al crear y lo devuelve una sola vez; el resto de la gestión es vía PUT.
+export interface UsuarioStaff {
+  id: number
+  nombre: string
+  rol: 'owner' | 'admin' | 'mozo'
+  sucursalId: number | null
+  codigoAcceso: string | null
+  activo: boolean
+  bloqueadoHasta: string | null
+  ultimoAccesoAt: string | null
+  createdAt: string
+}
+
+export const staffApi = {
+  list: (token: string) =>
+    fetchApi<{ success: boolean; data: UsuarioStaff[]; ownerId: number }>(
+      '/staff/usuarios',
+      { headers: { Authorization: `Bearer ${token}` } },
+    ),
+  create: (token: string, data: { nombre: string; rol: 'admin' | 'mozo'; sucursalId?: number | null; pin: string }) =>
+    fetchApi<{ success: boolean; data: { id: number; codigoAcceso: string } }>(
+      '/staff/usuarios',
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) },
+    ),
+  update: (token: string, id: number, data: { nombre?: string; sucursalId?: number | null; activo?: boolean; pin?: string }) =>
+    fetchApi<{ success: boolean }>(
+      `/staff/usuarios/${id}`,
+      { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) },
+    ),
+}
+
 export const claimApi = {
   // 404 con flags distintivos en err.response: { yaReclamada?: true } o { vencido?: true }.
   // `config` es aditivo: admins viejos que no lo lean siguen funcionando.
