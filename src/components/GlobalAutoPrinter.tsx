@@ -15,15 +15,16 @@ interface DeliveryItem {
     id: number; productoId: number; cantidad: number; precioUnitario: string;
     nombreProducto: string; imagenUrl: string | null;
     ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
-    agregados?: any; varianteNombre?: string; clienteNombre?: string | null;
+    agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null;
 }
 interface UnifiedPedido {
-    id: number; tipo: 'delivery' | 'takeaway'; estado: string; total: string; createdAt: string;
+    id: number; tipo: 'delivery' | 'takeaway' | 'mesa'; estado: string; total: string; createdAt: string;
     nombreCliente: string | null; telefono: string | null; direccion?: string | null; notas?: string | null;
     items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
     sucursalId?: number | null; sucursalNombre?: string | null;
     horarioProgramado?: string | null; deliveryFee?: string | null; grupal?: boolean | null;
+    mesaNombre?: string | null;
 }
 
 const STORAGE_SUCURSAL = 'sucursal_activa_id'
@@ -108,7 +109,7 @@ const GlobalAutoPrinter = () => {
                 sucursalActivaId,
             ) as any
             if (response.success && response.data) {
-                const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway') as UnifiedPedido[]
+                const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway' || p.tipo === 'mesa') as UnifiedPedido[]
                 setUnifiedPedidos(validPedidos)
             }
         } catch (error) {
@@ -122,10 +123,10 @@ const GlobalAutoPrinter = () => {
         fetchPedidos()
     }, [token, fetchPedidos])
 
-    // Refetch ante cualquier update de delivery/takeaway por WebSocket
+    // Refetch ante cualquier update de delivery/takeaway/mesa por WebSocket
     useEffect(() => {
         if (!lastUpdate) return
-        if (lastUpdate.type !== 'delivery' && lastUpdate.type !== 'takeaway') return
+        if (lastUpdate.type !== 'delivery' && lastUpdate.type !== 'takeaway' && lastUpdate.type !== 'mesa') return
         const sucursalActivaId = readStoredSucursalId()
         if (
             sucursalActivaId != null &&
@@ -213,7 +214,7 @@ const GlobalAutoPrinter = () => {
                                 direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
                                 tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                                 metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
-                                horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal,
+                                horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
                             }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
                             printRaw(commandsToBytes(comandaData)).catch((err) => {

@@ -6,6 +6,9 @@ export interface Sucursal {
   id: number
   nombre: string
   direccion: string | null
+  direccionLat: string | null
+  direccionLng: string | null
+  direccionCiudad: string | null
   whatsappEnabled: boolean
   whatsappNumber: string | null
   rapiboyToken: string | null

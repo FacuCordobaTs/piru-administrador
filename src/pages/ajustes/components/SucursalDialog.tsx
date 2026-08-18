@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { useAuthStore } from '@/store/authStore'
 import type { Sucursal } from '../hooks/useSucursales'
 
@@ -23,9 +24,24 @@ interface SucursalDialogProps {
   rapiboyActivo?: boolean
 }
 
-const vacio = {
+type SucursalForm = {
+  nombre: string
+  direccion: string
+  direccionLat: number | null
+  direccionLng: number | null
+  direccionCiudad: string | null
+  whatsappEnabled: boolean
+  whatsappNumber: string
+  rapiboyToken: string
+  activo: boolean
+}
+
+const vacio: SucursalForm = {
   nombre: '',
   direccion: '',
+  direccionLat: null,
+  direccionLng: null,
+  direccionCiudad: null,
   whatsappEnabled: false,
   whatsappNumber: '',
   rapiboyToken: '',
@@ -36,7 +52,7 @@ const apiBase = () => import.meta.env.VITE_API_URL || 'http://localhost:3000/api
 
 /** Crear/editar sucursal. Transaccional: conserva Guardar/Cancelar. */
 export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyActivo = false }: SucursalDialogProps) {
-  const [form, setForm] = useState(vacio)
+  const [form, setForm] = useState<SucursalForm>(vacio)
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
@@ -46,6 +62,9 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
         ? {
             nombre: editando.nombre,
             direccion: editando.direccion || '',
+            direccionLat: editando.direccionLat != null ? Number(editando.direccionLat) : null,
+            direccionLng: editando.direccionLng != null ? Number(editando.direccionLng) : null,
+            direccionCiudad: editando.direccionCiudad || null,
             whatsappEnabled: editando.whatsappEnabled,
             whatsappNumber: editando.whatsappNumber || '',
             // Una credencial ya existente se conserva aunque el módulo esté
@@ -65,6 +84,14 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
   const guardar = async () => {
     if (!form.nombre.trim()) {
       toast.error('El nombre es requerido')
+      return
+    }
+    if (!form.direccion.trim() || form.direccionLat == null || form.direccionLng == null) {
+      toast.error('Seleccioná la dirección exacta desde las sugerencias')
+      return
+    }
+    if (form.whatsappEnabled && !form.whatsappNumber.trim()) {
+      toast.error('Ingresá el número de WhatsApp de la sucursal')
       return
     }
     setGuardando(true)
@@ -136,13 +163,21 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-medium">Dirección</Label>
-            <Input
+            <Label className="font-medium">Dirección exacta</Label>
+            <AddressAutocomplete
               value={form.direccion}
-              onChange={(e) => setForm((p) => ({ ...p, direccion: e.target.value }))}
-              placeholder="Ej: San Martín 123"
-              className="h-11"
+              onChange={(direccion, direccionLat, direccionLng, details) => setForm((p) => ({
+                ...p,
+                direccion,
+                direccionLat,
+                direccionLng,
+                direccionCiudad: details?.ciudad ?? null,
+              }))}
+              placeholder="Buscá la dirección exacta de la sucursal…"
             />
+            <p className="text-xs font-normal text-muted-foreground">
+              Se usa para mostrar el local de retiro y limitar las direcciones de delivery a su ciudad.
+            </p>
           </div>
           <div className="flex items-center justify-between gap-4 rounded-xl border border-border p-4">
             <div className="min-w-0">

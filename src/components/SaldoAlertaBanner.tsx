@@ -11,7 +11,7 @@ import { useSuscripcion } from '@/pages/ajustes/hooks/useSuscripcion'
  * está en orden (regla 11). Descartable por sesión: si el nivel empeora (80→95→negativo)
  * vuelve a aparecer.
  */
-export function SaldoAlertaBanner() {
+export function SaldoAlertaBanner({ onDismiss }: { onDismiss?: () => void }) {
   const { data } = useSuscripcion()
   const [dismissed, setDismissed] = useState<string | null>(() =>
     sessionStorage.getItem('piru-saldo-alerta-dismiss'),
@@ -44,6 +44,7 @@ export function SaldoAlertaBanner() {
   const descartar = () => {
     setDismissed(nivel)
     sessionStorage.setItem('piru-saldo-alerta-dismiss', nivel!)
+    onDismiss?.()
   }
 
   return (

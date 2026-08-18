@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,8 +10,8 @@ import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-    X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2,
-    Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight,
+    X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2, Armchair,
+    Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight, Eye, EyeOff,
 } from 'lucide-react'
 
 type Producto = ReturnType<typeof useRestauranteStore.getState>['productos'][number]
@@ -22,6 +22,8 @@ interface CartItem {
     nombre: string
     varianteId?: number
     varianteNombre?: string
+    varianteSecundariaId?: number
+    varianteSecundariaNombre?: string
     precioBase: number
     ingredientesExcluidos: number[]
     agregados: Array<{ id: number; nombre: string; precio: string }>
@@ -30,7 +32,7 @@ interface CartItem {
 
 interface PersistedPosDraft {
     cart: CartItem[]
-    tipo: 'delivery' | 'takeaway'
+    tipo: 'delivery' | 'takeaway' | 'mesa'
     nombre: string
     telefono: string
     direccion: string
@@ -43,12 +45,14 @@ export interface PosDraftItem {
     key: string
     nombre: string
     varianteNombre?: string
+    varianteSecundariaNombre?: string
+    ingredientesExcluidosNombres?: string[]
     cantidad: number
     precioUnitario: number
 }
 
 export interface PosDraft {
-    tipo: 'delivery' | 'takeaway'
+    tipo: 'delivery' | 'takeaway' | 'mesa'
     nombreCliente: string
     telefono: string
     direccion: string
@@ -59,8 +63,39 @@ export interface PosDraft {
     items: PosDraftItem[]
     subtotal: number
     total: number
+    submitting: boolean
     mesaLocalId?: number
     mesaNombre?: string
+}
+
+export interface PosEditablePedido {
+    id: number
+    version: number
+    tipo: 'delivery' | 'takeaway' | 'mesa'
+    nombreCliente?: string | null
+    telefono?: string | null
+    direccion?: string | null
+    latitud?: string | number | null
+    longitud?: string | number | null
+    notas?: string | null
+    metodoPago?: string | null
+    pagado?: boolean
+    deliveryFee?: string | number | null
+    mesaLocalId?: number | null
+    mesaNombre?: string | null
+    items: Array<{
+        id: number
+        productoId: number
+        nombreProducto: string
+        varianteId?: number | null
+        varianteNombre?: string | null
+        varianteSecundariaId?: number | null
+        varianteSecundariaNombre?: string | null
+        cantidad: number
+        precioUnitario: string | number
+        ingredientesExcluidos?: number[] | null
+        agregados?: unknown
+    }>
 }
 
 export type PosDraftUpdate = Partial<Pick<PosDraft,
@@ -77,17 +112,32 @@ export interface PuntoDeVentaHandle {
     updateDraft: (changes: PosDraftUpdate) => void
     /** Pide descartar el borrador actual antes de cerrar el POS. */
     requestClose: () => void
+    /** Confirma el borrador desde la comanda desktop. */
+    submitDraft: () => void
+    /** Limpia el borrador desde la comanda desktop, sin confirmación. */
+    clearDraft: () => void
+    /** Lleva el cursor al buscador de productos. */
+    focusProductSearch: () => void
 }
 
 interface PuntoDeVentaProps {
     onClose: () => void
     onCreated: (pedidoId: number) => void
+    onUpdated?: (pedido: PosEditablePedido) => void
     sucursalActivaId: number | null
     /** El padre (Dashboard) espeja este borrador en la comanda de la derecha en vivo. */
     onDraftChange?: (draft: PosDraft | null) => void
     /** Volver al grid desde un pedido existente conserva el borrador. */
     onStartDraft?: () => void
     mesaAsignada?: { id: number; nombre: string } | null
+    /** Abre el plano para elegir una mesa libre sin alterar todavía el borrador. */
+    onRequestMesa?: () => void
+    /** Desasigna la mesa al cambiar el borrador a delivery o takeaway. */
+    onClearMesa?: () => void
+    /** Sólo el borrador activo captura la escritura rápida para buscar productos. */
+    autoFocusSearch?: boolean
+    /** Pedido POS que se carga como borrador editable. */
+    initialPedido?: PosEditablePedido | null
 }
 
 const METODOS_PAGO: Array<{ id: string; label: string; icon: React.ElementType }> = [
@@ -100,14 +150,29 @@ const METODOS_PAGO: Array<{ id: string; label: string; icon: React.ElementType }
 const itemUnitPrice = (it: CartItem) =>
     it.precioBase + it.agregados.reduce((s, a) => s + (parseFloat(String(a.precio)) || 0), 0)
 
+/** El toggle se usa sólo con puntero: no interrumpe el recorrido de carga del pedido. */
+const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: boolean; fieldName: string; onToggle: () => void }) => (
+    <button
+        type="button"
+        tabIndex={-1}
+        aria-label={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
+        title={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
+        onClick={onToggle}
+        className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
+)
+
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null },
+    { onClose, onCreated, onUpdated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onRequestMesa, onClearMesa, autoFocusSearch = true, initialPedido = null },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
     const { productos } = useRestauranteStore()
 
     const [query, setQuery] = useState('')
+    const searchInputRef = useRef<HTMLInputElement>(null)
     const [cart, setCart] = useState<CartItem[]>([])
     const [configProducto, setConfigProducto] = useState<{
         producto: Producto
@@ -118,30 +183,112 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const [mobileStep, setMobileStep] = useState<'productos' | 'checkout'>('productos')
 
     // Datos del cliente
-    const [tipo, setTipo] = useState<'delivery' | 'takeaway'>('takeaway')
+    const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('takeaway')
     const [nombre, setNombre] = useState('')
     const [telefono, setTelefono] = useState('')
+    const [nombreVisible, setNombreVisible] = useState(true)
+    const [telefonoVisible, setTelefonoVisible] = useState(true)
     const [direccion, setDireccion] = useState('')
     const [lat, setLat] = useState<number | null>(null)
     const [lng, setLng] = useState<number | null>(null)
     const [notas, setNotas] = useState('')
     const [metodoPago, setMetodoPago] = useState<string>('cash')
-    // El pedido anotado a mano siempre nace cobrado: no hay selección de "pagado".
-    const pagado = true
+    // Las altas manuales nacen cobradas. Al editar se conserva el estado de
+    // pago existente: cambiar productos o datos del cliente no confirma cobros.
+    const pagado = initialPedido?.pagado ?? true
     const [deliveryFee, setDeliveryFee] = useState('')
     const [submitting, setSubmitting] = useState(false)
-    const storageKey = `piru:pos-draft:${sucursalActivaId ?? 'sin-sucursal'}:${mesaAsignada?.id ?? 'sin-mesa'}`
+    const modoEdicion = initialPedido != null
+    // Una edición no comparte almacenamiento con el borrador de alta ni cambia
+    // de clave al reasignar la mesa; eso evita rehidratar y perder cambios.
+    const storageKey = modoEdicion
+        ? `piru:pos-edit:${initialPedido.id}`
+        : `piru:pos-draft:${sucursalActivaId ?? 'sin-sucursal'}:${mesaAsignada?.id ?? 'sin-mesa'}`
     const [hydratedStorageKey, setHydratedStorageKey] = useState<string | null>(null)
+
+    const focusProductSearch = () => searchInputRef.current?.focus()
+
+    // En el borrador, el lector/teclado debe poder empezar a buscar sin un click
+    // previo. No se roba el foco de campos que el usuario haya elegido de forma
+    // explícita, ni del configurador de un producto abierto.
+    useEffect(() => {
+        if (!autoFocusSearch || configProducto) return
+        const frame = window.requestAnimationFrame(focusProductSearch)
+        return () => window.cancelAnimationFrame(frame)
+    }, [autoFocusSearch, configProducto])
+
+    useEffect(() => {
+        if (!autoFocusSearch || configProducto) return
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return
+
+            const target = event.target as HTMLElement | null
+            // Un campo elegido por el usuario conserva siempre la escritura.
+            if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+            if (document.activeElement === searchInputRef.current) return
+
+            event.preventDefault()
+            focusProductSearch()
+            setQuery((current) => current + event.key)
+        }
+
+        window.addEventListener('keydown', handleKeyDown, true)
+        return () => window.removeEventListener('keydown', handleKeyDown, true)
+    }, [autoFocusSearch, configProducto])
 
     // El borrador sobrevive una recarga accidental dentro de la misma pestaña. Se
     // separa por sucursal para no cruzar comandas entre locales del mismo negocio.
     useEffect(() => {
+        if (initialPedido) {
+            const parseAgregados = (value: unknown): CartItem['agregados'] => {
+                if (typeof value === 'string') {
+                    try { return parseAgregados(JSON.parse(value)) } catch { return [] }
+                }
+                if (!Array.isArray(value)) return []
+                return value.flatMap((agregado) => {
+                    if (!agregado || typeof agregado !== 'object') return []
+                    const candidate = agregado as { id?: unknown; nombre?: unknown; precio?: unknown }
+                    const id = Number(candidate.id)
+                    if (!Number.isInteger(id) || id <= 0) return []
+                    return [{ id, nombre: String(candidate.nombre ?? ''), precio: String(candidate.precio ?? 0) }]
+                })
+            }
+            setCart(initialPedido.items.map((item) => {
+                const agregados = parseAgregados(item.agregados)
+                const precioUnitario = Number(item.precioUnitario) || 0
+                return {
+                    key: `pedido-${initialPedido.id}-item-${item.id}`,
+                    productoId: item.productoId,
+                    nombre: item.nombreProducto,
+                    varianteId: item.varianteId ?? undefined,
+                    varianteNombre: item.varianteNombre ?? undefined,
+                    varianteSecundariaId: item.varianteSecundariaId ?? undefined,
+                    varianteSecundariaNombre: item.varianteSecundariaNombre ?? undefined,
+                    precioBase: Math.max(0, precioUnitario - agregados.reduce((sum, agregado) => sum + (Number(agregado.precio) || 0), 0)),
+                    ingredientesExcluidos: Array.isArray(item.ingredientesExcluidos) ? item.ingredientesExcluidos : [],
+                    agregados,
+                    cantidad: item.cantidad,
+                }
+            }))
+            setTipo(initialPedido.tipo)
+            setNombre(initialPedido.nombreCliente || '')
+            setTelefono(initialPedido.telefono || '')
+            setDireccion(initialPedido.direccion || '')
+            setLat(initialPedido.latitud == null ? null : Number(initialPedido.latitud))
+            setLng(initialPedido.longitud == null ? null : Number(initialPedido.longitud))
+            setNotas(initialPedido.notas || '')
+            setMetodoPago(initialPedido.metodoPago || 'cash')
+            setDeliveryFee(initialPedido.deliveryFee == null ? '' : String(initialPedido.deliveryFee))
+            setHydratedStorageKey(null)
+            return
+        }
         try {
             const saved = sessionStorage.getItem(storageKey)
             if (saved) {
                 const parsed = JSON.parse(saved) as Partial<PersistedPosDraft>
                 setCart(Array.isArray(parsed.cart) ? parsed.cart : [])
-                setTipo(parsed.tipo === 'delivery' ? 'delivery' : 'takeaway')
+                setTipo(mesaAsignada ? 'mesa' : parsed.tipo === 'delivery' ? 'delivery' : 'takeaway')
                 setNombre(typeof parsed.nombre === 'string' ? parsed.nombre : '')
                 setTelefono(typeof parsed.telefono === 'string' ? parsed.telefono : '')
                 setDireccion(typeof parsed.direccion === 'string' ? parsed.direccion : '')
@@ -150,20 +297,21 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 setDeliveryFee(typeof parsed.deliveryFee === 'string' ? parsed.deliveryFee : '')
             } else {
                 setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
-                setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo('takeaway')
+                setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
             }
         } catch {
             sessionStorage.removeItem(storageKey)
         } finally {
             setHydratedStorageKey(storageKey)
         }
-    }, [storageKey])
+    }, [storageKey, initialPedido])
 
     useEffect(() => {
-        if (mesaAsignada) setTipo('takeaway')
+        setTipo((current) => mesaAsignada ? 'mesa' : current === 'mesa' ? 'takeaway' : current)
     }, [mesaAsignada])
 
     useEffect(() => {
+        if (modoEdicion) return
         if (hydratedStorageKey !== storageKey) return
         const persisted: PersistedPosDraft = { cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee }
         const hasContent = cart.length > 0 || [nombre, telefono, direccion, notas, deliveryFee].some((value) => value.trim() !== '')
@@ -173,7 +321,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         } catch {
             // sessionStorage puede estar deshabilitado; el POS sigue funcionando en memoria.
         }
-    }, [hydratedStorageKey, storageKey, cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee])
+    }, [modoEdicion, hydratedStorageKey, storageKey, cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee])
 
     // ── Productos filtrados por búsqueda (nombre, descripción o etiquetas/tags) ──
     const productosFiltrados = useMemo(() => {
@@ -227,23 +375,31 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 key: it.key,
                 nombre: it.nombre,
                 varianteNombre: it.varianteNombre,
+                varianteSecundariaNombre: it.varianteSecundariaNombre,
+                ingredientesExcluidosNombres: productos
+                    .find((producto) => producto.id === it.productoId)
+                    ?.ingredientes
+                    ?.filter((ingrediente) => it.ingredientesExcluidos.includes(ingrediente.id))
+                    .map((ingrediente) => ingrediente.nombre),
                 cantidad: it.cantidad,
                 precioUnitario: itemUnitPrice(it),
             })),
             subtotal: cartTotal,
             total: totalFinal,
+            submitting,
             mesaLocalId: mesaAsignada?.id,
             mesaNombre: mesaAsignada?.nombre,
         })
-    }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, pagado, deliveryFeeNum, cart, cartTotal, totalFinal, mesaAsignada?.nombre])
+    }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, pagado, deliveryFeeNum, cart, cartTotal, totalFinal, submitting, mesaAsignada?.nombre, productos])
 
     const addToCart = (
         producto: Producto,
         variante?: { id: number; nombre: string; precio: string },
+        varianteSecundaria?: { id: number; nombre: string; precio: string },
         agregados: CartItem['agregados'] = [],
         ingredientesExcluidos: number[] = []
     ) => {
-        const precioBase = variante ? parseFloat(variante.precio) : parseFloat(producto.precio)
+        const precioBase = (variante ? parseFloat(variante.precio) : parseFloat(producto.precio)) + (varianteSecundaria ? parseFloat(varianteSecundaria.precio) : 0)
         // Cada toque es una fila independiente: dos pedidos iguales pueden requerir
         // cambios distintos después y no deben fusionarse silenciosamente.
         const key = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
@@ -253,6 +409,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             nombre: producto.nombre,
             varianteId: variante?.id,
             varianteNombre: variante?.nombre,
+            varianteSecundariaId: varianteSecundaria?.id,
+            varianteSecundariaNombre: varianteSecundaria?.nombre,
             precioBase,
             ingredientesExcluidos,
             agregados,
@@ -263,9 +421,9 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const handleProductClick = (producto: Producto, anchor: DOMRect) => {
         onStartDraft?.()
         const tieneVariantes = !!producto.variantes && producto.variantes.length > 0
-        const tieneAgregados = !!producto.agregados && producto.agregados.length > 0
-        const tieneIngredientes = !!producto.ingredientes && producto.ingredientes.length > 0
-        if (tieneVariantes || tieneAgregados || tieneIngredientes) {
+        // Durante la carga sólo las variantes requieren elegir una opción. Los
+        // ingredientes se ajustan después, desde la edición del ítem agregado.
+        if (tieneVariantes) {
             setConfigProducto({ producto, anchor })
         } else {
             addToCart(producto)
@@ -297,7 +455,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     const updateDraft = (changes: PosDraftUpdate) => {
-        if (changes.tipo) setTipo(mesaAsignada ? 'takeaway' : changes.tipo)
+        if (changes.tipo) setTipo(changes.tipo)
         if (changes.nombreCliente !== undefined) setNombre(changes.nombreCliente)
         if (changes.telefono !== undefined) setTelefono(changes.telefono.replace(/\D/g, ''))
         if (changes.direccion !== undefined) { setDireccion(changes.direccion); setLat(null); setLng(null) }
@@ -308,20 +466,22 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const resetForm = () => {
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
-        setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo('takeaway')
+        setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
         setQuery(''); setMobileStep('productos')
-        try { sessionStorage.removeItem(storageKey) } catch { /* noop */ }
+        if (!modoEdicion) {
+            try { sessionStorage.removeItem(storageKey) } catch { /* noop */ }
+        }
     }
 
     const requestClose = () => {
         const hasContent = cart.length > 0 || [nombre, telefono, direccion, notas, deliveryFee].some((value) => value.trim() !== '')
-        if (hasContent && !window.confirm('¿Descartar este borrador? Los productos y datos cargados se perderán.')) return
+        if (hasContent && !window.confirm(modoEdicion ? '¿Salir sin guardar los cambios del pedido?' : '¿Descartar este borrador? Los productos y datos cargados se perderán.')) return
         resetForm()
         onClose()
     }
 
     // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
-    useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose }))
+    useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: resetForm, focusProductSearch }))
 
     const handleSubmit = async () => {
         if (!token) return
@@ -331,6 +491,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         const items: PedidoUnificadoItemInput[] = cart.map((it) => ({
             productoId: it.productoId,
             varianteId: it.varianteId,
+            varianteSecundariaId: it.varianteSecundariaId,
             cantidad: it.cantidad,
             ingredientesExcluidos: it.ingredientesExcluidos.length ? it.ingredientesExcluidos : undefined,
             agregados: it.agregados.length ? it.agregados : undefined,
@@ -346,8 +507,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 pagado,
                 metodoPago,
                 sucursalId: sucursalActivaId ?? undefined,
-                mesaLocalId: mesaAsignada?.id,
-                consumoEnLocal: !!mesaAsignada,
                 items,
             }
             const data =
@@ -360,20 +519,42 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                           deliveryFee: deliveryFeeNum || undefined,
                           ...common,
                       }
-                    : { tipo: 'takeaway' as const, ...common }
+                    : mesaAsignada
+                      ? { tipo: 'mesa' as const, mesaLocalId: mesaAsignada.id, consumoEnLocal: true as const, ...common }
+                      : { tipo: 'takeaway' as const, ...common }
 
-            const res = await pedidoUnificadoApi.create(token, data) as { success?: boolean; data?: { id?: number }; message?: string }
+            const res = (modoEdicion
+                ? await pedidoUnificadoApi.updateFromPos(token, initialPedido.id, {
+                      version: initialPedido.version,
+                      tipo: data.tipo,
+                      mesaLocalId: data.tipo === 'mesa' ? data.mesaLocalId : null,
+                      nombreCliente: nombre.trim() || null,
+                      telefono: telefono.trim() || null,
+                      notas: notas.trim() || null,
+                      direccion: data.tipo === 'delivery' ? data.direccion : null,
+                      latitud: data.tipo === 'delivery' ? data.latitud ?? null : null,
+                      longitud: data.tipo === 'delivery' ? data.longitud ?? null : null,
+                      deliveryFee: data.tipo === 'delivery' ? deliveryFeeNum : null,
+                      metodoPago,
+                      pagado,
+                      items,
+                  })
+                : await pedidoUnificadoApi.create(token, data)) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
             if (res.success) {
-                toast.success('Pedido anotado correctamente')
+                toast.success(modoEdicion ? 'Pedido actualizado correctamente' : 'Pedido anotado correctamente')
                 const newId = res.data?.id
-                resetForm()
-                if (newId) onCreated(newId)
-                else onClose()
+                if (modoEdicion && res.data) onUpdated?.(res.data)
+                else {
+                    resetForm()
+                    // El POS queda listo para anotar el siguiente pedido. El Dashboard
+                    // sólo sincroniza el listado; cerrar el POS acá interrumpía ese flujo.
+                    if (newId) onCreated(newId)
+                }
             } else {
                 toast.error(res.message || 'No se pudo crear el pedido')
             }
         } catch (error: unknown) {
-            toast.error('Error al crear el pedido', { description: error instanceof Error ? error.message : undefined })
+            toast.error(modoEdicion ? 'Error al actualizar el pedido' : 'Error al crear el pedido', { description: error instanceof Error ? error.message : undefined })
         } finally {
             setSubmitting(false)
         }
@@ -407,7 +588,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-semibold text-foreground truncate">
                                             {it.nombre}
-                                            {it.varianteNombre && <span className="text-[#FF7A00] text-xs font-medium"> ({it.varianteNombre})</span>}
+                                            {(it.varianteNombre || it.varianteSecundariaNombre) && <span className="text-[#FF7A00] text-xs font-medium"> ({[it.varianteNombre, it.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
                                         </p>
                                         {it.agregados.length > 0 && (
                                             <p className="text-[11px] text-muted-foreground truncate">
@@ -439,34 +620,58 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 {/* En desktop estos controles viven en la comanda; en mobile este panel es la comanda. */}
                 <div className="lg:hidden">
                     <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Tipo</Label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                         <button
-                            onClick={() => setTipo('takeaway')}
+                            onClick={() => { onClearMesa?.(); setTipo('delivery') }}
                             className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
-                                tipo === 'takeaway' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00]' : 'border-border text-muted-foreground hover:bg-accent')}
-                        >
-                            <ShoppingBag className="h-4 w-4" /> Takeaway
-                        </button>
-                        <button
-                            onClick={() => setTipo('delivery')}
-                            className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
-                                tipo === 'delivery' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00]' : 'border-border text-muted-foreground hover:bg-accent')}
+                                tipo === 'delivery' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
                         >
                             <Truck className="h-4 w-4" /> Delivery
                         </button>
+                        <button
+                            onClick={onRequestMesa}
+                            className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
+                                tipo === 'mesa' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
+                        >
+                            <Armchair className="h-4 w-4" /> Mesa
+                        </button>
+                        <button
+                            onClick={() => { onClearMesa?.(); setTipo('takeaway') }}
+                            className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
+                                tipo === 'takeaway' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
+                        >
+                            <ShoppingBag className="h-4 w-4" /> Takeaway
+                        </button>
                     </div>
+                    {mesaAsignada && <p className="mt-2 text-center text-xs font-semibold text-[#FF7A00]">Asignado a {mesaAsignada.nombre}</p>}
                 </div>
 
                 {/* Datos del cliente */}
-                <div className="space-y-3 lg:hidden">
-                    <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
+                <div className="relative space-y-3 lg:hidden">
+                    {nombreVisible && <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
+                            <div className="flex items-center gap-1">
+                                <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                                <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                            </div>
+                        </div>
                         <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl" />
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Celular</Label>
+                    </div>}
+                    {telefonoVisible && <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Celular</Label>
+                            {!nombreVisible && <div className="flex items-center gap-1">
+                                <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                                <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                            </div>}
+                        </div>
                         <Input value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))} placeholder="Ej: 3415123456" inputMode="tel" className="h-11 rounded-xl" />
-                    </div>
+                    </div>}
+                    {!nombreVisible && !telefonoVisible && <div className="absolute right-0 top-0 flex items-center gap-1">
+                        <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                        <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                    </div>}
                     {tipo === 'delivery' && (
                         <>
                             <div className="space-y-1.5">
@@ -504,7 +709,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     key={m.id}
                                     onClick={() => setMetodoPago(m.id)}
                                     className={cn('flex items-center gap-2 h-10 px-3 rounded-xl border text-sm font-semibold transition-colors',
-                                        selected ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00]' : 'border-border text-muted-foreground hover:bg-accent')}
+                                        selected ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
                                 >
                                     <Icon className="h-4 w-4 shrink-0" /> {m.label}
                                 </button>
@@ -514,8 +719,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 </div>
             </div>
 
-            {/* Footer total + confirmar */}
-            <div className="shrink-0 border-t border-border p-4 bg-background">
+            {/* En desktop el total y la confirmación viven en la comanda del Dashboard. */}
+            <div className="lg:hidden shrink-0 border-t border-border p-4 bg-background">
                 {tipo === 'delivery' && deliveryFeeNum > 0 && (
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
                         <span>Productos</span><span>${cartTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
@@ -535,7 +740,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     disabled={submitting || cart.length === 0}
                     className="w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
                 >
-                    {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
+                    {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
                 </Button>
             </div>
         </div>
@@ -543,13 +748,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-background">
-            {/* Header */}
-            <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-background">
-                <div className="flex items-center gap-2">
-                    <ShoppingCart className="h-4 w-4 text-[#FF7A00]" />
-                    <span className="font-bold text-sm">Anotar pedido (POS)</span>
-                    {mesaAsignada && <span className="rounded-full bg-[#FF7A00]/10 px-2 py-0.5 text-xs font-semibold text-[#FF7A00]">{mesaAsignada.nombre}</span>}
-                </div>
+            <div className="shrink-0 flex items-center justify-between px-4 pt-2 bg-background">
+                <span className="text-xs font-bold text-muted-foreground">{modoEdicion ? `Editando pedido #${initialPedido.id}` : 'Nuevo pedido'}</span>
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={requestClose}>
                     <X className="h-4 w-4" />
                 </Button>
@@ -558,10 +758,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             <div className="flex-1 flex overflow-hidden">
                 {/* ── Productos ── */}
                 <div className={cn('flex-1 flex-col overflow-hidden', mobileStep === 'productos' ? 'flex' : 'hidden lg:flex')}>
-                    <div className="p-3 border-b border-border">
+                    <div className="p-3">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                             <Input
+                                ref={searchInputRef}
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
                                 onKeyDown={(e) => {
@@ -572,7 +773,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     }
                                 }}
                                 placeholder="Buscar producto o tag..."
-                                className="h-10 pl-10 rounded-xl"
+                                className="h-10 pl-10 rounded-xl border-0 shadow-sm"
                             />
                         </div>
                     </div>
@@ -588,18 +789,15 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                         {items.map((p) => (
                                             <button
                                                 key={p.id}
+                                                tabIndex={-1}
                                                 onClick={(event) => handleProductClick(p, event.currentTarget.getBoundingClientRect())}
-                                                className="group min-h-28 text-left rounded-2xl border border-border/70 bg-card p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#FF7A00]/45 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00] active:translate-y-0 active:scale-[0.98]"
+                                                className="group min-h-28 text-left rounded-2xl bg-card p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00] active:translate-y-0 active:scale-[0.98]"
                                             >
-                                                <p className="text-sm font-semibold text-foreground leading-tight line-clamp-2 min-h-[2.5rem]">{p.nombre}</p>
-                                                {p.descripcion && <p className="mt-1 text-xs leading-snug text-muted-foreground line-clamp-1">{p.descripcion}</p>}
+                                                <p className="min-h-[3.5rem] text-base font-semibold leading-snug text-foreground line-clamp-3">{p.nombre}</p>
                                                 <div className="flex items-center justify-between mt-3">
                                                     <span className="text-base font-bold text-[#FF7A00]">
                                                         ${parseFloat(p.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                     </span>
-                                                    {((p.variantes?.length ?? 0) > 0 || (p.agregados?.length ?? 0) > 0 || (p.ingredientes?.length ?? 0) > 0) && (
-                                                        <span className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">Configurar <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
-                                                    )}
                                                 </div>
                                             </button>
                                         ))}
@@ -609,18 +807,18 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                         )}
                     </div>
                     {/* Botón flotante mobile para ir al checkout */}
-                    <div className="lg:hidden shrink-0 p-3 border-t border-border">
+                    <div className="lg:hidden shrink-0 p-3">
                         <Button onClick={() => setMobileStep('checkout')} className="w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold">
                             Ver pedido ({totalItems}) · ${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                         </Button>
                     </div>
                 </div>
 
-                {/* ── Checkout (sidebar desktop / paso mobile) ──
-                    Angosto a propósito: libera ancho para una columna más en el grid de productos. */}
-                <div className={cn('w-full lg:w-[300px] xl:w-[340px] shrink-0 lg:border-l border-border bg-muted/10',
-                    mobileStep === 'checkout' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col')}>
-                    <div className="lg:hidden shrink-0 p-2 border-b border-border">
+                {/* ── Checkout (solo paso mobile) ──
+                    En desktop la comanda del Dashboard concentra el borrador y la acción. */}
+                <div className={cn('w-full shrink-0 bg-muted/10 lg:hidden',
+                    mobileStep === 'checkout' ? 'flex flex-col' : 'hidden')}>
+                    <div className="lg:hidden shrink-0 p-2">
                         <button onClick={() => setMobileStep('productos')} className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground px-2 py-1">
                             <ChevronRight className="h-4 w-4 rotate-180" /> Seguir agregando
                         </button>
@@ -636,18 +834,16 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     anchor={configProducto.anchor}
                     onClose={() => setConfigProducto(null)}
                     initialItem={configProducto.initialItem}
-                    onDelete={configProducto.editKey ? () => { removeItem(configProducto.editKey!); setConfigProducto(null) } : undefined}
-                    onConfirm={(variante, agregados, ingredientesExcluidos) => {
-                        if (configProducto.editKey) {
-                            const precioBase = variante ? parseFloat(variante.precio) : parseFloat(configProducto.producto.precio)
-                            setCart((prev) => prev.map((item) => item.key === configProducto.editKey ? {
-                                ...item, varianteId: variante?.id, varianteNombre: variante?.nombre, precioBase, agregados, ingredientesExcluidos,
-                            } : item))
-                        } else {
-                            addToCart(configProducto.producto, variante, agregados, ingredientesExcluidos)
-                        }
+                    onConfirm={(variante, varianteSecundaria, agregados, ingredientesExcluidos) => {
+                        addToCart(configProducto.producto, variante, varianteSecundaria, agregados, ingredientesExcluidos)
                         setConfigProducto(null)
                     }}
+                    onChange={configProducto.editKey ? (variante, varianteSecundaria, agregados, ingredientesExcluidos) => {
+                        const precioBase = (variante ? parseFloat(variante.precio) : parseFloat(configProducto.producto.precio)) + (varianteSecundaria ? parseFloat(varianteSecundaria.precio) : 0)
+                        setCart((prev) => prev.map((item) => item.key === configProducto.editKey ? {
+                            ...item, varianteId: variante?.id, varianteNombre: variante?.nombre, varianteSecundariaId: varianteSecundaria?.id, varianteSecundariaNombre: varianteSecundaria?.nombre, precioBase, agregados, ingredientesExcluidos,
+                        } : item))
+                    } : undefined}
                 />
             )}
         </div>
@@ -665,24 +861,36 @@ function ProductConfigOverlay({
     anchor,
     onClose,
     initialItem,
-    onDelete,
     onConfirm,
+    onChange,
 }: {
     producto: Producto
     anchor: DOMRect
     onClose: () => void
     initialItem?: CartItem
-    onDelete?: () => void
     onConfirm: (
         variante: { id: number; nombre: string; precio: string } | undefined,
+        varianteSecundaria: { id: number; nombre: string; precio: string } | undefined,
+        agregados: Array<{ id: number; nombre: string; precio: string }>,
+        ingredientesExcluidos: number[]
+    ) => void
+    onChange?: (
+        variante: { id: number; nombre: string; precio: string } | undefined,
+        varianteSecundaria: { id: number; nombre: string; precio: string } | undefined,
         agregados: Array<{ id: number; nombre: string; precio: string }>,
         ingredientesExcluidos: number[]
     ) => void
 }) {
+    const dialogRef = useRef<HTMLDivElement>(null)
     const variantes = producto.variantes ?? []
+    const variantesSecundarias = producto.variantesSecundarias ?? []
     const ingredientes = producto.ingredientes ?? []
     const agregadosDisp = producto.agregados ?? []
+    // Los ingredientes se modifican sobre un ítem ya agregado. Al cargar uno
+    // nuevo, las variantes se confirman directamente sin abrir esa columna.
+    const mostrarIngredientes = !!initialItem && ingredientes.length > 0
     const [varianteId, setVarianteId] = useState<number | null>(initialItem?.varianteId ?? (variantes.length > 0 ? variantes[0].id : null))
+    const [varianteSecundariaId, setVarianteSecundariaId] = useState<number | null>(initialItem?.varianteSecundariaId ?? (variantesSecundarias.length > 0 ? variantesSecundarias[0].id : null))
     const [ingredientesExcluidos, setIngredientesExcluidos] = useState<number[]>(initialItem?.ingredientesExcluidos ?? [])
     const [agregadosSel, setAgregadosSel] = useState<number[]>(initialItem?.agregados.map((agregado) => agregado.id) ?? [])
     const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640)
@@ -694,15 +902,53 @@ function ProductConfigOverlay({
         return () => window.removeEventListener('resize', syncViewport)
     }, [])
     useEffect(() => {
+        dialogRef.current?.focus()
+    }, [])
+    useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
     }, [onClose])
 
     const variante = variantes.find((v) => v.id === varianteId)
-    const precioBase = variante ? parseFloat(variante.precio) : parseFloat(producto.precio)
+    const varianteSecundaria = variantesSecundarias.find((v) => v.id === varianteSecundariaId)
     const agregadosObj = agregadosDisp.filter((a) => agregadosSel.includes(a.id))
-    const precioTotal = precioBase + agregadosObj.reduce((s, a) => s + (parseFloat(a.precio) || 0), 0)
+    const confirmarVariante = (seleccionada: typeof variantes[number]) => {
+        if (variantesSecundarias.length > 0 && !initialItem) return
+        if (initialItem && onChange) onChange(seleccionada, varianteSecundaria, agregadosObj, ingredientesExcluidos)
+        else onConfirm(seleccionada, varianteSecundaria, agregadosObj, ingredientesExcluidos)
+    }
+
+    useEffect(() => {
+        if (variantes.length === 0) return
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null
+            // Si el foco ya está en otro control del configurador, ese control
+            // conserva sus propias teclas (por ejemplo Enter en un extra).
+            if (target?.closest('button, input, textarea, select')) return
+
+            if (event.key === 'ArrowDown' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                event.preventDefault()
+                const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1
+                setVarianteId((currentId) => {
+                    const currentIndex = variantes.findIndex((item) => item.id === currentId)
+                    const nextIndex = (Math.max(currentIndex, 0) + direction + variantes.length) % variantes.length
+                    return variantes[nextIndex].id
+                })
+                return
+            }
+
+            if (event.key === 'Enter') {
+                const seleccionada = variantes.find((item) => item.id === varianteId) ?? variantes[0]
+                event.preventDefault()
+                confirmarVariante(seleccionada)
+            }
+        }
+
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [variantes, varianteId, agregadosObj, ingredientesExcluidos])
 
     const width = 360
     const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12))
@@ -715,20 +961,25 @@ function ProductConfigOverlay({
     return (
         <div className={cn('fixed inset-0 z-[1002]', isCompact && 'bg-background/60 backdrop-blur-sm')} onClick={onClose}>
             <div
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Configurar ${producto.nombre}`}
+                tabIndex={-1}
                 className={cn('flex w-full flex-col overflow-hidden bg-card shadow-2xl', panelClass)}
                 style={panelStyle}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                    <div className="min-w-0"><span className="block font-bold text-sm truncate">{producto.nombre}</span><span className="text-xs text-muted-foreground">Personalizá antes de agregar</span></div>
+                    <span className="min-w-0 block font-bold text-sm truncate">{producto.nombre}</span>
                     <button onClick={onClose} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground">
                         <X className="h-4 w-4" />
                     </button>
                 </div>
                 <div className="p-4 space-y-4 max-h-[55vh] overflow-y-auto">
+                    <div className={cn(
+                        variantes.length > 0 && mostrarIngredientes ? 'grid grid-cols-2 gap-4' : 'space-y-4'
+                    )}>
                     {variantes.length > 0 && (
                         <div>
                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Variante</Label>
@@ -736,7 +987,7 @@ function ProductConfigOverlay({
                                 {variantes.map((v) => (
                                     <button
                                         key={v.id}
-                                        onClick={() => setVarianteId(v.id)}
+                                        onClick={() => { setVarianteId(v.id); confirmarVariante(v) }}
                                         className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors',
                                             varianteId === v.id ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] font-semibold' : 'border-border hover:bg-accent')}
                                     >
@@ -747,24 +998,49 @@ function ProductConfigOverlay({
                             </div>
                         </div>
                     )}
-                    {ingredientes.length > 0 && (
+                    {variantesSecundarias.length > 0 && (
+                        <div>
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Segunda variante</Label>
+                            <div className="space-y-1.5">
+                                {variantesSecundarias.map((v) => (
+                                    <button
+                                        key={v.id}
+                                        onClick={() => {
+                                            setVarianteSecundariaId(v.id)
+                                            if (initialItem && onChange) onChange(variante, v, agregadosObj, ingredientesExcluidos)
+                                        }}
+                                        className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors',
+                                            varianteSecundariaId === v.id ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] font-semibold' : 'border-border hover:bg-accent')}
+                                    >
+                                        <span>{v.nombre}</span>
+                                        <span className="font-bold">{parseFloat(v.precio) > 0 ? `+$${parseFloat(v.precio).toLocaleString('es-AR')}` : 'Sin adicional'}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {mostrarIngredientes && (
                         <div>
                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Ingredientes</Label>
-                            <p className="mb-2 text-xs text-muted-foreground">Tocá los que querés quitar.</p>
                             <div className="space-y-1.5">
                                 {ingredientes.map((ingrediente) => {
                                     const excluido = ingredientesExcluidos.includes(ingrediente.id)
                                     return <button
                                         key={ingrediente.id}
-                                        onClick={() => setIngredientesExcluidos((prev) => excluido ? prev.filter((id) => id !== ingrediente.id) : [...prev, ingrediente.id])}
-                                        className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors', excluido ? 'border-red-400 bg-red-500/10 text-red-600 dark:text-red-400' : 'border-border hover:bg-accent')}
+                                        onClick={() => {
+                                            const next = excluido ? ingredientesExcluidos.filter((id) => id !== ingrediente.id) : [...ingredientesExcluidos, ingrediente.id]
+                                            setIngredientesExcluidos(next)
+                                            if (initialItem && onChange) onChange(variante, varianteSecundaria, agregadosObj, next)
+                                        }}
+                                        className={cn('w-full flex items-center px-3 py-2.5 rounded-xl border text-sm transition-colors', excluido ? 'border-transparent bg-transparent text-muted-foreground/50 line-through hover:bg-muted/40' : 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] hover:bg-[#FF7A00]/20')}
                                     >
-                                        <span>{ingrediente.nombre}</span><span className="text-xs font-medium">{excluido ? 'Sin' : 'Incluir'}</span>
+                                        <span>{ingrediente.nombre}</span>
                                     </button>
                                 })}
                             </div>
                         </div>
                     )}
+                    </div>
                     {agregadosDisp.length > 0 && (
                         <div>
                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Extras</Label>
@@ -774,7 +1050,11 @@ function ProductConfigOverlay({
                                     return (
                                         <button
                                             key={a.id}
-                                            onClick={() => setAgregadosSel((prev) => sel ? prev.filter((x) => x !== a.id) : [...prev, a.id])}
+                                            onClick={() => {
+                                                const next = sel ? agregadosSel.filter((id) => id !== a.id) : [...agregadosSel, a.id]
+                                                setAgregadosSel(next)
+                                                if (initialItem && onChange) onChange(variante, varianteSecundaria, agregadosDisp.filter((item) => next.includes(item.id)), ingredientesExcluidos)
+                                            }}
                                             className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors',
                                                 sel ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold' : 'border-border hover:bg-accent')}
                                         >
@@ -792,14 +1072,15 @@ function ProductConfigOverlay({
                         </div>
                     )}
                 </div>
-                <div className="p-4 border-t border-border">
-                    <div className="flex gap-2">
-                        {onDelete && <Button variant="outline" onClick={onDelete} className="h-11 rounded-xl text-red-600 hover:text-red-700 hover:bg-red-50">Eliminar</Button>}
-                        <Button onClick={() => onConfirm(variante, agregadosObj, ingredientesExcluidos)} className="flex-1 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold">
-                            {initialItem ? 'Guardar cambios' : 'Agregar'} · ${precioTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                        </Button>
+                {(!initialItem && (variantes.length === 0 || variantesSecundarias.length > 0)) && (
+                    <div className="p-4 border-t border-border">
+                        <div className="flex gap-2">
+                            <Button onClick={() => onConfirm(variante, varianteSecundaria, agregadosObj, ingredientesExcluidos)} className="flex-1 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold">
+                                Agregar
+                            </Button>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     )

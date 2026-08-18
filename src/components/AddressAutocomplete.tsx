@@ -5,9 +5,23 @@ import { useGoogleMapsScript } from '@/hooks/useGoogleMapsScript'
 
 interface AddressAutocompleteProps {
     value: string
-    onChange: (address: string, lat: number | null, lng: number | null) => void
+    onChange: (address: string, lat: number | null, lng: number | null, details?: AddressPlaceDetails) => void
     placeholder?: string
     className?: string
+}
+
+export interface AddressPlaceDetails {
+    ciudad: string | null
+}
+
+function extraerCiudad(components: google.maps.GeocoderAddressComponent[] | undefined): string | null {
+    if (!components) return null
+    const tiposPreferidos = ['locality', 'postal_town', 'administrative_area_level_2']
+    for (const tipo of tiposPreferidos) {
+        const component = components.find((c) => c.types.includes(tipo))
+        if (component?.long_name) return component.long_name
+    }
+    return null
 }
 
 export function AddressAutocomplete({
@@ -54,7 +68,9 @@ export function AddressAutocomplete({
 
                 setInternalValue(formattedAddress)
                 setHasSelectedPlace(true)
-                stableOnChange(formattedAddress, lat, lng)
+                stableOnChange(formattedAddress, lat, lng, {
+                    ciudad: extraerCiudad(place.address_components),
+                })
             }
         })
 

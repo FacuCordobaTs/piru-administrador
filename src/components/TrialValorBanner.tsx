@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, X } from 'lucide-react'
 import { useSuscripcion } from '@/pages/ajustes/hooks/useSuscripcion'
 
 const fmtARS = (n: number) =>
@@ -11,9 +11,9 @@ const fmtARS = (n: number) =>
  * con Piru ("Recibiste X pedidos por $Y"). El día del pago la pregunta deja de ser "¿cuánto
  * cuesta?" y pasa a ser "¿dejo de recibir esto?". Los datos salen de `/planes/mi-suscripcion`
  * (`trialFin` + `trialValor`, computados en el backend sobre los pedidos que entraron por Piru
- * desde que arrancó la prueba). No es descartable: es información, no una alerta.
+ * desde que arrancó la prueba). El Dashboard puede permitir descartarlo durante la visita.
  */
-export function TrialValorBanner() {
+export function TrialValorBanner({ onDismiss }: { onDismiss?: () => void }) {
   const { data } = useSuscripcion()
 
   if (!data || data.estado !== 'trial') return null
@@ -45,6 +45,16 @@ export function TrialValorBanner() {
       >
         Activar suscripción
       </Link>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Cerrar aviso de suscripción"
+          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
     </div>
   )
 }

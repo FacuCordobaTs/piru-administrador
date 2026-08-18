@@ -15,10 +15,10 @@ import {
     Search, MapPin, Phone, CalendarDays,
     ShoppingBag, DollarSign, ChevronRight,
     User, TrendingUp, Users,
-    MessageCircle, X,
-    Clock, Truck, Package, ArrowUpRight, Star, Ticket,
+    X,
+    Clock, Truck, Package, Star, Ticket,
     Sparkles, Crown, AlertTriangle, Moon, UserX,
-    Repeat, Timer, Utensils, Rocket, Gift, Loader2, Send, CheckCircle2, BellOff
+    Repeat, Timer, Utensils, Rocket, Gift, Loader2, Send, CheckCircle2, BellOff, Copy
 } from 'lucide-react'
 import CodigosDescuento from './CodigosDescuento'
 import MotorRecompra from './MotorRecompra'
@@ -60,7 +60,7 @@ interface PedidoHistorial {
     id: number
     total: string
     createdAt: string
-    tipo: 'delivery' | 'takeaway'
+    tipo: 'delivery' | 'takeaway' | 'mesa'
     items: ItemPedido[]
 }
 
@@ -234,7 +234,9 @@ const getInitials = (name: string) => {
 // =============================================================================
 // MAIN COMPONENT (con tabs: Clientes / Motor de Recompra / Cupones)
 // El usuario primero elige la sección en una pantalla centrada; recién ahí
-// aparece el navegador de tabs para moverse entre las 3.
+// aparece el navegador de tabs para moverse entre las 3. Las 3 secciones se
+// ofrecen siempre: si el módulo de una está desactivado, su tarjeta aparece
+// como "Desactivado" y no se puede entrar hasta activar el módulo.
 // =============================================================================
 type SeccionClientes = 'clientes' | 'motor' | 'cupones'
 
@@ -243,6 +245,8 @@ interface SeccionMeta {
     label: string
     icon: typeof Users
     descripcion: string
+    // Código del módulo que habilita la sección (undefined = siempre disponible).
+    modulo?: string
 }
 
 const SECCIONES: SeccionMeta[] = [
@@ -257,28 +261,40 @@ const SECCIONES: SeccionMeta[] = [
         label: 'Motor de Recompra',
         icon: Rocket,
         descripcion: 'Trae de vuelta, en automático, a los clientes que se enfrían.',
+        modulo: 'motor_recompra',
     },
     {
         key: 'cupones',
         label: 'Cupones',
         icon: Ticket,
         descripcion: 'Códigos de descuento y promociones para tu tienda.',
+        modulo: 'codigos_descuento',
     },
 ]
 
 export default function Clientes() {
     const motorRecompraActivo = useModuloActivo('motor_recompra')
+    const codigosActivos = useModuloActivo('codigos_descuento')
     // null = todavía no eligió → pantalla de selección centrada
     const [tab, setTab] = useState<SeccionClientes | null>(null)
-    const secciones = motorRecompraActivo
-        ? SECCIONES
-        : SECCIONES.filter((seccion) => seccion.key !== 'motor')
 
-    // Si el módulo se desactiva mientras esta vista está abierta, volvemos a la
-    // base de clientes sin dejar acciones del Motor expuestas.
+    // Las 3 secciones se ofrecen siempre; una con módulo desactivado se muestra
+    // como "Desactivado" y no es clickeable (tarjeta ni tab) hasta activarla.
+    const activos: Record<string, boolean> = {
+        motor_recompra: motorRecompraActivo,
+        codigos_descuento: codigosActivos,
+    }
+    const secciones = SECCIONES.map(seccion => ({
+        ...seccion,
+        desactivada: !!seccion.modulo && !activos[seccion.modulo],
+    }))
+
+    // Si el módulo de la sección abierta se desactiva mientras esta vista está
+    // abierta, volvemos a la base de clientes sin dejar acciones expuestas.
     useEffect(() => {
-        if (!motorRecompraActivo && tab === 'motor') setTab('clientes')
-    }, [motorRecompraActivo, tab])
+        const desactivada = tab === 'motor' ? !motorRecompraActivo : tab === 'cupones' ? !codigosActivos : false
+        if (desactivada) setTab('clientes')
+    }, [motorRecompraActivo, codigosActivos, tab])
 
     // ---- Pantalla de selección (paso previo al navegador) ----
     if (tab === null) {
@@ -317,6 +333,7 @@ export default function Clientes() {
                             active={tab === seccion.key}
                             onClick={() => setTab(seccion.key)}
                             icon={seccion.icon}
+                            desactivada={seccion.desactivada}
                         >
                             {seccion.label === 'Base de clientes' ? 'Clientes' : seccion.label}
                         </TabButton>
@@ -326,46 +343,67 @@ export default function Clientes() {
 
             {/* Panel activo */}
             <div className="flex-1 min-h-0 flex flex-col">
-                {tab === 'clientes' ? <ClientesPanel /> : tab === 'motor' && motorRecompraActivo ? <MotorRecompra /> : <CodigosDescuento />}
+                {tab === 'clientes' ? <ClientesPanel /> : tab === 'motor' ? <MotorRecompra /> : <CodigosDescuento />}
             </div>
         </div>
     )
 }
 
 function SeccionCard({ seccion, onClick }: {
-    seccion: SeccionMeta
+    seccion: SeccionMeta & { desactivada?: boolean }
     onClick: () => void
 }) {
     const Icon = seccion.icon
+    const desactivada = !!seccion.desactivada
     return (
         <button
             onClick={onClick}
-            className="group flex flex-col items-center text-center gap-3 p-6 rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background transition-colors cursor-pointer hover:bg-muted/40 hover:border-border"
+            disabled={desactivada}
+            className={`group flex flex-col items-center text-center gap-3 p-6 rounded-xl border transition-colors ${
+                desactivada
+                    ? 'border-dashed border-border/70 bg-muted/20 cursor-not-allowed'
+                    : 'border-border/60 bg-[#FFFBF0] dark:bg-background cursor-pointer hover:bg-muted/40 hover:border-border'
+            }`}
         >
-            <div className="w-11 h-11 rounded-xl bg-white dark:bg-muted flex items-center justify-center text-foreground">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
+                desactivada ? 'bg-muted/40 text-muted-foreground/60' : 'bg-white dark:bg-muted text-foreground'
+            }`}>
                 <Icon className="w-5 h-5" />
             </div>
             <div>
-                <h2 className="text-sm font-semibold text-foreground">{seccion.label}</h2>
+                <div className="flex items-center justify-center gap-2">
+                    <h2 className={`text-sm font-semibold ${desactivada ? 'text-muted-foreground' : 'text-foreground'}`}>
+                        {seccion.label}
+                    </h2>
+                    {desactivada && (
+                        <Badge variant="outline" className="text-[10px] h-5 px-2 font-semibold text-muted-foreground border-border/70 bg-muted/30">
+                            Desactivado
+                        </Badge>
+                    )}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{seccion.descripcion}</p>
             </div>
         </button>
     )
 }
 
-function TabButton({ active, onClick, icon: Icon, children }: {
+function TabButton({ active, onClick, icon: Icon, children, desactivada }: {
     active: boolean
     onClick: () => void
     icon: typeof Users
     children: React.ReactNode
+    desactivada?: boolean
 }) {
     return (
         <button
             onClick={onClick}
+            disabled={desactivada}
             className={`inline-flex items-center gap-2 px-3.5 h-9 rounded-full text-sm font-medium transition-colors ${
                 active
                     ? 'bg-foreground text-background shadow-sm'
-                    : "bg-white dark:bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : desactivada
+                        ? 'bg-white dark:bg-muted/60 text-muted-foreground/50 cursor-not-allowed'
+                        : "bg-white dark:bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
         >
             <Icon className="w-4 h-4" />
@@ -463,11 +501,17 @@ function ClientesPanel() {
         return clientes.find(c => c.id === selectedClientId) || null
     }, [clientes, selectedClientId])
 
-    const openWhatsApp = (phone: string, e?: React.MouseEvent) => {
-        e?.stopPropagation()
-        const cleanPhone = phone.replace(/\D/g, '')
-        window.open(`https://wa.me/${cleanPhone}`, '_blank')
-    }
+    // Copia el número de WhatsApp al portapapeles (el local lo pega en su propia app).
+    const copiarWhatsApp = useCallback(async (phone: string) => {
+        try {
+            await navigator.clipboard.writeText(phone)
+            toast.success('Número copiado', {
+                description: `${phone} está en tu portapapeles para pegarlo en WhatsApp.`,
+            })
+        } catch {
+            toast.error('No se pudo copiar el número')
+        }
+    }, [])
 
     // Actualiza en memoria el estado de recupero de un cliente tras enviarle un toque.
     const actualizarRecupero = useCallback((clienteId: number, recupero: EstadoRecupero) => {
@@ -477,9 +521,9 @@ function ClientesPanel() {
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
             {/* ============================================================= */}
-            {/* TOP HEADER — KPIs del motor + segmentos */}
+            {/* TOP HEADER — KPIs del motor + segmentos (flotante, sin línea) */}
             {/* ============================================================= */}
-            <div className="border-b bg-[#FFFBF0] dark:bg-background sticky top-0 z-20">
+            <div className="bg-[#FFFBF0] dark:bg-background sticky top-0 z-20">
                 <div className="px-6 py-5 max-w-6xl mx-auto w-full">
                     {/* Title Row */}
                     <div className="mb-4">
@@ -520,19 +564,19 @@ function ClientesPanel() {
             </div>
 
             {/* ============================================================= */}
-            {/* MAIN CONTENT — Master / Detail split */}
+            {/* MAIN CONTENT — Master / Detail split (paneles flotantes) */}
             {/* ============================================================= */}
-            <div className="flex-1 flex min-h-0 overflow-hidden max-w-6xl mx-auto w-full">
-                {/* ===== LEFT PANEL — Client List ===== */}
+            <div className="flex-1 flex min-h-0 overflow-hidden max-w-6xl mx-auto w-full lg:gap-4 lg:p-4 lg:pt-2">
+                {/* ===== LEFT PANEL — Client List (tarjeta flotante) ===== */}
                 <div className={`
-                    flex flex-col border-r bg-[#FFFBF0] dark:bg-background
+                    flex flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:bg-white lg:dark:bg-muted/20
                     ${selectedClient ? 'hidden lg:flex' : 'flex'}
                     w-full lg:w-[420px] xl:w-[480px] lg:shrink-0
                     transition-all duration-200
                 `}>
-                    {/* Search + Filter */}
-                    <div className="px-4 py-3 border-b bg-white dark:bg-muted/30">
-                        <div className="flex gap-2">
+                    {/* Search + Filter — centrado horizontalmente */}
+                    <div className="px-4 py-3">
+                        <div className="flex gap-2 max-w-md mx-auto w-full">
                             <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                                 <input
@@ -578,7 +622,7 @@ function ClientesPanel() {
                                 </p>
                             </div>
                         ) : (
-                            <div className="py-1">
+                            <div className="p-3 space-y-2">
                                 {filteredAndSorted.map(cliente => (
                                     <ClienteRow
                                         key={cliente.id}
@@ -597,14 +641,14 @@ function ClientesPanel() {
                     <ClienteDetalle
                         cliente={selectedClient}
                         onClose={() => setSelectedClientId(null)}
-                        openWhatsApp={openWhatsApp}
+                        copiarWhatsApp={copiarWhatsApp}
                         onRecuperoSent={actualizarRecupero}
                     />
                 ) : (
                     /* ===== EMPTY STATE — No client selected (desktop) ===== */
-                    <div className="hidden lg:flex flex-1 items-center justify-center bg-[#FFFBF0] dark:bg-muted/20">
+                    <div className="hidden lg:flex flex-1 items-center justify-center bg-white dark:bg-muted/20 rounded-2xl shadow-sm">
                         <div className="text-center max-w-xs">
-                            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-muted/80 flex items-center justify-center mx-auto mb-4">
+                            <div className="w-16 h-16 rounded-2xl bg-[#FFFBF0] dark:bg-muted/80 flex items-center justify-center mx-auto mb-4">
                                 <Users className="w-7 h-7 text-muted-foreground/40" />
                             </div>
                             <h3 className="text-sm font-medium text-foreground mb-1">
@@ -637,20 +681,20 @@ function ClienteRow({ cliente, selected, onSelect }: {
             onClick={onSelect}
             className={`
                 w-full text-left px-4 py-3 flex items-center gap-3
-                transition-all duration-150 cursor-pointer border-b
+                rounded-xl transition-all duration-150 cursor-pointer border-0
                 ${selected
-                    ? 'bg-primary/6 dark:bg-primary/12 border-b-border/50'
-                    : 'hover:bg-muted/50 border-b-border/30'
+                    ? 'bg-white dark:bg-muted/40 border-l-[3px] border-l-[#FF7A00] shadow-sm'
+                    : 'bg-white dark:bg-muted/20 hover:bg-muted/40 hover:shadow-sm'
                 }
             `}
         >
             {/* Avatar con punto de segmento */}
             <div className="relative shrink-0">
-                <div className="w-10 h-10 rounded-full bg-white dark:bg-muted flex items-center justify-center text-foreground text-sm font-semibold">
+                <div className="w-10 h-10 rounded-full bg-[#FFFBF0] dark:bg-muted flex items-center justify-center text-foreground text-sm font-semibold">
                     {getInitials(cliente.nombre)}
                 </div>
                 <span
-                    className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${meta.dot} ring-2 ring-[#FFFBF0] dark:ring-background`}
+                    className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${meta.dot} ring-2 ring-white dark:ring-background`}
                     title={meta.label}
                 />
             </div>
@@ -693,10 +737,10 @@ function ClienteRow({ cliente, selected, onSelect }: {
 // =============================================================================
 // CLIENT DETAIL (panel derecho)
 // =============================================================================
-function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
+function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent }: {
     cliente: Cliente
     onClose: () => void
-    openWhatsApp: (phone: string, e?: React.MouseEvent) => void
+    copiarWhatsApp: (phone: string) => Promise<void>
     onRecuperoSent: (clienteId: number, recupero: EstadoRecupero) => void
 }) {
     const seg = getSegmento(cliente)
@@ -707,6 +751,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
     const token = useAuthStore(state => state.token)
     const [confirmOpen, setConfirmOpen] = useState(false)
     const [enviando, setEnviando] = useState(false)
+    const [copiado, setCopiado] = useState(false)
 
     const recupero = cliente.recupero
     const proximoNivel = recupero?.proximoNivel ?? 1
@@ -714,6 +759,12 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
     const mostrarRecupero = SEGMENTOS_RECUPERABLES.includes(seg)
     const optOut = !!cliente.marketingOptOut // protección de la base (4.5): pidió no recibir marketing
     const productoAntojo = cliente.productosTop?.[0]?.nombre ?? 'su pedido de siempre'
+
+    const handleCopiarWhatsApp = async () => {
+        await copiarWhatsApp(cliente.telefono)
+        setCopiado(true)
+        setTimeout(() => setCopiado(false), 2000)
+    }
 
     const handleEnviarRecupero = async () => {
         if (!token) return
@@ -746,9 +797,9 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
     }
 
     return (
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#FFFBF0] dark:bg-muted/20">
-            {/* Detail Header */}
-            <div className="px-6 py-5 bg-[#FFFBF0] dark:bg-background border-b">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:bg-white lg:dark:bg-muted/20 lg:shadow-sm">
+            {/* Detail Header — flotante, sin línea */}
+            <div className="px-6 py-5">
                 <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
                         {/* Mobile back button */}
@@ -795,11 +846,11 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                         <Button
                             size="sm"
                             variant="outline"
-                            onClick={(e) => openWhatsApp(cliente.telefono, e)}
+                            onClick={handleCopiarWhatsApp}
                             className="h-8 px-3 gap-1.5 text-xs font-medium text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-950/30"
                         >
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            WhatsApp
+                            {copiado ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiado ? 'Copiado' : 'Copiar número'}
                         </Button>
                         <Button
                             size="icon"
@@ -839,9 +890,9 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                     {/* ---- Motor de Recompra · playbook de recupero (4.2) ---- */}
                     {mostrarRecupero && (
-                        <div className="rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background overflow-hidden">
-                            <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-white dark:bg-muted flex items-center justify-center text-muted-foreground">
+                        <div className="rounded-2xl bg-white dark:bg-muted/20 overflow-hidden shadow-sm">
+                            <div className="px-4 py-3 flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-[#FFFBF0] dark:bg-muted flex items-center justify-center text-muted-foreground">
                                     <Rocket className="w-4 h-4" />
                                 </div>
                                 <div className="min-w-0">
@@ -929,8 +980,8 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
 
                     {/* ---- Productos que más pide (base del "repetí tu pedido") ---- */}
                     {cliente.productosTop && cliente.productosTop.length > 0 && (
-                        <div className="bg-[#FFFBF0] dark:bg-background rounded-xl border border-border/60 overflow-hidden">
-                            <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
+                        <div className="bg-white dark:bg-muted/20 rounded-2xl overflow-hidden shadow-sm">
+                            <div className="px-4 py-3 flex items-center gap-2">
                                 <Utensils className="w-3.5 h-3.5 text-muted-foreground" />
                                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                     Lo que más pide
@@ -953,23 +1004,24 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                     )}
 
                     {/* ---- Contact Info Card ---- */}
-                    <div className="bg-[#FFFBF0] dark:bg-background rounded-xl border border-border/60 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-border/40">
+                    <div className="bg-white dark:bg-muted/20 rounded-2xl overflow-hidden shadow-sm">
+                        <div className="px-4 py-3">
                             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 Información de contacto
                             </h3>
                         </div>
-                        <div className="divide-y divide-border/40">
+                        <div className="p-3 space-y-2">
                             <ContactRow
                                 icon={<Phone className="w-4 h-4" />}
                                 label="Teléfono"
                                 value={cliente.telefono}
                                 action={
                                     <button
-                                        onClick={(e) => openWhatsApp(cliente.telefono, e)}
+                                        onClick={handleCopiarWhatsApp}
                                         className="text-xs text-green-600 dark:text-green-400 hover:underline flex items-center gap-1 font-medium"
                                     >
-                                        Enviar mensaje <ArrowUpRight className="w-3 h-3" />
+                                        <Copy className="w-3 h-3" />
+                                        Copiar número
                                     </button>
                                 }
                             />
@@ -995,8 +1047,8 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                     </div>
 
                     {/* ---- Order History ---- */}
-                    <div className="bg-[#FFFBF0] dark:bg-background rounded-xl border border-border/60 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
+                    <div className="bg-white dark:bg-muted/20 rounded-2xl overflow-hidden shadow-sm">
+                        <div className="px-4 py-3 flex items-center justify-between">
                             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 Historial de pedidos
                             </h3>
@@ -1011,7 +1063,7 @@ function ClienteDetalle({ cliente, onClose, openWhatsApp, onRecuperoSent }: {
                                 <p className="text-sm text-muted-foreground">Sin pedidos registrados</p>
                             </div>
                         ) : (
-                            <div className="divide-y divide-border/30">
+                            <div className="p-3 space-y-2">
                                 {cliente.pedidos.map((pedido) => (
                                     <OrderRow key={pedido.id} pedido={pedido} />
                                 ))}
@@ -1128,8 +1180,8 @@ function ContactRow({ icon, label, value, action }: {
     action?: React.ReactNode
 }) {
     return (
-        <div className="px-4 py-3 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-white dark:bg-muted/50 flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
+        <div className="px-3 py-2.5 flex items-start gap-3 rounded-xl bg-[#FFFBF0] dark:bg-muted/40">
+            <div className="w-8 h-8 rounded-lg bg-white dark:bg-muted flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
                 {icon}
             </div>
             <div className="flex-1 min-w-0">
@@ -1151,10 +1203,10 @@ function OrderRow({ pedido }: { pedido: PedidoHistorial }) {
             <button
                 onClick={() => hasItems && setExpanded(!expanded)}
                 className={`
-                    w-full text-left px-4 py-3.5 flex items-center gap-3
+                    w-full text-left px-4 py-3.5 flex items-center gap-3 rounded-xl
                     transition-colors duration-100
                     ${hasItems ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'}
-                    ${expanded ? "bg-white dark:bg-muted/20" : ''}
+                    ${expanded ? "bg-white dark:bg-muted/20 shadow-sm" : ''}
                 `}
             >
                 {/* Order Type Icon */}
@@ -1205,7 +1257,7 @@ function OrderRow({ pedido }: { pedido: PedidoHistorial }) {
             {/* Expanded Items */}
             {expanded && hasItems && (
                 <div className="px-4 pb-3 pt-0 ml-[52px]">
-                    <div className="bg-white dark:bg-muted/30 rounded-lg border border-border/40 divide-y divide-border/30 overflow-hidden">
+                    <div className="bg-[#FFFBF0] dark:bg-muted/40 rounded-lg overflow-hidden">
                         {pedido.items.map((item, idx) => (
                             <div key={idx} className="px-3 py-2 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2 min-w-0">

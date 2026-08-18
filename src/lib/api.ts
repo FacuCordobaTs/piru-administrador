@@ -65,7 +65,18 @@ async function fetchApi<T>(
       },
     })
 
-    const data = await response.json()
+    // Hono devuelve texto plano para excepciones no manejadas. Intentar
+    // decodificar siempre como JSON convertía un 500 real en un falso
+    // "Error de conexión con el servidor" en el POS y en el resto del admin.
+    const rawBody = await response.text()
+    let data: any = null
+    if (rawBody) {
+      try {
+        data = JSON.parse(rawBody)
+      } catch {
+        data = { message: rawBody }
+      }
+    }
 
     if (!response.ok) {
       // Si es un error 401 (Unauthorized), hacer logout automático
@@ -1247,10 +1258,11 @@ export const notificacionesApi = {
   },
 }
 
-// Pedido Unificado API (delivery + takeaway) - backend único
+// Pedido Unificado API (delivery + takeaway + mesa) - backend único
 export type PedidoUnificadoItemInput = {
   productoId: number
   varianteId?: number
+  varianteSecundariaId?: number
   cantidad: number
   ingredientesExcluidos?: number[]
   agregados?: Array<{ id: number; nombre: string; precio: string | number }>
@@ -1259,7 +1271,7 @@ export type PedidoUnificadoItemInput = {
 export const pedidoUnificadoApi = {
   getAll: async (
     token: string,
-    tipo: 'delivery' | 'takeaway' | 'all' = 'all',
+    tipo: 'delivery' | 'takeaway' | 'mesa' | 'all' = 'all',
     page = 1,
     limit = 20,
     estado?: string,
@@ -1281,7 +1293,7 @@ export const pedidoUnificadoApi = {
   getByDia: async (
     token: string,
     dia: string,
-    tipo: 'delivery' | 'takeaway' | 'all' = 'all',
+    tipo: 'delivery' | 'takeaway' | 'mesa' | 'all' = 'all',
     page = 1,
     limit = 50,
     estado?: string,
@@ -1347,6 +1359,20 @@ export const pedidoUnificadoApi = {
           notificarWhatsappPrueba?: boolean
           items: Array<PedidoUnificadoItemInput>
         }
+      | {
+          tipo: 'mesa'
+          mesaLocalId: number
+          consumoEnLocal?: true
+          nombreCliente?: string
+          telefono?: string
+          notas?: string
+          anotadoManualmente?: boolean
+          pagado?: boolean
+          metodoPago?: string
+          sucursalId?: number
+          notificarWhatsappPrueba?: boolean
+          items: Array<PedidoUnificadoItemInput>
+        }
   ) => {
     return fetchApi('/pedido-unificado/create', {
       method: 'POST',
@@ -1354,6 +1380,29 @@ export const pedidoUnificadoApi = {
       body: JSON.stringify(data),
     })
   },
+  updateFromPos: async (
+    token: string,
+    id: number,
+    data: {
+      version: number
+      tipo: 'delivery' | 'takeaway' | 'mesa'
+      mesaLocalId?: number | null
+      nombreCliente?: string | null
+      telefono?: string | null
+      notas?: string | null
+      direccion?: string | null
+      latitud?: string | number | null
+      longitud?: string | number | null
+      deliveryFee?: string | number | null
+      metodoPago?: string | null
+      pagado?: boolean
+      items: Array<PedidoUnificadoItemInput>
+    },
+  ) => fetchApi(`/pedido-unificado/${id}/pos`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  }),
   updateEstado: async (token: string, id: number, estado: string) => {
     return fetchApi(`/pedido-unificado/${id}/estado`, {
       method: 'PUT',

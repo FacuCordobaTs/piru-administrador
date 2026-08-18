@@ -7,6 +7,7 @@ interface ItemPedidoLike {
     agregados?: any[]
     categoriaNombre?: string
     varianteNombre?: string
+    varianteSecundariaNombre?: string
     clienteNombre?: string | null
 }
 
@@ -127,6 +128,8 @@ export const formatComanda = (
         commands.push(`DELIVERY\n`);
     } else if (pedido.tipo === 'takeaway') {
         commands.push(`TAKE AWAY\n`);
+    } else if (pedido.tipo === 'mesa') {
+        commands.push(`${pedido.mesaNombre?.toUpperCase() || 'MESA'}\n`);
     } else if (pedido.mesaNombre) {
         commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
     }
@@ -171,7 +174,8 @@ export const formatComanda = (
     }
 
     const printItem = (item: ItemPedidoLike, indent = '') => {
-        const sufijoVariante = item.varianteNombre ? ` (${item.varianteNombre})` : '';
+        const nombresVariantes = [item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ');
+        const sufijoVariante = nombresVariantes ? ` (${nombresVariantes})` : '';
         const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
         commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
         commands.push(`${indent}${item.cantidad}x ${nombre}\n`);
@@ -317,6 +321,8 @@ export const formatFactura = (
         commands.push(`DELIVERY\n`);
     } else if (pedido.tipo === 'takeaway') {
         commands.push(`TAKE AWAY\n`);
+    } else if (pedido.tipo === 'mesa') {
+        commands.push(`${pedido.mesaNombre?.toUpperCase() || 'MESA'}\n`);
     } else if (pedido.mesaNombre) {
         commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
     }
@@ -369,7 +375,8 @@ export const formatFactura = (
             subtotalCliente += subtotal;
 
             // Nombre del producto: DOBLE ALTO + NEGRITA
-            const sufijoVariante = item.varianteNombre ? ` (${item.varianteNombre})` : '';
+            const nombresVariantes = [item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ');
+            const sufijoVariante = nombresVariantes ? ` (${nombresVariantes})` : '';
             const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
             commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
             commands.push(`  ${item.cantidad}x ${nombre}\n`);

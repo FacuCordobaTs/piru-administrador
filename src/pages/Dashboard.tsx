@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment, useMemo, type KeyboardEvent, type MouseEvent } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,11 +9,11 @@ import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
-import { deliveryApi, takeawayApi, pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi, mesasLocalesApi, type MesaLocal } from '@/lib/api'
+import { pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi, type MesaLocal } from '@/lib/api'
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
-import PuntoDeVenta, { type PosDraft, type PosDraftUpdate, type PuntoDeVentaHandle } from '@/components/PuntoDeVenta'
+import PuntoDeVenta, { type PosDraft, type PosDraftUpdate, type PosEditablePedido, type PuntoDeVentaHandle } from '@/components/PuntoDeVenta'
 import { MesasOperativas } from '@/components/MesasOperativas'
 import {
     Loader2, Plus, Clock, Trash2,
@@ -21,7 +21,7 @@ import {
     Phone, ShoppingBag, CalendarDays, Tag, Settings,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
-    Copy, ExternalLink, MoreVertical,
+    Copy, ExternalLink, MoreVertical, Eye, EyeOff, Armchair, Pencil,
 } from 'lucide-react'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -61,10 +61,12 @@ interface DeliveryItem {
     id: number; productoId: number; cantidad: number; precioUnitario: string;
     nombreProducto: string; imagenUrl: string | null;
     ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
-    agregados?: any; varianteNombre?: string; clienteNombre?: string | null;
+    agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null;
 }
+type PedidoTipo = 'delivery' | 'takeaway' | 'mesa'
+
 interface UnifiedPedido {
-    id: number; tipo: 'delivery' | 'takeaway'; estado: string; total: string; createdAt: string;
+    id: number; tipo: PedidoTipo; estado: string; total: string; createdAt: string;
     nombreCliente: string | null; telefono: string | null; direccion?: string | null; notas?: string | null;
     items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
@@ -73,7 +75,8 @@ interface UnifiedPedido {
     horarioProgramado?: string | null; latitud?: string | null; longitud?: string | null;
     deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null;
     grupal?: boolean | null; creadoPorIa?: boolean | null; anotadoManualmente?: boolean | null;
-    mesaLocalId?: number | null; consumoEnLocal?: boolean | null;
+    mesaLocalId?: number | null; mesaNombre?: string | null; consumoEnLocal?: boolean | null;
+    version?: number; editable?: boolean; motivosNoEditable?: string[];
 }
 interface Repartidor { id: number; nombre: string; estado: 'activo' | 'inactivo'; restauranteId: number }
 interface ClienteContexto {
@@ -84,6 +87,12 @@ interface ClienteContexto {
 }
 
 const STORAGE_SUCURSAL = 'sucursal_activa_id'
+
+const pedidoTipoLabel = (pedido: Pick<UnifiedPedido, 'tipo' | 'mesaNombre'>) =>
+    pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'mesa' ? (pedido.mesaNombre || 'Mesa') : 'Takeaway'
+
+const PedidoTipoIcon = ({ tipo, className }: { tipo: PedidoTipo; className: string }) =>
+    tipo === 'delivery' ? <Truck className={className} /> : tipo === 'mesa' ? <Armchair className={className} /> : <ShoppingBag className={className} />
 
 function readStoredSucursalId(): number | null {
     try {
@@ -437,9 +446,7 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                                             )}
                                         >
                                             <span className="font-black">#{pedido.id}</span>
-                                            {pedido.tipo === 'takeaway'
-                                                ? <ShoppingBag className="h-3 w-3 opacity-70" />
-                                                : <Truck className="h-3 w-3 opacity-70" />}
+                                            <PedidoTipoIcon tipo={pedido.tipo} className="h-3 w-3 opacity-70" />
                                             {pedido.nombreCliente && (
                                                 <span className={cn("max-w-[80px] truncate", isChipSelected ? "opacity-90" : "text-muted-foreground")}>
                                                     {pedido.nombreCliente.split(' ')[0]}
@@ -549,7 +556,7 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                                         <div className="flex gap-2 flex-1 min-w-0">
                                             <span className="text-sm font-bold text-muted-foreground shrink-0">{item.cantidad}x</span>
                                             <span className="text-sm font-medium text-foreground truncate">
-                                                {item.nombreProducto}{item.varianteNombre ? ` (${item.varianteNombre})` : ''}
+                                                {item.nombreProducto}{[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).length ? ` (${[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ')})` : ''}
                                             </span>
                                         </div>
                                         <span className="text-sm tabular-nums font-semibold text-foreground shrink-0">
@@ -645,7 +652,7 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
 const OrderMiniMap = ({ orders, selected }: { orders: UnifiedPedido[]; selected?: UnifiedPedido | null }) => {
     // Cuando el pedido seleccionado es takeaway o está archivado, el minimapa no
     // aporta nada (no tiene ubicación de entrega relevante), así que no mostramos nada.
-    const hideMap = selected?.tipo === 'takeaway' || selected?.estado === 'archived'
+    const hideMap = (selected != null && selected.tipo !== 'delivery') || selected?.estado === 'archived'
 
     const ordersWithCoords = orders.filter(p => {
         if (p.tipo !== 'delivery' || !p.latitud || !p.longitud) return false
@@ -846,106 +853,74 @@ const POS_METODO_LABEL: Record<string, string> = {
     mercadopago: 'Mercado Pago',
 }
 
+/** El toggle se usa sólo con puntero: no interrumpe el recorrido de carga del pedido. */
+const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: boolean; fieldName: string; onToggle: () => void }) => (
+    <button
+        type="button"
+        tabIndex={-1}
+        aria-label={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
+        title={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
+        onClick={onToggle}
+        className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
+)
+
 const PosComandaPreview = ({
     draft,
     onEditItem,
+    onRemoveItem,
     onUpdate,
+    onSubmit,
+    onClear,
     mesasActivas = false,
-    mesasDisponibles = [],
-    onMesaChange,
+    onRequestMesa,
+    onClearMesa,
+    editingPedidoId,
 }: {
     draft: PosDraft | null
     onEditItem?: (key: string) => void
+    onRemoveItem?: (key: string) => void
     onUpdate?: (changes: PosDraftUpdate) => void
+    onSubmit?: () => void
+    onClear?: () => void
     mesasActivas?: boolean
-    mesasDisponibles?: Array<Pick<MesaLocal, 'id' | 'nombre'>>
-    onMesaChange?: (mesa: Pick<MesaLocal, 'id' | 'nombre'> | null) => void
+    onRequestMesa?: () => void
+    onClearMesa?: () => void
+    editingPedidoId?: number
 }) => {
+    const [nombreVisible, setNombreVisible] = useState(true)
+    const [telefonoVisible, setTelefonoVisible] = useState(true)
+
     if (!draft) {
         return (
-            <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-8">
-                <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
-                    <ShoppingCart className="h-7 w-7 text-muted-foreground/60" />
+            <div className="h-full flex flex-col">
+                <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6">
+                    <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">Borrador</h2>
                 </div>
-                <p className="text-base font-bold text-foreground">Comanda en blanco</p>
-                <p className="text-xs text-muted-foreground max-w-[260px] leading-relaxed">
-                    Anotá el pedido en el panel del medio: los productos y los datos del cliente se van reflejando acá en vivo.
-                </p>
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+                    <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
+                        <ShoppingCart className="h-7 w-7 text-muted-foreground/60" />
+                    </div>
+                    <p className="text-base font-bold text-foreground">Comanda en blanco</p>
+                    <p className="text-xs text-muted-foreground max-w-[260px] leading-relaxed">
+                        Agregá productos desde el panel central: el pedido se va reflejando acá en vivo.
+                    </p>
+                </div>
             </div>
         )
     }
 
     const totalItems = draft.items.reduce((s, it) => s + it.cantidad, 0)
-    const metodoLabel = POS_METODO_LABEL[draft.metodoPago] || 'Sin método'
-
     return (
         <div className="flex h-full w-full overflow-hidden">
             <div className="flex flex-col h-full relative flex-1 min-w-0">
                 <div className="flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6 pb-10">
+                    <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6 pb-[26rem]">
 
-                        {/* Modalidad y cobro: se eligen en la comanda, cerca del total. */}
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex rounded-xl bg-muted/60 p-1 gap-1">
-                                <button onClick={() => onUpdate?.({ tipo: 'takeaway' })} className={cn('h-8 px-3 rounded-lg text-xs font-bold transition-colors', draft.tipo === 'takeaway' ? 'bg-background text-[#FF7A00] shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-                                    <Store className="h-3.5 w-3.5 inline mr-1" />Consumo en el local
-                                </button>
-                                <button onClick={() => onUpdate?.({ tipo: 'delivery' })} className={cn('h-8 px-3 rounded-lg text-xs font-bold transition-colors', draft.tipo === 'delivery' ? 'bg-background text-[#FF7A00] shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-                                    <Truck className="h-3.5 w-3.5 inline mr-1" />Delivery
-                                </button>
-                            </div>
-                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#FF7A00]">
-                                <Zap className="h-3 w-3" /> En curso
-                            </span>
-                        </div>
-
-                        {/* Datos inline: no hay un segundo formulario separado de la comanda. */}
-                        <div className="mb-6 text-left">
-                            <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 px-0 border-0 border-b rounded-none text-2xl font-black tracking-tight focus-visible:ring-0 focus-visible:border-[#FF7A00]" />
-                            <div className="mt-3 space-y-2">
-                                <div className="flex items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
-                                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                    <Input value={draft.telefono} onChange={(event) => onUpdate?.({ telefono: event.target.value })} placeholder="Celular" inputMode="tel" className="h-9 px-0 border-0 rounded-none focus-visible:ring-0" />
-                                </div>
-                                {draft.tipo === 'delivery' ? (
-                                    <>
-                                        <div className="flex items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
-                                            <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                            <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 px-0 border-0 rounded-none focus-visible:ring-0" />
-                                        </div>
-                                        <div className="flex items-center gap-2 w-40 border-b border-border/60 focus-within:border-[#FF7A00]">
-                                            <span className="text-sm font-bold text-muted-foreground">$</span>
-                                            <Input value={draft.deliveryFee || ''} onChange={(event) => onUpdate?.({ deliveryFee: Number(event.target.value.replace(/\D/g, '')) || 0 })} placeholder="Envío" inputMode="numeric" className="h-9 px-0 border-0 rounded-none focus-visible:ring-0" />
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="space-y-2">
-                                        <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
-                                            <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                            Consumo en el local
-                                        </p>
-                                        {mesasActivas && (
-                                            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                                                <span className="shrink-0 font-medium">Mesa</span>
-                                                <select
-                                                    value={draft.mesaLocalId ?? ''}
-                                                    onChange={(event) => onMesaChange?.(mesasDisponibles.find((mesa) => mesa.id === Number(event.target.value)) ?? null)}
-                                                    className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 text-sm text-foreground"
-                                                >
-                                                    <option value="">Sin mesa</option>
-                                                    {mesasDisponibles.map((mesa) => <option key={mesa.id} value={mesa.id}>{mesa.nombre}</option>)}
-                                                </select>
-                                            </label>
-                                        )}
-                                    </div>
-                                )}
-                                <div className="flex flex-wrap gap-1 pt-1">
-                                    {Object.entries(POS_METODO_LABEL).map(([id, label]) => <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors', draft.metodoPago === id ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00]' : 'border-border text-muted-foreground hover:bg-muted')}>
-                                        {label}
-                                    </button>)}
-                                </div>
-                                <p className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><CheckCircle className="h-3.5 w-3.5" /> Cobrado · {metodoLabel}</p>
-                            </div>
+                        <div className="relative mb-6 text-left">
+                            <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">{editingPedidoId ? `Pedido #${editingPedidoId}` : 'Borrador'}</h2>
                         </div>
 
                         <Separator className="bg-border/60 mb-6" />
@@ -960,27 +935,46 @@ const PosComandaPreview = ({
                             ) : (
                                 <div className="space-y-0">
                                     {draft.items.map((it, idx) => (
-                                        <button key={it.key} onClick={() => onEditItem?.(it.key)} className={`w-full flex items-center justify-between gap-3 py-3 text-left rounded-lg transition-colors hover:bg-muted/50 ${idx > 0 ? 'border-t border-border/40' : ''}`}>
+                                        <div
+                                            key={it.key}
+                                            role="button"
+                                            tabIndex={-1}
+                                            onClick={() => onEditItem?.(it.key)}
+                                            onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault()
+                                                    onEditItem?.(it.key)
+                                                }
+                                            }}
+                                            className={`w-full flex items-center justify-between gap-3 py-3 text-left rounded-lg transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00] ${idx > 0 ? 'border-t border-border/40' : ''}`}
+                                        >
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-semibold text-base text-foreground leading-snug">
-                                                    {it.nombre}{it.varianteNombre && <span className="text-muted-foreground font-medium"> ({it.varianteNombre})</span>}
+                                                    {it.nombre}{(it.varianteNombre || it.varianteSecundariaNombre) && <span className="text-muted-foreground font-medium"> ({[it.varianteNombre, it.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground mt-0.5">${it.precioUnitario.toLocaleString('es-AR', { minimumFractionDigits: 0 })} c/u</p>
+                                                {it.ingredientesExcluidosNombres && it.ingredientesExcluidosNombres.length > 0 && (
+                                                    <p className="text-xs font-medium text-orange-600 mt-1">Sin: {it.ingredientesExcluidosNombres.join(', ')}</p>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-3 shrink-0">
                                                 <span className="font-semibold text-base tabular-nums text-foreground">
                                                     ${(it.precioUnitario * it.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                 </span>
+                                                <button
+                                                    type="button"
+                                                    tabIndex={-1}
+                                                    aria-label={`Eliminar ${it.nombre}`}
+                                                    onClick={(event) => { event.stopPropagation(); onRemoveItem?.(it.key) }}
+                                                    className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex items-center justify-center"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
                                             </div>
-                                        </button>
+                                        </div>
                                     ))}
                                 </div>
                             )}
-                        </div>
-
-                        <div className="mb-6">
-                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Nota</Label>
-                            <Input value={draft.notas} onChange={(event) => onUpdate?.({ notas: event.target.value })} placeholder="Aclaraciones del pedido" className="h-10 rounded-xl" />
                         </div>
 
                         {draft.tipo === 'delivery' && draft.deliveryFee > 0 && (
@@ -990,12 +984,82 @@ const PosComandaPreview = ({
                             </div>
                         )}
 
-                        {/* Total */}
+                    </div>
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 z-40 bg-[#FFFBF0] dark:bg-background">
+                    <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
+                        <div className="grid grid-cols-3 gap-1 rounded-2xl bg-muted/60 p-1">
+                            <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'delivery' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'delivery' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                <Truck className="h-4 w-4" />Delivery
+                            </button>
+                            <button disabled={!mesasActivas} onClick={onRequestMesa} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40', draft.tipo === 'mesa' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                <Armchair className="h-4 w-4" />Mesa
+                            </button>
+                            <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'takeaway' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'takeaway' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                <ShoppingBag className="h-4 w-4" />Takeaway
+                            </button>
+                        </div>
+                        {draft.tipo === 'mesa' && draft.mesaNombre && <p className="text-center text-xs font-semibold text-[#FF7A00]">Asignado a {draft.mesaNombre}</p>}
+                        <div className="grid grid-cols-4 gap-1 rounded-2xl bg-muted/60 p-1">
+                            {Object.entries(POS_METODO_LABEL).map(([id, label]) => (
+                                <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center', draft.metodoPago === id ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="relative text-left">
+                            {nombreVisible && <div className="flex h-11 items-center gap-2 border-b border-border focus-within:border-[#FF7A00]">
+                                <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none text-2xl font-black tracking-tight focus-visible:ring-0" />
+                                {draft.tipo === 'delivery' && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none text-base focus-visible:ring-0" />}
+                                <div className="flex items-center gap-1">
+                                    <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                                    <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                                </div>
+                            </div>}
+                            {telefonoVisible && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', nombreVisible && 'mt-3')}>
+                                <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <Input value={draft.telefono} onChange={(event) => onUpdate?.({ telefono: event.target.value })} placeholder="Celular" inputMode="tel" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none focus-visible:ring-0" />
+                                {!nombreVisible && draft.tipo === 'delivery' && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none focus-visible:ring-0" />}
+                                {!nombreVisible && <div className="flex items-center gap-1">
+                                    <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                                    <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                                </div>}
+                            </div>}
+                            {!nombreVisible && !telefonoVisible && <div className="flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
+                                {draft.tipo === 'delivery' && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none focus-visible:ring-0" />}
+                                <div className="flex gap-1">
+                                <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                                <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                                </div>
+                            </div>}
+                        </div>
+                        <div>
+                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Nota</Label>
+                            <Input value={draft.notas} onChange={(event) => onUpdate?.({ notas: event.target.value })} placeholder="Aclaraciones del pedido" className="h-10 rounded-xl" />
+                        </div>
                         <div className="flex items-baseline justify-between gap-3">
                             <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">Total</span>
                             <span className="text-3xl font-black tracking-tight text-[#FF7A00]">
                                 ${draft.total.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                             </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                tabIndex={-1}
+                                onClick={onClear}
+                                disabled={draft.submitting}
+                                title="Limpiar borrador"
+                                className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
+                            >
+                                <Trash2 className="h-5 w-5" />
+                            </button>
+                            <Button
+                                onClick={onSubmit}
+                                disabled={draft.items.length === 0 || draft.submitting}
+                                className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
+                            >
+                                {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : editingPedidoId ? 'Guardar cambios' : 'Anotar pedido'}
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -1041,8 +1105,8 @@ const Dashboard = () => {
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
     const [showOrderMap, setShowOrderMap] = useState(false)
     const [showPOS, setShowPOS] = useState(false)
+    const [pedidoPosEditando, setPedidoPosEditando] = useState<PosEditablePedido | null>(null)
     const [mesaPosAsignada, setMesaPosAsignada] = useState<Pick<MesaLocal, 'id' | 'nombre'> | null>(null)
-    const [mesasPosDisponibles, setMesasPosDisponibles] = useState<Array<Pick<MesaLocal, 'id' | 'nombre'>>>([])
     const [posContext, setPosContext] = useState<'borrador' | 'pedidoExistente'>('borrador')
     // Borrador del pedido que se está anotando en el POS flotante: se espeja
     // en vivo en la comanda de la derecha (PosComandaPreview).
@@ -1060,8 +1124,14 @@ const Dashboard = () => {
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
     const [demoraInputs, setDemoraInputs] = useState<Record<string, string>>({})
     const [confirmandoDemora, setConfirmandoDemora] = useState<string | null>(null)
+    // Los avisos superiores son informativos: el local siempre puede quitarlos
+    // durante esta visita, incluso cuando el estado de suscripción/saldo sigue vigente.
+    const [showTrialBanner, setShowTrialBanner] = useState(true)
+    const [showSaldoBanner, setShowSaldoBanner] = useState(true)
     // La ubicación se muestra en un mapa flotante (dialog), no inline.
     const [showMapaDialog, setShowMapaDialog] = useState(false)
+    const [showMesasDialog, setShowMesasDialog] = useState(false)
+    const [mesasDialogMode, setMesasDialogMode] = useState<'operar' | 'asignar-borrador'>('operar')
 
     const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
     const [sucursalNombre, setSucursalNombre] = useState<string>('')
@@ -1069,20 +1139,6 @@ const Dashboard = () => {
     const [sucursalesList, setSucursalesList] = useState<SucursalListRow[]>([])
     const [sucursalesLoaded, setSucursalesLoaded] = useState(false)
     const [prefsReady, setPrefsReady] = useState(false)
-
-    useEffect(() => {
-        if (!token || !mesasActivo) { setMesasPosDisponibles([]); return }
-        let vigente = true
-        void mesasLocalesApi.list(token, false)
-            .then((respuesta) => {
-                if (!vigente) return
-                setMesasPosDisponibles(respuesta.data
-                    .filter((mesa) => sucursalActivaId == null || mesa.sucursalId == null || mesa.sucursalId === sucursalActivaId)
-                    .map(({ id, nombre }) => ({ id, nombre })))
-            })
-            .catch(() => { if (vigente) setMesasPosDisponibles([]) })
-        return () => { vigente = false }
-    }, [token, mesasActivo, sucursalActivaId])
 
     const sucursalNombrePorId = useMemo(() => {
         const m = new Map<number, string>()
@@ -1098,7 +1154,7 @@ const Dashboard = () => {
     const [loadingRepartidores, setLoadingRepartidores] = useState(false)
     const [nuevoRepartidorNombre, setNuevoRepartidorNombre] = useState('')
     const [creandoRepartidor, setCreandoRepartidor] = useState(false)
-    const [pendingDispatchPedido, setPendingDispatchPedido] = useState<{ tipo: 'delivery' | 'takeaway'; id: number } | null>(null)
+    const [pendingDispatchPedido, setPendingDispatchPedido] = useState<{ tipo: PedidoTipo; id: number } | null>(null)
     const [repartidorSelectorOpen, setRepartidorSelectorOpen] = useState(false)
     const [asignandoRepartidor, setAsignandoRepartidor] = useState(false)
 
@@ -1216,7 +1272,7 @@ const Dashboard = () => {
                 sucursalActivaId,
             ) as any
             if (response.success && response.data) {
-                const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway') as UnifiedPedido[]
+                const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway' || p.tipo === 'mesa') as UnifiedPedido[]
 
                 setUnifiedPedidos(prev => {
                     const combined: UnifiedPedido[] = append ? [...prev, ...validPedidos] : validPedidos
@@ -1251,7 +1307,7 @@ const Dashboard = () => {
 
     useEffect(() => {
         if (!prefsReady || !lastUpdate) return
-        if (lastUpdate.type !== 'delivery' && lastUpdate.type !== 'takeaway') return
+        if (lastUpdate.type !== 'delivery' && lastUpdate.type !== 'takeaway' && lastUpdate.type !== 'mesa') return
         if (
             sucursalActivaId != null &&
             lastUpdate.sucursalId !== undefined &&
@@ -1357,7 +1413,7 @@ const Dashboard = () => {
                                 direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
                                 tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                                 metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
-                                horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal,
+                                horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
                             }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
                             printRaw(commandsToBytes(comandaData)).catch((err) => {
@@ -1384,11 +1440,10 @@ const Dashboard = () => {
     // ─────────────────────────────────────────────
     // ACCIONES DE PEDIDO
     // ─────────────────────────────────────────────
-    const handleEstadoChange = async (tipo: 'delivery' | 'takeaway', id: number, nuevoEstado: string) => {
+    const handleEstadoChange = async (tipo: PedidoTipo, id: number, nuevoEstado: string) => {
         if (!token) return
         try {
-            if (tipo === 'delivery') await deliveryApi.updateEstado(token, id, nuevoEstado)
-            else await takeawayApi.updateEstado(token, id, nuevoEstado)
+            await pedidoUnificadoApi.updateEstado(token, id, nuevoEstado)
             setUnifiedPedidos(prev => prev.map(p => p.id === id && p.tipo === tipo ? { ...p, estado: nuevoEstado } : p))
             if (nuevoEstado === 'archived') {
                 setSelectedUnifiedPedido(null)
@@ -1422,7 +1477,7 @@ const Dashboard = () => {
         }
     }, [token, gestionCadetesActiva, loadRepartidores])
 
-    const handleDespachar = async (tipo: 'delivery' | 'takeaway', id: number) => {
+    const handleDespachar = async (tipo: PedidoTipo, id: number) => {
         // Sin Gestión de Cadetes el pedido se despacha directamente. Con el
         // módulo activo se ofrece asignación cuando hay equipo para elegir.
         if (gestionCadetesActiva && tipo === 'delivery') {
@@ -1436,7 +1491,7 @@ const Dashboard = () => {
         await handleEstadoChange(tipo, id, 'archived')
     }
 
-    const handleRepartidorSelected = async (tipo: 'delivery' | 'takeaway', id: number, repartidorId: number | null) => {
+    const handleRepartidorSelected = async (tipo: PedidoTipo, id: number, repartidorId: number | null) => {
         if (!token) return
         setAsignandoRepartidor(true)
         try {
@@ -1463,9 +1518,7 @@ const Dashboard = () => {
         setUpdatingPago(pedido.id.toString())
         try {
             const mp = resolveMetodoMarcarPagado(pedido.metodoPago, metodoOverrides)
-            const res: any = (pedido.tipo === 'delivery'
-                ? await deliveryApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
-                : await takeawayApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp }))
+            const res: any = await pedidoUnificadoApi.marcarPagado(token, pedido.id, { pagado: true, metodoPago: mp })
 
             if (res.success) {
                 setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id && p.tipo === pedido.tipo ? { ...p, pagado: true, metodoPago: mp } : p))
@@ -1478,8 +1531,7 @@ const Dashboard = () => {
     const handleDeletePedido = async () => {
         if (!token || !selectedUnifiedPedido) return
         try {
-            if (selectedUnifiedPedido.tipo === 'delivery') await deliveryApi.delete(token, selectedUnifiedPedido.id)
-            else await takeawayApi.delete(token, selectedUnifiedPedido.id)
+            await pedidoUnificadoApi.delete(token, selectedUnifiedPedido.id)
             setUnifiedPedidos(prev => prev.filter(p => !(p.id === selectedUnifiedPedido.id && p.tipo === selectedUnifiedPedido.tipo)))
             setShowDeleteDialog(false)
             setSelectedUnifiedPedido(null)
@@ -1587,6 +1639,7 @@ const Dashboard = () => {
         setShowOrderMap(false)
         setSelectedUnifiedPedido(null)
         setMesaPosAsignada(null)
+        setPedidoPosEditando(null)
         setPosContext('borrador')
         setShowPOS(true)
         setMobileView('detail')
@@ -1595,6 +1648,7 @@ const Dashboard = () => {
     const closePOS = () => {
         setShowPOS(false)
         setMesaPosAsignada(null)
+        setPedidoPosEditando(null)
         setPosContext('borrador')
         setMobileView('orders')
     }
@@ -1617,15 +1671,55 @@ const Dashboard = () => {
         setMobileView('detail')
     }
 
+    // Al estar viendo un pedido, el POS sigue visible detrás. Cualquier zona libre
+    // del POS vuelve al borrador; los controles conservan su interacción normal.
+    const handlePosBackgroundClick = (event: MouseEvent<HTMLDivElement>) => {
+        const target = event.target as Element
+        if (target.closest('button, input, textarea, select, a, [role="button"]')) return
+        volverAlBorrador()
+    }
+
     useEffect(() => {
         if (!showPOS) setDraftPos(null)
     }, [showPOS])
 
-    const handlePedidoManualCreado = (_pedidoId: number) => {
-        setShowPOS(false)
+    const handlePedidoManualCreado = () => {
+        // El POS es un flujo de carga continua: después de anotar un pedido el
+        // componente ya limpió su borrador. Sólo sincronizamos la lista, sin
+        // alterar el POS ni su vista para que se pueda cargar el siguiente.
+        fetchPedidos(1, false)
+    }
+
+    const editarPedidoEnPos = async (pedido: UnifiedPedido) => {
+        if (!token || !posActivo) return
+        try {
+            const response = await pedidoUnificadoApi.getById(token, pedido.id) as { success?: boolean; data?: PosEditablePedido & { editable?: boolean; motivosNoEditable?: string[] } }
+            const editable = response.data
+            if (!response.success || !editable) return toast.error('No se pudo cargar el pedido')
+            if (!editable.editable) return toast.error(editable.motivosNoEditable?.[0] || 'Este pedido ya no se puede editar')
+            setShowOrderMap(false)
+            setSelectedUnifiedPedido(null)
+            setPedidoPosEditando(editable)
+            setMesaPosAsignada(editable.tipo === 'mesa' && editable.mesaLocalId
+                ? { id: editable.mesaLocalId, nombre: editable.mesaNombre || `Mesa ${editable.mesaLocalId}` }
+                : null)
+            setPosContext('borrador')
+            setShowPOS(true)
+            setMobileView('detail')
+        } catch (error) {
+            toast.error('No se pudo abrir la edición', { description: error instanceof Error ? error.message : undefined })
+        }
+    }
+
+    const handlePedidoManualActualizado = (pedido: PosEditablePedido) => {
+        const actualizado = pedido as UnifiedPedido
+        setUnifiedPedidos((prev) => prev.map((item) => item.id === actualizado.id ? { ...item, ...actualizado } : item))
+        setPedidoPosEditando(null)
         setMesaPosAsignada(null)
-        setPosContext('borrador')
-        setMobileView('orders')
+        setShowPOS(false)
+        setPosContext('pedidoExistente')
+        setSelectedUnifiedPedido(actualizado)
+        setMobileView('detail')
         fetchPedidos(1, false)
     }
 
@@ -1638,8 +1732,22 @@ const Dashboard = () => {
     const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
 
     const hoyDay = getArDayString(new Date())
+    const abrirSelectorMesaBorrador = () => {
+        if (!mesasActivo) return
+        setMesasDialogMode('asignar-borrador')
+        setShowMesasDialog(true)
+    }
     const abrirMesaLibre = (mesa: MesaLocal) => {
+        if (mesasDialogMode === 'asignar-borrador') {
+            setMesaPosAsignada({ id: mesa.id, nombre: mesa.nombre })
+            setShowMesasDialog(false)
+            setSelectedUnifiedPedido(null)
+            setPosContext('borrador')
+            setMobileView('detail')
+            return
+        }
         if (!posActivo) return
+        setShowMesasDialog(false)
         setShowOrderMap(false)
         setSelectedUnifiedPedido(null)
         setMesaPosAsignada({ id: mesa.id, nombre: mesa.nombre })
@@ -1648,8 +1756,10 @@ const Dashboard = () => {
         setMobileView('detail')
     }
     const abrirPedidoMesa = (pedidoMesa: { id: number }) => {
+        if (mesasDialogMode === 'asignar-borrador') return
         const pedido = activeOrders.find((candidato) => candidato.id === pedidoMesa.id)
         if (!pedido) return
+        setShowMesasDialog(false)
         setMesaPosAsignada(null)
         setShowOrderMap(false)
         setSelectedUnifiedPedido(pedido)
@@ -1657,7 +1767,8 @@ const Dashboard = () => {
         setShowPOS(true)
         setMobileView('detail')
     }
-    const isDayTitle = !(mobileView === 'detail' && (showPOS || showOrderMap))
+    // El selector del día sigue disponible al abrir el POS; solo el mapa lo reemplaza.
+    const isDayTitle = !(mobileView === 'detail' && showOrderMap)
 
     const pickDay = (day: string) => {
         if (!day) return
@@ -1727,10 +1838,10 @@ const Dashboard = () => {
                         </button>
                     ) : (
                         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                            {mobileView === 'detail' && showPOS ? 'Anotar pedido' : 'Mapa de pedidos'}
+                            {mobileView === 'detail' && showPOS ? (pedidoPosEditando ? `Editar #${pedidoPosEditando.id}` : 'Anotar pedido') : 'Mapa de pedidos'}
                         </h1>
                     )}
-                    {posActivo && isDayTitle && (
+                    {posActivo && isDayTitle && !showPOS && (
                         <Button
                             variant="outline"
                             onClick={openPOS}
@@ -1758,6 +1869,11 @@ const Dashboard = () => {
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
+                    {mesasActivo && selectedDay === hoyDay && (
+                        <Button variant="outline" className="h-10 rounded-xl" onClick={() => { setMesasDialogMode('operar'); setShowMesasDialog(true) }}>
+                            <Armchair className="mr-2 h-4 w-4" /> Mesas
+                        </Button>
+                    )}
                     <Button variant="outline" className="h-10 rounded-xl" onClick={() => {
                         if (showPOS) { requestClosePOS(); return }
                         setShowOrderMap(true); setMobileView('detail')
@@ -1864,11 +1980,9 @@ const Dashboard = () => {
                 </DialogContent>
             </Dialog>
 
-            {/* Contador de valor del trial (sólo en prueba): "Recibiste X pedidos por $Y" */}
-            <TrialValorBanner />
-
-            {/* Aviso de saldo de avisos por WhatsApp bajo/agotado (sólo aparece si hace falta) */}
-            <SaldoAlertaBanner />
+            {/* Los banners superiores son siempre descartables desde el Dashboard. */}
+            {showTrialBanner && <TrialValorBanner onDismiss={() => setShowTrialBanner(false)} />}
+            {showSaldoBanner && <SaldoAlertaBanner onDismiss={() => setShowSaldoBanner(false)} />}
 
             {/* ── MAIN CONTENT ── */}
             <div className="relative flex-1 flex overflow-hidden lg:justify-center lg:gap-4 lg:p-4">
@@ -1913,18 +2027,6 @@ const Dashboard = () => {
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                {mesasActivo && selectedDay === hoyDay && (
-                                    <div className="mb-4">
-                                        <MesasOperativas
-                                            token={token}
-                                            sucursalId={sucursalActivaId}
-                                            pedidos={activeOrders}
-                                            refreshKey={lastUpdate?.timestamp}
-                                            onMesaLibre={abrirMesaLibre}
-                                            onMesaOcupada={abrirPedidoMesa}
-                                        />
-                                    </div>
-                                )}
                                 {activeOrders.length === 0 ? (
                                     <div className="h-32 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-2xl">
                                         <Receipt className="h-6 w-6 mb-2 opacity-40" />
@@ -1959,8 +2061,8 @@ const Dashboard = () => {
                                                             <div className="flex items-center gap-2 flex-wrap">
                                                                 <span className="font-bold text-sm">#{pedido.id}</span>
                                                                 <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-                                                                    {pedido.tipo === 'delivery' ? <Truck className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
-                                                                    {pedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                                                                    <PedidoTipoIcon tipo={pedido.tipo} className="h-3 w-3" />
+                                                                    {pedidoTipoLabel(pedido)}
                                                                 </span>
                                                                 {pedido.creadoPorIa && (
                                                                     <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center gap-0.5">
@@ -2026,18 +2128,14 @@ const Dashboard = () => {
                                                                     </button>
                                                                 )}
                                                                 <button
-                                                                    title={esPlanBasico || pedido.pagado ? 'Despachar' : 'Cobrar'}
-                                                                    className={cn("h-8 w-8 rounded-lg flex items-center justify-center text-white shrink-0 transition-colors disabled:opacity-50 cursor-pointer", esPlanBasico || pedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
+                                                                    title="Despachar"
+                                                                    className="h-8 w-8 rounded-lg flex items-center justify-center text-white shrink-0 transition-colors disabled:opacity-50 cursor-pointer bg-[#FF7A00] hover:bg-[#E66E00]"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        if (esPlanBasico || pedido.pagado) void handleDespachar(pedido.tipo, pedido.id);
-                                                                        else handleAprobarPago(pedido);
+                                                                        void handleDespachar(pedido.tipo, pedido.id);
                                                                     }}
-                                                                    disabled={!esPlanBasico && updatingPago === pedido.id.toString()}
                                                                 >
-                                                                    {!esPlanBasico && updatingPago === pedido.id.toString()
-                                                                        ? <Loader2 className="h-4 w-4 animate-spin" />
-                                                                        : esPlanBasico || pedido.pagado ? <ShoppingBag className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                                                                    <Truck className="h-4 w-4" />
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -2118,21 +2216,30 @@ const Dashboard = () => {
                         </div>
 
                         {/* ── PANEL DEL MEDIO: POS (ANOTAR PEDIDO) ──
-                            Se abre como columna entre la lista (izquierda) y la comanda
-                            (derecha), empujándolas a los costados: la lista se angosta y la
-                            comanda (PosComandaPreview) queda a la derecha llenándose con el
-                            borrador. Los tres paneles cubren todo el ancho (flex-1). */}
+                            El selector ocupa todo el panel central. El borrador y la
+                            confirmación quedan concentrados en la comanda de la derecha. */}
                         {showPOS && isDesktopViewport && (
-                            <div className="hidden lg:flex flex-col flex-1 min-w-0 rounded-2xl border border-border bg-background overflow-hidden">
+                            <div
+                                onClick={handlePosBackgroundClick}
+                                className={cn(
+                                    "hidden lg:flex flex-col flex-1 min-w-0 rounded-2xl bg-background overflow-hidden transition-[filter,opacity] duration-200",
+                                    posContext === 'pedidoExistente' && "grayscale opacity-50"
+                                )}
+                            >
                                 <PuntoDeVenta
-                                    key="pos-activo"
+                                    key={pedidoPosEditando ? `pos-edit-${pedidoPosEditando.id}-${pedidoPosEditando.version}` : 'pos-activo'}
                                     ref={posRef}
                                     onClose={closePOS}
                                     onCreated={handlePedidoManualCreado}
+                                    onUpdated={handlePedidoManualActualizado}
                                     sucursalActivaId={sucursalActivaId}
                                     onDraftChange={setDraftPos}
-                                    onStartDraft={volverAlBorrador}
+                                    onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                     mesaAsignada={mesaPosAsignada}
+                                    onRequestMesa={abrirSelectorMesaBorrador}
+                                    onClearMesa={() => setMesaPosAsignada(null)}
+                                    autoFocusSearch={posContext === 'borrador'}
+                                    initialPedido={pedidoPosEditando}
                                 />
                             </div>
                         )}
@@ -2154,10 +2261,14 @@ const Dashboard = () => {
                                 <PosComandaPreview
                                     draft={draftPos}
                                     onEditItem={(key) => posRef.current?.editItem(key)}
+                                    onRemoveItem={(key) => posRef.current?.removeItem(key)}
                                     onUpdate={(changes) => posRef.current?.updateDraft(changes)}
+                                    onSubmit={() => posRef.current?.submitDraft()}
+                                    onClear={() => posRef.current?.clearDraft()}
                                     mesasActivas={mesasActivo}
-                                    mesasDisponibles={mesasPosDisponibles}
-                                    onMesaChange={setMesaPosAsignada}
+                                    onRequestMesa={abrirSelectorMesaBorrador}
+                                    onClearMesa={() => setMesaPosAsignada(null)}
+                                    editingPedidoId={pedidoPosEditando?.id}
                                 />
                             ) : showOrderMap ? (
                                 <OrderMapView
@@ -2184,8 +2295,8 @@ const Dashboard = () => {
                                             {/* Tipo */}
                                             <div className="flex items-center justify-between mb-6">
                                                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                                                    {selectedUnifiedPedido.tipo === 'delivery' ? <Truck className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-                                                    {selectedUnifiedPedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                                                    <PedidoTipoIcon tipo={selectedUnifiedPedido.tipo} className="h-3.5 w-3.5" />
+                                                    {pedidoTipoLabel(selectedUnifiedPedido)}
                                                 </span>
                                                 {showPOS && posContext === 'pedidoExistente' && (
                                                     <Button variant="outline" size="sm" className="h-8 rounded-lg text-xs font-bold" onClick={volverAlBorrador}>
@@ -2208,6 +2319,11 @@ const Dashboard = () => {
                                                                 <span>{formatDireccionCorta(selectedUnifiedPedido.direccion)}</span>
                                                             </p>
                                                         )
+                                                    ) : selectedUnifiedPedido.tipo === 'mesa' ? (
+                                                        <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
+                                                            <Armchair className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                            {selectedUnifiedPedido.mesaNombre || 'Mesa asignada'}
+                                                        </p>
                                                     ) : (
                                                         <p className="flex items-center justify-start gap-2 text-base font-semibold text-foreground">
                                                             <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -2224,6 +2340,16 @@ const Dashboard = () => {
                                                         {getDateLabel(selectedUnifiedPedido.createdAt)}, {formatPedidoTime(selectedUnifiedPedido.createdAt)}
                                                         <span className="opacity-60">· {formatTimeAgo(selectedUnifiedPedido.createdAt)}</span>
                                                     </p>
+                                                    {(() => {
+                                                        const metodoPago = metodoPagoListBadge(selectedUnifiedPedido.metodoPago)
+                                                        if (!metodoPago) return null
+                                                        return (
+                                                            <p className="flex items-center justify-start gap-2 text-sm text-muted-foreground">
+                                                                <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                                                                {metodoPago.label}
+                                                            </p>
+                                                        )
+                                                    })()}
                                                 </div>
 
                                                 {selectedUnifiedPedido.horarioProgramado && (
@@ -2273,15 +2399,6 @@ const Dashboard = () => {
                                                             Transf.
                                                         </Button>
                                                     </div>
-                                                    {(() => {
-                                                        const b = metodoPagoListBadge(selectedUnifiedPedido.metodoPago)
-                                                        if (!b) return null
-                                                        return (
-                                                            <p className="mt-2 text-xs text-muted-foreground">
-                                                                Método elegido por el cliente: <span className="font-semibold text-foreground">{b.label}</span>
-                                                            </p>
-                                                        )
-                                                    })()}
                                                 </div>
                                             )}
 
@@ -2368,7 +2485,7 @@ const Dashboard = () => {
                                                                                 <span className="font-bold text-base text-muted-foreground w-6 shrink-0 tabular-nums">{item.cantidad}x</span>
                                                                                 <div className="min-w-0">
                                                                                     <p className="font-semibold text-base text-foreground leading-snug">
-                                                                                        {item.nombreProducto}{item.varianteNombre && <span className="text-muted-foreground font-medium"> ({item.varianteNombre})</span>}
+                                                                                        {item.nombreProducto}{(item.varianteNombre || item.varianteSecundariaNombre) && <span className="text-muted-foreground font-medium"> ({[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
                                                                                     </p>
                                                                                     {formatAgregados(item.agregados).length > 0 && (
                                                                                         <div className="mt-1 space-y-0.5">
@@ -2403,7 +2520,7 @@ const Dashboard = () => {
                                                                         <span className="font-bold text-base text-muted-foreground w-6 shrink-0 tabular-nums">{item.cantidad}x</span>
                                                                         <div className="min-w-0">
                                                                             <p className="font-semibold text-base text-foreground leading-snug">
-                                                                                {item.nombreProducto}{item.varianteNombre && <span className="text-muted-foreground font-medium"> ({item.varianteNombre})</span>}
+                                                                                {item.nombreProducto}{(item.varianteNombre || item.varianteSecundariaNombre) && <span className="text-muted-foreground font-medium"> ({[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
                                                                             </p>
                                                                             {formatAgregados(item.agregados).length > 0 && (
                                                                                 <div className="mt-1 space-y-0.5">
@@ -2471,6 +2588,7 @@ const Dashboard = () => {
                                                             telefono: selectedUnifiedPedido.telefono,
                                                             direccion: selectedUnifiedPedido.tipo === 'delivery' ? selectedUnifiedPedido.direccion : undefined,
                                                             tipo: selectedUnifiedPedido.tipo,
+                                                            mesaNombre: selectedUnifiedPedido.mesaNombre,
                                                             total: selectedUnifiedPedido.total,
                                                             deliveryFee,
                                                             notas: selectedUnifiedPedido.notas,
@@ -2499,8 +2617,17 @@ const Dashboard = () => {
                                                     ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                 </span>
                                             </div>
-                                            {selectedUnifiedPedido.estado !== 'archived' && (
+                                                    {selectedUnifiedPedido.estado !== 'archived' && (
                                                 <div className="flex items-center gap-2">
+                                                    {selectedUnifiedPedido.anotadoManualmente && ['pending', 'received', 'preparing'].includes(selectedUnifiedPedido.estado) && (
+                                                        <button
+                                                            onClick={() => void editarPedidoEnPos(selectedUnifiedPedido)}
+                                                            title="Editar pedido en el punto de venta"
+                                                            className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-[#FF7A00] hover:bg-[#FF7A00]/10 transition-colors shrink-0 cursor-pointer"
+                                                        >
+                                                            <Pencil className="h-5 w-5" />
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => setShowDeleteDialog(true)}
                                                         className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 cursor-pointer"
@@ -2519,25 +2646,10 @@ const Dashboard = () => {
                                                         </button>
                                                     )}
                                                     <Button
-                                                        className={cn("flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98]", esPlanBasico || selectedUnifiedPedido.pagado ? "bg-[#FF7A00] hover:bg-[#E66E00]" : "bg-emerald-600 hover:bg-emerald-700")}
-                                                        onClick={() => {
-                                                            if (esPlanBasico || selectedUnifiedPedido.pagado) void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)
-                                                            else if (pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)) void handleAprobarPago(selectedUnifiedPedido)
-                                                            else toast.error('Debes verificar el pago primero')
-                                                        }}
-                                                        disabled={!esPlanBasico && (
-                                                            updatingPago === selectedUnifiedPedido.id.toString()
-                                                            || (!selectedUnifiedPedido.pagado && !pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago))
-                                                        )}
+                                                        className="flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98] bg-[#FF7A00] hover:bg-[#E66E00]"
+                                                        onClick={() => void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)}
                                                     >
-                                                        {!esPlanBasico && updatingPago === selectedUnifiedPedido.id.toString() ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : null}
-                                                        {esPlanBasico
-                                                            ? 'Despachar Pedido'
-                                                            : selectedUnifiedPedido.pagado
-                                                                ? 'Despachar Pedido'
-                                                                : pedidoCobroManualYaElegido(selectedUnifiedPedido.metodoPago)
-                                                                    ? 'Cobrar'
-                                                                    : 'Pendiente de Cobro'}
+                                                        Despachar Pedido
                                                     </Button>
                                                 </div>
                                             )}
@@ -2556,16 +2668,24 @@ const Dashboard = () => {
                             cambio, cubre la pantalla como overlay y la comanda queda detrás. */}
                         {showPOS && !isDesktopViewport && (
                             <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center p-3 sm:p-6 pointer-events-none">
-                                <div className="pointer-events-auto w-full max-w-5xl h-full max-h-[860px] rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
+                                <div
+                                    onClick={handlePosBackgroundClick}
+                                    className="pointer-events-auto w-full max-w-5xl h-full max-h-[860px] rounded-2xl bg-background shadow-2xl overflow-hidden"
+                                >
                                     <PuntoDeVenta
-                                        key="pos-activo"
+                                        key={pedidoPosEditando ? `pos-edit-${pedidoPosEditando.id}-${pedidoPosEditando.version}` : 'pos-activo'}
                                         ref={posRef}
                                         onClose={closePOS}
                                         onCreated={handlePedidoManualCreado}
+                                        onUpdated={handlePedidoManualActualizado}
                                         sucursalActivaId={sucursalActivaId}
                                         onDraftChange={setDraftPos}
-                                        onStartDraft={volverAlBorrador}
+                                        onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                         mesaAsignada={mesaPosAsignada}
+                                        onRequestMesa={abrirSelectorMesaBorrador}
+                                        onClearMesa={() => setMesaPosAsignada(null)}
+                                        autoFocusSearch={posContext === 'borrador'}
+                                        initialPedido={pedidoPosEditando}
                                     />
                                 </div>
                             </div>
@@ -2643,8 +2763,8 @@ const Dashboard = () => {
                                                 <div className="flex items-center gap-2 flex-wrap">
                                                     <span className="font-bold text-sm">#{pedido.id}</span>
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-                                                        {pedido.tipo === 'delivery' ? <Truck className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
-                                                        {pedido.tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                                                        <PedidoTipoIcon tipo={pedido.tipo} className="h-3 w-3" />
+                                                        {pedidoTipoLabel(pedido)}
                                                     </span>
                                                     {!esPlanBasico && !pedido.pagado && (
                                                         <span className="text-[9px] font-semibold text-amber-600 dark:text-amber-400">Sin cobrar</span>
@@ -2692,6 +2812,30 @@ const Dashboard = () => {
                         {selectedUnifiedPedido && (
                             <OrderMiniMap orders={activeOrders} selected={selectedUnifiedPedido} />
                         )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── PLANO OPERATIVO DE MESAS ── */}
+            <Dialog open={showMesasDialog} onOpenChange={setShowMesasDialog}>
+                <DialogContent className="flex h-[70vh] w-[60vw] max-w-[60vw] flex-col overflow-hidden rounded-[28px] border border-border bg-background p-0 sm:max-w-[60vw]">
+                    <DialogHeader className="px-5 pt-5 pb-3">
+                        <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                            <Armchair className="h-5 w-5 text-[#FF7A00]" /> {mesasDialogMode === 'asignar-borrador' ? 'Elegir mesa' : 'Mesas'}
+                        </DialogTitle>
+                        <DialogDescription className="sr-only">{mesasDialogMode === 'asignar-borrador' ? 'Seleccioná una mesa libre para asignarla al pedido.' : 'Plano operativo de mesas.'}</DialogDescription>
+                    </DialogHeader>
+                    <div className="min-h-0 flex-1 px-5 pb-5">
+                        <MesasOperativas
+                            token={token}
+                            sucursalId={sucursalActivaId}
+                            pedidos={activeOrders}
+                            refreshKey={lastUpdate?.timestamp}
+                            onMesaLibre={abrirMesaLibre}
+                            onMesaOcupada={abrirPedidoMesa}
+                            selectionMode={mesasDialogMode === 'asignar-borrador'}
+                            selectedMesaId={mesasDialogMode === 'asignar-borrador' ? mesaPosAsignada?.id : null}
+                        />
                     </div>
                 </DialogContent>
             </Dialog>

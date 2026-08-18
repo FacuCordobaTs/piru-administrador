@@ -73,6 +73,7 @@ const Productos = () => {
     descuentoFechaInicio: string
     descuentoFechaFin: string
     variantes: Array<{ id?: number, nombre: string, precio: string }>
+    variantesSecundarias: Array<{ id?: number, nombre: string, precio: string }>
   }>({
     nombre: '',
     descripcion: '',
@@ -83,7 +84,8 @@ const Productos = () => {
     descuento: '',
     descuentoFechaInicio: '',
     descuentoFechaFin: '',
-    variantes: []
+    variantes: [],
+    variantesSecundarias: []
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [etiquetasProducto, setEtiquetasProducto] = useState<string[]>([])
@@ -194,7 +196,7 @@ const Productos = () => {
     setPanelNuevo(true)
     setActivePanelType('product')
     setPanelModo('edicion')
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [] })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [] })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
@@ -215,7 +217,8 @@ const Productos = () => {
       descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : '',
       descuentoFechaInicio: (producto as any).descuentoFechaInicio ? new Date((producto as any).descuentoFechaInicio).toISOString().slice(0, 16) : '',
       descuentoFechaFin: (producto as any).descuentoFechaFin ? new Date((producto as any).descuentoFechaFin).toISOString().slice(0, 16) : '',
-      variantes: (producto as any).variantes ? (producto as any).variantes.map((v: any) => ({ id: v.id, nombre: v.nombre, precio: v.precio.toString() })) : []
+      variantes: (producto as any).variantes ? (producto as any).variantes.map((v: any) => ({ id: v.id, nombre: v.nombre, precio: v.precio.toString() })) : [],
+      variantesSecundarias: (producto as any).variantesSecundarias ? (producto as any).variantesSecundarias.map((v: any) => ({ id: v.id, nombre: v.nombre, precio: v.precio.toString() })) : []
     })
     setImageBase64(producto.imagenUrl || null)
     setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
@@ -302,6 +305,13 @@ const Productos = () => {
     if (!formData.descripcion.trim()) { toast.error('La descripción es requerida'); return }
     const precio = parseFloat(formData.precio)
     if (isNaN(precio) || precio <= 0) { toast.error('El precio debe ser mayor a 0'); return }
+    const variantesInvalidas = [...formData.variantes, ...formData.variantesSecundarias]
+      .some(v => !v.nombre.trim() || !Number.isFinite(Number(v.precio)) || Number(v.precio) < 0)
+    if (variantesInvalidas) { toast.error('Completá el nombre y precio de todas las variantes'); return }
+    if (formData.variantesSecundarias.length > 0 && formData.variantes.length === 0) {
+      toast.error('La segunda elección requiere al menos una variante principal')
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -317,6 +327,7 @@ const Productos = () => {
         agregadoIds: agregadosSeleccionados,
         etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
         variantes: formData.variantes.length > 0 ? formData.variantes.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
+        variantesSecundarias: formData.variantesSecundarias.length > 0 ? formData.variantesSecundarias.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
         puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
         puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
         descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,
@@ -596,7 +607,9 @@ const Productos = () => {
   // Sección summaries
   // ─────────────────────────────────────────────
   const summaryDescuento = formData.descuento && parseInt(formData.descuento) > 0 ? `${formData.descuento}% activo` : 'Sin descuento'
-  const summaryVariantes = formData.variantes.length > 0 ? `${formData.variantes.length} variante${formData.variantes.length !== 1 ? 's' : ''}` : 'Sin variantes'
+  const summaryVariantes = formData.variantes.length > 0
+    ? `${formData.variantes.length} + ${formData.variantesSecundarias.length} opciones`
+    : 'Sin variantes'
   const summaryIngredientes = ingredientesSeleccionados.length > 0 ? `${ingredientesSeleccionados.length} ingrediente${ingredientesSeleccionados.length !== 1 ? 's' : ''}` : 'Sin ingredientes'
   const summaryExtras = agregadosSeleccionados.length > 0 ? `${agregadosSeleccionados.length} extra${agregadosSeleccionados.length !== 1 ? 's' : ''}` : 'Sin extras'
   const summaryImagen = (imageBase64 && imageBase64.length > 10) ? 'Con imagen' : 'Sin imagen'
@@ -1118,7 +1131,10 @@ const Productos = () => {
               </div>
               {seccionesAbiertas.has('variantes') && (
                 <div className="px-6 py-4 space-y-3 border-b border-zinc-200 dark:border-white/5">
-                  <p className="text-xs text-muted-foreground dark:text-zinc-500">Múltiples opciones con distinto precio (Ej: Simple, Doble).</p>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-white">Primera elección</p>
+                    <p className="text-xs text-muted-foreground dark:text-zinc-500">Define el precio base (Ej: Simple, Doble, Triple).</p>
+                  </div>
                   {formData.variantes.map((variante, index) => (
                     <div key={index} className="flex gap-2 items-center">
                       <Input
@@ -1168,6 +1184,58 @@ const Productos = () => {
                     className="flex items-center gap-1 text-sm text-orange-500 hover:text-orange-400 transition-colors"
                   >
                     <Plus className="h-4 w-4" /> Agregar variante
+                  </button>
+
+                  <div className="border-t border-zinc-200 pt-4 dark:border-white/10">
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-white">Segunda elección</p>
+                    <p className="text-xs text-muted-foreground dark:text-zinc-500">Opcional. Se muestra después de la primera y su importe se suma al precio (Ej: Carne $0, Vegana +$500).</p>
+                  </div>
+                  {formData.variantesSecundarias.map((variante, index) => (
+                    <div key={variante.id ?? `sec-${index}`} className="flex gap-2 items-center">
+                      <Input
+                        placeholder="Nombre"
+                        value={variante.nombre}
+                        onChange={(e) => {
+                          const nuevas = [...formData.variantesSecundarias]
+                          nuevas[index] = { ...nuevas[index], nombre: e.target.value }
+                          setFormData({ ...formData, variantesSecundarias: nuevas }); markDirty()
+                        }}
+                        className={cn(panelInputClass, "flex-1")}
+                      />
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-muted-foreground dark:text-zinc-400 text-sm">+$</span>
+                        <Input
+                          aria-label="Precio adicional"
+                          placeholder="Adicional"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={variante.precio}
+                          onChange={(e) => {
+                            const nuevas = [...formData.variantesSecundarias]
+                            nuevas[index] = { ...nuevas[index], precio: e.target.value }
+                            setFormData({ ...formData, variantesSecundarias: nuevas }); markDirty()
+                          }}
+                          className={cn(panelInputClass, "pl-9 font-bold")}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Eliminar variante secundaria"
+                        onClick={() => { setFormData({ ...formData, variantesSecundarias: formData.variantesSecundarias.filter((_, i) => i !== index) }); markDirty() }}
+                        className="h-10 w-10 shrink-0 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-500 flex items-center justify-center transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={formData.variantes.length === 0}
+                    onClick={() => { setFormData({ ...formData, variantesSecundarias: [...formData.variantesSecundarias, { nombre: '', precio: '0' }] }); markDirty() }}
+                    className="flex items-center gap-1 text-sm text-orange-500 hover:text-orange-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Plus className="h-4 w-4" /> Agregar segunda variante
                   </button>
                 </div>
               )}

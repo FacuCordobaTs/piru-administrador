@@ -35,6 +35,7 @@ interface Producto {
   ingredientes?: Array<{ id: number; nombre: string }>
   agregados?: Array<{ id: number; nombre: string; precio: string }>
   variantes?: Array<{ id: number; nombre: string; precio: string }>
+  variantesSecundarias?: Array<{ id: number; nombre: string; precio: string }>
 }
 
 export interface RestauranteData {
