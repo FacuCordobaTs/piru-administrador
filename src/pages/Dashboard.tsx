@@ -35,6 +35,7 @@ import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { POS_METODOS_ORDER, POS_TIPOS_ORDER, usePosConfig } from '@/lib/posConfig'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
 
@@ -892,6 +893,12 @@ const PosComandaPreview = ({
 }) => {
     const [nombreVisible, setNombreVisible] = useState(true)
     const [telefonoVisible, setTelefonoVisible] = useState(true)
+    // Qué datos/opciones muestra la comanda según la configuración del POS.
+    const config = usePosConfig()
+    const tiposHabilitados = POS_TIPOS_ORDER.filter((tipo) => config.tipos[tipo])
+    const metodosPagoHabilitados = POS_METODOS_ORDER.filter((id) => config.metodosPago[id])
+    const nombreEditable = config.camposCliente.nombre && nombreVisible
+    const telefonoEditable = config.camposCliente.telefono && telefonoVisible
 
     if (!draft) {
         return (
@@ -988,55 +995,65 @@ const PosComandaPreview = ({
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 z-40 bg-[#FFFBF0] dark:bg-background">
                     <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
-                        <div className="grid grid-cols-3 gap-1 rounded-2xl bg-muted/60 p-1">
-                            <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'delivery' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'delivery' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
-                                <Truck className="h-4 w-4" />Delivery
-                            </button>
-                            <button disabled={!mesasActivas} onClick={onRequestMesa} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40', draft.tipo === 'mesa' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
-                                <Armchair className="h-4 w-4" />Mesa
-                            </button>
-                            <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'takeaway' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'takeaway' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
-                                <ShoppingBag className="h-4 w-4" />Takeaway
-                            </button>
+                        <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
+                            {tiposHabilitados.includes('delivery') && (
+                                <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'delivery' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'delivery' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                    <Truck className="h-4 w-4" />Delivery
+                                </button>
+                            )}
+                            {tiposHabilitados.includes('mesa') && (
+                                <button disabled={!mesasActivas} onClick={onRequestMesa} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40', draft.tipo === 'mesa' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                    <Armchair className="h-4 w-4" />Mesa
+                                </button>
+                            )}
+                            {tiposHabilitados.includes('takeaway') && (
+                                <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'takeaway' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'takeaway' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                    <ShoppingBag className="h-4 w-4" />Takeaway
+                                </button>
+                            )}
                         </div>
                         {draft.tipo === 'mesa' && draft.mesaNombre && <p className="text-center text-xs font-semibold text-[#FF7A00]">Asignado a {draft.mesaNombre}</p>}
-                        <div className="grid grid-cols-4 gap-1 rounded-2xl bg-muted/60 p-1">
-                            {Object.entries(POS_METODO_LABEL).map(([id, label]) => (
-                                <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center', draft.metodoPago === id ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
+                        {metodosPagoHabilitados.length > 0 && (
+                            <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${metodosPagoHabilitados.length}, minmax(0, 1fr))` }}>
+                                {metodosPagoHabilitados.map((id) => (
+                                    <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center', draft.metodoPago === id ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                        {POS_METODO_LABEL[id]}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         <div className="relative text-left">
-                            {nombreVisible && <div className="flex h-11 items-center gap-2 border-b border-border focus-within:border-[#FF7A00]">
-                                <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none text-2xl font-black tracking-tight focus-visible:ring-0" />
-                                {draft.tipo === 'delivery' && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none text-base focus-visible:ring-0" />}
+                            {nombreEditable && <div className="flex h-11 items-center gap-2 border-b border-border focus-within:border-[#FF7A00]">
+                                <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent text-2xl font-black tracking-tight focus-visible:ring-0" />
+                                {draft.tipo === 'delivery' && config.camposCliente.direccion && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent text-base focus-visible:ring-0" />}
                                 <div className="flex items-center gap-1">
                                     <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
-                                    <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                                    {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
                                 </div>
                             </div>}
-                            {telefonoVisible && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', nombreVisible && 'mt-3')}>
+                            {telefonoEditable && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', nombreEditable && 'mt-3')}>
                                 <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                <Input value={draft.telefono} onChange={(event) => onUpdate?.({ telefono: event.target.value })} placeholder="Celular" inputMode="tel" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none focus-visible:ring-0" />
-                                {!nombreVisible && draft.tipo === 'delivery' && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none focus-visible:ring-0" />}
-                                {!nombreVisible && <div className="flex items-center gap-1">
-                                    <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                                <Input value={draft.telefono} onChange={(event) => onUpdate?.({ telefono: event.target.value })} placeholder="Celular" inputMode="tel" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0" />
+                                {!nombreEditable && draft.tipo === 'delivery' && config.camposCliente.direccion && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0" />}
+                                {!nombreEditable && <div className="flex items-center gap-1">
+                                    {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
                                     <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
                                 </div>}
                             </div>}
-                            {!nombreVisible && !telefonoVisible && <div className="flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
-                                {draft.tipo === 'delivery' && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none focus-visible:ring-0" />}
+                            {!nombreEditable && !telefonoEditable && (config.camposCliente.nombre || config.camposCliente.telefono) && <div className="flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
+                                {draft.tipo === 'delivery' && config.camposCliente.direccion && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0" />}
                                 <div className="flex gap-1">
-                                <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
-                                <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                                {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
+                                {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
                                 </div>
                             </div>}
                         </div>
-                        <div>
-                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Nota</Label>
-                            <Input value={draft.notas} onChange={(event) => onUpdate?.({ notas: event.target.value })} placeholder="Aclaraciones del pedido" className="h-10 rounded-xl" />
-                        </div>
+                        {config.notas && (
+                            <div>
+                                <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Nota</Label>
+                                <Input value={draft.notas} onChange={(event) => onUpdate?.({ notas: event.target.value })} placeholder="Aclaraciones del pedido" className="h-10 rounded-xl" />
+                            </div>
+                        )}
                         <div className="flex items-baseline justify-between gap-3">
                             <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">Total</span>
                             <span className="text-3xl font-black tracking-tight text-[#FF7A00]">

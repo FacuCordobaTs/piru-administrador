@@ -9,6 +9,7 @@ import { pedidoUnificadoApi, type PedidoUnificadoItemInput } from '@/lib/api'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { POS_TIPOS_ORDER, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
 import {
     X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2, Armchair,
     Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight, Eye, EyeOff,
@@ -140,7 +141,7 @@ interface PuntoDeVentaProps {
     initialPedido?: PosEditablePedido | null
 }
 
-const METODOS_PAGO: Array<{ id: string; label: string; icon: React.ElementType }> = [
+const METODOS_PAGO: Array<{ id: PosMetodoPago; label: string; icon: React.ElementType }> = [
     { id: 'cash', label: 'Efectivo', icon: Banknote },
     { id: 'tarjeta', label: 'Tarjeta', icon: CreditCard },
     { id: 'manual_transfer', label: 'Transferencia', icon: Landmark },
@@ -170,6 +171,16 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 ) {
     const token = useAuthStore((s) => s.token)
     const { productos } = useRestauranteStore()
+    // La configuración del POS (qué datos/opciones se cargan) vive en localStorage.
+    const config = usePosConfig()
+    const tiposHabilitados = useMemo(
+        () => POS_TIPOS_ORDER.filter((tipo) => config.tipos[tipo]),
+        [config],
+    )
+    const metodosHabilitados = useMemo(
+        () => METODOS_PAGO.filter((metodo) => config.metodosPago[metodo.id]),
+        [config],
+    )
 
     const [query, setQuery] = useState('')
     const searchInputRef = useRef<HTMLInputElement>(null)
@@ -322,6 +333,18 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             // sessionStorage puede estar deshabilitado; el POS sigue funcionando en memoria.
         }
     }, [modoEdicion, hydratedStorageKey, storageKey, cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee])
+
+    // Si la configuración del POS deshabilitó el tipo o el método de pago del
+    // borrador, se pasa al primero habilitado. Al editar se respeta el pedido.
+    useEffect(() => {
+        if (modoEdicion || mesaAsignada) return
+        setTipo((current) => config.tipos[current] ? current : (tiposHabilitados[0] ?? 'takeaway'))
+    }, [modoEdicion, mesaAsignada, config, tiposHabilitados])
+
+    useEffect(() => {
+        if (modoEdicion) return
+        setMetodoPago((current) => config.metodosPago[current as PosMetodoPago] ? current : (metodosHabilitados[0]?.id ?? 'cash'))
+    }, [modoEdicion, config, metodosHabilitados])
 
     // ── Productos filtrados por búsqueda (nombre, descripción o etiquetas/tags) ──
     const productosFiltrados = useMemo(() => {
@@ -486,7 +509,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const handleSubmit = async () => {
         if (!token) return
         if (cart.length === 0) return toast.error('Agregá al menos un producto')
-        if (tipo === 'delivery' && !direccion.trim()) return toast.error('Ingresá la dirección de entrega')
+        if (tipo === 'delivery' && config.camposCliente.direccion && !direccion.trim()) return toast.error('Ingresá la dirección de entrega')
 
         const items: PedidoUnificadoItemInput[] = cart.map((it) => ({
             productoId: it.productoId,
@@ -560,6 +583,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         }
     }
 
+    // Con la configuración del POS, un campo desactivado se oculta por completo
+    // (no sólo con el toggle de ojo) y no participa de los datos del borrador.
+    const nombreEditable = config.camposCliente.nombre && nombreVisible
+    const telefonoEditable = config.camposCliente.telefono && telefonoVisible
+
     // ── Sub-componente: panel de checkout (carrito + datos) ──
     const CheckoutPanel = (
         <div className="flex flex-col h-full">
@@ -620,59 +648,65 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 {/* En desktop estos controles viven en la comanda; en mobile este panel es la comanda. */}
                 <div className="lg:hidden">
                     <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Tipo</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                        <button
-                            onClick={() => { onClearMesa?.(); setTipo('delivery') }}
-                            className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
-                                tipo === 'delivery' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                        >
-                            <Truck className="h-4 w-4" /> Delivery
-                        </button>
-                        <button
-                            onClick={onRequestMesa}
-                            className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
-                                tipo === 'mesa' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                        >
-                            <Armchair className="h-4 w-4" /> Mesa
-                        </button>
-                        <button
-                            onClick={() => { onClearMesa?.(); setTipo('takeaway') }}
-                            className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
-                                tipo === 'takeaway' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                        >
-                            <ShoppingBag className="h-4 w-4" /> Takeaway
-                        </button>
+                    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
+                        {tiposHabilitados.includes('delivery') && (
+                            <button
+                                onClick={() => { onClearMesa?.(); setTipo('delivery') }}
+                                className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
+                                    tipo === 'delivery' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
+                            >
+                                <Truck className="h-4 w-4" /> Delivery
+                            </button>
+                        )}
+                        {tiposHabilitados.includes('mesa') && (
+                            <button
+                                onClick={onRequestMesa}
+                                className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
+                                    tipo === 'mesa' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
+                            >
+                                <Armchair className="h-4 w-4" /> Mesa
+                            </button>
+                        )}
+                        {tiposHabilitados.includes('takeaway') && (
+                            <button
+                                onClick={() => { onClearMesa?.(); setTipo('takeaway') }}
+                                className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
+                                    tipo === 'takeaway' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
+                            >
+                                <ShoppingBag className="h-4 w-4" /> Takeaway
+                            </button>
+                        )}
                     </div>
                     {mesaAsignada && <p className="mt-2 text-center text-xs font-semibold text-[#FF7A00]">Asignado a {mesaAsignada.nombre}</p>}
                 </div>
 
                 {/* Datos del cliente */}
                 <div className="relative space-y-3 lg:hidden">
-                    {nombreVisible && <div className="space-y-1.5">
+                    {nombreEditable && <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
                             <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
                             <div className="flex items-center gap-1">
                                 <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
-                                <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                                {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
                             </div>
                         </div>
-                        <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl" />
+                        <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
                     </div>}
-                    {telefonoVisible && <div className="space-y-1.5">
+                    {telefonoEditable && <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
                             <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Celular</Label>
-                            {!nombreVisible && <div className="flex items-center gap-1">
-                                <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
+                            {!nombreEditable && <div className="flex items-center gap-1">
+                                {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
                                 <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
                             </div>}
                         </div>
-                        <Input value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))} placeholder="Ej: 3415123456" inputMode="tel" className="h-11 rounded-xl" />
+                        <Input value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))} placeholder="Ej: 3415123456" inputMode="tel" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
                     </div>}
-                    {!nombreVisible && !telefonoVisible && <div className="absolute right-0 top-0 flex items-center gap-1">
-                        <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
-                        <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
+                    {(config.camposCliente.nombre || config.camposCliente.telefono) && !nombreEditable && !telefonoEditable && <div className="absolute right-0 top-0 flex items-center gap-1">
+                        {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
+                        {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
                     </div>}
-                    {tipo === 'delivery' && (
+                    {tipo === 'delivery' && config.camposCliente.direccion && (
                         <>
                             <div className="space-y-1.5">
                                 <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Dirección</Label>
@@ -686,37 +720,39 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                 <Label className="text-xs font-semibold text-muted-foreground">Costo de envío</Label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
-                                    <Input value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0" inputMode="decimal" className="h-11 rounded-xl pl-7" />
+                                    <Input value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0" inputMode="decimal" className="h-11 rounded-xl pl-7 bg-transparent dark:bg-transparent" />
                                 </div>
                             </div>
                         </>
                     )}
-                    <div className="space-y-1.5">
+                    {config.notas && <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-muted-foreground">Notas</Label>
                         <Textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Aclaraciones..." className="rounded-xl resize-none min-h-[60px]" />
-                    </div>
+                    </div>}
                 </div>
 
                 {/* Método de pago */}
-                <div className="lg:hidden">
-                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Método de pago</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                        {METODOS_PAGO.map((m) => {
-                            const Icon = m.icon
-                            const selected = metodoPago === m.id
-                            return (
-                                <button
-                                    key={m.id}
-                                    onClick={() => setMetodoPago(m.id)}
-                                    className={cn('flex items-center gap-2 h-10 px-3 rounded-xl border text-sm font-semibold transition-colors',
-                                        selected ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                                >
-                                    <Icon className="h-4 w-4 shrink-0" /> {m.label}
-                                </button>
-                            )
-                        })}
+                {metodosHabilitados.length > 0 && (
+                    <div className="lg:hidden">
+                        <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Método de pago</Label>
+                        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${metodosHabilitados.length}, minmax(0, 1fr))` }}>
+                            {metodosHabilitados.map((m) => {
+                                const Icon = m.icon
+                                const selected = metodoPago === m.id
+                                return (
+                                    <button
+                                        key={m.id}
+                                        onClick={() => setMetodoPago(m.id)}
+                                        className={cn('flex items-center gap-2 h-10 px-3 rounded-xl border text-sm font-semibold transition-colors',
+                                            selected ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
+                                    >
+                                        <Icon className="h-4 w-4 shrink-0" /> {m.label}
+                                    </button>
+                                )
+                            })}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
 
             {/* En desktop el total y la confirmación viven en la comanda del Dashboard. */}

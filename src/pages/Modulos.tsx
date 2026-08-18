@@ -15,13 +15,25 @@ import {
   ChevronRight,
   CircleCheck,
   CircleAlert,
+  Truck,
+  Armchair,
+  ShoppingBag,
+  Banknote,
+  Landmark,
+  Smartphone,
+  User,
+  Phone,
+  MapPin,
+  StickyNote,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { getPosConfig, POS_METODOS_ORDER, POS_TIPOS_ORDER, setPosConfig, type PosConfig, type PosMetodoPago, type PosTipo } from '@/lib/posConfig'
 import { useModulosStore } from '@/store/modulosStore'
 import type { Modulo } from '@/lib/api'
 
@@ -104,9 +116,11 @@ function AccionModulo({
     if (modulo.tipo === 'pago') {
       return <Button className="w-full" variant="ghost" disabled={procesando} onClick={onDesactivar}>{procesando ? 'Guardando…' : 'Desactivar al finalizar el período'}</Button>
     }
+    // El POS no navega a una pantalla: abre su propia configuración en esta página.
+    const conConfiguracion = RUTAS_CONFIGURACION[modulo.codigo] || modulo.codigo === 'pos'
     return (
-      <div className={cn('grid gap-2', RUTAS_CONFIGURACION[modulo.codigo] && 'grid-cols-2')}>
-        {RUTAS_CONFIGURACION[modulo.codigo] ? (
+      <div className={cn('grid gap-2', conConfiguracion && 'grid-cols-2')}>
+        {conConfiguracion ? (
           <Button variant="outline" onClick={onConfigurar}>Configurar</Button>
         ) : null}
         <Button variant="ghost" disabled={procesando} onClick={onDesactivar}>
@@ -202,6 +216,141 @@ function CardModulo({
   )
 }
 
+const TIPOS_POS: Array<{ id: PosTipo; label: string; icon: typeof Truck }> = [
+  { id: 'delivery', label: 'Delivery', icon: Truck },
+  { id: 'mesa', label: 'Mesa', icon: Armchair },
+  { id: 'takeaway', label: 'Takeaway', icon: ShoppingBag },
+]
+
+const METODOS_POS: Array<{ id: PosMetodoPago; label: string; icon: typeof Banknote }> = [
+  { id: 'cash', label: 'Efectivo', icon: Banknote },
+  { id: 'tarjeta', label: 'Tarjeta', icon: CreditCard },
+  { id: 'manual_transfer', label: 'Transferencia', icon: Landmark },
+  { id: 'mercadopago', label: 'Mercado Pago', icon: Smartphone },
+]
+
+function FilaConfig({
+  icon: Icon,
+  label,
+  descripcion,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  icon: typeof Truck
+  label: string
+  descripcion?: string
+  checked: boolean
+  disabled?: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  return (
+    <div className={cn('flex items-center justify-between gap-3 rounded-2xl border p-3.5', checked ? 'border-border' : 'border-border/60 bg-muted/30', disabled && 'opacity-60')}>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          {descripcion && <p className="mt-0.5 text-xs text-muted-foreground">{descripcion}</p>}
+        </div>
+      </div>
+      <Switch size="sm" checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+    </div>
+  )
+}
+
+/**
+ * Configuración del punto de venta. Se guarda sólo en localStorage (este
+ * dispositivo): el backend no participa y el POS lee esta misma información
+ * para decidir qué componentes mostrar.
+ */
+function PosConfigForm({ onSaved }: { onSaved: () => void }) {
+  const [config, setConfig] = useState<PosConfig>(getPosConfig)
+
+  const toggleTipo = (tipo: PosTipo) => {
+    setConfig((prev) => {
+      const quedan = POS_TIPOS_ORDER.some((t) => t !== tipo && prev.tipos[t])
+      if (prev.tipos[tipo] && !quedan) {
+        toast.error('Dejá al menos un tipo de pedido activo')
+        return prev
+      }
+      const activo = !prev.tipos[tipo]
+      return {
+        ...prev,
+        tipos: { ...prev.tipos, [tipo]: activo },
+        camposCliente: {
+          ...prev.camposCliente,
+          // Sin delivery la dirección queda sin sentido y se desactiva.
+          direccion: tipo === 'delivery' && !activo ? false : prev.camposCliente.direccion,
+        },
+      }
+    })
+  }
+
+  const toggleMetodoPago = (id: PosMetodoPago) => {
+    setConfig((prev) => {
+      const quedan = POS_METODOS_ORDER.some((m) => m !== id && prev.metodosPago[m])
+      if (prev.metodosPago[id] && !quedan) {
+        toast.error('Dejá al menos un método de pago activo')
+        return prev
+      }
+      return { ...prev, metodosPago: { ...prev.metodosPago, [id]: !prev.metodosPago[id] } }
+    })
+  }
+
+  const toggleCampo = (campo: keyof PosConfig['camposCliente']) => {
+    setConfig((prev) => ({ ...prev, camposCliente: { ...prev.camposCliente, [campo]: !prev.camposCliente[campo] } }))
+  }
+
+  const guardar = () => {
+    setPosConfig(config)
+    toast.success('Configuración del punto de venta guardada')
+    onSaved()
+  }
+
+  return (
+    <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tipos de pedido</p>
+        <div className="mt-2 space-y-2">
+          {TIPOS_POS.map((t) => (
+            <FilaConfig key={t.id} icon={t.icon} label={t.label} checked={config.tipos[t.id]} onCheckedChange={() => toggleTipo(t.id)} />
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Métodos de pago</p>
+        <div className="mt-2 space-y-2">
+          {METODOS_POS.map((m) => (
+            <FilaConfig key={m.id} icon={m.icon} label={m.label} checked={config.metodosPago[m.id]} onCheckedChange={() => toggleMetodoPago(m.id)} />
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Datos del cliente</p>
+        <div className="mt-2 space-y-2">
+          <FilaConfig icon={User} label="Nombre" checked={config.camposCliente.nombre} onCheckedChange={() => toggleCampo('nombre')} />
+          <FilaConfig icon={Phone} label="Celular" checked={config.camposCliente.telefono} onCheckedChange={() => toggleCampo('telefono')} />
+          <FilaConfig
+            icon={MapPin}
+            label="Dirección"
+            descripcion="Requiere el tipo de pedido Delivery"
+            checked={config.camposCliente.direccion}
+            disabled={!config.tipos.delivery}
+            onCheckedChange={() => toggleCampo('direccion')}
+          />
+        </div>
+      </div>
+      <FilaConfig icon={StickyNote} label="Nota" checked={config.notas} onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, notas: checked }))} />
+      <DialogFooter className="gap-2 sm:gap-2">
+        <Button variant="outline" onClick={onSaved}>Cancelar</Button>
+        <Button onClick={guardar}>Guardar</Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
 function CatalogoSkeleton() {
   return (
     <div className="space-y-10">
@@ -234,6 +383,7 @@ export default function Modulos() {
   const [moduloSeleccionado, setModuloSeleccionado] = useState<Modulo | null>(null)
   const [moduloPagoSeleccionado, setModuloPagoSeleccionado] = useState<Modulo | null>(null)
   const [confirmandoBaja, setConfirmandoBaja] = useState<Modulo | null>(null)
+  const [configurandoPos, setConfigurandoPos] = useState(false)
   const vieneDeActivarSuscripcion = new URLSearchParams(location.search).get('origen') === 'suscripcion'
 
   useEffect(() => {
@@ -292,6 +442,10 @@ export default function Modulos() {
   }
 
   const configurarModulo = (modulo: Modulo) => {
+    if (modulo.codigo === 'pos') {
+      setConfigurandoPos(true)
+      return
+    }
     const ruta = RUTAS_CONFIGURACION[modulo.codigo]
     if (ruta) navigate(ruta)
   }
@@ -428,9 +582,11 @@ export default function Modulos() {
         <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
           {moduloSeleccionado && (() => {
             const requisito = requisitoConfiguracion(moduloSeleccionado)
-            const configuracion = requisito ?? (RUTAS_CONFIGURACION[moduloSeleccionado.codigo]
-              ? 'Podés dejar este módulo listo desde su pantalla de configuración.'
-              : null)
+            const configuracion = requisito ?? (moduloSeleccionado.codigo === 'pos'
+              ? 'Podés elegir qué datos y opciones se muestran al anotar un pedido.'
+              : RUTAS_CONFIGURACION[moduloSeleccionado.codigo]
+                ? 'Podés dejar este módulo listo desde su pantalla de configuración.'
+                : null)
             const proximamente = moduloSeleccionado.estadoProducto === 'proximamente' || !moduloSeleccionado.activable
             const activo = moduloSeleccionado.estado === 'activo'
             const estadoTexto = proximamente
@@ -528,6 +684,18 @@ export default function Modulos() {
             <Button variant="outline" disabled={Boolean(procesandoCodigo)} onClick={() => void enviarLinkPago()}><MessageCircle className="h-4 w-4" />Link por WhatsApp</Button>
             <Button disabled={Boolean(procesandoCodigo)} onClick={() => void iniciarCheckout()}>{procesandoCodigo ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pagar ahora'}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={configurandoPos} onOpenChange={(abierto) => !abierto && setConfigurandoPos(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Configurar punto de venta</DialogTitle>
+            <DialogDescription>
+              Elegí qué datos y opciones se cargan al anotar un pedido. La configuración se guarda en este dispositivo.
+            </DialogDescription>
+          </DialogHeader>
+          {configurandoPos && <PosConfigForm onSaved={() => setConfigurandoPos(false)} />}
         </DialogContent>
       </Dialog>
 
