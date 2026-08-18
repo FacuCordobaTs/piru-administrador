@@ -30,6 +30,7 @@ type SucursalForm = {
   direccionLat: number | null
   direccionLng: number | null
   direccionCiudad: string | null
+  transferenciaAlias: string
   whatsappEnabled: boolean
   whatsappNumber: string
   rapiboyToken: string
@@ -42,6 +43,7 @@ const vacio: SucursalForm = {
   direccionLat: null,
   direccionLng: null,
   direccionCiudad: null,
+  transferenciaAlias: '',
   whatsappEnabled: false,
   whatsappNumber: '',
   rapiboyToken: '',
@@ -65,6 +67,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
             direccionLat: editando.direccionLat != null ? Number(editando.direccionLat) : null,
             direccionLng: editando.direccionLng != null ? Number(editando.direccionLng) : null,
             direccionCiudad: editando.direccionCiudad || null,
+            transferenciaAlias: editando.transferenciaAlias || '',
             whatsappEnabled: editando.whatsappEnabled,
             whatsappNumber: editando.whatsappNumber || '',
             // Una credencial ya existente se conserva aunque el módulo esté
@@ -205,6 +208,22 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
               />
             </div>
           )}
+          <div className="space-y-1.5">
+            <Label className="font-medium">
+              Alias para transferencias <span className="font-normal text-muted-foreground">(opcional)</span>
+            </Label>
+            <Input
+              value={form.transferenciaAlias}
+              onChange={(e) => setForm((p) => ({ ...p, transferenciaAlias: e.target.value }))}
+              placeholder="Ej: sucursal.centro"
+              autoCapitalize="none"
+              autoCorrect="off"
+              className="h-11"
+            />
+            <p className="text-xs font-normal text-muted-foreground">
+              Se muestra en el mensaje del pedido. Si queda vacío, se usa el alias general del negocio.
+            </p>
+          </div>
           {rapiboyActivo && <div className="space-y-1.5">
             <Label className="font-medium">
               Token Rapiboy <span className="font-normal text-muted-foreground">(opcional)</span>

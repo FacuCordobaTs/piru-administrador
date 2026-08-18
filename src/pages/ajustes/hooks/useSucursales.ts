@@ -9,6 +9,7 @@ export interface Sucursal {
   direccionLat: string | null
   direccionLng: string | null
   direccionCiudad: string | null
+  transferenciaAlias: string | null
   whatsappEnabled: boolean
   whatsappNumber: string | null
   rapiboyToken: string | null
