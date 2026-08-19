@@ -325,6 +325,7 @@ export const restauranteApi = {
       direccionTexto?: string | null
       direccionLat?: number | null
       direccionLng?: number | null
+      deliveryFee?: string
     }
   ) => {
     return fetchApi('/restaurante/update', {

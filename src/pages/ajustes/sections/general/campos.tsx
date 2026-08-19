@@ -80,6 +80,48 @@ export function SucursalJustInTime() {
   )
 }
 
+/** Costo fijo de envío: autosave onBlur, sólo números. Vacío = sin costo. */
+export function CostoEnvioField() {
+  const { valor, guardar, status } = useAjuste('deliveryFee')
+  const [draft, setDraft] = useState(String(valor ?? ''))
+  useEffect(() => {
+    setDraft(String(valor ?? ''))
+  }, [valor])
+  const commit = () => guardar(draft)
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Label htmlFor="ajuste-costo-envio" className="font-medium">
+          Costo fijo por envío
+        </Label>
+        <SavedIndicator status={status} />
+      </div>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
+        <Input
+          id="ajuste-costo-envio"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ''))}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
+          }}
+          placeholder="0"
+          inputMode="decimal"
+          className="h-11 rounded-xl pl-7"
+        />
+      </div>
+      <p className="text-xs font-normal text-muted-foreground">
+        Se suma automáticamente a cada pedido de delivery del POS. Dejalo en 0 para no cobrar envío.
+      </p>
+    </div>
+  )
+}
+
 /** Campo de color con swatch + hex, autosave onBlur. */
 export function ColorField({
   campo,

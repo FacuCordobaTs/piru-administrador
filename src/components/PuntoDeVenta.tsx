@@ -236,6 +236,12 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // pago existente: cambiar productos o datos del cliente no confirma cobros.
     const pagado = initialPedido?.pagado ?? true
     const [deliveryFee, setDeliveryFee] = useState('')
+    // Costo fijo de envío del restaurante (Ajustes → General): precarga los
+    // pedidos de delivery nuevos para no volver a preguntar lo ya decidido.
+    const costoEnvioFijoNum = parseFloat(useRestauranteStore((s) => s.restaurante?.deliveryFee) ?? '') || 0
+    // El prefill se aplica una sola vez por borrador: si el cajero vacía el
+    // costo a propósito (envío gratis puntual), no se vuelve a reponer.
+    const prefillEnvioRef = useRef(false)
     const [submitting, setSubmitting] = useState(false)
     const modoEdicion = initialPedido != null
     // Una edición no comparte almacenamiento con el borrador de alta. El borrador
@@ -386,6 +392,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         try {
             const saved = sessionStorage.getItem(storageKey)
             if (saved) {
+                prefillEnvioRef.current = false
                 const parsed = JSON.parse(saved) as Partial<PersistedPosDraft>
                 setCart(Array.isArray(parsed.cart) ? parsed.cart : [])
                 setTipo(mesaAsignada ? 'mesa' : parsed.tipo === 'delivery' ? 'delivery' : 'takeaway')
@@ -396,6 +403,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 setMetodoPago(typeof parsed.metodoPago === 'string' ? parsed.metodoPago : 'cash')
                 setDeliveryFee(typeof parsed.deliveryFee === 'string' ? parsed.deliveryFee : '')
             } else {
+                prefillEnvioRef.current = false
                 setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
                 setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
             }
@@ -434,6 +442,23 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         if (modoEdicion) return
         setMetodoPago((current) => config.metodosPago[current as PosMetodoPago] ? current : (metodosHabilitados[0]?.id ?? 'cash'))
     }, [modoEdicion, config, metodosHabilitados])
+
+    // Un delivery nuevo nace con el costo fijo del restaurante precargado; el
+    // cajero igual puede ajustarlo o vaciarlo por pedido. Cubre también el
+    // caso "el perfil todavía no cargó": cuando llega el costo y el borrador
+    // sigue en delivery sin fee, se rellena en ese momento.
+    useEffect(() => {
+        if (modoEdicion || tipo !== 'delivery' || prefillEnvioRef.current) return
+        if (deliveryFee.trim() === '') {
+            if (costoEnvioFijoNum > 0) {
+                prefillEnvioRef.current = true
+                setDeliveryFee(String(costoEnvioFijoNum))
+            }
+        } else {
+            // El cajero ya escribió un valor: respetarlo, sin volver a mirar.
+            prefillEnvioRef.current = true
+        }
+    }, [tipo, deliveryFee, costoEnvioFijoNum, modoEdicion])
 
     // ── Productos filtrados por búsqueda ──
     // Cada término debe coincidir en algún lado (nombre, descripción, categoría
@@ -631,6 +656,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     const resetForm = () => {
+        prefillEnvioRef.current = false
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
         setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
         setQuery(''); setMobileStep('productos')

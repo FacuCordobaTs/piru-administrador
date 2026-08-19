@@ -12,9 +12,10 @@ import {
   SucursalJustInTime,
   ColorField,
   LogoField,
+  CostoEnvioField,
 } from './general/campos'
 
-type EditorId = 'negocio' | 'tienda' | 'logos' | 'avisos' | null
+type EditorId = 'negocio' | 'tienda' | 'envio' | 'logos' | 'avisos' | null
 
 export default function General() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
@@ -27,6 +28,7 @@ export default function General() {
   const avisosOn = restaurante?.whatsappEnabled === true
   const telefono = restaurante?.telefono?.trim()
   const colorUnico = restaurante?.usarColorUnico === true
+  const costoEnvioNum = parseFloat(restaurante?.deliveryFee ?? '') || 0
 
   return (
     <section className="space-y-6">
@@ -57,6 +59,16 @@ export default function General() {
           }
           estado={username ? 'configurado' : 'sin-configurar'}
           onAccion={() => setEditor('tienda')}
+        />
+        <AjusteRow
+          titulo="Costo de envío"
+          oracion={
+            costoEnvioNum > 0
+              ? `Cobrás $${costoEnvioNum.toLocaleString('es-AR', { minimumFractionDigits: 0 })} por pedido de delivery`
+              : 'Sin costo fijo de envío configurado'
+          }
+          estado={costoEnvioNum > 0 ? 'configurado' : 'sin-configurar'}
+          onAccion={() => setEditor('envio')}
         />
         <AjusteRow
           titulo="Avisos de pedidos"
@@ -119,6 +131,15 @@ export default function General() {
             </div>
           )}
         </div>
+      </AjusteEditor>
+
+      <AjusteEditor
+        open={editor === 'envio'}
+        onOpenChange={(o) => !o && setEditor(null)}
+        titulo="Costo de envío"
+        descripcion="Se precarga automáticamente en los pedidos de delivery anotados en el POS."
+      >
+        <CostoEnvioField />
       </AjusteEditor>
 
       <AjusteEditor
