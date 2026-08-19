@@ -21,7 +21,7 @@ import {
     Phone, ShoppingBag, CalendarDays, Tag, Settings,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
-    Copy, ExternalLink, MoreVertical, Eye, EyeOff, Armchair, Pencil,
+    Copy, ExternalLink, MoreVertical, Armchair, Pencil,
 } from 'lucide-react'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -35,7 +35,7 @@ import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { POS_METODOS_ORDER, POS_TIPOS_ORDER, usePosConfig } from '@/lib/posConfig'
+import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig } from '@/lib/posConfig'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
 
@@ -854,20 +854,6 @@ const POS_METODO_LABEL: Record<string, string> = {
     mercadopago: 'Mercado Pago',
 }
 
-/** El toggle se usa sólo con puntero: no interrumpe el recorrido de carga del pedido. */
-const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: boolean; fieldName: string; onToggle: () => void }) => (
-    <button
-        type="button"
-        tabIndex={-1}
-        aria-label={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
-        title={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
-        onClick={onToggle}
-        className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-    >
-        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-    </button>
-)
-
 const PosComandaPreview = ({
     draft,
     onEditItem,
@@ -891,14 +877,12 @@ const PosComandaPreview = ({
     onClearMesa?: () => void
     editingPedidoId?: number
 }) => {
-    const [nombreVisible, setNombreVisible] = useState(true)
-    const [telefonoVisible, setTelefonoVisible] = useState(true)
     // Qué datos/opciones muestra la comanda según la configuración del POS.
     const config = usePosConfig()
     const tiposHabilitados = POS_TIPOS_ORDER.filter((tipo) => config.tipos[tipo])
     const metodosPagoHabilitados = POS_METODOS_ORDER.filter((id) => config.metodosPago[id])
-    const nombreEditable = config.camposCliente.nombre && nombreVisible
-    const telefonoEditable = config.camposCliente.telefono && telefonoVisible
+    const nombreEditable = config.camposCliente.nombre
+    const telefonoEditable = config.camposCliente.telefono
 
     if (!draft) {
         return (
@@ -1013,7 +997,9 @@ const PosComandaPreview = ({
                             )}
                         </div>
                         {draft.tipo === 'mesa' && draft.mesaNombre && <p className="text-center text-xs font-semibold text-[#FF7A00]">Asignado a {draft.mesaNombre}</p>}
-                        {metodosPagoHabilitados.length > 0 && (
+                        {/* Con un único método habilitado no se muestra ningún botón:
+                            el pedido se guarda directo con ese método. */}
+                        {metodosPagoHabilitados.length > 1 && (
                             <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${metodosPagoHabilitados.length}, minmax(0, 1fr))` }}>
                                 {metodosPagoHabilitados.map((id) => (
                                     <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center', draft.metodoPago === id ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
@@ -1023,29 +1009,23 @@ const PosComandaPreview = ({
                             </div>
                         )}
                         <div className="relative text-left">
+                            {/* Dirección: siempre visible, desactivada cuando el pedido es mesa o takeaway. */}
+                            {config.camposCliente.direccion && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', (nombreEditable || telefonoEditable) && 'mb-3')}>
+                                <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <Input
+                                    value={draft.direccion}
+                                    onChange={(event) => onUpdate?.({ direccion: event.target.value })}
+                                    placeholder="Dirección de entrega"
+                                    disabled={draft.tipo !== 'delivery'}
+                                    className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0"
+                                />
+                            </div>}
                             {nombreEditable && <div className="flex h-11 items-center gap-2 border-b border-border focus-within:border-[#FF7A00]">
                                 <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent text-2xl font-black tracking-tight focus-visible:ring-0" />
-                                {draft.tipo === 'delivery' && config.camposCliente.direccion && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent text-base focus-visible:ring-0" />}
-                                <div className="flex items-center gap-1">
-                                    <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
-                                    {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
-                                </div>
                             </div>}
                             {telefonoEditable && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', nombreEditable && 'mt-3')}>
                                 <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                 <Input value={draft.telefono} onChange={(event) => onUpdate?.({ telefono: event.target.value })} placeholder="Celular" inputMode="tel" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0" />
-                                {!nombreEditable && draft.tipo === 'delivery' && config.camposCliente.direccion && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0" />}
-                                {!nombreEditable && <div className="flex items-center gap-1">
-                                    {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
-                                    <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
-                                </div>}
-                            </div>}
-                            {!nombreEditable && !telefonoEditable && (config.camposCliente.nombre || config.camposCliente.telefono) && <div className="flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]">
-                                {draft.tipo === 'delivery' && config.camposCliente.direccion && <Input value={draft.direccion} onChange={(event) => onUpdate?.({ direccion: event.target.value })} placeholder="Dirección de entrega" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0" />}
-                                <div className="flex gap-1">
-                                {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
-                                {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
-                                </div>
                             </div>}
                         </div>
                         {config.notas && (
@@ -1121,7 +1101,11 @@ const Dashboard = () => {
     const [updatingPago, setUpdatingPago] = useState<string | null>(null)
     const [dashboardMode, setDashboardMode] = useState<'orders' | 'nuevoPedido'>('orders')
     const [showOrderMap, setShowOrderMap] = useState(false)
-    const [showPOS, setShowPOS] = useState(false)
+    // Con el módulo POS activo el punto de venta queda siempre abierto: no hay
+    // botón para abrirlo ni cierre posible. En móvil el overlay conserva su
+    // propio estado para poder ver los pedidos detrás.
+    const showPOS = posActivo
+    const [showPosMovil, setShowPosMovil] = useState(false)
     const [pedidoPosEditando, setPedidoPosEditando] = useState<PosEditablePedido | null>(null)
     const [mesaPosAsignada, setMesaPosAsignada] = useState<Pick<MesaLocal, 'id' | 'nombre'> | null>(null)
     const [posContext, setPosContext] = useState<'borrador' | 'pedidoExistente'>('borrador')
@@ -1130,6 +1114,9 @@ const Dashboard = () => {
     const [draftPos, setDraftPos] = useState<PosDraft | null>(null)
     // Ref al POS (desktop) para que la comanda pueda quitar ítems del borrador.
     const posRef = useRef<PuntoDeVentaHandle>(null)
+    // Marca la sesión de edición que fusionó el borrador con el pedido de una
+    // mesa ocupada: al guardar, ese borrador ya quedó consumido y se limpia.
+    const mesaMergeRef = useRef(false)
     const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
     const [showMobileOrdersSheet, setShowMobileOrdersSheet] = useState(false)
     const [showCierreTurno, setShowCierreTurno] = useState(false)
@@ -1658,12 +1645,17 @@ const Dashboard = () => {
         setMesaPosAsignada(null)
         setPedidoPosEditando(null)
         setPosContext('borrador')
-        setShowPOS(true)
+        setShowPosMovil(true)
         setMobileView('detail')
     }
 
     const closePOS = () => {
-        setShowPOS(false)
+        // Con el módulo activo el POS no se cierra en desktop: esta función sólo
+        // oculta el overlay móvil. Si la edición de fusión se cierra sin guardar,
+        // el borrador queda intacto en sessionStorage; deja de estar pendiente la
+        // limpieza post-guardado.
+        mesaMergeRef.current = false
+        setShowPosMovil(false)
         setMesaPosAsignada(null)
         setPedidoPosEditando(null)
         setPosContext('borrador')
@@ -1700,6 +1692,12 @@ const Dashboard = () => {
         if (!showPOS) setDraftPos(null)
     }, [showPOS])
 
+    // En móvil el POS arranca abierto cuando el módulo está activo: replica el
+    // comportamiento de desktop, donde el panel no tiene cierre.
+    useEffect(() => {
+        if (posActivo) setShowPosMovil(true)
+    }, [posActivo])
+
     const handlePedidoManualCreado = () => {
         // El POS es un flujo de carga continua: después de anotar un pedido el
         // componente ya limpió su borrador. Sólo sincronizamos la lista, sin
@@ -1709,6 +1707,8 @@ const Dashboard = () => {
 
     const editarPedidoEnPos = async (pedido: UnifiedPedido) => {
         if (!token || !posActivo) return
+        // Editar otro pedido abandona cualquier fusión de mesa pendiente de guardar.
+        mesaMergeRef.current = false
         try {
             const response = await pedidoUnificadoApi.getById(token, pedido.id) as { success?: boolean; data?: PosEditablePedido & { editable?: boolean; motivosNoEditable?: string[] } }
             const editable = response.data
@@ -1721,7 +1721,7 @@ const Dashboard = () => {
                 ? { id: editable.mesaLocalId, nombre: editable.mesaNombre || `Mesa ${editable.mesaLocalId}` }
                 : null)
             setPosContext('borrador')
-            setShowPOS(true)
+            setShowPosMovil(true)
             setMobileView('detail')
         } catch (error) {
             toast.error('No se pudo abrir la edición', { description: error instanceof Error ? error.message : undefined })
@@ -1729,11 +1729,17 @@ const Dashboard = () => {
     }
 
     const handlePedidoManualActualizado = (pedido: PosEditablePedido) => {
+        // Si la edición fusionó el borrador con el pedido de una mesa, ese
+        // borrador ya quedó consumido: se limpia para que no resurja en el alta siguiente.
+        if (mesaMergeRef.current) {
+            mesaMergeRef.current = false
+            try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId)) } catch { /* noop */ }
+        }
         const actualizado = pedido as UnifiedPedido
         setUnifiedPedidos((prev) => prev.map((item) => item.id === actualizado.id ? { ...item, ...actualizado } : item))
         setPedidoPosEditando(null)
         setMesaPosAsignada(null)
-        setShowPOS(false)
+        setShowPosMovil(false)
         setPosContext('pedidoExistente')
         setSelectedUnifiedPedido(actualizado)
         setMobileView('detail')
@@ -1769,11 +1775,51 @@ const Dashboard = () => {
         setSelectedUnifiedPedido(null)
         setMesaPosAsignada({ id: mesa.id, nombre: mesa.nombre })
         setPosContext('borrador')
-        setShowPOS(true)
+        setShowPosMovil(true)
         setMobileView('detail')
     }
-    const abrirPedidoMesa = (pedidoMesa: { id: number }) => {
-        if (mesasDialogMode === 'asignar-borrador') return
+    const abrirPedidoMesa = async (pedidoMesa: { id: number }) => {
+        if (mesasDialogMode === 'asignar-borrador') {
+            // Mesa ocupada durante un borrador: el borrador se suma al pedido
+            // abierto. Se carga ese pedido en el POS en modo edición, con los
+            // ítems del borrador ya fusionados, y se guarda con "Guardar cambios".
+            const itemsBorrador = posRef.current?.getCartItems() ?? []
+            const pedido = activeOrders.find((candidato) => candidato.id === pedidoMesa.id)
+            if (itemsBorrador.length === 0) {
+                // Sin productos en el borrador no hay nada que sumar: se abre el
+                // pedido de la mesa como siempre.
+                if (!pedido) return
+                setShowMesasDialog(false)
+                setMesaPosAsignada(null)
+                setShowOrderMap(false)
+                setSelectedUnifiedPedido(pedido)
+                setPosContext('pedidoExistente')
+                setShowPosMovil(true)
+                setMobileView('detail')
+                return
+            }
+            if (!token) return
+            try {
+                const response = await pedidoUnificadoApi.getById(token, pedidoMesa.id) as { success?: boolean; data?: PosEditablePedido & { editable?: boolean; motivosNoEditable?: string[] } }
+                const editable = response.data
+                if (!response.success || !editable) return toast.error('No se pudo cargar el pedido de la mesa')
+                if (!editable.editable) return toast.error(editable.motivosNoEditable?.[0] || 'Este pedido ya no se puede editar')
+                mesaMergeRef.current = true
+                setShowMesasDialog(false)
+                setShowOrderMap(false)
+                setSelectedUnifiedPedido(null)
+                setPedidoPosEditando({ ...editable, items: [...editable.items, ...itemsBorrador] })
+                setMesaPosAsignada(editable.tipo === 'mesa' && editable.mesaLocalId
+                    ? { id: editable.mesaLocalId, nombre: editable.mesaNombre || `Mesa ${editable.mesaLocalId}` }
+                    : null)
+                setPosContext('borrador')
+                setShowPosMovil(true)
+                setMobileView('detail')
+            } catch (error) {
+                toast.error('No se pudo abrir el pedido de la mesa', { description: error instanceof Error ? error.message : undefined })
+            }
+            return
+        }
         const pedido = activeOrders.find((candidato) => candidato.id === pedidoMesa.id)
         if (!pedido) return
         setShowMesasDialog(false)
@@ -1781,7 +1827,7 @@ const Dashboard = () => {
         setShowOrderMap(false)
         setSelectedUnifiedPedido(pedido)
         setPosContext('pedidoExistente')
-        setShowPOS(true)
+        setShowPosMovil(true)
         setMobileView('detail')
     }
     // El selector del día sigue disponible al abrir el POS; solo el mapa lo reemplaza.
@@ -1855,17 +1901,16 @@ const Dashboard = () => {
                         </button>
                     ) : (
                         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                            {mobileView === 'detail' && showPOS ? (pedidoPosEditando ? `Editar #${pedidoPosEditando.id}` : 'Anotar pedido') : 'Mapa de pedidos'}
+                            {showPOS && !showOrderMap ? (pedidoPosEditando ? `Editar #${pedidoPosEditando.id}` : 'Anotar pedido') : 'Mapa de pedidos'}
                         </h1>
                     )}
-                    {posActivo && isDayTitle && !showPOS && (
+                    {/* En desktop el POS queda siempre abierto con el módulo activo;
+                        el botón sólo permite reabrir el overlay móvil. */}
+                    {!isDesktopViewport && posActivo && isDayTitle && !showPosMovil && (
                         <Button
                             variant="outline"
                             onClick={openPOS}
-                            className={cn(
-                                "h-8 rounded-full px-4 text-xs gap-1.5 flex items-center",
-                                showPOS && "border-[#FF7A00] text-[#FF7A00] bg-[#FF7A00]/10"
-                            )}
+                            className="h-8 rounded-full px-4 text-xs gap-1.5 flex items-center"
                         >
                             <ShoppingCart className="h-3.5 w-3.5" />
                             Anotar pedido
@@ -1892,7 +1937,10 @@ const Dashboard = () => {
                         </Button>
                     )}
                     <Button variant="outline" className="h-10 rounded-xl" onClick={() => {
-                        if (showPOS) { requestClosePOS(); return }
+                        // En desktop el POS nunca se cierra: el mapa se abre en el
+                        // panel derecho conviviendo con el POS. En móvil el overlay
+                        // se cierra primero (paridad con el flujo anterior).
+                        if (showPosMovil && !isDesktopViewport) { requestClosePOS(); return }
                         setShowOrderMap(true); setMobileView('detail')
                     }}>
                         <MapIcon className="mr-2 h-4 w-4" /> Mapa
@@ -2250,6 +2298,7 @@ const Dashboard = () => {
                                     onCreated={handlePedidoManualCreado}
                                     onUpdated={handlePedidoManualActualizado}
                                     sucursalActivaId={sucursalActivaId}
+                                    sucursalNombre={sucursalNombre}
                                     onDraftChange={setDraftPos}
                                     onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                     mesaAsignada={mesaPosAsignada}
@@ -2257,6 +2306,7 @@ const Dashboard = () => {
                                     onClearMesa={() => setMesaPosAsignada(null)}
                                     autoFocusSearch={posContext === 'borrador'}
                                     initialPedido={pedidoPosEditando}
+                                    mostrarBotonCerrar={false}
                                 />
                             </div>
                         )}
@@ -2316,8 +2366,8 @@ const Dashboard = () => {
                                                     {pedidoTipoLabel(selectedUnifiedPedido)}
                                                 </span>
                                                 {showPOS && posContext === 'pedidoExistente' && (
-                                                    <Button variant="outline" size="sm" className="h-8 rounded-lg text-xs font-bold" onClick={volverAlBorrador}>
-                                                        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Volver al borrador
+                                                    <Button variant="outline" size="sm" className="h-8 rounded-lg text-xs font-bold" onClick={() => void editarPedidoEnPos(selectedUnifiedPedido)}>
+                                                        <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar pedido
                                                     </Button>
                                                 )}
                                             </div>
@@ -2636,15 +2686,6 @@ const Dashboard = () => {
                                             </div>
                                                     {selectedUnifiedPedido.estado !== 'archived' && (
                                                 <div className="flex items-center gap-2">
-                                                    {selectedUnifiedPedido.anotadoManualmente && ['pending', 'received', 'preparing'].includes(selectedUnifiedPedido.estado) && (
-                                                        <button
-                                                            onClick={() => void editarPedidoEnPos(selectedUnifiedPedido)}
-                                                            title="Editar pedido en el punto de venta"
-                                                            className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-[#FF7A00] hover:bg-[#FF7A00]/10 transition-colors shrink-0 cursor-pointer"
-                                                        >
-                                                            <Pencil className="h-5 w-5" />
-                                                        </button>
-                                                    )}
                                                     <button
                                                         onClick={() => setShowDeleteDialog(true)}
                                                         className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 cursor-pointer"
@@ -2683,7 +2724,7 @@ const Dashboard = () => {
                         {/* ── POS (solo móvil) ──
                             En lg+ el POS es la columna inline del medio (arriba). En móvil, en
                             cambio, cubre la pantalla como overlay y la comanda queda detrás. */}
-                        {showPOS && !isDesktopViewport && (
+                        {showPosMovil && !isDesktopViewport && (
                             <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center p-3 sm:p-6 pointer-events-none">
                                 <div
                                     onClick={handlePosBackgroundClick}
@@ -2696,6 +2737,7 @@ const Dashboard = () => {
                                         onCreated={handlePedidoManualCreado}
                                         onUpdated={handlePedidoManualActualizado}
                                         sucursalActivaId={sucursalActivaId}
+                                        sucursalNombre={sucursalNombre}
                                         onDraftChange={setDraftPos}
                                         onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                         mesaAsignada={mesaPosAsignada}
@@ -2840,7 +2882,7 @@ const Dashboard = () => {
                         <DialogTitle className="flex items-center gap-2 text-lg font-bold">
                             <Armchair className="h-5 w-5 text-[#FF7A00]" /> {mesasDialogMode === 'asignar-borrador' ? 'Elegir mesa' : 'Mesas'}
                         </DialogTitle>
-                        <DialogDescription className="sr-only">{mesasDialogMode === 'asignar-borrador' ? 'Seleccioná una mesa libre para asignarla al pedido.' : 'Plano operativo de mesas.'}</DialogDescription>
+                        <DialogDescription className="sr-only">{mesasDialogMode === 'asignar-borrador' ? 'Elegí una mesa libre para asignarla al borrador, u ocupada para sumarle los productos del borrador.' : 'Plano operativo de mesas.'}</DialogDescription>
                     </DialogHeader>
                     <div className="min-h-0 flex-1 px-5 pb-5">
                         <MesasOperativas

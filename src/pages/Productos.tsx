@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import {
   Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
   X, AlertTriangle, Percent, Image as ImageIcon,
-  ChevronDown, GripVertical, ArrowUpDown, Check
+  ChevronDown, GripVertical, ArrowUpDown, Check, SquareCheck
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
@@ -52,6 +52,11 @@ const Productos = () => {
   const [panelModo, setPanelModo] = useState<'vista' | 'edicion'>('vista')
   const [panelNuevo, setPanelNuevo] = useState(false)
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false)
+  // ─── Selección múltiple / borrado masivo ───
+  const [seleccionando, setSeleccionando] = useState(false)
+  const [productosSeleccionados, setProductosSeleccionados] = useState<number[]>([])
+  const [dialogEliminarMasivoAbierto, setDialogEliminarMasivoAbierto] = useState(false)
+  const [isEliminandoMasivo, setIsEliminandoMasivo] = useState(false)
   const [seccionesAbiertas, setSeccionesAbiertas] = useState<Set<string>>(new Set(['info']))
   const [isDirty, setIsDirty] = useState(false)
   const [isTogglingActivo, setIsTogglingActivo] = useState(false)
@@ -292,6 +297,65 @@ const Productos = () => {
       }
     } finally {
       setIsEliminando(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Selección múltiple / borrado masivo
+  // ─────────────────────────────────────────────
+  const entrarModoSeleccion = () => {
+    cerrarPanel()
+    setProductosSeleccionados([])
+    setSeleccionando(true)
+  }
+
+  const salirModoSeleccion = () => {
+    setSeleccionando(false)
+    setProductosSeleccionados([])
+  }
+
+  const toggleSeleccionProducto = (id: number) => {
+    setProductosSeleccionados(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
+
+  const seleccionarTodosVisibles = () => {
+    setProductosSeleccionados(productosFiltrados.map(p => p.id))
+  }
+
+  const eliminarSeleccionados = async () => {
+    if (!token || productosSeleccionados.length === 0) return
+    setIsEliminandoMasivo(true)
+    try {
+      const response = await productosApi.bulkDelete(token, productosSeleccionados) as {
+        success: boolean
+        message: string
+        eliminados: number
+        bloqueados: string[]
+      }
+      toast.success(response.message || `${response.eliminados} producto(s) eliminado(s)`)
+      if (response.bloqueados && response.bloqueados.length > 0) {
+        const nombres = response.bloqueados.slice(0, 3).join(', ')
+        const restantes = response.bloqueados.length > 3 ? ` y ${response.bloqueados.length - 3} más` : ''
+        toast.warning('Algunos productos no se eliminaron', {
+          description: `${nombres}${restantes} tienen pedidos asociados. Desactivalos en su lugar para ocultarlos sin perder el historial.`
+        })
+      }
+      setDialogEliminarMasivoAbierto(false)
+      salirModoSeleccion()
+      await fetchData()
+    } catch (error: any) {
+      const errorMessage = error.message || error.response?.message || ''
+      if (errorMessage.includes('pedidos asociados') || errorMessage.includes('pedido')) {
+        toast.error('No se pudieron eliminar los productos', {
+          description: 'Algunos tienen pedidos asociados. Desactivalos en su lugar para ocultarlos del menú sin perder el historial.'
+        })
+      } else {
+        toast.error('Error al eliminar productos', { description: errorMessage || 'Error de conexión' })
+      }
+    } finally {
+      setIsEliminandoMasivo(false)
     }
   }
 
@@ -655,6 +719,13 @@ const Productos = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={seleccionando ? salirModoSeleccion : entrarModoSeleccion}
+                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5", seleccionando ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
+                >
+                  <SquareCheck className="h-4 w-4" />
+                  {seleccionando ? 'Cancelar selección' : 'Seleccionar'}
+                </button>
+                <button
                   onClick={abrirPanelNuevo}
                   className="h-9 px-4 rounded-lg text-sm font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white transition-colors flex items-center gap-1.5 shadow-md shadow-orange-500/20"
                 >
@@ -805,13 +876,15 @@ const Productos = () => {
                     )}>
                       {porCategoria[categoriaNombre].map((producto) => {
                         const isSelected = activePanelType === 'product' && panelProductoId === producto.id
+                        const isChecked = seleccionando && productosSeleccionados.includes(producto.id)
                         return (
                           <div
                             key={producto.id}
-                            onClick={() => abrirPanel(producto)}
+                            onClick={() => seleccionando ? toggleSeleccionProducto(producto.id) : abrirPanel(producto)}
                             className={cn(
                               "bg-white dark:bg-zinc-900 rounded-4xl overflow-hidden cursor-pointer transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800",
-                              isSelected && "border-l-2 border-orange-500",
+                              seleccionando && isChecked && "ring-2 ring-[#FF7A00]",
+                              !seleccionando && isSelected && "border-l-2 border-orange-500",
                               !producto.activo && "opacity-50"
                             )}
                           >
@@ -833,6 +906,14 @@ const Productos = () => {
                                   <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm text-[10px] px-1.5 py-0.5">
                                     -{producto.descuento}%
                                   </Badge>
+                                </div>
+                              )}
+                              {seleccionando && (
+                                <div className={cn(
+                                  "absolute top-2 right-2 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors",
+                                  isChecked ? "bg-[#FF7A00] border-[#FF7A00]" : "bg-white/90 dark:bg-zinc-900/90 border-zinc-400 dark:border-zinc-600"
+                                )}>
+                                  {isChecked && <Check className="h-3.5 w-3.5 text-white" />}
                                 </div>
                               )}
                             </div>
@@ -860,9 +941,38 @@ const Productos = () => {
         </div>
       </div>
 
+      {/* Barra de selección múltiple — visible solo en modo selección */}
+      {seleccionando && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 sm:gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 rounded-2xl shadow-xl px-3 py-2.5 sm:px-4">
+          <span className="text-sm font-semibold text-zinc-950 dark:text-white whitespace-nowrap">
+            {productosSeleccionados.length} seleccionado{productosSeleccionados.length !== 1 ? 's' : ''}
+          </span>
+          <button
+            onClick={seleccionarTodosVisibles}
+            className="text-xs font-medium text-[#FF7A00] hover:text-orange-400 transition-colors whitespace-nowrap"
+          >
+            Seleccionar todos
+          </button>
+          <button
+            onClick={salirModoSeleccion}
+            className="text-xs font-medium text-muted-foreground dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors whitespace-nowrap"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => setDialogEliminarMasivoAbierto(true)}
+            disabled={productosSeleccionados.length === 0}
+            className="h-9 px-3 sm:px-4 rounded-lg text-sm font-bold bg-red-500 hover:bg-red-600 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <Trash2 className="h-4 w-4" />
+            Eliminar
+          </button>
+        </div>
+      )}
+
       {/* FAB (Mobile Only) — oculto mientras el panel full-width está abierto */}
       <Button
-        className={cn("sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50", activePanelType && "hidden")}
+        className={cn("sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50", activePanelType && "hidden", seleccionando && "hidden")}
         onClick={abrirPanelNuevo}
       >
         <Plus className="h-6 w-6" />
@@ -1795,6 +1905,29 @@ const Productos = () => {
         </DialogContent>
       </Dialog>
 
+
+{/* ─────────────────────────────────────────────
+          MODAL: ELIMINAR PRODUCTOS (masivo)
+      ───────────────────────────────────────────── */}
+      <Dialog open={dialogEliminarMasivoAbierto} onOpenChange={setDialogEliminarMasivoAbierto}>
+        <DialogContent className="max-w-sm rounded-[32px] p-8 border-none bg-white dark:bg-zinc-900 text-center">
+          <div className="h-16 w-16 bg-red-100 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="h-8 w-8 text-red-600 dark:text-red-500" />
+          </div>
+          <DialogTitle className="text-xl font-bold mb-2">
+            Eliminar {productosSeleccionados.length} producto{productosSeleccionados.length !== 1 ? 's' : ''}
+          </DialogTitle>
+          <DialogDescription className="text-sm mb-8">
+            Esta acción es permanente. Los productos que tengan pedidos asociados no se eliminarán.
+          </DialogDescription>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 h-12 rounded-lg font-bold border-zinc-200 dark:border-zinc-800" onClick={() => setDialogEliminarMasivoAbierto(false)}>Cancelar</Button>
+            <Button variant="destructive" className="flex-1 h-12 rounded-lg font-bold" onClick={eliminarSeleccionados} disabled={isEliminandoMasivo}>
+              {isEliminandoMasivo ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Eliminar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
 {/* Modal: Confirmar Eliminar Extra */}
       <Dialog open={dialogEliminarAgregadoAbierto} onOpenChange={setDialogEliminarAgregadoAbierto}>

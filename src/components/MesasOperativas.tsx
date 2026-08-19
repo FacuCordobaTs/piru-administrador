@@ -132,7 +132,7 @@ export function MesasOperativas({
 
   return <section aria-label="Mesas operativas" className="flex h-full min-h-0 min-w-0 flex-col">
     <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
-      <p className="text-xs text-muted-foreground">{selectionMode ? 'Elegí una mesa libre para asignarla al borrador.' : 'Tocá una mesa para abrir su pedido o empezar uno nuevo.'}</p>
+      <p className="text-xs text-muted-foreground">{selectionMode ? 'Elegí una mesa libre para asignarla al borrador, u ocupada para sumarle los productos.' : 'Tocá una mesa para abrir su pedido o empezar uno nuevo.'}</p>
       <div className="flex shrink-0 items-center gap-1 rounded-xl border bg-background p-1 shadow-sm">
         <button type="button" aria-label="Alejar" disabled={zoom <= MIN_ZOOM} onClick={() => cambiarZoom(zoom - 0.1)} className="grid h-8 w-8 place-items-center rounded-lg hover:bg-muted disabled:opacity-30"><Minus className="h-4 w-4" /></button>
         <span className="w-12 text-center text-xs font-semibold tabular-nums">{Math.round(zoom * 100)}%</span>
@@ -161,8 +161,10 @@ export function MesasOperativas({
         const estado = estadoDerivado(pedido)
         const meta = ESTADO_MESA[estado]
         const Icon = meta.Icon
-        const noDisponible = selectionMode && !!pedido
-        return <button key={mesa.id} type="button" disabled={noDisponible} aria-label={`${mesa.nombre}, ${noDisponible ? 'no disponible' : meta.label}`} title={noDisponible ? `${mesa.nombre} está ocupada` : mesa.nombre} onClick={() => pedido ? onMesaOcupada(pedido) : onMesaLibre(mesa)} className={cn('absolute flex min-h-20 flex-col justify-between overflow-hidden rounded-xl border p-2.5 text-left shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:shadow-sm', meta.className, selectedMesaId === mesa.id && 'ring-2 ring-[#FF7A00] ring-offset-2')} style={{ left: (mesa.posicionX - limitesPlano.minX) * CELL_SIZE + 16, top: (mesa.posicionY - limitesPlano.minY) * CELL_SIZE + 16, width: Math.max(104, mesa.ancho * CELL_SIZE - 8), height: Math.max(88, mesa.alto * CELL_SIZE - 8) }}>
+        // En modo selección una mesa ocupada también es elegible: su pedido
+        // recibe los productos del borrador que se está armando.
+        const sumarAlPedido = selectionMode && !!pedido
+        return <button key={mesa.id} type="button" aria-label={`${mesa.nombre}, ${sumarAlPedido ? 'sumar productos del borrador a su pedido' : meta.label}`} title={sumarAlPedido ? `${mesa.nombre} · sumar productos del borrador a su pedido` : mesa.nombre} onClick={() => pedido ? onMesaOcupada(pedido) : onMesaLibre(mesa)} className={cn('absolute flex min-h-20 flex-col justify-between overflow-hidden rounded-xl border p-2.5 text-left shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', meta.className, selectedMesaId === mesa.id && 'ring-2 ring-[#FF7A00] ring-offset-2')} style={{ left: (mesa.posicionX - limitesPlano.minX) * CELL_SIZE + 16, top: (mesa.posicionY - limitesPlano.minY) * CELL_SIZE + 16, width: Math.max(104, mesa.ancho * CELL_SIZE - 8), height: Math.max(88, mesa.alto * CELL_SIZE - 8) }}>
           <span className="line-clamp-2 w-full break-words text-sm font-bold leading-tight">{mesa.nombre}</span>
           <div><span className="flex items-center gap-1 text-xs font-medium"><Icon className="h-3.5 w-3.5 shrink-0" />{meta.label}{pedido ? ` · #${pedido.id}` : ''}</span><span className="mt-1 flex items-center gap-1 text-[11px] opacity-75"><Users className="h-3 w-3" />{mesa.capacidad}</span></div>
         </button>

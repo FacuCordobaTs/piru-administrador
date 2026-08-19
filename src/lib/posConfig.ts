@@ -12,6 +12,11 @@ export interface PosConfig {
 
 export const POS_CONFIG_KEY = 'piru:pos-config'
 
+/** Clave del borrador POS en sessionStorage: una por sucursal, sin depender de
+ *  la mesa asignada, para que asignar/desasignar mesa conserve el mismo borrador. */
+export const posDraftStorageKey = (sucursalId: number | null) =>
+    `piru:pos-draft:${sucursalId ?? 'sin-sucursal'}`
+
 export const POS_TIPOS_ORDER: PosTipo[] = ['delivery', 'mesa', 'takeaway']
 export const POS_METODOS_ORDER: PosMetodoPago[] = ['cash', 'tarjeta', 'manual_transfer', 'mercadopago']
 

@@ -8,6 +8,7 @@ interface AddressAutocompleteProps {
     onChange: (address: string, lat: number | null, lng: number | null, details?: AddressPlaceDetails) => void
     placeholder?: string
     className?: string
+    disabled?: boolean
 }
 
 export interface AddressPlaceDetails {
@@ -28,7 +29,8 @@ export function AddressAutocomplete({
     value,
     onChange,
     placeholder = 'Busca la dirección...',
-    className
+    className,
+    disabled = false
 }: AddressAutocompleteProps) {
     const inputRef = useRef<HTMLInputElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
@@ -93,7 +95,7 @@ export function AddressAutocomplete({
     }
 
     return (
-        <div ref={containerRef} className="relative group">
+        <div ref={containerRef} className={cn('relative group', disabled && 'pointer-events-none opacity-60')}>
             <div
                 className={cn(
                     'relative flex items-center h-12 w-full rounded-xl border bg-transparent px-3 text-base transition-all duration-300',
@@ -124,7 +126,8 @@ export function AddressAutocomplete({
                     onFocus={() => setIsFocused(true)}
                     onBlur={() => setIsFocused(false)}
                     placeholder={placeholder}
-                    className="flex-1 h-full bg-transparent outline-none text-foreground placeholder:text-muted-foreground/60 text-sm"
+                    disabled={disabled}
+                    className="flex-1 h-full bg-transparent outline-none text-foreground placeholder:text-muted-foreground/60 text-sm disabled:cursor-not-allowed"
                     autoComplete="off"
                 />
 

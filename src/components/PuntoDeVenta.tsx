@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -7,12 +7,20 @@ import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidoUnificadoApi, type PedidoUnificadoItemInput } from '@/lib/api'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
+import { usePrinter } from '@/context/PrinterContext'
+import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
+import {
+    usePosOfflineStore, sincronizarPendientes, registrarPedidoSincronizado,
+    esErrorDeConexion, navegadorOffline, nextLocalNumero, deferComandaHastaPagado,
+    type PedidoPosPendiente,
+} from '@/lib/posOffline'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { POS_TIPOS_ORDER, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
+import { POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
 import {
     X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2, Armchair,
     Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight, Eye, EyeOff,
+    WifiOff, Printer,
 } from 'lucide-react'
 
 type Producto = ReturnType<typeof useRestauranteStore.getState>['productos'][number]
@@ -42,12 +50,15 @@ interface PersistedPosDraft {
     deliveryFee: string
 }
 
+
 export interface PosDraftItem {
     key: string
     nombre: string
     varianteNombre?: string
     varianteSecundariaNombre?: string
     ingredientesExcluidosNombres?: string[]
+    /** Extras aplicados: la comanda sin conexión los imprime como "CON: +...". */
+    agregados?: Array<{ nombre: string }>
     cantidad: number
     precioUnitario: number
 }
@@ -119,6 +130,9 @@ export interface PuntoDeVentaHandle {
     clearDraft: () => void
     /** Lleva el cursor al buscador de productos. */
     focusProductSearch: () => void
+    /** Exporta los ítems del borrador como ítems de pedido editable, para
+     *  fusionarlos en la edición del pedido de una mesa ocupada. */
+    getCartItems: () => PosEditablePedido['items']
 }
 
 interface PuntoDeVentaProps {
@@ -139,6 +153,10 @@ interface PuntoDeVentaProps {
     autoFocusSearch?: boolean
     /** Pedido POS que se carga como borrador editable. */
     initialPedido?: PosEditablePedido | null
+    /** Oculta la "x" de cierre: el POS queda siempre abierto (módulo activo en desktop). */
+    mostrarBotonCerrar?: boolean
+    /** Nombre de la sucursal activa, para la comanda impresa sin conexión. */
+    sucursalNombre?: string
 }
 
 const METODOS_PAGO: Array<{ id: PosMetodoPago; label: string; icon: React.ElementType }> = [
@@ -166,11 +184,15 @@ const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: bool
 )
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onRequestMesa, onClearMesa, autoFocusSearch = true, initialPedido = null },
+    { onClose, onCreated, onUpdated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onRequestMesa, onClearMesa, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '' },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
+    // La impresión de comandas es local (Tauri invoke): funciona sin conexión.
+    const { printRaw } = usePrinter()
+    const restauranteNombre = useAuthStore((s) => s.restaurante?.nombre) || 'Restaurante'
     const { productos } = useRestauranteStore()
+    const cucuruConfigurado = useRestauranteStore((s) => s.restaurante?.cucuruConfigurado) ?? false
     // La configuración del POS (qué datos/opciones se cargan) vive en localStorage.
     const config = usePosConfig()
     const tiposHabilitados = useMemo(
@@ -184,6 +206,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const [query, setQuery] = useState('')
     const searchInputRef = useRef<HTMLInputElement>(null)
+    // Contenedor scrolleable del listado: mantiene el producto destacado a la vista.
+    const scrollRef = useRef<HTMLDivElement>(null)
     const [cart, setCart] = useState<CartItem[]>([])
     const [configProducto, setConfigProducto] = useState<{
         producto: Producto
@@ -192,13 +216,17 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         initialItem?: CartItem
     } | null>(null)
     const [mobileStep, setMobileStep] = useState<'productos' | 'checkout'>('productos')
+    // El listado completo puede ocultarse para dejar la vista limpia: los
+    // productos reaparecen cuando se escribe en el buscador.
+    const [listadoOculto, setListadoOculto] = useState(false)
+    // Producto destacado del resultado: es el que Enter agrega al pedido y el
+    // que las flechitas recorren durante la búsqueda (indicado con el marquito).
+    const [indiceSeleccionado, setIndiceSeleccionado] = useState(0)
 
     // Datos del cliente
     const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('takeaway')
     const [nombre, setNombre] = useState('')
     const [telefono, setTelefono] = useState('')
-    const [nombreVisible, setNombreVisible] = useState(true)
-    const [telefonoVisible, setTelefonoVisible] = useState(true)
     const [direccion, setDireccion] = useState('')
     const [lat, setLat] = useState<number | null>(null)
     const [lng, setLng] = useState<number | null>(null)
@@ -210,12 +238,73 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const [deliveryFee, setDeliveryFee] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const modoEdicion = initialPedido != null
-    // Una edición no comparte almacenamiento con el borrador de alta ni cambia
-    // de clave al reasignar la mesa; eso evita rehidratar y perder cambios.
+    // Una edición no comparte almacenamiento con el borrador de alta. El borrador
+    // es uno solo por sucursal: asignar una mesa cambia el tipo pero conserva los
+    // productos ya cargados, y volver a delivery muestra el mismo borrador.
     const storageKey = modoEdicion
         ? `piru:pos-edit:${initialPedido.id}`
-        : `piru:pos-draft:${sucursalActivaId ?? 'sin-sucursal'}:${mesaAsignada?.id ?? 'sin-mesa'}`
+        : posDraftStorageKey(sucursalActivaId)
     const [hydratedStorageKey, setHydratedStorageKey] = useState<string | null>(null)
+
+    // ── Modo offline (sólo del POS) ──
+    // Arranca con el estado real del navegador; si un pedido falla por red
+    // mientras navigator.onLine sigue en true (servidor caído), se fuerza a
+    // offline para que la UI avise y el reintento periódico se encargue.
+    const [online, setOnline] = useState<boolean>(() => !navegadorOffline())
+    const [showPendientes, setShowPendientes] = useState(false)
+    const restauranteId = useAuthStore((s) => s.restaurante?.id ?? null)
+    const pendientes = usePosOfflineStore((s) => s.pendientes)
+    const sincronizando = usePosOfflineStore((s) => s.sincronizando)
+
+    useEffect(() => {
+        const onOnline = () => setOnline(true)
+        const onOffline = () => setOnline(false)
+        window.addEventListener('online', onOnline)
+        window.addEventListener('offline', onOffline)
+        return () => {
+            window.removeEventListener('online', onOnline)
+            window.removeEventListener('offline', onOffline)
+        }
+    }, [])
+
+    // Disparar una sincronización: si el servidor volvió (aunque navigator.onLine
+    // nunca lo haya notado), el chip "Sin conexión" se apaga.
+    const intentarSincronizar = useCallback(() => {
+        void sincronizarPendientes().then((sincronizo) => {
+            if (sincronizo) setOnline(true)
+        })
+    }, [])
+
+    // La cola de pendientes vive por restaurante en localStorage.
+    useEffect(() => {
+        if (restauranteId == null) return
+        usePosOfflineStore.getState().initPendientes(restauranteId)
+    }, [restauranteId])
+
+    // Cuando vuelve la conexión, sincronizar todo lo guardado.
+    useEffect(() => {
+        if (!online || !token) return
+        intentarSincronizar()
+    }, [online, token, intentarSincronizar])
+
+    // Reintento periódico: cubre el caso "navegador online pero servidor caído",
+    // donde el evento `online` del navegador nunca se dispara.
+    useEffect(() => {
+        if (!token) return
+        const interval = window.setInterval(() => {
+            if (usePosOfflineStore.getState().pendientes.length === 0) return
+            intentarSincronizar()
+        }, 45_000)
+        return () => window.clearInterval(interval)
+    }, [token, intentarSincronizar])
+
+    // Cada pedido sincronizado refresca el listado del Dashboard (onCreated),
+    // igual que cuando el alta se hace online.
+    useEffect(() => {
+        return registrarPedidoSincronizado((pedidoId) => {
+            onCreated(pedidoId)
+        })
+    }, [onCreated])
 
     const focusProductSearch = () => searchInputRef.current?.focus()
 
@@ -346,17 +435,27 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         setMetodoPago((current) => config.metodosPago[current as PosMetodoPago] ? current : (metodosHabilitados[0]?.id ?? 'cash'))
     }, [modoEdicion, config, metodosHabilitados])
 
-    // ── Productos filtrados por búsqueda (nombre, descripción o etiquetas/tags) ──
+    // ── Productos filtrados por búsqueda ──
+    // Cada término debe coincidir en algún lado (nombre, descripción, categoría
+    // o etiquetas/tags), sin importar el orden: "gratinado milanesa" encuentra un
+    // "Sandwich gratinado" de categoría "Milanesa", igual que "gratinado sandwich".
     const productosFiltrados = useMemo(() => {
-        const term = query.trim().toLowerCase()
+        const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
         const activos = productos.filter((p) => p.activo !== false)
-        if (!term) return activos
-        return activos.filter((p) =>
-            p.nombre.toLowerCase().includes(term) ||
-            (p.descripcion && p.descripcion.toLowerCase().includes(term)) ||
-            (p.etiquetas && p.etiquetas.some((e) => e.nombre.toLowerCase().includes(term)))
-        )
+        if (terms.length === 0) return activos
+        return activos.filter((p) => {
+            const texto = [
+                p.nombre,
+                p.descripcion,
+                p.categoria,
+                ...(p.etiquetas ?? []).map((e) => e.nombre),
+            ].filter(Boolean).join(' ').toLowerCase()
+            return terms.every((term) => texto.includes(term))
+        })
     }, [productos, query])
+
+    // Con el listado oculto, los productos sólo se muestran durante una búsqueda.
+    const mostrarListado = !listadoOculto || query.trim() !== ''
 
     const porCategoria = useMemo(() => {
         const map: Record<string, Producto[]> = {}
@@ -372,6 +471,40 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         })
     }, [productosFiltrados])
 
+    // Orden plano de los productos tal como se muestran en pantalla (agrupados
+    // por categoría): Enter agrega el primero visible, no el primero del store.
+    const productosOrdenados = useMemo(
+        () => porCategoria.flatMap(([, items]) => items),
+        [porCategoria]
+    )
+    const indicePorId = useMemo(() => {
+        const map = new Map<number, number>()
+        productosOrdenados.forEach((producto, index) => map.set(producto.id, index))
+        return map
+    }, [productosOrdenados])
+
+    // Al cambiar el resultado (búsqueda o menú) la selección vuelve al primer producto.
+    useEffect(() => {
+        setIndiceSeleccionado(0)
+    }, [productosOrdenados])
+
+    // El producto destacado se mantiene a la vista aunque el listado haya hecho scroll.
+    useEffect(() => {
+        if (!mostrarListado) return
+        const card = scrollRef.current?.querySelector<HTMLElement>(`[data-flat-index="${indiceSeleccionado}"]`)
+        card?.scrollIntoView({ block: 'nearest' })
+    }, [indiceSeleccionado, mostrarListado])
+
+    // Columnas reales del grid de resultados: las flechitas verticales saltan
+    // de fila en fila y las horizontales de producto en producto.
+    const calcularColumnas = () => {
+        const contenedor = scrollRef.current
+        const tarjeta = contenedor?.querySelector<HTMLElement>('[data-flat-index]')
+        if (!contenedor || !tarjeta || tarjeta.offsetWidth === 0) return 1
+        const gap = 12 // gap-3 entre tarjetas del grid
+        return Math.max(1, Math.round((contenedor.clientWidth + gap) / (tarjeta.offsetWidth + gap)))
+    }
+
     const cartTotal = useMemo(
         () => cart.reduce((s, it) => s + itemUnitPrice(it) * it.cantidad, 0),
         [cart]
@@ -381,38 +514,45 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const totalFinal = cartTotal + deliveryFeeNum
 
     // ── Borrador en vivo ──
-    // Reporta al padre (Dashboard) todo lo anotado hasta ahora para espejarlo
-    // en la comanda de la derecha mientras se carga el pedido.
+    // Snapshot del borrador tal como se ve: lo espeja el padre en la comanda
+    // de la derecha y, en modo offline, se guarda junto al pedido pendiente
+    // para reimprimir la comanda sin depender del carrito.
+    const buildDraftSnapshot = (submitting: boolean): PosDraft => ({
+        tipo,
+        // Se espejan los valores tal cual se tipean: si se recortan acá, el
+        // input controlado de la comanda pierde el espacio final al escribir
+        // (p. ej. "Salta 640" queda "Salta640"). El recorte se hace al validar y enviar.
+        nombreCliente: nombre,
+        telefono: telefono.trim(),
+        direccion,
+        notas,
+        metodoPago,
+        pagado,
+        deliveryFee: deliveryFeeNum,
+        items: cart.map((it) => ({
+            key: it.key,
+            nombre: it.nombre,
+            varianteNombre: it.varianteNombre,
+            varianteSecundariaNombre: it.varianteSecundariaNombre,
+            ingredientesExcluidosNombres: productos
+                .find((producto) => producto.id === it.productoId)
+                ?.ingredientes
+                ?.filter((ingrediente) => it.ingredientesExcluidos.includes(ingrediente.id))
+                .map((ingrediente) => ingrediente.nombre),
+            agregados: it.agregados.map((agregado) => ({ nombre: agregado.nombre })),
+            cantidad: it.cantidad,
+            precioUnitario: itemUnitPrice(it),
+        })),
+        subtotal: cartTotal,
+        total: totalFinal,
+        submitting,
+        mesaLocalId: mesaAsignada?.id,
+        mesaNombre: mesaAsignada?.nombre,
+    })
+
     useEffect(() => {
         if (!onDraftChange) return
-        onDraftChange({
-            tipo,
-            nombreCliente: nombre.trim(),
-            telefono: telefono.trim(),
-            direccion: direccion.trim(),
-            notas: notas.trim(),
-            metodoPago,
-            pagado,
-            deliveryFee: deliveryFeeNum,
-            items: cart.map((it) => ({
-                key: it.key,
-                nombre: it.nombre,
-                varianteNombre: it.varianteNombre,
-                varianteSecundariaNombre: it.varianteSecundariaNombre,
-                ingredientesExcluidosNombres: productos
-                    .find((producto) => producto.id === it.productoId)
-                    ?.ingredientes
-                    ?.filter((ingrediente) => it.ingredientesExcluidos.includes(ingrediente.id))
-                    .map((ingrediente) => ingrediente.nombre),
-                cantidad: it.cantidad,
-                precioUnitario: itemUnitPrice(it),
-            })),
-            subtotal: cartTotal,
-            total: totalFinal,
-            submitting,
-            mesaLocalId: mesaAsignada?.id,
-            mesaNombre: mesaAsignada?.nombre,
-        })
+        onDraftChange(buildDraftSnapshot(submitting))
     }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, pagado, deliveryFeeNum, cart, cartTotal, totalFinal, submitting, mesaAsignada?.nombre, productos])
 
     const addToCart = (
@@ -439,6 +579,9 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             agregados,
             cantidad: 1,
         }])
+        // Al agregar al borrador se limpia el buscador: el próximo producto
+        // se escribe directo, sin borrar el término anterior.
+        setQuery('')
     }
 
     const handleProductClick = (producto: Producto, anchor: DOMRect) => {
@@ -496,6 +639,24 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         }
     }
 
+    // Los ítems del borrador convertidos al formato de pedido editable: el
+    // Dashboard los fusiona en la edición del pedido de una mesa ocupada. El id
+    // es negativo y único porque sólo sirve de key del carrito; al guardar el
+    // backend reemplaza el set completo de ítems (el id nunca se envía).
+    const getCartItems = (): PosEditablePedido['items'] => cart.map((it, index) => ({
+        id: -1 - index,
+        productoId: it.productoId,
+        nombreProducto: it.nombre,
+        varianteId: it.varianteId ?? null,
+        varianteNombre: it.varianteNombre ?? null,
+        varianteSecundariaId: it.varianteSecundariaId ?? null,
+        varianteSecundariaNombre: it.varianteSecundariaNombre ?? null,
+        cantidad: it.cantidad,
+        precioUnitario: itemUnitPrice(it),
+        ingredientesExcluidos: it.ingredientesExcluidos,
+        agregados: it.agregados,
+    }))
+
     const requestClose = () => {
         const hasContent = cart.length > 0 || [nombre, telefono, direccion, notas, deliveryFee].some((value) => value.trim() !== '')
         if (hasContent && !window.confirm(modoEdicion ? '¿Salir sin guardar los cambios del pedido?' : '¿Descartar este borrador? Los productos y datos cargados se perderán.')) return
@@ -503,8 +664,95 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         onClose()
     }
 
+    // ── Modo offline: comanda local y cola de pendientes ──
+    // La impresión usa el plugin local de Tauri (no la red), así que un pedido
+    // guardado sin conexión imprime la comanda igual que uno online. El número
+    // "LOCAL-{n}" distingue la comanda pendiente de las reales en la cocina.
+    const imprimirComandaPendiente = async (pendiente: PedidoPosPendiente) => {
+        const draft = pendiente.draft
+        const itemsToPrint = draft.items.map((it) => ({
+            cantidad: it.cantidad,
+            precioUnitario: it.precioUnitario,
+            nombreProducto: it.nombre,
+            varianteNombre: it.varianteNombre,
+            varianteSecundariaNombre: it.varianteSecundariaNombre,
+            ingredientesExcluidosNombres: it.ingredientesExcluidosNombres,
+            agregados: it.agregados,
+        }))
+        const comandaData = formatComanda({
+            id: `LOCAL-${pendiente.localNumero}`,
+            nombrePedido: draft.nombreCliente,
+            telefono: draft.telefono,
+            direccion: draft.tipo === 'delivery' ? draft.direccion : undefined,
+            tipo: draft.tipo,
+            total: String(draft.total),
+            deliveryFee: draft.deliveryFee,
+            notas: draft.notas ? `SIN CONEXIÓN - ${draft.notas}` : 'SIN CONEXIÓN',
+            metodoPago: draft.metodoPago,
+            sucursalNombre: sucursalNombre || undefined,
+            mesaNombre: draft.mesaNombre,
+        }, itemsToPrint, restauranteNombre)
+        await printRaw(commandsToBytes(comandaData))
+    }
+
+    const guardarPedidoOffline = async (data: Parameters<typeof pedidoUnificadoApi.create>[1]) => {
+        if (restauranteId == null) {
+            toast.error('No se pudo guardar el pedido sin conexión')
+            return
+        }
+        const pendiente: PedidoPosPendiente = {
+            localId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+            localNumero: nextLocalNumero(restauranteId),
+            creadoEn: new Date().toISOString(),
+            tipo: data.tipo,
+            estado: 'pendiente',
+            draft: buildDraftSnapshot(false),
+            payload: data,
+        }
+        usePosOfflineStore.getState().guardarPendiente(pendiente)
+        // Si navigator.onLine sigue en true pero el servidor está caído, la UI
+        // debe igual mostrar el estado sin conexión.
+        setOnline(false)
+
+        // La comanda se imprime en el acto, como el auto-print online. Si la
+        // impresión falla el pedido queda igual guardado y se reimprime desde
+        // el panel de pendientes.
+        if (!deferComandaHastaPagado(pendiente.draft.metodoPago, cucuruConfigurado) || pendiente.draft.pagado) {
+            try {
+                await imprimirComandaPendiente(pendiente)
+            } catch {
+                toast.warning('Pedido guardado, pero la comanda no se pudo imprimir', {
+                    description: `Reimprimila desde el panel de pedidos sin conexión (#LOCAL-${pendiente.localNumero}).`,
+                })
+            }
+        }
+
+        toast.success('Pedido guardado sin conexión', {
+            description: `Se sincronizará automáticamente cuando vuelva el internet (#LOCAL-${pendiente.localNumero}).`,
+        })
+        resetForm()
+        // Recién guardado puede haber vuelto la conexión: intentar ya.
+        intentarSincronizar()
+    }
+
+    const reimprimirPendiente = async (pendiente: PedidoPosPendiente) => {
+        try {
+            await imprimirComandaPendiente(pendiente)
+            toast.success(`Comanda #LOCAL-${pendiente.localNumero} enviada a imprimir`)
+        } catch (error) {
+            toast.error(`No se pudo imprimir #LOCAL-${pendiente.localNumero}`, {
+                description: error instanceof Error ? error.message : undefined,
+            })
+        }
+    }
+
+    const eliminarPendiente = (pendiente: PedidoPosPendiente) => {
+        if (!window.confirm(`¿Eliminar el pedido #LOCAL-${pendiente.localNumero}? Todavía no se sincronizó: si lo eliminás se pierde.`)) return
+        usePosOfflineStore.getState().eliminarPendiente(pendiente.localId)
+    }
+
     // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
-    useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: resetForm, focusProductSearch }))
+    useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: resetForm, focusProductSearch, getCartItems }))
 
     const handleSubmit = async () => {
         if (!token) return
@@ -520,73 +768,98 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             agregados: it.agregados.length ? it.agregados : undefined,
         }))
 
+        const common = {
+            nombreCliente: nombre.trim() || undefined,
+            telefono: telefono.trim() || undefined,
+            notas: notas.trim() || undefined,
+            anotadoManualmente: true,
+            pagado,
+            metodoPago,
+            sucursalId: sucursalActivaId ?? undefined,
+            items,
+        }
+        const data =
+            tipo === 'delivery' && !mesaAsignada
+                ? {
+                      tipo: 'delivery' as const,
+                      direccion: direccion.trim(),
+                      latitud: lat ?? undefined,
+                      longitud: lng ?? undefined,
+                      deliveryFee: deliveryFeeNum || undefined,
+                      ...common,
+                  }
+                : mesaAsignada
+                  ? { tipo: 'mesa' as const, mesaLocalId: mesaAsignada.id, consumoEnLocal: true as const, ...common }
+                  : { tipo: 'takeaway' as const, ...common }
+
         setSubmitting(true)
         try {
-            const common = {
-                nombreCliente: nombre.trim() || undefined,
-                telefono: telefono.trim() || undefined,
-                notas: notas.trim() || undefined,
-                anotadoManualmente: true,
-                pagado,
-                metodoPago,
-                sucursalId: sucursalActivaId ?? undefined,
-                items,
+            // Editar un pedido existente requiere el servidor: la cola offline
+            // es sólo para altas nuevas del POS.
+            if (modoEdicion) {
+                const res = await pedidoUnificadoApi.updateFromPos(token, initialPedido.id, {
+                    version: initialPedido.version,
+                    tipo: data.tipo,
+                    mesaLocalId: data.tipo === 'mesa' ? data.mesaLocalId : null,
+                    nombreCliente: nombre.trim() || null,
+                    telefono: telefono.trim() || null,
+                    notas: notas.trim() || null,
+                    direccion: data.tipo === 'delivery' ? data.direccion : null,
+                    latitud: data.tipo === 'delivery' ? data.latitud ?? null : null,
+                    longitud: data.tipo === 'delivery' ? data.longitud ?? null : null,
+                    deliveryFee: data.tipo === 'delivery' ? deliveryFeeNum : null,
+                    metodoPago,
+                    pagado,
+                    items,
+                }) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
+                if (res.success) {
+                    toast.success('Pedido actualizado correctamente')
+                    if (res.data) onUpdated?.(res.data)
+                } else {
+                    toast.error(res.message || 'No se pudo actualizar el pedido')
+                }
+                return
             }
-            const data =
-                tipo === 'delivery' && !mesaAsignada
-                    ? {
-                          tipo: 'delivery' as const,
-                          direccion: direccion.trim(),
-                          latitud: lat ?? undefined,
-                          longitud: lng ?? undefined,
-                          deliveryFee: deliveryFeeNum || undefined,
-                          ...common,
-                      }
-                    : mesaAsignada
-                      ? { tipo: 'mesa' as const, mesaLocalId: mesaAsignada.id, consumoEnLocal: true as const, ...common }
-                      : { tipo: 'takeaway' as const, ...common }
 
-            const res = (modoEdicion
-                ? await pedidoUnificadoApi.updateFromPos(token, initialPedido.id, {
-                      version: initialPedido.version,
-                      tipo: data.tipo,
-                      mesaLocalId: data.tipo === 'mesa' ? data.mesaLocalId : null,
-                      nombreCliente: nombre.trim() || null,
-                      telefono: telefono.trim() || null,
-                      notas: notas.trim() || null,
-                      direccion: data.tipo === 'delivery' ? data.direccion : null,
-                      latitud: data.tipo === 'delivery' ? data.latitud ?? null : null,
-                      longitud: data.tipo === 'delivery' ? data.longitud ?? null : null,
-                      deliveryFee: data.tipo === 'delivery' ? deliveryFeeNum : null,
-                      metodoPago,
-                      pagado,
-                      items,
-                  })
-                : await pedidoUnificadoApi.create(token, data)) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
-            if (res.success) {
-                toast.success(modoEdicion ? 'Pedido actualizado correctamente' : 'Pedido anotado correctamente')
-                const newId = res.data?.id
-                if (modoEdicion && res.data) onUpdated?.(res.data)
-                else {
+            // Sin conexión el pedido va directo a la cola local y la comanda se
+            // imprime en el acto: el local nunca deja de anotar.
+            if (!online) {
+                await guardarPedidoOffline(data)
+                return
+            }
+
+            try {
+                const res = await pedidoUnificadoApi.create(token, data) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
+                if (res.success) {
+                    toast.success('Pedido anotado correctamente')
                     resetForm()
                     // El POS queda listo para anotar el siguiente pedido. El Dashboard
                     // sólo sincroniza el listado; cerrar el POS acá interrumpía ese flujo.
-                    if (newId) onCreated(newId)
+                    if (res.data?.id) onCreated(res.data.id)
+                } else {
+                    toast.error(res.message || 'No se pudo crear el pedido')
                 }
-            } else {
-                toast.error(res.message || 'No se pudo crear el pedido')
+            } catch (error: unknown) {
+                if (esErrorDeConexion(error)) {
+                    // El servidor está caído aunque navigator.onLine siga en true:
+                    // mismo camino que sin conexión (cola local + comanda).
+                    await guardarPedidoOffline(data)
+                } else {
+                    toast.error('Error al crear el pedido', { description: error instanceof Error ? error.message : undefined })
+                }
             }
         } catch (error: unknown) {
-            toast.error(modoEdicion ? 'Error al actualizar el pedido' : 'Error al crear el pedido', { description: error instanceof Error ? error.message : undefined })
+            // Sólo llega acá el path de edición: el de alta ya manejó sus errores.
+            toast.error('Error al actualizar el pedido', { description: error instanceof Error ? error.message : undefined })
         } finally {
             setSubmitting(false)
         }
     }
 
     // Con la configuración del POS, un campo desactivado se oculta por completo
-    // (no sólo con el toggle de ojo) y no participa de los datos del borrador.
-    const nombreEditable = config.camposCliente.nombre && nombreVisible
-    const telefonoEditable = config.camposCliente.telefono && telefonoVisible
+    // y no participa de los datos del borrador.
+    const nombreEditable = config.camposCliente.nombre
+    const telefonoEditable = config.camposCliente.telefono
 
     // ── Sub-componente: panel de checkout (carrito + datos) ──
     const CheckoutPanel = (
@@ -682,31 +955,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
                 {/* Datos del cliente */}
                 <div className="relative space-y-3 lg:hidden">
-                    {nombreEditable && <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
-                            <div className="flex items-center gap-1">
-                                <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />
-                                {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
-                            </div>
-                        </div>
-                        <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
-                    </div>}
-                    {telefonoEditable && <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Celular</Label>
-                            {!nombreEditable && <div className="flex items-center gap-1">
-                                {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
-                                <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />
-                            </div>}
-                        </div>
-                        <Input value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))} placeholder="Ej: 3415123456" inputMode="tel" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
-                    </div>}
-                    {(config.camposCliente.nombre || config.camposCliente.telefono) && !nombreEditable && !telefonoEditable && <div className="absolute right-0 top-0 flex items-center gap-1">
-                        {config.camposCliente.nombre && <FieldVisibilityButton visible={nombreVisible} fieldName="nombre del cliente" onToggle={() => setNombreVisible((visible) => !visible)} />}
-                        {config.camposCliente.telefono && <FieldVisibilityButton visible={telefonoVisible} fieldName="celular" onToggle={() => setTelefonoVisible((visible) => !visible)} />}
-                    </div>}
-                    {tipo === 'delivery' && config.camposCliente.direccion && (
+                    {/* Dirección: siempre visible, desactivada cuando el pedido es mesa o takeaway. */}
+                    {config.camposCliente.direccion && (
                         <>
                             <div className="space-y-1.5">
                                 <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Dirección</Label>
@@ -714,25 +964,41 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     value={direccion}
                                     onChange={(addr, newLat, newLng) => { setDireccion(addr); setLat(newLat); setLng(newLng) }}
                                     placeholder="Calle y número..."
+                                    disabled={tipo !== 'delivery'}
                                 />
                             </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-xs font-semibold text-muted-foreground">Costo de envío</Label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
-                                    <Input value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0" inputMode="decimal" className="h-11 rounded-xl pl-7 bg-transparent dark:bg-transparent" />
+                            {tipo === 'delivery' && (
+                                <div className="space-y-1.5">
+                                    <Label className="text-xs font-semibold text-muted-foreground">Costo de envío</Label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
+                                        <Input value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0" inputMode="decimal" className="h-11 rounded-xl pl-7 bg-transparent dark:bg-transparent" />
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </>
                     )}
+                    {nombreEditable && <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
+                        </div>
+                        <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
+                    </div>}
+                    {telefonoEditable && <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Celular</Label>
+                        </div>
+                        <Input value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))} placeholder="Ej: 3415123456" inputMode="tel" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
+                    </div>}
                     {config.notas && <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-muted-foreground">Notas</Label>
                         <Textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Aclaraciones..." className="rounded-xl resize-none min-h-[60px]" />
                     </div>}
                 </div>
 
-                {/* Método de pago */}
-                {metodosHabilitados.length > 0 && (
+                {/* Método de pago. Con un único método habilitado no se muestra
+                    ningún botón: el pedido se guarda directo con ese método. */}
+                {metodosHabilitados.length > 1 && (
                     <div className="lg:hidden">
                         <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Método de pago</Label>
                         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${metodosHabilitados.length}, minmax(0, 1fr))` }}>
@@ -784,11 +1050,100 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-background">
-            <div className="shrink-0 flex items-center justify-between px-4 pt-2 bg-background">
-                <span className="text-xs font-bold text-muted-foreground">{modoEdicion ? `Editando pedido #${initialPedido.id}` : 'Nuevo pedido'}</span>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={requestClose}>
-                    <X className="h-4 w-4" />
-                </Button>
+            <div className="relative shrink-0 flex items-center justify-between gap-2 px-4 pt-2 bg-background">
+                <span className="min-w-0 truncate text-xs font-bold text-muted-foreground">{modoEdicion ? `Editando pedido #${initialPedido.id}` : 'Nuevo pedido'}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                    {/* Sin conexión: el POS sigue anotando pedidos en la cola local. */}
+                    {!online && (
+                        <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded-full px-2.5 py-1">
+                            <WifiOff className="h-3.5 w-3.5" /> Sin conexión
+                        </span>
+                    )}
+                    {/* Pedidos guardados sin conexión: pendientes de sincronizar. */}
+                    {pendientes.length > 0 && (
+                        <button
+                            onClick={() => setShowPendientes((s) => !s)}
+                            title="Pedidos guardados sin conexión"
+                            className={cn(
+                                'flex items-center gap-1.5 text-[11px] font-bold rounded-full px-2.5 py-1 border transition-colors',
+                                showPendientes
+                                    ? 'bg-[#FF7A00]/20 border-[#FF7A00]/40 text-[#FF7A00]'
+                                    : 'bg-[#FF7A00]/10 border-[#FF7A00]/30 text-[#FF7A00] hover:bg-[#FF7A00]/20'
+                            )}
+                        >
+                            {sincronizando
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <WifiOff className="h-3.5 w-3.5" />}
+                            {pendientes.length} pendiente{pendientes.length === 1 ? '' : 's'}
+                        </button>
+                    )}
+                    {/* En el modo siempre abierto (módulo POS activo en desktop) no hay
+                        cierre posible: la "x" sólo se muestra cuando el padre la habilita. */}
+                    {mostrarBotonCerrar && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={requestClose}>
+                            <X className="h-4 w-4" />
+                        </Button>
+                    )}
+                </div>
+
+                {/* ── Panel de pedidos sin conexión ── */}
+                {showPendientes && (
+                    <div className="absolute right-0 top-full mt-1 w-[340px] max-h-[65vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl z-[1001] p-2 space-y-1.5">
+                        <div className="flex items-center justify-between px-2 pt-1.5 pb-1">
+                            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Pedidos sin conexión</p>
+                            <button onClick={() => setShowPendientes(false)} className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted">
+                                <X className="h-3.5 w-3.5" />
+                            </button>
+                        </div>
+                        {pendientes.length === 0 ? (
+                            <p className="text-sm text-muted-foreground/60 py-6 text-center">No hay pedidos sin conexión.</p>
+                        ) : (
+                            pendientes.map((p) => {
+                                const hora = new Date(p.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+                                const tipoLabel = p.tipo === 'delivery' ? 'Delivery' : p.tipo === 'mesa' ? 'Mesa' : 'Takeaway'
+                                return (
+                                    <div key={p.localId} className="rounded-xl border border-border p-2.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-sm font-bold">#LOCAL-{p.localNumero}</span>
+                                            <span className={cn('text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5', p.estado === 'pendiente' ? 'bg-amber-500/10 text-amber-600' : 'bg-red-500/10 text-red-600')}>
+                                                {p.estado === 'pendiente' ? 'Pendiente' : 'Error'}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            {hora} · {tipoLabel} · ${p.draft.total.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                            {p.draft.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(', ')}
+                                        </p>
+                                        {p.estado === 'error' && p.errorMessage && (
+                                            <p className="text-[11px] text-red-600 mt-1">{p.errorMessage}</p>
+                                        )}
+                                        <div className="flex items-center gap-1.5 mt-2">
+                                            <button
+                                                onClick={() => void reimprimirPendiente(p)}
+                                                className="flex-1 h-8 rounded-lg bg-muted hover:bg-accent text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                                            >
+                                                <Printer className="h-3.5 w-3.5" /> Imprimir
+                                            </button>
+                                            <button
+                                                onClick={() => eliminarPendiente(p)}
+                                                title="Eliminar pedido sin conexión"
+                                                className="h-8 px-2.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 text-xs font-semibold flex items-center justify-center transition-colors"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )
+                            })
+                        )}
+                        {sincronizando && (
+                            <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-muted-foreground py-2">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Sincronizando…
+                            </p>
+                        )}
+                    </div>
+                )}
             </div>
 
             <div className="flex-1 flex overflow-hidden">
@@ -802,41 +1157,74 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
                                 onKeyDown={(e) => {
-                                    // Enter agrega el primer producto del resultado filtrado directamente al pedido.
-                                    if (e.key === 'Enter' && productosFiltrados.length > 0) {
+                                    // Las flechitas recorren el resultado: el producto destacado
+                                    // (el del marquito) es el que Enter agrega al pedido.
+                                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                                        if (!mostrarListado || productosOrdenados.length === 0) return
                                         e.preventDefault()
-                                        handleProductClick(productosFiltrados[0], e.currentTarget.getBoundingClientRect())
+                                        setIndiceSeleccionado((prev) => {
+                                            const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+                                            const columnas = horizontal ? 1 : calcularColumnas()
+                                            const direccion = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1
+                                            return (prev + direccion * columnas + productosOrdenados.length) % productosOrdenados.length
+                                        })
+                                        return
+                                    }
+                                    // Enter agrega el primer producto visible del resultado filtrado
+                                    // (primera categoría del listado), no el primero del store.
+                                    // Con el listado oculto se exige una búsqueda: no se agrega algo invisible.
+                                    if (e.key === 'Enter' && mostrarListado && productosOrdenados.length > 0) {
+                                        e.preventDefault()
+                                        const producto = productosOrdenados[Math.min(indiceSeleccionado, productosOrdenados.length - 1)] ?? productosOrdenados[0]
+                                        handleProductClick(producto, e.currentTarget.getBoundingClientRect())
                                     }
                                 }}
                                 placeholder="Buscar producto o tag..."
-                                className="h-10 pl-10 rounded-xl border-0 shadow-sm"
+                                className="h-10 pl-10 pr-10 rounded-xl border-0 shadow-sm"
                             />
+                            {/* Ocultar/mostrar el listado completo: queda sólo la búsqueda. */}
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                                <FieldVisibilityButton
+                                    visible={!listadoOculto}
+                                    fieldName="listado de productos"
+                                    onToggle={() => setListadoOculto((oculto) => !oculto)}
+                                />
+                            </div>
                         </div>
                     </div>
                     {/* Scroll con scrollbar nunca visible: el scroll entre productos sigue funcionando. */}
-                    <div className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                        {productosFiltrados.length === 0 ? (
+                    <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {!mostrarListado ? (
+                            <p className="text-sm text-muted-foreground/60 py-12 text-center">Listado oculto. Escribí para buscar un producto.</p>
+                        ) : productosFiltrados.length === 0 ? (
                             <p className="text-sm text-muted-foreground/60 py-12 text-center">No se encontraron productos.</p>
                         ) : (
                             porCategoria.map(([cat, items]) => (
                                 <div key={cat} className="mb-5">
                                     <h4 className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-foreground mb-2">{cat}</h4>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                                        {items.map((p) => (
-                                            <button
-                                                key={p.id}
-                                                tabIndex={-1}
-                                                onClick={(event) => handleProductClick(p, event.currentTarget.getBoundingClientRect())}
-                                                className="group min-h-28 text-left rounded-2xl bg-card p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00] active:translate-y-0 active:scale-[0.98]"
-                                            >
-                                                <p className="min-h-[3.5rem] text-base font-semibold leading-snug text-foreground line-clamp-3">{p.nombre}</p>
-                                                <div className="flex items-center justify-between mt-3">
-                                                    <span className="text-base font-bold text-[#FF7A00]">
-                                                        ${parseFloat(p.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                                                    </span>
-                                                </div>
-                                            </button>
-                                        ))}
+                                        {items.map((p) => {
+                                            const flatIndex = indicePorId.get(p.id)
+                                            return (
+                                                <button
+                                                    key={p.id}
+                                                    tabIndex={-1}
+                                                    data-flat-index={flatIndex}
+                                                    onClick={(event) => handleProductClick(p, event.currentTarget.getBoundingClientRect())}
+                                                    className={cn(
+                                                        'group min-h-28 text-left rounded-2xl bg-card p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00] active:translate-y-0 active:scale-[0.98]',
+                                                        flatIndex === indiceSeleccionado && 'ring-2 ring-[#FF7A00]'
+                                                    )}
+                                                >
+                                                    <p className="min-h-[3.5rem] text-base font-semibold leading-snug text-foreground line-clamp-3">{p.nombre}</p>
+                                                    <div className="flex items-center justify-between mt-3">
+                                                        <span className="text-base font-bold text-[#FF7A00]">
+                                                            ${parseFloat(p.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                        </span>
+                                                    </div>
+                                                </button>
+                                            )
+                                        })}
                                     </div>
                                 </div>
                             ))

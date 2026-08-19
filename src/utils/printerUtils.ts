@@ -17,7 +17,8 @@ interface ItemFacturaLike extends ItemPedidoLike {
 }
 
 interface PedidoLike {
-    id: number
+    /** Número real del pedido, o "LOCAL-{n}" para comandas sin conexión del POS. */
+    id: number | string
     mesaNombre?: string | null
     nombrePedido?: string | null
     total?: string  // Total del pedido para usar como fallback

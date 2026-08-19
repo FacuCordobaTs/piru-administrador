@@ -782,6 +782,17 @@ export const productosApi = {
       body: JSON.stringify(data),
     }),
 
+  // Eliminar varios productos a la vez. El backend devuelve `eliminados` y
+  // `bloqueados` (productos con pedidos asociados que no se pudieron borrar).
+  bulkDelete: (token: string, productoIds: number[]) =>
+    fetchApi('/producto/bulk-delete', {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ productoIds }),
+    }),
+
   // Reordenar productos (drag & drop): productoIds en el orden deseado
   reorder: (token: string, productoIds: number[]) =>
     fetchApi('/producto/reorder', {
