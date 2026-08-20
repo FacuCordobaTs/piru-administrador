@@ -39,7 +39,10 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     }, []);
 
-    /** Bytes ESC/POS (p. ej. `commandsToBytes(formatComanda(...))`). Cupón/descuento van en `printerUtils`. */
+    /**
+     * Envía bytes ESC/POS ya formateados. Los estilos por tipo de producto
+     * (incluido el destaque de bebidas) se resuelven antes en `printerUtils`.
+     */
     const printRaw = useCallback(async (data: number[]) => {
         if (!impresionComandasActiva) {
             throw new Error('Activá el módulo Impresión de comandas para imprimir');

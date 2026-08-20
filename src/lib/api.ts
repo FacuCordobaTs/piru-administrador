@@ -656,6 +656,7 @@ export const categoriasApi = {
     token: string,
     data: {
       nombre: string
+      esBebida?: boolean
     }
   ) => {
     return fetchApi('/categoria/create', {
@@ -672,6 +673,7 @@ export const categoriasApi = {
     data: {
       id: number
       nombre?: string
+      esBebida?: boolean
     }
   ) => {
     return fetchApi('/categoria/update', {

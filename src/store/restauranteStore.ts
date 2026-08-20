@@ -14,6 +14,7 @@ interface Categoria {
   id: number
   restauranteId: number
   nombre: string
+  esBebida?: boolean
   orden?: number | null
   createdAt: string
 }
@@ -29,6 +30,7 @@ interface Producto {
   imagenUrl: string | null
   createdAt: string
   categoria: string | null
+  categoriaEsBebida?: boolean
   orden?: number | null
   descuento?: number | null
   tieneVariantes?: boolean | null

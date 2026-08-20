@@ -106,6 +106,7 @@ const Productos = () => {
   // ─── Categorias ───
   const [dialogCategoriaAbierto, setDialogCategoriaAbierto] = useState(false)
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState('')
+  const [nuevaCategoriaEsBebida, setNuevaCategoriaEsBebida] = useState(false)
   const [isCreandoCategoria, setIsCreandoCategoria] = useState(false)
   const [dialogGestionCategoriasAbierto, setDialogGestionCategoriasAbierto] = useState(false)
   const [dialogEliminarCategoriaAbierto, setDialogEliminarCategoriaAbierto] = useState(false)
@@ -114,6 +115,7 @@ const Productos = () => {
   const [ordenCategoriasLocal, setOrdenCategoriasLocal] = useState<typeof categorias>([])
   const [dragCategoriaIndex, setDragCategoriaIndex] = useState<number | null>(null)
   const [isGuardandoOrdenCategorias, setIsGuardandoOrdenCategorias] = useState(false)
+  const [categoriaBebidaActualizandoId, setCategoriaBebidaActualizandoId] = useState<number | null>(null)
 
   // ─── Ingredientes ───
   const [ingredientes, setIngredientes] = useState<Array<{ id: number; nombre: string }>>([])
@@ -557,10 +559,14 @@ const Productos = () => {
     }
     setIsCreandoCategoria(true)
     try {
-      const response = await categoriasApi.create(token, { nombre: nuevaCategoriaNombre.trim() }) as { success: boolean; data?: any }
+      const response = await categoriasApi.create(token, {
+        nombre: nuevaCategoriaNombre.trim(),
+        esBebida: nuevaCategoriaEsBebida,
+      }) as { success: boolean; data?: any }
       if (response.success) {
         toast.success('Categoría creada')
         setNuevaCategoriaNombre('')
+        setNuevaCategoriaEsBebida(false)
         setDialogCategoriaAbierto(false)
         const r = await categoriasApi.getAll(token) as any
         if (r.success && r.categorias) setCategorias(r.categorias)
@@ -595,6 +601,28 @@ const Productos = () => {
   }
 
   const contarProductosPorCategoria = (categoriaId: number) => productos.filter(p => p.categoriaId === categoriaId).length
+
+  const actualizarCategoriaEsBebida = async (categoria: typeof categorias[0], esBebida: boolean) => {
+    if (!token) return
+    setCategoriaBebidaActualizandoId(categoria.id)
+    try {
+      await categoriasApi.update(token, { id: categoria.id, esBebida })
+      setOrdenCategoriasLocal((actual) => actual.map((item) =>
+        item.id === categoria.id ? { ...item, esBebida } : item
+      ))
+      setCategorias(categorias.map((item) =>
+        item.id === categoria.id ? { ...item, esBebida } : item
+      ))
+      await fetchData()
+      toast.success(esBebida ? 'La categoría se imprimirá como bebida' : 'La categoría ya no se imprimirá como bebida')
+    } catch (error: unknown) {
+      toast.error('No se pudo actualizar la categoría', {
+        description: error instanceof Error ? error.message : 'Error de conexión',
+      })
+    } finally {
+      setCategoriaBebidaActualizandoId(null)
+    }
+  }
 
   const abrirGestionCategorias = () => {
     setOrdenCategoriasLocal([...categorias].sort((a, b) =>
@@ -1910,7 +1938,18 @@ const Productos = () => {
                   <div className="min-w-0 flex items-center gap-3">
                     <GripVertical className="h-5 w-5 shrink-0 text-zinc-400" />
                     <span className="h-6 w-6 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-muted-foreground">{index + 1}</span>
-                    <div className="font-semibold text-foreground truncate">{categoria.nombre} <span className="text-xs font-normal text-muted-foreground ml-2">{contarProductosPorCategoria(categoria.id)} ítems</span></div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-foreground truncate">{categoria.nombre} <span className="text-xs font-normal text-muted-foreground ml-2">{contarProductosPorCategoria(categoria.id)} ítems</span></div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <Switch
+                          checked={categoria.esBebida ?? false}
+                          disabled={categoriaBebidaActualizandoId !== null || isGuardandoOrdenCategorias}
+                          onCheckedChange={(checked) => actualizarCategoriaEsBebida(categoria, checked)}
+                          aria-label={`Marcar ${categoria.nombre} como bebidas`}
+                        />
+                        <span className="text-xs text-muted-foreground">Bebidas (destacar en comanda)</span>
+                      </div>
+                    </div>
                   </div>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg" onClick={() => { setCategoriaAEliminar(categoria); setDialogEliminarCategoriaAbierto(true) }}>
                     <Trash2 className="h-4 w-4" />
@@ -1941,6 +1980,13 @@ const Productos = () => {
           </DialogHeader>
           <div className="space-y-4">
             <Input value={nuevaCategoriaNombre} onChange={(e) => setNuevaCategoriaNombre(e.target.value)} placeholder="Ej: Pizzas, Bebidas..." disabled={isCreandoCategoria} className={phantomInputClass} onKeyDown={(e) => { if (e.key === 'Enter') crearCategoria() }} />
+            <div className="flex items-center justify-between gap-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <div>
+                <Label htmlFor="nueva-categoria-bebida" className="font-semibold">Es una categoría de bebidas</Label>
+                <p className="mt-1 text-xs text-muted-foreground">Sus productos saldrán más grandes y en negrita en la comanda.</p>
+              </div>
+              <Switch id="nueva-categoria-bebida" checked={nuevaCategoriaEsBebida} onCheckedChange={setNuevaCategoriaEsBebida} disabled={isCreandoCategoria} />
+            </div>
             <Button className="w-full h-14 rounded-2xl font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={crearCategoria} disabled={isCreandoCategoria || !nuevaCategoriaNombre.trim()}>
               {isCreandoCategoria ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Crear Categoría'}
             </Button>

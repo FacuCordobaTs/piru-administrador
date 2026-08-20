@@ -61,6 +61,7 @@ export interface PosDraftItem {
     agregados?: Array<{ nombre: string }>
     cantidad: number
     precioUnitario: number
+    categoriaEsBebida?: boolean
 }
 
 export interface PosDraft {
@@ -567,6 +568,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             agregados: it.agregados.map((agregado) => ({ nombre: agregado.nombre })),
             cantidad: it.cantidad,
             precioUnitario: itemUnitPrice(it),
+            categoriaEsBebida: productos.find((producto) => producto.id === it.productoId)?.categoriaEsBebida ?? false,
         })),
         subtotal: cartTotal,
         total: totalFinal,
@@ -704,6 +706,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             varianteSecundariaNombre: it.varianteSecundariaNombre,
             ingredientesExcluidosNombres: it.ingredientesExcluidosNombres,
             agregados: it.agregados,
+            categoriaEsBebida: it.categoriaEsBebida,
         }))
         const comandaData = formatComanda({
             id: `LOCAL-${pendiente.localNumero}`,

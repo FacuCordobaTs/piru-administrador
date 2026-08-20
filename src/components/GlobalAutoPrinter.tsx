@@ -16,6 +16,7 @@ interface DeliveryItem {
     nombreProducto: string; imagenUrl: string | null;
     ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
     agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null;
+    categoriaEsBebida?: boolean;
 }
 interface UnifiedPedido {
     id: number; tipo: 'delivery' | 'takeaway' | 'mesa'; estado: string; total: string; createdAt: string;
@@ -204,7 +205,7 @@ const GlobalAutoPrinter = () => {
 
                         const itemsToPrint = pedido.items.map(item => {
                             const producto = allProductos.find(p => p.id === item.productoId)
-                            return { ...item, producto }
+                            return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
                         })
 
                         if (itemsToPrint.length > 0) {

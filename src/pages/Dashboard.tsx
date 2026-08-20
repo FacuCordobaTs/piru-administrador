@@ -1407,7 +1407,7 @@ const Dashboard = () => {
 
                         const itemsToPrint = pedido.items.map(item => {
                             const producto = allProductos.find(p => p.id === item.productoId)
-                            return { ...item, producto }
+                            return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
                         })
 
                         if (itemsToPrint.length > 0) {
@@ -2647,7 +2647,15 @@ const Dashboard = () => {
                                             {selectedPrinter && (
                                                 <div className="flex justify-center">
                                                     <Button variant="ghost" className="text-muted-foreground border border-border bg-[#FFFBF0] dark:bg-background" onClick={() => {
-                                                        const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => ({ ...item, precioUnitario: item.precioUnitario || '0' }))
+                                                        const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => {
+                                                            const producto = allProductos.find((candidate) => candidate.id === item.productoId)
+                                                            return {
+                                                                ...item,
+                                                                precioUnitario: item.precioUnitario || '0',
+                                                                producto,
+                                                                categoriaEsBebida: producto?.categoriaEsBebida ?? false,
+                                                            }
+                                                        })
                                                         const deliveryFee = selectedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(selectedUnifiedPedido) : 0
                                                         const data = formatComanda({
                                                             id: selectedUnifiedPedido.id,

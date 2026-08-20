@@ -6,6 +6,10 @@ interface ItemPedidoLike {
     ingredientesExcluidosNombres?: string[]
     agregados?: any[]
     categoriaNombre?: string
+    /** Marca explícita de la categoría; no se infiere a partir del nombre. */
+    categoriaEsBebida?: boolean
+    /** Los callers que enriquecen el ítem con el catálogo pueden pasar el producto completo. */
+    producto?: { categoriaEsBebida?: boolean | null } | null
     varianteNombre?: string
     varianteSecundariaNombre?: string
     clienteNombre?: string | null
@@ -178,7 +182,9 @@ export const formatComanda = (
         const nombresVariantes = [item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ');
         const sufijoVariante = nombresVariantes ? ` (${nombresVariantes})` : '';
         const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
-        commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
+        const esBebida = item.categoriaEsBebida === true || item.producto?.categoriaEsBebida === true;
+        // Bebidas: doble ancho + doble alto + negrita. Resto: doble alto + negrita.
+        commands.push(ESC + '!' + (esBebida ? '\x38' : '\x18'));
         commands.push(`${indent}${item.cantidad}x ${nombre}\n`);
         commands.push(ESC + '!' + '\x00'); // Normal
 
