@@ -4,7 +4,7 @@ interface ItemPedidoLike {
     precio?: string | number
     precioUnitario?: string | number  // Campo del WebSocket (puede venir como string)
     ingredientesExcluidosNombres?: string[]
-    agregados?: any[]
+    agregados?: any[] | string | null
     categoriaNombre?: string
     /** Marca explícita de la categoría; no se infiere a partir del nombre. */
     categoriaEsBebida?: boolean
@@ -65,16 +65,8 @@ const getMontoDescuentoPedido = (pedido: PedidoLike): number => {
 const getItemPrice = (item: ItemPedidoLike): number => {
     if (item.precio !== undefined) {
         const basePrice = typeof item.precio === 'string' ? parseFloat(item.precio) || 0 : item.precio;
-        let agregadosTotal = 0;
-        if (item.agregados) {
-            let arr: any[] = [];
-            if (typeof item.agregados === 'string') {
-                try { arr = JSON.parse(item.agregados) } catch (e) { }
-            } else if (Array.isArray(item.agregados)) {
-                arr = item.agregados;
-            }
-            arr.forEach((ag: any) => { agregadosTotal += parseFloat(ag.precio || '0') })
-        }
+        const agregadosTotal = getAgregados(item.agregados)
+            .reduce((total, ag) => total + (parseFloat(String(ag.precio ?? 0)) || 0), 0)
         return basePrice + agregadosTotal;
     }
     if (item.precioUnitario !== undefined) {
@@ -84,6 +76,33 @@ const getItemPrice = (item: ItemPedidoLike): number => {
             : item.precioUnitario;
     }
     return 0;
+}
+
+const getAgregados = (raw: ItemPedidoLike['agregados']): Array<{ nombre: string; precio?: string | number }> => {
+    let parsed: unknown = raw
+    if (typeof raw === 'string') {
+        try { parsed = JSON.parse(raw) } catch { return [] }
+    }
+    if (!Array.isArray(parsed)) return []
+    const vistos = new Set<string>()
+    return parsed.filter((ag: any) => {
+        if (!ag || typeof ag !== 'object' || typeof ag.nombre !== 'string' || !ag.nombre.trim()) return false
+        const key = ag.id != null ? `id:${ag.id}` : `nombre:${ag.nombre.trim().toLowerCase()}:${ag.precio ?? ''}`
+        if (vistos.has(key)) return false
+        vistos.add(key)
+        return true
+    })
+}
+
+const getNombreProductoConVariantes = (item: ItemPedidoLike): string => {
+    const base = (item.nombreProducto || 'Producto').trim()
+    const baseNormalizado = base.toLocaleLowerCase('es-AR')
+    const variantes = [item.varianteNombre, item.varianteSecundariaNombre]
+        .map(nombre => nombre?.trim())
+        .filter((nombre): nombre is string => !!nombre)
+        .filter((nombre, index, all) => all.findIndex(v => v.toLocaleLowerCase('es-AR') === nombre.toLocaleLowerCase('es-AR')) === index)
+        .filter(nombre => !baseNormalizado.includes(nombre.toLocaleLowerCase('es-AR')))
+    return variantes.length > 0 ? `${base} (${variantes.join(' · ')})` : base
 }
 
 const formatPrecioComanda = (value: number): string =>
@@ -182,9 +201,7 @@ export const formatComanda = (
     }
 
     const printItem = (item: ItemPedidoLike, indent = '') => {
-        const nombresVariantes = [item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ');
-        const sufijoVariante = nombresVariantes ? ` (${nombresVariantes})` : '';
-        const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
+        const nombre = getNombreProductoConVariantes(item);
         const esBebida = item.categoriaEsBebida === true || item.producto?.categoriaEsBebida === true;
         // Bebidas: doble ancho + doble alto + negrita. Resto: doble alto + negrita.
         commands.push(ESC + '!' + (esBebida ? '\x38' : '\x18'));
@@ -202,10 +219,11 @@ export const formatComanda = (
             commands.push(`${indent}  Precio: ${formatPrecioComanda(precioUnitarioFinal)}\n`);
         }
 
-        if (item.agregados && item.agregados.length > 0) {
+        const agregados = getAgregados(item.agregados);
+        if (agregados.length > 0) {
             commands.push(ESC + '!' + '\x10'); // Doble alto
             commands.push(`${indent}  CON:\n`);
-            item.agregados.forEach((a: any) => {
+            agregados.forEach((a) => {
                 commands.push(`${indent}   + ${a.nombre}\n`);
             });
             commands.push(ESC + '!' + '\x00');
@@ -396,9 +414,7 @@ export const formatFactura = (
             subtotalCliente += subtotal;
 
             // Nombre del producto: DOBLE ALTO + NEGRITA
-            const nombresVariantes = [item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ');
-            const sufijoVariante = nombresVariantes ? ` (${nombresVariantes})` : '';
-            const nombre = `${item.nombreProducto || 'Producto'}${sufijoVariante}`;
+            const nombre = getNombreProductoConVariantes(item);
             commands.push(ESC + '!' + '\x18'); // Doble alto + Negrita
             commands.push(`  ${item.cantidad}x ${nombre}\n`);
             commands.push(ESC + '!' + '\x00'); // Normal
@@ -408,10 +424,11 @@ export const formatFactura = (
             commands.push(`    ${item.cantidad} x $${pUnit.toFixed(2)} = ${subtotalStr}\n`);
 
             // Agregados (CON:)
-            if (item.agregados && item.agregados.length > 0) {
+            const agregados = getAgregados(item.agregados);
+            if (agregados.length > 0) {
                 commands.push(ESC + '!' + '\x10'); // Doble alto
                 commands.push(`    CON:\n`);
-                item.agregados.forEach((a: any) => {
+                agregados.forEach((a) => {
                     commands.push(`     + ${a.nombre}\n`);
                 });
                 commands.push(ESC + '!' + '\x00');

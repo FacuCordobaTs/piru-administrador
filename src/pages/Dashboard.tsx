@@ -225,14 +225,36 @@ const formatUltimaVez = (iso: string): string => {
 
 const formatAgregados = (agregadosData: any): any[] => {
     if (!agregadosData) return []
-    if (Array.isArray(agregadosData)) return agregadosData
+    let parsed: unknown = agregadosData
     if (typeof agregadosData === 'string') {
         try {
-            const parsed = JSON.parse(agregadosData)
-            return Array.isArray(parsed) ? parsed : []
+            parsed = JSON.parse(agregadosData)
         } catch { return [] }
     }
-    return []
+    if (!Array.isArray(parsed)) return []
+    const vistos = new Set<string>()
+    return parsed.filter((ag: any) => {
+        if (!ag || typeof ag !== 'object' || typeof ag.nombre !== 'string' || !ag.nombre.trim()) return false
+        const key = ag.id != null ? `id:${ag.id}` : `nombre:${ag.nombre.trim().toLowerCase()}:${ag.precio ?? ''}`
+        if (vistos.has(key)) return false
+        vistos.add(key)
+        return true
+    })
+}
+
+const formatNombreConVariantes = (
+    nombreBase: string,
+    varianteNombre?: string | null,
+    varianteSecundariaNombre?: string | null,
+): string => {
+    const base = (nombreBase || 'Producto').trim()
+    const baseNormalizado = base.toLocaleLowerCase('es-AR')
+    const variantes = [varianteNombre, varianteSecundariaNombre]
+        .map(nombre => nombre?.trim())
+        .filter((nombre): nombre is string => !!nombre)
+        .filter((nombre, index, all) => all.findIndex(v => v.toLocaleLowerCase('es-AR') === nombre.toLocaleLowerCase('es-AR')) === index)
+        .filter(nombre => !baseNormalizado.includes(nombre.toLocaleLowerCase('es-AR')))
+    return variantes.length > 0 ? `${base} (${variantes.join(' · ')})` : base
 }
 
 const getOrderDeliveryFee = (pedido: { total: string; items: any[]; montoDescuento?: string | number | null; deliveryFee?: string | null }) => {
@@ -556,9 +578,16 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                                     <div key={idx} className="flex justify-between gap-2">
                                         <div className="flex gap-2 flex-1 min-w-0">
                                             <span className="text-sm font-bold text-muted-foreground shrink-0">{item.cantidad}x</span>
-                                            <span className="text-sm font-medium text-foreground truncate">
-                                                {item.nombreProducto}{[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).length ? ` (${[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ')})` : ''}
-                                            </span>
+                                            <div className="min-w-0">
+                                                <span className="block text-sm font-medium text-foreground truncate">
+                                                    {formatNombreConVariantes(item.nombreProducto, item.varianteNombre, item.varianteSecundariaNombre)}
+                                                </span>
+                                                {formatAgregados(item.agregados).length > 0 && (
+                                                    <span className="block text-xs text-emerald-600 truncate">
+                                                        Extras: {formatAgregados(item.agregados).map((ag: any) => ag.nombre).join(', ')}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                         <span className="text-sm tabular-nums font-semibold text-foreground shrink-0">
                                             ${(parseFloat(item.precioUnitario || '0') * item.cantidad).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
@@ -941,11 +970,14 @@ const PosComandaPreview = ({
                                         >
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-semibold text-base text-foreground leading-snug">
-                                                    {it.nombre}{(it.varianteNombre || it.varianteSecundariaNombre) && <span className="text-muted-foreground font-medium"> ({[it.varianteNombre, it.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
+                                                    {formatNombreConVariantes(it.nombre, it.varianteNombre, it.varianteSecundariaNombre)}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground mt-0.5">${it.precioUnitario.toLocaleString('es-AR', { minimumFractionDigits: 0 })} c/u</p>
                                                 {it.ingredientesExcluidosNombres && it.ingredientesExcluidosNombres.length > 0 && (
                                                     <p className="text-xs font-medium text-orange-600 mt-1">Sin: {it.ingredientesExcluidosNombres.join(', ')}</p>
+                                                )}
+                                                {formatAgregados(it.agregados).length > 0 && (
+                                                    <p className="text-xs font-medium text-emerald-600 mt-1">Extras: {formatAgregados(it.agregados).map((ag: any) => ag.nombre).join(', ')}</p>
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-3 shrink-0">
@@ -2554,7 +2586,7 @@ const Dashboard = () => {
                                                                                 <span className="font-bold text-base text-muted-foreground w-6 shrink-0 tabular-nums">{item.cantidad}x</span>
                                                                                 <div className="min-w-0">
                                                                                     <p className="font-semibold text-base text-foreground leading-snug">
-                                                                                        {item.nombreProducto}{(item.varianteNombre || item.varianteSecundariaNombre) && <span className="text-muted-foreground font-medium"> ({[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
+                                                                                        {formatNombreConVariantes(item.nombreProducto, item.varianteNombre, item.varianteSecundariaNombre)}
                                                                                     </p>
                                                                                     {formatAgregados(item.agregados).length > 0 && (
                                                                                         <div className="mt-1 space-y-0.5">
@@ -2589,7 +2621,7 @@ const Dashboard = () => {
                                                                         <span className="font-bold text-base text-muted-foreground w-6 shrink-0 tabular-nums">{item.cantidad}x</span>
                                                                         <div className="min-w-0">
                                                                             <p className="font-semibold text-base text-foreground leading-snug">
-                                                                                {item.nombreProducto}{(item.varianteNombre || item.varianteSecundariaNombre) && <span className="text-muted-foreground font-medium"> ({[item.varianteNombre, item.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
+                                                                                {formatNombreConVariantes(item.nombreProducto, item.varianteNombre, item.varianteSecundariaNombre)}
                                                                             </p>
                                                                             {formatAgregados(item.agregados).length > 0 && (
                                                                                 <div className="mt-1 space-y-0.5">
