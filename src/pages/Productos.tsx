@@ -584,6 +584,7 @@ const Productos = () => {
         toast.success(mensaje)
         setDialogEliminarCategoriaAbierto(false)
         setCategoriaAEliminar(null)
+        setOrdenCategoriasLocal((actual) => actual.filter((categoria) => categoria.id !== categoriaAEliminar.id))
         await fetchData()
       }
     } catch (error: any) {
@@ -623,8 +624,8 @@ const Productos = () => {
       setCategorias(ordenCategoriasLocal.map((categoria, orden) => ({ ...categoria, orden })))
       toast.success('Orden de categorías actualizado')
       setDialogGestionCategoriasAbierto(false)
-    } catch (error: any) {
-      toast.error('Error al ordenar categorías', { description: error.message || 'Error de conexión' })
+    } catch (error: unknown) {
+      toast.error('Error al ordenar categorías', { description: error instanceof Error ? error.message : 'Error de conexión' })
     } finally {
       setIsGuardandoOrdenCategorias(false)
       setDragCategoriaIndex(null)
