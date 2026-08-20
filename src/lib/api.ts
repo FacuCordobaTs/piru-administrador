@@ -726,6 +726,13 @@ export const productosApi = {
       categoriaId?: number
       ingredienteIds?: number[]
       agregadoIds?: number[]
+      agregadoIdsSecundarios?: number[]
+      variantes?: Array<{ id?: number; nombre: string; precio: number }>
+      variantesSecundarias?: Array<{ id?: number; nombre: string; precio: number }>
+      tituloVariantesPrimarias?: string
+      tituloVariantesSecundarias?: string
+      tituloExtrasPrimarios?: string
+      tituloExtrasSecundarios?: string
       etiquetas?: string[]
       puntosGanados?: number
       puntosNecesarios?: number
@@ -752,6 +759,13 @@ export const productosApi = {
       categoriaId?: number | null
       ingredienteIds?: number[]
       agregadoIds?: number[]
+      agregadoIdsSecundarios?: number[]
+      variantes?: Array<{ id?: number; nombre: string; precio: number }>
+      variantesSecundarias?: Array<{ id?: number; nombre: string; precio: number }>
+      tituloVariantesPrimarias?: string
+      tituloVariantesSecundarias?: string
+      tituloExtrasPrimarios?: string
+      tituloExtrasSecundarios?: string
       activo?: boolean
       etiquetas?: string[]
       puntosGanados?: number

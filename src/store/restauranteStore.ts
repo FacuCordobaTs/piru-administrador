@@ -36,9 +36,15 @@ interface Producto {
   tieneVariantes?: boolean | null
   etiquetas?: Array<{ id: number; nombre: string }>
   ingredientes?: Array<{ id: number; nombre: string }>
-  agregados?: Array<{ id: number; nombre: string; precio: string }>
+  agregados?: Array<{ id: number; nombre: string; precio: string; grupo?: number }>
+  agregadosPrimarios?: Array<{ id: number; nombre: string; precio: string; grupo?: number }>
+  agregadosSecundarios?: Array<{ id: number; nombre: string; precio: string; grupo?: number }>
   variantes?: Array<{ id: number; nombre: string; precio: string }>
   variantesSecundarias?: Array<{ id: number; nombre: string; precio: string }>
+  tituloVariantesPrimarias?: string
+  tituloVariantesSecundarias?: string
+  tituloExtrasPrimarios?: string
+  tituloExtrasSecundarios?: string
 }
 
 export interface RestauranteData {

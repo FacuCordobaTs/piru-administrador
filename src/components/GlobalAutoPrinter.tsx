@@ -216,6 +216,8 @@ const GlobalAutoPrinter = () => {
                                 tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                                 metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
                                 horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
+                                montoDescuento: pedido.montoDescuento,
+                                codigoDescuentoCodigo: pedido.codigoDescuentoCodigo,
                             }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
                             printRaw(commandsToBytes(comandaData)).catch((err) => {

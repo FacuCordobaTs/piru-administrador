@@ -79,6 +79,10 @@ const Productos = () => {
     descuentoFechaFin: string
     variantes: Array<{ id?: number, nombre: string, precio: string }>
     variantesSecundarias: Array<{ id?: number, nombre: string, precio: string }>
+    tituloVariantesPrimarias: string
+    tituloVariantesSecundarias: string
+    tituloExtrasPrimarios: string
+    tituloExtrasSecundarios: string
   }>({
     nombre: '',
     descripcion: '',
@@ -90,7 +94,11 @@ const Productos = () => {
     descuentoFechaInicio: '',
     descuentoFechaFin: '',
     variantes: [],
-    variantesSecundarias: []
+    variantesSecundarias: [],
+    tituloVariantesPrimarias: 'Elegí una opción',
+    tituloVariantesSecundarias: 'Elegí también una segunda opción',
+    tituloExtrasPrimarios: 'Extras',
+    tituloExtrasSecundarios: 'Extras'
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [etiquetasProducto, setEtiquetasProducto] = useState<string[]>([])
@@ -128,6 +136,7 @@ const Productos = () => {
   // ─── Agregados ───
   const [agregados, setAgregados] = useState<Array<{ id: number; nombre: string; precio: string; activo?: boolean }>>([])
   const [agregadosSeleccionados, setAgregadosSeleccionados] = useState<number[]>([])
+  const [agregadosSecundariosSeleccionados, setAgregadosSecundariosSeleccionados] = useState<number[]>([])
   const [nuevoAgregadoNombre, setNuevoAgregadoNombre] = useState('')
   const [nuevoAgregadoPrecio, setNuevoAgregadoPrecio] = useState('')
   const [dialogAgregadoAbierto, setDialogAgregadoAbierto] = useState(false)
@@ -206,10 +215,11 @@ const Productos = () => {
     setPanelNuevo(true)
     setActivePanelType('product')
     setPanelModo('edicion')
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [] })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
+    setAgregadosSecundariosSeleccionados([])
     setEtiquetasProducto([])
     setBusquedaIngrediente('')
     setSeccionesAbiertas(new Set(['info']))
@@ -228,7 +238,11 @@ const Productos = () => {
       descuentoFechaInicio: (producto as any).descuentoFechaInicio ? new Date((producto as any).descuentoFechaInicio).toISOString().slice(0, 16) : '',
       descuentoFechaFin: (producto as any).descuentoFechaFin ? new Date((producto as any).descuentoFechaFin).toISOString().slice(0, 16) : '',
       variantes: (producto as any).variantes ? (producto as any).variantes.map((v: any) => ({ id: v.id, nombre: v.nombre, precio: v.precio.toString() })) : [],
-      variantesSecundarias: (producto as any).variantesSecundarias ? (producto as any).variantesSecundarias.map((v: any) => ({ id: v.id, nombre: v.nombre, precio: v.precio.toString() })) : []
+      variantesSecundarias: (producto as any).variantesSecundarias ? (producto as any).variantesSecundarias.map((v: any) => ({ id: v.id, nombre: v.nombre, precio: v.precio.toString() })) : [],
+      tituloVariantesPrimarias: (producto as any).tituloVariantesPrimarias || 'Elegí una opción',
+      tituloVariantesSecundarias: (producto as any).tituloVariantesSecundarias || 'Elegí también una segunda opción',
+      tituloExtrasPrimarios: (producto as any).tituloExtrasPrimarios || 'Extras',
+      tituloExtrasSecundarios: (producto as any).tituloExtrasSecundarios || 'Extras'
     })
     setImageBase64(producto.imagenUrl || null)
     setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
@@ -242,8 +256,10 @@ const Productos = () => {
 
       try {
         const response2 = await agregadosApi.getByProducto(token, producto.id) as any
-        setAgregadosSeleccionados(response2.success && response2.agregados ? response2.agregados.map((ag: any) => ag.id) : [])
-      } catch { setAgregadosSeleccionados([]) }
+        const asignados = response2.success && response2.agregados ? response2.agregados : []
+        setAgregadosSeleccionados(asignados.filter((ag: any) => (ag.grupo ?? 1) === 1).map((ag: any) => ag.id))
+        setAgregadosSecundariosSeleccionados(asignados.filter((ag: any) => ag.grupo === 2).map((ag: any) => ag.id))
+      } catch { setAgregadosSeleccionados([]); setAgregadosSecundariosSeleccionados([]) }
     }
 
     setPanelModo('edicion')
@@ -381,6 +397,13 @@ const Productos = () => {
       toast.error('La segunda elección requiere al menos una variante principal')
       return
     }
+    const titulosInvalidos = [
+      formData.tituloVariantesPrimarias,
+      formData.tituloVariantesSecundarias,
+      formData.tituloExtrasPrimarios,
+      formData.tituloExtrasSecundarios,
+    ].some(titulo => !titulo.trim())
+    if (titulosInvalidos) { toast.error('Las frases de cada paso no pueden estar vacías'); return }
 
     setIsSubmitting(true)
     try {
@@ -394,9 +417,14 @@ const Productos = () => {
         categoriaId: categoriaId !== undefined ? categoriaId : null,
         ingredienteIds: ingredientesSeleccionados,
         agregadoIds: agregadosSeleccionados,
+        agregadoIdsSecundarios: agregadosSecundariosSeleccionados,
         etiquetas: etiquetasProducto.length > 0 ? etiquetasProducto : undefined,
         variantes: formData.variantes.length > 0 ? formData.variantes.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
         variantesSecundarias: formData.variantesSecundarias.length > 0 ? formData.variantesSecundarias.map(v => ({ id: v.id, nombre: v.nombre, precio: parseFloat(v.precio) })) : [],
+        tituloVariantesPrimarias: formData.tituloVariantesPrimarias.trim(),
+        tituloVariantesSecundarias: formData.tituloVariantesSecundarias.trim(),
+        tituloExtrasPrimarios: formData.tituloExtrasPrimarios.trim(),
+        tituloExtrasSecundarios: formData.tituloExtrasSecundarios.trim(),
         puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
         puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
         descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,
@@ -541,6 +569,7 @@ const Productos = () => {
         const res = await agregadosApi.getAll(token) as any
         if (res.success && res.agregados) setAgregados(res.agregados)
         setAgregadosSeleccionados(prev => prev.filter(id => id !== agregadoAEliminar.id))
+        setAgregadosSecundariosSeleccionados(prev => prev.filter(id => id !== agregadoAEliminar.id))
       }
     } catch (error: any) {
       toast.error('Error al eliminar extra', { description: error.message || 'Error de conexión' })
@@ -743,7 +772,8 @@ const Productos = () => {
     ? `${formData.variantes.length} + ${formData.variantesSecundarias.length} opciones`
     : 'Sin variantes'
   const summaryIngredientes = ingredientesSeleccionados.length > 0 ? `${ingredientesSeleccionados.length} ingrediente${ingredientesSeleccionados.length !== 1 ? 's' : ''}` : 'Sin ingredientes'
-  const summaryExtras = agregadosSeleccionados.length > 0 ? `${agregadosSeleccionados.length} extra${agregadosSeleccionados.length !== 1 ? 's' : ''}` : 'Sin extras'
+  const totalExtrasSeleccionados = agregadosSeleccionados.length + agregadosSecundariosSeleccionados.length
+  const summaryExtras = totalExtrasSeleccionados > 0 ? `${agregadosSeleccionados.length} + ${agregadosSecundariosSeleccionados.length} extras` : 'Sin extras'
   const summaryImagen = (imageBase64 && imageBase64.length > 10) ? 'Con imagen' : 'Sin imagen'
 
   if (isLoading) {
@@ -1315,6 +1345,16 @@ const Productos = () => {
                     <p className="text-sm font-semibold text-zinc-900 dark:text-white">Primera elección</p>
                     <p className="text-xs text-muted-foreground dark:text-zinc-500">Define el precio base (Ej: Simple, Doble, Triple).</p>
                   </div>
+                  <div>
+                    <Label className={panelLabelClass}>Frase para el cliente</Label>
+                    <Input
+                      value={formData.tituloVariantesPrimarias}
+                      maxLength={120}
+                      onChange={(e) => { setFormData({ ...formData, tituloVariantesPrimarias: e.target.value }); markDirty() }}
+                      placeholder="Elegí una opción"
+                      className={panelInputClass}
+                    />
+                  </div>
                   {formData.variantes.map((variante, index) => (
                     <div key={index} className="flex gap-2 items-center">
                       <Input
@@ -1369,6 +1409,16 @@ const Productos = () => {
                   <div className="border-t border-zinc-200 pt-4 dark:border-white/10">
                     <p className="text-sm font-semibold text-zinc-900 dark:text-white">Segunda elección</p>
                     <p className="text-xs text-muted-foreground dark:text-zinc-500">Opcional. Se muestra después de la primera y su importe se suma al precio (Ej: Carne $0, Vegana +$500).</p>
+                  </div>
+                  <div>
+                    <Label className={panelLabelClass}>Frase para el cliente</Label>
+                    <Input
+                      value={formData.tituloVariantesSecundarias}
+                      maxLength={120}
+                      onChange={(e) => { setFormData({ ...formData, tituloVariantesSecundarias: e.target.value }); markDirty() }}
+                      placeholder="Elegí también una segunda opción"
+                      className={panelInputClass}
+                    />
                   </div>
                   {formData.variantesSecundarias.map((variante, index) => (
                     <div key={variante.id ?? `sec-${index}`} className="flex gap-2 items-center">
@@ -1506,7 +1556,10 @@ const Productos = () => {
               {seccionesAbiertas.has('extras') && (
                 <div className="px-6 py-4 space-y-3 border-b border-zinc-200 dark:border-white/5">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground dark:text-zinc-500">Opciones con costo adicional (Ej: Extra Cheddar).</p>
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-white">Extras primarios</p>
+                      <p className="text-xs text-muted-foreground dark:text-zinc-500">Aparecen antes que los extras secundarios.</p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setDialogAgregadoAbierto(true)}
@@ -1514,6 +1567,16 @@ const Productos = () => {
                     >
                       + Nuevo
                     </button>
+                  </div>
+                  <div>
+                    <Label className={panelLabelClass}>Frase para el cliente</Label>
+                    <Input
+                      value={formData.tituloExtrasPrimarios}
+                      maxLength={120}
+                      onChange={(e) => { setFormData({ ...formData, tituloExtrasPrimarios: e.target.value }); markDirty() }}
+                      placeholder="Extras"
+                      className={panelInputClass}
+                    />
                   </div>
                   <div className="max-h-48 overflow-y-auto space-y-1">
                     {agregados.length === 0 ? (
@@ -1530,7 +1593,10 @@ const Productos = () => {
                             )}
                             onClick={() => {
                               if (isSelected) setAgregadosSeleccionados(prev => prev.filter(id => id !== ag.id))
-                              else setAgregadosSeleccionados(prev => [...prev, ag.id])
+                              else {
+                                setAgregadosSeleccionados(prev => [...prev, ag.id])
+                                setAgregadosSecundariosSeleccionados(prev => prev.filter(id => id !== ag.id))
+                              }
                               markDirty()
                             }}
                           >
@@ -1543,6 +1609,53 @@ const Productos = () => {
                               )}
                             </span>
                             {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+
+                  <div className="border-t border-zinc-200 pt-4 dark:border-white/10">
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-white">Extras secundarios</p>
+                    <p className="text-xs text-muted-foreground dark:text-zinc-500">Opcional. Se muestran en un paso posterior a los extras primarios.</p>
+                  </div>
+                  <div>
+                    <Label className={panelLabelClass}>Frase para el cliente</Label>
+                    <Input
+                      value={formData.tituloExtrasSecundarios}
+                      maxLength={120}
+                      onChange={(e) => { setFormData({ ...formData, tituloExtrasSecundarios: e.target.value }); markDirty() }}
+                      placeholder="Extras"
+                      className={panelInputClass}
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {agregados.length === 0 ? (
+                      <p className="text-sm text-zinc-600 italic py-2 text-center">No hay extras creados.</p>
+                    ) : (
+                      agregados.map((ag) => {
+                        const isSelected = agregadosSecundariosSeleccionados.includes(ag.id)
+                        return (
+                          <div
+                            key={`sec-${ag.id}`}
+                            className={cn(
+                              "flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-all",
+                              isSelected ? "bg-violet-100 dark:bg-violet-950/20 border-violet-500/50" : "bg-white dark:bg-zinc-800/50 border-transparent hover:border-zinc-200 dark:hover:border-white/10"
+                            )}
+                            onClick={() => {
+                              if (isSelected) setAgregadosSecundariosSeleccionados(prev => prev.filter(id => id !== ag.id))
+                              else {
+                                setAgregadosSecundariosSeleccionados(prev => [...prev, ag.id])
+                                setAgregadosSeleccionados(prev => prev.filter(id => id !== ag.id))
+                              }
+                              markDirty()
+                            }}
+                          >
+                            <span className={cn("text-sm font-medium", isSelected ? "text-violet-600 dark:text-violet-400" : "text-zinc-800 dark:text-zinc-300")}>
+                              {ag.nombre} <span className="opacity-60 ml-1 text-xs">+${ag.precio}</span>
+                              {ag.activo === false && <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground dark:text-zinc-400">Desactivado</span>}
+                            </span>
+                            {isSelected && <CheckCircle2 className="h-4 w-4 text-violet-500" />}
                           </div>
                         )
                       })

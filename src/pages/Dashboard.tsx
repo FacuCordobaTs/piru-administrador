@@ -1418,6 +1418,8 @@ const Dashboard = () => {
                                 tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                                 metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
                                 horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
+                                montoDescuento: pedido.montoDescuento,
+                                codigoDescuentoCodigo: pedido.codigoDescuentoCodigo,
                             }, itemsToPrint, restaurante?.nombre || 'Restaurante')
 
                             printRaw(commandsToBytes(comandaData)).catch((err) => {
@@ -2667,7 +2669,9 @@ const Dashboard = () => {
                                                             total: selectedUnifiedPedido.total,
                                                             deliveryFee,
                                                             notas: selectedUnifiedPedido.notas,
+                                                            metodoPago: selectedUnifiedPedido.metodoPago,
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
+                                                            codigoDescuentoCodigo: selectedUnifiedPedido.codigoDescuentoCodigo,
                                                             sucursalNombre: selectedUnifiedPedido.sucursalNombre,
                                                             horarioProgramado: selectedUnifiedPedido.horarioProgramado,
                                                             grupal: selectedUnifiedPedido.grupal,

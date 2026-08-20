@@ -1,7 +1,7 @@
 interface ItemPedidoLike {
     cantidad: number
     nombreProducto?: string
-    precio?: number
+    precio?: string | number
     precioUnitario?: string | number  // Campo del WebSocket (puede venir como string)
     ingredientesExcluidosNombres?: string[]
     agregados?: any[]
@@ -64,7 +64,7 @@ const getMontoDescuentoPedido = (pedido: PedidoLike): number => {
 // precio es solo el precio base del producto.
 const getItemPrice = (item: ItemPedidoLike): number => {
     if (item.precio !== undefined) {
-        let basePrice = item.precio;
+        const basePrice = typeof item.precio === 'string' ? parseFloat(item.precio) || 0 : item.precio;
         let agregadosTotal = 0;
         if (item.agregados) {
             let arr: any[] = [];
@@ -85,6 +85,9 @@ const getItemPrice = (item: ItemPedidoLike): number => {
     }
     return 0;
 }
+
+const formatPrecioComanda = (value: number): string =>
+    `$${value.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 export const formatComanda = (
     pedido: PedidoLike,
@@ -187,6 +190,17 @@ export const formatComanda = (
         commands.push(ESC + '!' + (esBebida ? '\x38' : '\x18'));
         commands.push(`${indent}${item.cantidad}x ${nombre}\n`);
         commands.push(ESC + '!' + '\x00'); // Normal
+
+        // precioUnitario es el importe final congelado en el pedido: ya contempla
+        // promociones del producto, variantes y agregados. El descuento por cupón
+        // se informa por separado al pie porque aplica al pedido completo.
+        const precioUnitarioFinal = getItemPrice(item);
+        const subtotalItem = item.cantidad * precioUnitarioFinal;
+        if (item.cantidad > 1) {
+            commands.push(`${indent}  Precio: ${item.cantidad} x ${formatPrecioComanda(precioUnitarioFinal)} = ${formatPrecioComanda(subtotalItem)}\n`);
+        } else {
+            commands.push(`${indent}  Precio: ${formatPrecioComanda(precioUnitarioFinal)}\n`);
+        }
 
         if (item.agregados && item.agregados.length > 0) {
             commands.push(ESC + '!' + '\x10'); // Doble alto
