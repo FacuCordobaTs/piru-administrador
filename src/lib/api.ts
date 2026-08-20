@@ -683,6 +683,16 @@ export const categoriasApi = {
     })
   },
 
+  reorder: (token: string, categoriaIds: number[]) => {
+    return fetchApi('/categoria/reorder', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ categoriaIds }),
+    })
+  },
+
   delete: async (token: string, id: number) => {
     return fetchApi(`/categoria/delete/${id}`, {
       method: 'DELETE',

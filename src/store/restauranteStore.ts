@@ -14,6 +14,7 @@ interface Categoria {
   id: number
   restauranteId: number
   nombre: string
+  orden?: number | null
   createdAt: string
 }
 

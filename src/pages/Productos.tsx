@@ -111,6 +111,9 @@ const Productos = () => {
   const [dialogEliminarCategoriaAbierto, setDialogEliminarCategoriaAbierto] = useState(false)
   const [categoriaAEliminar, setCategoriaAEliminar] = useState<typeof categorias[0] | null>(null)
   const [isEliminandoCategoria, setIsEliminandoCategoria] = useState(false)
+  const [ordenCategoriasLocal, setOrdenCategoriasLocal] = useState<typeof categorias>([])
+  const [dragCategoriaIndex, setDragCategoriaIndex] = useState<number | null>(null)
+  const [isGuardandoOrdenCategorias, setIsGuardandoOrdenCategorias] = useState(false)
 
   // ─── Ingredientes ───
   const [ingredientes, setIngredientes] = useState<Array<{ id: number; nombre: string }>>([])
@@ -592,6 +595,42 @@ const Productos = () => {
 
   const contarProductosPorCategoria = (categoriaId: number) => productos.filter(p => p.categoriaId === categoriaId).length
 
+  const abrirGestionCategorias = () => {
+    setOrdenCategoriasLocal([...categorias].sort((a, b) =>
+      (a.orden ?? 0) - (b.orden ?? 0) || a.nombre.localeCompare(b.nombre) || a.id - b.id
+    ))
+    setDragCategoriaIndex(null)
+    setDialogGestionCategoriasAbierto(true)
+  }
+
+  const handleCategoriaDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (dragCategoriaIndex === null || dragCategoriaIndex === index) return
+    setOrdenCategoriasLocal((actual) => {
+      const siguiente = [...actual]
+      const [movida] = siguiente.splice(dragCategoriaIndex, 1)
+      siguiente.splice(index, 0, movida)
+      return siguiente
+    })
+    setDragCategoriaIndex(index)
+  }
+
+  const guardarOrdenCategorias = async () => {
+    if (!token || ordenCategoriasLocal.length === 0) return
+    setIsGuardandoOrdenCategorias(true)
+    try {
+      await categoriasApi.reorder(token, ordenCategoriasLocal.map((categoria) => categoria.id))
+      setCategorias(ordenCategoriasLocal.map((categoria, orden) => ({ ...categoria, orden })))
+      toast.success('Orden de categorías actualizado')
+      setDialogGestionCategoriasAbierto(false)
+    } catch (error: any) {
+      toast.error('Error al ordenar categorías', { description: error.message || 'Error de conexión' })
+    } finally {
+      setIsGuardandoOrdenCategorias(false)
+      setDragCategoriaIndex(null)
+    }
+  }
+
   // ─────────────────────────────────────────────
   // Etiquetas backfill
   // ─────────────────────────────────────────────
@@ -789,7 +828,9 @@ const Productos = () => {
                 const categoriasOrdenadas = Object.keys(porCategoria).sort((a, b) => {
                   if (a === 'Sin categoría') return 1
                   if (b === 'Sin categoría') return -1
-                  return a.localeCompare(b)
+                  const ordenA = categorias.find((categoria) => categoria.nombre === a)?.orden ?? 0
+                  const ordenB = categorias.find((categoria) => categoria.nombre === b)?.orden ?? 0
+                  return ordenA - ordenB || a.localeCompare(b)
                 })
 
                 return categoriasOrdenadas.map((categoriaNombre) => {
@@ -1153,7 +1194,7 @@ const Productos = () => {
                       <Label className={cn(panelLabelClass, "mb-0")}>Categoría</Label>
                       <button
                         type="button"
-                        onClick={() => setDialogGestionCategoriasAbierto(true)}
+                        onClick={abrirGestionCategorias}
                         className="text-xs text-orange-500 hover:text-orange-400 transition-colors"
                       >
                         Gestionar categorías
@@ -1841,19 +1882,35 @@ const Productos = () => {
       {/* ─────────────────────────────────────────────
           MODAL: GESTIONAR CATEGORÍAS
       ───────────────────────────────────────────── */}
-      <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={setDialogGestionCategoriasAbierto}>
+      <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={(abierto) => {
+        if (!isGuardandoOrdenCategorias) setDialogGestionCategoriasAbierto(abierto)
+      }}>
         <DialogContent className="max-w-md max-h-[80dvh] overflow-hidden flex flex-col rounded-[32px] p-0 border-zinc-200 dark:border-zinc-800">
           <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
             <DialogTitle className="text-xl font-bold">Gestión de Categorías</DialogTitle>
-            <DialogDescription className="mt-1 text-sm">Organiza tu menú. Al eliminar, los productos pasan a "Sin categoría".</DialogDescription>
+            <DialogDescription className="mt-1 text-sm">Arrastrá las categorías para definir cómo aparecen en la carta.</DialogDescription>
           </div>
           <div className="flex-1 overflow-y-auto p-6 space-y-2">
-            {categorias.length === 0 ? (
+            {ordenCategoriasLocal.length === 0 ? (
               <p className="text-center text-muted-foreground py-4">No hay categorías creadas.</p>
             ) : (
-              categorias.map((categoria) => (
-                <div key={categoria.id} className="flex items-center justify-between p-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121212]">
-                  <div className="font-semibold text-foreground">{categoria.nombre} <span className="text-xs font-normal text-muted-foreground ml-2">{contarProductosPorCategoria(categoria.id)} ítems</span></div>
+              ordenCategoriasLocal.map((categoria, index) => (
+                <div
+                  key={categoria.id}
+                  draggable={!isGuardandoOrdenCategorias}
+                  onDragStart={() => setDragCategoriaIndex(index)}
+                  onDragOver={(e) => handleCategoriaDragOver(e, index)}
+                  onDragEnd={() => setDragCategoriaIndex(null)}
+                  className={cn(
+                    "flex items-center justify-between p-3 rounded-2xl border bg-white dark:bg-[#121212] select-none cursor-grab active:cursor-grabbing transition-all",
+                    dragCategoriaIndex === index ? "border-orange-500/70 opacity-60 shadow-md" : "border-zinc-200 dark:border-zinc-800"
+                  )}
+                >
+                  <div className="min-w-0 flex items-center gap-3">
+                    <GripVertical className="h-5 w-5 shrink-0 text-zinc-400" />
+                    <span className="h-6 w-6 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-muted-foreground">{index + 1}</span>
+                    <div className="font-semibold text-foreground truncate">{categoria.nombre} <span className="text-xs font-normal text-muted-foreground ml-2">{contarProductosPorCategoria(categoria.id)} ítems</span></div>
+                  </div>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg" onClick={() => { setCategoriaAEliminar(categoria); setDialogEliminarCategoriaAbierto(true) }}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -1861,8 +1918,14 @@ const Productos = () => {
               ))
             )}
           </div>
-          <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
-            <Button className="w-full h-12 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={() => { setDialogGestionCategoriasAbierto(false); setDialogCategoriaAbierto(true) }}>
+          <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950 space-y-2">
+            {ordenCategoriasLocal.length > 0 && (
+              <Button className="w-full h-12 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={guardarOrdenCategorias} disabled={isGuardandoOrdenCategorias}>
+                {isGuardandoOrdenCategorias ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Check className="h-5 w-5 mr-2" />}
+                Guardar orden
+              </Button>
+            )}
+            <Button variant="outline" className="w-full h-12 rounded-lg font-bold" onClick={() => { setDialogGestionCategoriasAbierto(false); setDialogCategoriaAbierto(true) }} disabled={isGuardandoOrdenCategorias}>
               <Plus className="h-5 w-5 mr-2" /> Nueva Categoría
             </Button>
           </div>
