@@ -87,7 +87,7 @@ const GlobalAutoPrinter = () => {
     const restaurante = useAuthStore((state) => state.restaurante)
     const { restaurante: restauranteStore, productos: allProductos } = useRestauranteStore()
 
-    const { printRaw, selectedPrinter } = usePrinter()
+    const { printRaw, selectedPrinter, comandaGrandeMayusculas } = usePrinter()
     const { lastUpdate } = useAdminContext()
 
     const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
@@ -222,7 +222,9 @@ const GlobalAutoPrinter = () => {
                                 horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
                                 montoDescuento: pedido.montoDescuento,
                                 codigoDescuentoCodigo: pedido.codigoDescuentoCodigo,
-                            }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                            }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
+                                grandeMayusculas: comandaGrandeMayusculas,
+                            })
 
                             printRaw(commandsToBytes(comandaData)).catch((err) => {
                                 console.error('Error imprimiendo comanda automática:', err)
@@ -241,7 +243,7 @@ const GlobalAutoPrinter = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, isDashboardRoute])
+    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, isDashboardRoute, comandaGrandeMayusculas])
 
     return null
 }

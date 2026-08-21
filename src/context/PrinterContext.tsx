@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useModuloActivo } from '@/store/modulosStore';
+import { COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY, readComandaGrandeMayusculas } from '@/utils/printerUtils';
 
 const STORAGE_KEY = 'tauri_printer_name';
 
@@ -10,6 +11,8 @@ interface PrinterContextType {
     refreshPrinters: () => Promise<void>;
     printRaw: (data: number[]) => Promise<void>;
     setSelectedPrinter: (name: string) => void;
+    comandaGrandeMayusculas: boolean;
+    setComandaGrandeMayusculas: (enabled: boolean) => void;
 }
 
 const PrinterContext = createContext<PrinterContextType | undefined>(undefined);
@@ -17,6 +20,7 @@ const PrinterContext = createContext<PrinterContextType | undefined>(undefined);
 export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const impresionComandasActiva = useModuloActivo('impresion_comandas');
     const [printers, setPrinters] = useState<string[]>([]);
+    const [comandaGrandeMayusculas, setComandaGrandeMayusculasState] = useState(readComandaGrandeMayusculas);
 
     // Recuperar impresora guardada de localStorage al iniciar
     const [selectedPrinter, setSelectedPrinterState] = useState<string | null>(() => {
@@ -27,6 +31,11 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const setSelectedPrinter = useCallback((name: string) => {
         setSelectedPrinterState(name);
         localStorage.setItem(STORAGE_KEY, name);
+    }, []);
+
+    const setComandaGrandeMayusculas = useCallback((enabled: boolean) => {
+        setComandaGrandeMayusculasState(enabled);
+        localStorage.setItem(COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY, String(enabled));
     }, []);
 
     // Obtener lista de impresoras desde el backend Rust
@@ -73,7 +82,9 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
             selectedPrinter,
             refreshPrinters,
             printRaw,
-            setSelectedPrinter
+            setSelectedPrinter,
+            comandaGrandeMayusculas,
+            setComandaGrandeMayusculas,
         }}>
             {children}
         </PrinterContext.Provider>

@@ -42,6 +42,23 @@ interface PedidoLike {
     grupal?: boolean | null
 }
 
+export const COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY = 'piru_comanda_grande_mayusculas'
+
+export interface ComandaFormatOptions {
+    /** Convierte todo el texto a mayúsculas y usa doble altura en toda la comanda. */
+    grandeMayusculas?: boolean
+}
+
+/** Preferencia local del equipo; los callers antiguos también la respetan. */
+export const readComandaGrandeMayusculas = (): boolean => {
+    if (typeof window === 'undefined') return false
+    try {
+        return window.localStorage.getItem(COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY) === 'true'
+    } catch {
+        return false
+    }
+}
+
 const formatMetodoPagoPrinter = (metodoPago: string | null | undefined): string => {
     const m = String(metodoPago || '').trim()
     if (m.includes('mercadopago')) return 'MercadoPago'
@@ -123,12 +140,14 @@ const formatMesaComanda = (mesaNombre: string | null | undefined): string => {
 export const formatComanda = (
     pedido: PedidoLike,
     items: ItemPedidoLike[],
-    restauranteNombre: string
+    restauranteNombre: string,
+    options?: ComandaFormatOptions,
 ) => {
     const ESC = '\x1B';
     const GS = '\x1D';
     const LINE_WIDTH = 32;
     const esComandaMesa = pedido.tipo === 'mesa'
+    const grandeMayusculas = options?.grandeMayusculas ?? readComandaGrandeMayusculas()
 
     // Total consistente con la vista: itemsSubtotal + deliveryFee - descuento
     const itemsSubtotal = items.reduce((acc, item) => acc + (item.cantidad * getItemPrice(item)), 0)
@@ -323,7 +342,18 @@ export const formatComanda = (
     commands.push('\n\n\n\n');
     commands.push(GS + 'V' + '\x41' + '\x00'); // Cut
 
-    return commands;
+    if (!grandeMayusculas) return commands
+
+    return commands.map((command) => {
+        // Los comandos y los textos se agregan en entradas separadas. No se
+        // debe aplicar uppercase a ESC + "t", porque cambiaría el comando.
+        if (command.startsWith(ESC + '!') && command.length >= 3) {
+            // 0x10 = doble altura; conserva negrita/doble ancho ya existentes.
+            return command.slice(0, 2) + String.fromCharCode(command.charCodeAt(2) | 0x10) + command.slice(3)
+        }
+        if (command.startsWith(ESC) || command.startsWith(GS)) return command
+        return command.toLocaleUpperCase('es-AR')
+    })
 };
 
 /**

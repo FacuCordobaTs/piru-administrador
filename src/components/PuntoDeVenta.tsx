@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 import { POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
 import {
     X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2,
-    Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight, Eye, EyeOff,
+    Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight,
     WifiOff, Printer,
 } from 'lucide-react'
 
@@ -131,7 +131,8 @@ export interface PuntoDeVentaHandle {
     /** Pide descartar el borrador actual antes de cerrar el POS. */
     requestClose: () => void
     /** Confirma el borrador desde la comanda desktop. */
-    submitDraft: () => void
+    /** Guarda el borrador y devuelve el id persistido; permite encadenar acciones. */
+    submitDraft: () => Promise<number | null>
     /** Limpia el borrador desde la comanda desktop, sin confirmación. */
     clearDraft: () => void
     /** Lleva el cursor al buscador de productos. */
@@ -155,6 +156,8 @@ interface PuntoDeVentaProps {
     mesaAsignada?: { id: number; nombre: string } | null
     /** Desasigna la mesa al cambiar el borrador a delivery o takeaway. */
     onClearMesa?: () => void
+    /** Resincroniza el mapa si el backend detecta una ocupación concurrente. */
+    onMesaOcupadaDetectada?: () => void
     /** Sólo el borrador activo captura la escritura rápida para buscar productos. */
     autoFocusSearch?: boolean
     /** Pedido POS que se carga como borrador editable. */
@@ -165,10 +168,6 @@ interface PuntoDeVentaProps {
     sucursalNombre?: string
     /** En desktop, integra el catálogo como desplegable dentro de la comanda. */
     catalogoCompacto?: boolean
-    /** Controla la apertura del catálogo compacto sin desmontar el motor del POS. */
-    catalogoAbierto?: boolean
-    /** Se invoca al elegir un producto del catálogo compacto. */
-    onProductSelected?: () => void
 }
 
 const METODOS_PAGO: Array<{ id: PosMetodoPago; label: string; icon: React.ElementType }> = [
@@ -239,22 +238,8 @@ const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
     })),
 })
 
-/** El toggle se usa sólo con puntero: no interrumpe el recorrido de carga del pedido. */
-const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: boolean; fieldName: string; onToggle: () => void }) => (
-    <button
-        type="button"
-        tabIndex={-1}
-        aria-label={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
-        title={`${visible ? 'Ocultar' : 'Mostrar'} ${fieldName}`}
-        onClick={onToggle}
-        className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-    >
-        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-    </button>
-)
-
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, onDeletePedido, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false, catalogoAbierto = false, onProductSelected },
+    { onClose, onCreated, onUpdated, onDeletePedido, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -277,6 +262,9 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const [query, setQuery] = useState('')
     const searchInputRef = useRef<HTMLInputElement>(null)
+    // El destino del portal vive en la comanda hermana y aparece recién después
+    // del primer commit. Este estado fuerza el render que monta el buscador ahí.
+    const [catalogoPortalReady, setCatalogoPortalReady] = useState(false)
     // Contenedor scrolleable del listado: mantiene el producto destacado a la vista.
     const scrollRef = useRef<HTMLDivElement>(null)
     const [cart, setCart] = useState<CartItem[]>([])
@@ -287,9 +275,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         initialItem?: CartItem
     } | null>(null)
     const [mobileStep, setMobileStep] = useState<'productos' | 'checkout'>('productos')
-    // El listado completo puede ocultarse para dejar la vista limpia: los
-    // productos reaparecen cuando se escribe en el buscador.
-    const [listadoOculto, setListadoOculto] = useState(false)
     // Producto destacado del resultado: es el que Enter agrega al pedido y el
     // que las flechitas recorren durante la búsqueda (indicado con el marquito).
     const [indiceSeleccionado, setIndiceSeleccionado] = useState(0)
@@ -386,6 +371,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const focusProductSearch = () => searchInputRef.current?.focus()
 
+    useEffect(() => {
+        setCatalogoPortalReady(catalogoCompacto)
+    }, [catalogoCompacto])
+
     // En el borrador, el lector/teclado debe poder empezar a buscar sin un click
     // previo. No se roba el foco de campos que el usuario haya elegido de forma
     // explícita, ni del configurador de un producto abierto.
@@ -393,7 +382,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         if (!autoFocusSearch || configProducto) return
         const frame = window.requestAnimationFrame(focusProductSearch)
         return () => window.cancelAnimationFrame(frame)
-    }, [autoFocusSearch, configProducto])
+    }, [autoFocusSearch, configProducto, catalogoPortalReady])
 
     useEffect(() => {
         if (!autoFocusSearch || configProducto) return
@@ -553,8 +542,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         })
     }, [productos, query])
 
-    // Con el listado oculto, los productos sólo se muestran durante una búsqueda.
-    const mostrarListado = !listadoOculto || query.trim() !== ''
+    // El catálogo aparece solamente cuando hay una búsqueda en curso.
+    const mostrarListado = query.trim() !== ''
 
     const porCategoria = useMemo(() => {
         const map: Record<string, Producto[]> = {}
@@ -720,13 +709,13 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         // Al agregar al borrador se limpia el buscador: el próximo producto
         // se escribe directo, sin borrar el término anterior.
         setQuery('')
+        // Esperar al render garantiza que el input siga montado y activo incluso
+        // cuando el alta cerró el configurador de variantes.
+        window.requestAnimationFrame(() => searchInputRef.current?.focus())
     }
 
     const handleProductClick = (producto: Producto, anchor: DOMRect) => {
         onStartDraft?.()
-        // En el dashboard el catálogo compacto es un buscador desplegable: una
-        // vez elegido el producto, se repliega aunque requiera elegir variante.
-        if (catalogoCompacto) onProductSelected?.()
         const tieneVariantes = (producto.variantes?.length ?? 0) > 0 || (producto.variantesSecundarias?.length ?? 0) > 0
         // Durante la carga sólo las variantes requieren elegir una opción. Los
         // ingredientes y extras se ajustan después, desde la edición del ítem
@@ -898,11 +887,18 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
     useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: resetForm, focusProductSearch, getCartItems }))
 
-    const handleSubmit = async () => {
-        if (!token) return
-        if (modoEdicion && !hasChanges) return
-        if (cart.length === 0) return toast.error('Agregá al menos un producto')
-        if (tipo === 'delivery' && config.camposCliente.direccion && !direccion.trim()) return toast.error('Ingresá la dirección de entrega')
+    const handleSubmit = async (): Promise<number | null> => {
+        if (!token) return null
+        // Despachar una mesa ya guardada no exige introducir un cambio artificial.
+        if (modoEdicion && !hasChanges) return initialPedido.id
+        if (cart.length === 0) {
+            toast.error('Agregá al menos un producto')
+            return null
+        }
+        if (tipo === 'delivery' && config.camposCliente.direccion && !direccion.trim()) {
+            toast.error('Ingresá la dirección de entrega')
+            return null
+        }
 
         const items: PedidoUnificadoItemInput[] = cart.map((it) => ({
             productoId: it.productoId,
@@ -960,17 +956,18 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 if (res.success) {
                     toast.success('Pedido actualizado correctamente')
                     if (res.data) onUpdated?.(res.data)
+                    return res.data?.id ?? initialPedido.id
                 } else {
                     toast.error(res.message || 'No se pudo actualizar el pedido')
+                    return null
                 }
-                return
             }
 
             // Sin conexión el pedido va directo a la cola local y la comanda se
             // imprime en el acto: el local nunca deja de anotar.
             if (!online) {
                 await guardarPedidoOffline(data)
-                return
+                return null
             }
 
             try {
@@ -981,21 +978,29 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     // El POS queda listo para anotar el siguiente pedido. El Dashboard
                     // sólo sincroniza el listado; cerrar el POS acá interrumpía ese flujo.
                     if (res.data?.id) onCreated(res.data.id)
+                    return res.data?.id ?? null
                 } else {
                     toast.error(res.message || 'No se pudo crear el pedido')
+                    return null
                 }
             } catch (error: unknown) {
+                if ((error as { response?: { code?: string } })?.response?.code === 'MESA_OCUPADA') {
+                    onMesaOcupadaDetectada?.()
+                }
                 if (esErrorDeConexion(error)) {
                     // El servidor está caído aunque navigator.onLine siga en true:
                     // mismo camino que sin conexión (cola local + comanda).
                     await guardarPedidoOffline(data)
+                    return null
                 } else {
                     toast.error('Error al crear el pedido', { description: error instanceof Error ? error.message : undefined })
+                    return null
                 }
             }
         } catch (error: unknown) {
             // Sólo llega acá el path de edición: el de alta ya manejó sus errores.
             toast.error('Error al actualizar el pedido', { description: error instanceof Error ? error.message : undefined })
+            return null
         } finally {
             setSubmitting(false)
         }
@@ -1203,12 +1208,14 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     )
 
     if (catalogoCompacto) {
-        const catalogoTarget = typeof document === 'undefined' ? null : document.getElementById('pos-catalogo-compacto')
+        const catalogoTarget = catalogoPortalReady && typeof document !== 'undefined'
+            ? document.getElementById('pos-catalogo-compacto')
+            : null
         return (
             <>
-                {catalogoAbierto && catalogoTarget && createPortal(
-                    <div className="flex h-[min(42vh,360px)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
-                        <div className="shrink-0 border-b border-border/70 p-2.5">
+                {catalogoTarget && createPortal(
+                    <div className="flex flex-col overflow-hidden">
+                        <div className={cn('shrink-0', mostrarListado && 'border-b border-border/70 pb-2.5')}>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                                 <Input
@@ -1216,13 +1223,13 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     value={query}
                                     onChange={(event) => setQuery(event.target.value)}
                                     onKeyDown={(event) => {
-                                        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && productosOrdenados.length > 0) {
+                                        if (mostrarListado && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && productosOrdenados.length > 0) {
                                             event.preventDefault()
                                             const delta = event.key === 'ArrowDown' ? 1 : -1
                                             setIndiceSeleccionado((current) => (current + delta + productosOrdenados.length) % productosOrdenados.length)
                                             return
                                         }
-                                        if (event.key === 'Enter' && productosOrdenados.length > 0) {
+                                        if (event.key === 'Enter' && mostrarListado && productosOrdenados.length > 0) {
                                             event.preventDefault()
                                             const producto = productosOrdenados[Math.min(indiceSeleccionado, productosOrdenados.length - 1)] ?? productosOrdenados[0]
                                             handleProductClick(producto, event.currentTarget.getBoundingClientRect())
@@ -1233,7 +1240,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                 />
                             </div>
                         </div>
-                        <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {mostrarListado && <div ref={scrollRef} className="mt-2 max-h-[min(70vh,640px)] overflow-y-auto rounded-xl border border-border bg-background p-2 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             {productosFiltrados.length === 0 ? (
                                 <p className="py-10 text-center text-sm text-muted-foreground">No se encontraron productos.</p>
                             ) : (
@@ -1270,7 +1277,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     ))}
                                 </div>
                             )}
-                        </div>
+                        </div>}
                     </div>,
                     catalogoTarget,
                 )}
@@ -1431,20 +1438,12 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                 placeholder="Buscar producto o tag..."
                                 className="h-10 pl-10 pr-10 rounded-xl border-0 shadow-sm"
                             />
-                            {/* Ocultar/mostrar el listado completo: queda sólo la búsqueda. */}
-                            <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                                <FieldVisibilityButton
-                                    visible={!listadoOculto}
-                                    fieldName="listado de productos"
-                                    onToggle={() => setListadoOculto((oculto) => !oculto)}
-                                />
-                            </div>
                         </div>
                     </div>
                     {/* Scroll con scrollbar nunca visible: el scroll entre productos sigue funcionando. */}
                     <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {!mostrarListado ? (
-                            <p className="text-sm text-muted-foreground/60 py-12 text-center">Listado oculto. Escribí para buscar un producto.</p>
+                            <p className="text-sm text-muted-foreground/60 py-12 text-center">Escribí para buscar un producto.</p>
                         ) : productosFiltrados.length === 0 ? (
                             <p className="text-sm text-muted-foreground/60 py-12 text-center">No se encontraron productos.</p>
                         ) : (

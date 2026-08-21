@@ -1011,25 +1011,24 @@ const PosComandaPreview = ({
     onRemoveItem,
     onUpdate,
     onSubmit,
+    onDispatchMesa,
     onClear,
     onClearMesa,
     editingPedidoId,
     mesaAsignada,
-    catalogoAbierto = false,
-    onToggleCatalogo,
 }: {
     draft: PosDraft | null
     onEditItem?: (key: string) => void
     onRemoveItem?: (key: string) => void
     onUpdate?: (changes: PosDraftUpdate) => void
     onSubmit?: () => void
+    /** Guarda primero la comanda y luego despacha el pedido de la mesa. */
+    onDispatchMesa?: () => void | Promise<void>
     onClear?: () => void
     onClearMesa?: () => void
     editingPedidoId?: number
     /** La mesa se actualiza antes que el snapshot del POS; evita un título transitorio. */
     mesaAsignada?: Pick<MesaLocal, 'id' | 'nombre'> | null
-    catalogoAbierto?: boolean
-    onToggleCatalogo?: () => void
 }) => {
     // Qué datos/opciones muestra la comanda según la configuración del POS.
     const config = usePosConfig()
@@ -1051,10 +1050,7 @@ const PosComandaPreview = ({
                         <ShoppingCart className="h-7 w-7 text-muted-foreground/60" />
                     </div>
                     <p className="text-base font-bold text-foreground">Comanda en blanco</p>
-                    <Button onClick={onToggleCatalogo} className="mt-2 h-11 rounded-xl bg-[#FF7A00] px-5 font-bold text-white hover:bg-[#E66E00]">
-                        <Plus className="mr-2 h-4 w-4" /> Agregar producto
-                    </Button>
-                    <div id="pos-catalogo-compacto" className="mt-3 w-full max-w-[520px]" />
+                    <div id="pos-catalogo-compacto" className="mt-2 w-full max-w-[520px] text-left" />
                 </div>
             </div>
         )
@@ -1082,21 +1078,7 @@ const PosComandaPreview = ({
                         {/* Comanda */}
                         <div className="mb-6">
                             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Comanda · {totalItems} ítems</h3>
-                            <button
-                                type="button"
-                                onClick={onToggleCatalogo}
-                                aria-expanded={catalogoAbierto}
-                                className={cn(
-                                    'mb-2 flex h-11 w-full items-center justify-between rounded-xl border border-dashed px-3 text-sm font-bold transition-colors',
-                                    catalogoAbierto
-                                        ? 'border-[#FF7A00] bg-[#FF7A00]/5 text-[#FF7A00]'
-                                        : 'border-border text-foreground hover:border-[#FF7A00]/60 hover:bg-muted/40'
-                                )}
-                            >
-                                <span className="flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar producto</span>
-                                <ChevronDown className={cn('h-4 w-4 transition-transform', catalogoAbierto && 'rotate-180')} />
-                            </button>
-                            <div id="pos-catalogo-compacto" className={cn(catalogoAbierto && 'mb-2')} />
+                            <div id="pos-catalogo-compacto" className="mb-2" />
                             {draft.items.length === 0 ? (
                                 <p className="text-sm text-muted-foreground/60 py-8 text-center border border-dashed border-border rounded-xl">
                                     Todavía no hay productos
@@ -1232,6 +1214,18 @@ const PosComandaPreview = ({
                             >
                                 {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : editingPedidoId ? 'Guardar cambios' : 'Anotar pedido'}
                             </Button>
+                            {mesaAsignada && onDispatchMesa && (
+                                <button
+                                    type="button"
+                                    onClick={() => void onDispatchMesa()}
+                                    disabled={draft.items.length === 0 || draft.submitting}
+                                    aria-label="Despachar pedido de la mesa"
+                                    title="Despachar"
+                                    className="h-14 w-14 shrink-0 rounded-2xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
+                                >
+                                    <Truck className="h-5 w-5" />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1257,7 +1251,7 @@ const Dashboard = () => {
     // exclusivamente con su módulo y no depende de este alias legacy.
     const esPlanBasico = suscripcion?.planCodigo === 'basico'
 
-    const { printRaw, selectedPrinter } = usePrinter()
+    const { printRaw, selectedPrinter, comandaGrandeMayusculas } = usePrinter()
     const isDesktopViewport = useDesktopViewport()
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
     const initialLoadDoneRef = useRef(false)
@@ -1292,7 +1286,6 @@ const Dashboard = () => {
     const [cargandoPedidoPos, setCargandoPedidoPos] = useState(false)
     const [mesaPosAsignada, setMesaPosAsignada] = useState<Pick<MesaLocal, 'id' | 'nombre'> | null>(null)
     const [posContext, setPosContext] = useState<'borrador' | 'pedidoExistente'>('borrador')
-    const [catalogoPosAbierto, setCatalogoPosAbierto] = useState(false)
     // Borrador del pedido que se está anotando en el POS flotante: se espeja
     // en vivo en la comanda de la derecha (PosComandaPreview).
     const [draftPos, setDraftPos] = useState<PosDraft | null>(null)
@@ -1680,7 +1673,9 @@ const Dashboard = () => {
                                 horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
                                 montoDescuento: pedido.montoDescuento,
                                 codigoDescuentoCodigo: pedido.codigoDescuentoCodigo,
-                            }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                            }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
+                                grandeMayusculas: comandaGrandeMayusculas,
+                            })
 
                             printRaw(commandsToBytes(comandaData)).catch((err) => {
                                 // El claim ya quedó en true en el backend (no se reintentará solo),
@@ -1702,7 +1697,7 @@ const Dashboard = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore])
+    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas])
 
     // ─────────────────────────────────────────────
     // ACCIONES DE PEDIDO
@@ -1813,7 +1808,6 @@ const Dashboard = () => {
                 setPedidoPosEditando(null)
                 setMesaPosAsignada(null)
                 setDraftPos(null)
-                setCatalogoPosAbierto(false)
                 setPosContext('borrador')
             }
             setShowDeleteDialog(false)
@@ -1954,7 +1948,6 @@ const Dashboard = () => {
             void editarPedidoEnPos(pedido)
             return
         }
-        setCatalogoPosAbierto(false)
         setMesaPosAsignada(null)
         setSelectedUnifiedPedido(pedido)
         if (showPOS) setPosContext('pedidoExistente')
@@ -1967,10 +1960,9 @@ const Dashboard = () => {
         setMobileView('detail')
     }
 
-    // Al editar desde la comanda se repliega el buscador: el configurador del
-    // ítem queda como única capa activa y permite ajustar ingredientes y extras.
+    // El configurador del ítem se abre sobre la comanda para ajustar variantes,
+    // ingredientes y extras sin perder el buscador permanente.
     const editarItemComanda = useCallback((key: string) => {
-        setCatalogoPosAbierto(false)
         posRef.current?.editItem(key)
     }, [])
 
@@ -1986,7 +1978,6 @@ const Dashboard = () => {
         setSelectedUnifiedPedido(null)
         setPedidoPosEditando(null)
         setMesaPosAsignada(null)
-        setCatalogoPosAbierto(false)
         setPosContext('borrador')
         setShowPosMovil(true)
         setMobileView('detail')
@@ -2719,12 +2710,11 @@ const Dashboard = () => {
                                     onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                     mesaAsignada={mesaPosAsignada}
                                     onClearMesa={() => setMesaPosAsignada(null)}
-                                    autoFocusSearch={posContext === 'borrador' && catalogoPosAbierto}
+                                    onMesaOcupadaDetectada={fetchPedidosMesaAbiertos}
+                                    autoFocusSearch={posContext === 'borrador'}
                                     initialPedido={pedidoPosEditando}
                                     mostrarBotonCerrar={false}
                                     catalogoCompacto
-                                    catalogoAbierto={posContext === 'borrador' && catalogoPosAbierto}
-                                    onProductSelected={() => setCatalogoPosAbierto(false)}
                                 />
                             )}
                             {showPOS && posContext === 'borrador' ? (
@@ -2740,14 +2730,16 @@ const Dashboard = () => {
                                         onRemoveItem={(key) => posRef.current?.removeItem(key)}
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
+                                        onDispatchMesa={async () => {
+                                            const pedidoId = await posRef.current?.submitDraft()
+                                            if (pedidoId) await handleDespachar('mesa', pedidoId)
+                                        }}
                                         onClear={() => pedidoPosEditando
                                             ? abrirDialogoEliminarPedido(pedidoPosEditando)
                                             : posRef.current?.clearDraft()}
                                         onClearMesa={() => setMesaPosAsignada(null)}
                                         editingPedidoId={pedidoPosEditando?.id}
                                         mesaAsignada={mesaPosAsignada}
-                                        catalogoAbierto={catalogoPosAbierto}
-                                        onToggleCatalogo={() => setCatalogoPosAbierto((abierto) => !abierto)}
                                     />
                                 )
                             ) : showOrderMap ? (
@@ -3086,7 +3078,9 @@ const Dashboard = () => {
                                                             sucursalNombre: selectedUnifiedPedido.sucursalNombre,
                                                             horarioProgramado: selectedUnifiedPedido.horarioProgramado,
                                                             grupal: selectedUnifiedPedido.grupal,
-                                                        }, itemsToPrint, restaurante?.nombre || 'Restaurante')
+                                                        }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
+                                                            grandeMayusculas: comandaGrandeMayusculas,
+                                                        })
                                                         printRaw(commandsToBytes(data))
                                                     }}>
                                                         <Printer className="mr-2 h-4 w-4" /> Reimprimir Comprobante
@@ -3169,6 +3163,7 @@ const Dashboard = () => {
                                         onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                         mesaAsignada={mesaPosAsignada}
                                         onClearMesa={() => setMesaPosAsignada(null)}
+                                        onMesaOcupadaDetectada={fetchPedidosMesaAbiertos}
                                         autoFocusSearch={posContext === 'borrador'}
                                         initialPedido={pedidoPosEditando}
                                     />

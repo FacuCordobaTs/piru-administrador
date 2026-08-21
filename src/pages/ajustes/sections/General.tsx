@@ -7,6 +7,7 @@ import { AjusteEditor } from '../components/AjusteEditor'
 import { AjusteInput } from '../components/AjusteInput'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import { useAjuste } from '../hooks/useAjuste'
+import { usePrinter } from '@/context/PrinterContext'
 import {
   DireccionField,
   SucursalJustInTime,
@@ -20,6 +21,7 @@ type EditorId = 'negocio' | 'tienda' | 'envio' | 'logos' | 'avisos' | null
 export default function General() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const [editor, setEditor] = useState<EditorId>(null)
+  const { comandaGrandeMayusculas, setComandaGrandeMayusculas } = usePrinter()
 
   const nombre = restaurante?.nombre?.trim()
   const dirCorta = restaurante?.direccionTexto?.split(',')[0]?.trim()
@@ -88,6 +90,19 @@ export default function General() {
           estado={tieneLogo ? 'configurado' : 'atencion'}
           onAccion={() => setEditor('logos')}
         />
+        <div className="flex items-center justify-between gap-4 border-b border-border py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">Comandas grandes en mayúsculas</p>
+            <p className="mt-0.5 text-[13px] font-normal text-muted-foreground">
+              Imprime toda la comanda en mayúsculas y con letras más grandes en este dispositivo.
+            </p>
+          </div>
+          <Switch
+            checked={comandaGrandeMayusculas}
+            onCheckedChange={setComandaGrandeMayusculas}
+            aria-label="Comandas grandes en mayúsculas"
+          />
+        </div>
       </div>
 
       <AjusteEditor
