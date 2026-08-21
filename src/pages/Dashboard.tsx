@@ -1219,7 +1219,8 @@ const PosComandaPreview = ({
                                 tabIndex={-1}
                                 onClick={onClear}
                                 disabled={draft.submitting}
-                                title="Limpiar borrador"
+                                aria-label={editingPedidoId ? `Eliminar pedido #${editingPedidoId}` : 'Limpiar borrador'}
+                                title={editingPedidoId ? 'Eliminar pedido' : 'Limpiar borrador'}
                                 className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
                             >
                                 <Trash2 className="h-5 w-5" />
@@ -2684,7 +2685,7 @@ const Dashboard = () => {
                                     onClose={closePOS}
                                     onCreated={handlePedidoManualCreado}
                                     onUpdated={handlePedidoManualActualizado}
-                                    onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando as UnifiedPedido)}
+                                    onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
                                     sucursalActivaId={sucursalActivaId}
                                     sucursalNombre={sucursalNombre}
                                     onDraftChange={setDraftPos}
@@ -2713,7 +2714,7 @@ const Dashboard = () => {
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
                                         onClear={() => pedidoPosEditando
-                                            ? abrirDialogoEliminarPedido(pedidoPosEditando as UnifiedPedido)
+                                            ? abrirDialogoEliminarPedido(pedidoPosEditando)
                                             : posRef.current?.clearDraft()}
                                         onClearMesa={() => setMesaPosAsignada(null)}
                                         editingPedidoId={pedidoPosEditando?.id}
@@ -3134,7 +3135,7 @@ const Dashboard = () => {
                                         onClose={closePOS}
                                         onCreated={handlePedidoManualCreado}
                                         onUpdated={handlePedidoManualActualizado}
-                                        onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando as UnifiedPedido)}
+                                        onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
                                         sucursalActivaId={sucursalActivaId}
                                         sucursalNombre={sucursalNombre}
                                         onDraftChange={setDraftPos}
@@ -3311,7 +3312,10 @@ const Dashboard = () => {
                         Esta acción es irreversible. El pedido desaparecerá del sistema.
                     </DialogDescription>
                     <div className="flex gap-3">
-                        <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-border" onClick={() => setShowDeleteDialog(false)}>Cancelar</Button>
+                        <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-border" onClick={() => {
+                            setShowDeleteDialog(false)
+                            setPedidoAEliminar(null)
+                        }}>Cancelar</Button>
                         <Button variant="destructive" className="flex-1 h-12 rounded-xl font-bold" onClick={handleDeletePedido}>Eliminar</Button>
                     </div>
                 </DialogContent>

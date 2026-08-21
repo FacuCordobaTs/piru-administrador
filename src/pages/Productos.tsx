@@ -128,6 +128,9 @@ const Productos = () => {
   const [dragCategoriaIndex, setDragCategoriaIndex] = useState<number | null>(null)
   const [isGuardandoOrdenCategorias, setIsGuardandoOrdenCategorias] = useState(false)
   const [categoriaBebidaActualizandoId, setCategoriaBebidaActualizandoId] = useState<number | null>(null)
+  const [categoriaEditandoId, setCategoriaEditandoId] = useState<number | null>(null)
+  const [categoriaEditandoNombre, setCategoriaEditandoNombre] = useState('')
+  const [isGuardandoCategoriaNombre, setIsGuardandoCategoriaNombre] = useState(false)
 
   // ─── Ingredientes ───
   const [ingredientes, setIngredientes] = useState<Array<{ id: number; nombre: string }>>([])
@@ -665,11 +668,54 @@ const Productos = () => {
     }
   }
 
+  const comenzarEdicionCategoria = (categoria: typeof categorias[0]) => {
+    setCategoriaEditandoId(categoria.id)
+    setCategoriaEditandoNombre(categoria.nombre)
+  }
+
+  const cancelarEdicionCategoria = () => {
+    setCategoriaEditandoId(null)
+    setCategoriaEditandoNombre('')
+  }
+
+  const guardarNombreCategoria = async (categoria: typeof categorias[0]) => {
+    if (!token || isGuardandoCategoriaNombre) return
+    const nombre = categoriaEditandoNombre.trim()
+    if (!nombre) {
+      toast.error('El nombre de la categoría no puede estar vacío')
+      return
+    }
+    if (nombre === categoria.nombre) {
+      cancelarEdicionCategoria()
+      return
+    }
+
+    setIsGuardandoCategoriaNombre(true)
+    try {
+      await categoriasApi.update(token, { id: categoria.id, nombre })
+      setOrdenCategoriasLocal((actual) => actual.map((item) =>
+        item.id === categoria.id ? { ...item, nombre } : item
+      ))
+      setCategorias(categorias.map((item) =>
+        item.id === categoria.id ? { ...item, nombre } : item
+      ))
+      cancelarEdicionCategoria()
+      toast.success('Nombre de categoría actualizado')
+    } catch (error: unknown) {
+      toast.error('No se pudo renombrar la categoría', {
+        description: error instanceof Error ? error.message : 'Error de conexión',
+      })
+    } finally {
+      setIsGuardandoCategoriaNombre(false)
+    }
+  }
+
   const abrirGestionCategorias = () => {
     setOrdenCategoriasLocal([...categorias].sort((a, b) =>
       (a.orden ?? 0) - (b.orden ?? 0) || a.nombre.localeCompare(b.nombre) || a.id - b.id
     ))
     setDragCategoriaIndex(null)
+    cancelarEdicionCategoria()
     setDialogGestionCategoriasAbierto(true)
   }
 
@@ -2079,7 +2125,10 @@ const Productos = () => {
           MODAL: GESTIONAR CATEGORÍAS
       ───────────────────────────────────────────── */}
       <Dialog open={dialogGestionCategoriasAbierto} onOpenChange={(abierto) => {
-        if (!isGuardandoOrdenCategorias) setDialogGestionCategoriasAbierto(abierto)
+        if (!isGuardandoOrdenCategorias && !isGuardandoCategoriaNombre) {
+          setDialogGestionCategoriasAbierto(abierto)
+          if (!abierto) cancelarEdicionCategoria()
+        }
       }}>
         <DialogContent className="max-w-md max-h-[80dvh] overflow-hidden flex flex-col rounded-[32px] p-0 border-zinc-200 dark:border-zinc-800">
           <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
@@ -2093,7 +2142,7 @@ const Productos = () => {
               ordenCategoriasLocal.map((categoria, index) => (
                 <div
                   key={categoria.id}
-                  draggable={!isGuardandoOrdenCategorias}
+                  draggable={!isGuardandoOrdenCategorias && categoriaEditandoId !== categoria.id}
                   onDragStart={() => setDragCategoriaIndex(index)}
                   onDragOver={(e) => handleCategoriaDragOver(e, index)}
                   onDragEnd={() => setDragCategoriaIndex(null)}
@@ -2106,11 +2155,46 @@ const Productos = () => {
                     <GripVertical className="h-5 w-5 shrink-0 text-zinc-400" />
                     <span className="h-6 w-6 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-muted-foreground">{index + 1}</span>
                     <div className="min-w-0">
-                      <div className="font-semibold text-foreground truncate">{categoria.nombre} <span className="text-xs font-normal text-muted-foreground ml-2">{contarProductosPorCategoria(categoria.id)} ítems</span></div>
+                      {categoriaEditandoId === categoria.id ? (
+                        <div className="flex items-center gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
+                          <Input
+                            autoFocus
+                            value={categoriaEditandoNombre}
+                            onChange={(e) => setCategoriaEditandoNombre(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') guardarNombreCategoria(categoria)
+                              if (e.key === 'Escape') cancelarEdicionCategoria()
+                            }}
+                            disabled={isGuardandoCategoriaNombre}
+                            className="h-8 min-w-0 px-2"
+                            aria-label={`Nuevo nombre para ${categoria.nombre}`}
+                          />
+                          <Button
+                            type="button"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                            onClick={() => guardarNombreCategoria(categoria)}
+                            disabled={isGuardandoCategoriaNombre || !categoriaEditandoNombre.trim()}
+                            aria-label="Guardar nombre"
+                          >
+                            {isGuardandoCategoriaNombre ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-lg" onClick={cancelarEdicionCategoria} disabled={isGuardandoCategoriaNombre} aria-label="Cancelar edición">
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex min-w-0 items-center gap-1">
+                          <div className="font-semibold text-foreground truncate">{categoria.nombre} <span className="text-xs font-normal text-muted-foreground ml-2">{contarProductosPorCategoria(categoria.id)} ítems</span></div>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 rounded-lg" onClick={() => comenzarEdicionCategoria(categoria)} disabled={isGuardandoOrdenCategorias || isGuardandoCategoriaNombre} aria-label={`Editar nombre de ${categoria.nombre}`}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
                       <div className="mt-1 flex items-center gap-2">
                         <Switch
                           checked={categoria.esBebida ?? false}
-                          disabled={categoriaBebidaActualizandoId !== null || isGuardandoOrdenCategorias}
+                          disabled={categoriaBebidaActualizandoId !== null || isGuardandoOrdenCategorias || isGuardandoCategoriaNombre}
                           onCheckedChange={(checked) => actualizarCategoriaEsBebida(categoria, checked)}
                           aria-label={`Marcar ${categoria.nombre} como bebidas`}
                         />
@@ -2118,7 +2202,7 @@ const Productos = () => {
                       </div>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg" onClick={() => { setCategoriaAEliminar(categoria); setDialogEliminarCategoriaAbierto(true) }}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg" onClick={() => { setCategoriaAEliminar(categoria); setDialogEliminarCategoriaAbierto(true) }} disabled={isGuardandoCategoriaNombre}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -2127,12 +2211,12 @@ const Productos = () => {
           </div>
           <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950 space-y-2">
             {ordenCategoriasLocal.length > 0 && (
-              <Button className="w-full h-12 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={guardarOrdenCategorias} disabled={isGuardandoOrdenCategorias}>
+              <Button className="w-full h-12 rounded-lg font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white" onClick={guardarOrdenCategorias} disabled={isGuardandoOrdenCategorias || isGuardandoCategoriaNombre || categoriaEditandoId !== null}>
                 {isGuardandoOrdenCategorias ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Check className="h-5 w-5 mr-2" />}
                 Guardar orden
               </Button>
             )}
-            <Button variant="outline" className="w-full h-12 rounded-lg font-bold" onClick={() => { setDialogGestionCategoriasAbierto(false); setDialogCategoriaAbierto(true) }} disabled={isGuardandoOrdenCategorias}>
+            <Button variant="outline" className="w-full h-12 rounded-lg font-bold" onClick={() => { setDialogGestionCategoriasAbierto(false); setDialogCategoriaAbierto(true) }} disabled={isGuardandoOrdenCategorias || isGuardandoCategoriaNombre}>
               <Plus className="h-5 w-5 mr-2" /> Nueva Categoría
             </Button>
           </div>
