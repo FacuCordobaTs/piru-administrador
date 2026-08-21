@@ -1316,6 +1316,9 @@ const Dashboard = () => {
     const [pickerDay, setPickerDay] = useState<string>(() => getArDayString(new Date()))
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [pedidoAEliminar, setPedidoAEliminar] = useState<Pick<UnifiedPedido, 'id' | 'tipo'> | null>(null)
+    // La lista principal respeta el día/turno elegido, pero la ocupación de una
+    // mesa depende de todos los pedidos abiertos, incluso si nacieron ayer.
+    const [pedidosMesaAbiertos, setPedidosMesaAbiertos] = useState<UnifiedPedido[]>([])
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
     const [demoraInputs, setDemoraInputs] = useState<Record<string, string>>({})
     const [confirmandoDemora, setConfirmandoDemora] = useState<string | null>(null)
@@ -1516,6 +1519,23 @@ const Dashboard = () => {
         }
     }, [token, sucursalActivaId, selectedDay, cierreManualActivo, selectedTurnoId])
 
+    const fetchPedidosMesaAbiertos = useCallback(async () => {
+        if (!token || !mesasActivo) {
+            setPedidosMesaAbiertos([])
+            return
+        }
+        try {
+            const response = await pedidoUnificadoApi.getActivos(token, 'mesa', sucursalActivaId) as any
+            if (!response.success || !Array.isArray(response.data)) return
+            setPedidosMesaAbiertos(response.data.filter((pedido: UnifiedPedido) =>
+                pedido.mesaLocalId != null
+                && !['archived', 'cancelled', 'delivered'].includes(pedido.estado),
+            ))
+        } catch (error) {
+            console.error('Error fetching pedidos abiertos de mesas:', error)
+        }
+    }, [token, mesasActivo, sucursalActivaId])
+
     const confirmarCierreTurno = async () => {
         if (!token || !turnoActual) return
         setCerrandoTurno(true)
@@ -1536,7 +1556,8 @@ const Dashboard = () => {
     useEffect(() => {
         if (!token || !prefsReady) return
         fetchPedidos(1, false)
-    }, [token, prefsReady, fetchPedidos])
+        fetchPedidosMesaAbiertos()
+    }, [token, prefsReady, fetchPedidos, fetchPedidosMesaAbiertos])
 
     useEffect(() => {
         if (!prefsReady || !lastUpdate) return
@@ -1550,7 +1571,8 @@ const Dashboard = () => {
             return
         }
         fetchPedidos(1, false)
-    }, [lastUpdate, fetchPedidos, sucursalActivaId, prefsReady])
+        fetchPedidosMesaAbiertos()
+    }, [lastUpdate, fetchPedidos, fetchPedidosMesaAbiertos, sucursalActivaId, prefsReady])
 
     // Contexto histórico del cliente detrás del pedido seleccionado.
     // Se re-consulta al cambiar de pedido; se limpia mientras carga para no mostrar datos ajenos.
@@ -1784,6 +1806,7 @@ const Dashboard = () => {
         try {
             await pedidoUnificadoApi.delete(token, target.id)
             setUnifiedPedidos(prev => prev.filter(p => !(p.id === target.id && p.tipo === target.tipo)))
+            setPedidosMesaAbiertos(prev => prev.filter(p => p.id !== target.id))
             if (pedidoPosEditando?.id === target.id) {
                 try { sessionStorage.removeItem(`piru:pos-edit:${target.id}`) } catch { /* noop */ }
                 mesaMergeRef.current = false
@@ -1925,7 +1948,9 @@ const Dashboard = () => {
     }
 
     const openPedidoInPOS = (pedido: UnifiedPedido) => {
-        if (showPOS) {
+        // Sólo los pedidos anotados manualmente se editan desde el POS. Los de
+        // la web se abren en el detalle operativo, donde también se eliminan.
+        if (showPOS && pedido.anotadoManualmente) {
             void editarPedidoEnPos(pedido)
             return
         }
@@ -1992,6 +2017,7 @@ const Dashboard = () => {
         posOrdersPendingPrintRef.current.add(pedidoId)
         setMesaPosAsignada(null)
         fetchPedidos(1, false)
+        fetchPedidosMesaAbiertos()
     }
 
     const editarPedidoEnPos = async (pedido: UnifiedPedido) => {
@@ -2038,6 +2064,7 @@ const Dashboard = () => {
         setSelectedUnifiedPedido(null)
         setMobileView('detail')
         fetchPedidos(1, false)
+        fetchPedidosMesaAbiertos()
     }
 
     // ─────────────────────────────────────────────
@@ -2050,8 +2077,8 @@ const Dashboard = () => {
     // Una vez archivados permanecen en el historial general para su consulta.
     const activeOrdersListado = activeOrders.filter(p => p.tipo !== 'mesa' && !p.consumoEnLocal)
     const mesasOcupadas = new Set(
-        activeOrders
-            .filter(p => p.mesaLocalId != null && (p.tipo === 'mesa' || p.consumoEnLocal))
+        pedidosMesaAbiertos
+            .filter(p => p.mesaLocalId != null)
             .map(p => p.mesaLocalId),
     ).size
     const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
@@ -2104,7 +2131,7 @@ const Dashboard = () => {
             // abierto. Se carga ese pedido en el POS en modo edición, con los
             // ítems del borrador ya fusionados, y se guarda con "Guardar cambios".
             const itemsBorrador = posRef.current?.getCartItems() ?? []
-            const pedido = activeOrders.find((candidato) => candidato.id === pedidoMesa.id)
+            const pedido = pedidosMesaAbiertos.find((candidato) => candidato.id === pedidoMesa.id)
             if (itemsBorrador.length === 0) {
                 // Sin productos en el borrador no hay nada que sumar: se abre el
                 // pedido de la mesa como siempre.
@@ -2136,7 +2163,7 @@ const Dashboard = () => {
             }
             return
         }
-        const pedido = activeOrders.find((candidato) => candidato.id === pedidoMesa.id)
+        const pedido = pedidosMesaAbiertos.find((candidato) => candidato.id === pedidoMesa.id)
         if (!pedido) return
         setShowMesasDialog(false)
         setMesaPosAsignada(null)
@@ -2471,7 +2498,7 @@ const Dashboard = () => {
                                         <MesasGrid
                                             token={token}
                                             sucursalId={sucursalActivaId}
-                                            pedidos={activeOrders}
+            pedidos={pedidosMesaAbiertos}
                                             refreshKey={lastUpdate?.timestamp}
                                             onMesaLibre={abrirMesaLibreDesdeListado}
                                             onMesaOcupada={abrirPedidoMesaDesdeListado}
@@ -3287,7 +3314,7 @@ const Dashboard = () => {
                         <MesasOperativas
                             token={token}
                             sucursalId={sucursalActivaId}
-                            pedidos={activeOrders}
+                            pedidos={pedidosMesaAbiertos}
                             refreshKey={lastUpdate?.timestamp}
                             onMesaLibre={abrirMesaLibre}
                             onMesaOcupada={abrirPedidoMesa}

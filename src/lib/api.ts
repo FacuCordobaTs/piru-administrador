@@ -1359,6 +1359,18 @@ export const pedidoUnificadoApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+  getActivos: async (
+    token: string,
+    tipo: 'delivery' | 'takeaway' | 'mesa' | 'all' = 'all',
+    sucursalId?: number | null,
+  ) => {
+    const params = new URLSearchParams({ tipo })
+    if (sucursalId != null) params.append('sucursalId', String(sucursalId))
+    return fetchApi(`/pedido-unificado/activos?${params}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
   turnos: async (token: string) => fetchApi('/pedido-unificado/turnos', {
     method: 'GET', headers: { Authorization: `Bearer ${token}` },
   }),
