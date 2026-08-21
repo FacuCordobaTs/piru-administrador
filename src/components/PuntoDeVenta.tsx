@@ -145,6 +145,8 @@ interface PuntoDeVentaProps {
     onClose: () => void
     onCreated: (pedidoId: number) => void
     onUpdated?: (pedido: PosEditablePedido) => void
+    /** Solicita eliminar el pedido persistido que se está editando. */
+    onDeletePedido?: (pedidoId: number) => void
     sucursalActivaId: number | null
     /** El padre (Dashboard) espeja este borrador en la comanda de la derecha en vivo. */
     onDraftChange?: (draft: PosDraft | null) => void
@@ -252,7 +254,7 @@ const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: bool
 )
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false, catalogoAbierto = false, onProductSelected },
+    { onClose, onCreated, onUpdated, onDeletePedido, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false, catalogoAbierto = false, onProductSelected },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -1175,13 +1177,27 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     <span className="text-sm font-bold text-foreground">Total</span>
                     <span className="text-2xl font-black text-[#FF7A00]">${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                 </div>
-                <Button
-                    onClick={handleSubmit}
-                    disabled={submitting || cart.length === 0 || (modoEdicion && !hasChanges)}
-                    className="w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
-                >
-                    {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
-                </Button>
+                <div className="flex items-center gap-2">
+                    {modoEdicion && onDeletePedido && (
+                        <button
+                            type="button"
+                            onClick={() => onDeletePedido(initialPedido.id)}
+                            disabled={submitting}
+                            aria-label={`Eliminar pedido #${initialPedido.id}`}
+                            title="Eliminar pedido"
+                            className="h-12 w-12 rounded-xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 disabled:opacity-50"
+                        >
+                            <Trash2 className="h-5 w-5" />
+                        </button>
+                    )}
+                    <Button
+                        onClick={handleSubmit}
+                        disabled={submitting || cart.length === 0 || (modoEdicion && !hasChanges)}
+                        className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
+                    >
+                        {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
+                    </Button>
+                </div>
             </div>
         </div>
     )

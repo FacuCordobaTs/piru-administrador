@@ -1314,6 +1314,7 @@ const Dashboard = () => {
     const [showDayPicker, setShowDayPicker] = useState(false)
     const [pickerDay, setPickerDay] = useState<string>(() => getArDayString(new Date()))
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+    const [pedidoAEliminar, setPedidoAEliminar] = useState<Pick<UnifiedPedido, 'id' | 'tipo'> | null>(null)
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
     const [demoraInputs, setDemoraInputs] = useState<Record<string, string>>({})
     const [confirmandoDemora, setConfirmandoDemora] = useState<string | null>(null)
@@ -1771,13 +1772,29 @@ const Dashboard = () => {
         finally { setUpdatingPago(null) }
     }
 
+    const abrirDialogoEliminarPedido = (pedido: Pick<UnifiedPedido, 'id' | 'tipo'>) => {
+        setPedidoAEliminar(pedido)
+        setShowDeleteDialog(true)
+    }
+
     const handleDeletePedido = async () => {
-        if (!token || !selectedUnifiedPedido) return
+        if (!token || !pedidoAEliminar) return
+        const target = pedidoAEliminar
         try {
-            await pedidoUnificadoApi.delete(token, selectedUnifiedPedido.id)
-            setUnifiedPedidos(prev => prev.filter(p => !(p.id === selectedUnifiedPedido.id && p.tipo === selectedUnifiedPedido.tipo)))
+            await pedidoUnificadoApi.delete(token, target.id)
+            setUnifiedPedidos(prev => prev.filter(p => !(p.id === target.id && p.tipo === target.tipo)))
+            if (pedidoPosEditando?.id === target.id) {
+                try { sessionStorage.removeItem(`piru:pos-edit:${target.id}`) } catch { /* noop */ }
+                mesaMergeRef.current = false
+                setPedidoPosEditando(null)
+                setMesaPosAsignada(null)
+                setDraftPos(null)
+                setCatalogoPosAbierto(false)
+                setPosContext('borrador')
+            }
             setShowDeleteDialog(false)
-            setSelectedUnifiedPedido(null)
+            setPedidoAEliminar(null)
+            setSelectedUnifiedPedido((actual) => actual?.id === target.id && actual.tipo === target.tipo ? null : actual)
             setMobileView('orders')
             toast.success('Pedido eliminado')
         } catch (error) { toast.error('Error al eliminar') }
@@ -2425,6 +2442,11 @@ const Dashboard = () => {
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-48">
+                                        {mesasActivo && (
+                                            <DropdownMenuItem onClick={() => { setMesasDialogMode('operar'); setShowMesasDialog(true) }}>
+                                                <Armchair className="h-4 w-4 mr-2" /> Ver mapa de mesas
+                                            </DropdownMenuItem>
+                                        )}
                                         <DropdownMenuItem onClick={openMetodosPagoModal}>
                                             <Settings className="h-4 w-4 mr-2" /> Pagos
                                         </DropdownMenuItem>
@@ -2662,6 +2684,7 @@ const Dashboard = () => {
                                     onClose={closePOS}
                                     onCreated={handlePedidoManualCreado}
                                     onUpdated={handlePedidoManualActualizado}
+                                    onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando as UnifiedPedido)}
                                     sucursalActivaId={sucursalActivaId}
                                     sucursalNombre={sucursalNombre}
                                     onDraftChange={setDraftPos}
@@ -2689,7 +2712,9 @@ const Dashboard = () => {
                                         onRemoveItem={(key) => posRef.current?.removeItem(key)}
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
-                                        onClear={() => posRef.current?.clearDraft()}
+                                        onClear={() => pedidoPosEditando
+                                            ? abrirDialogoEliminarPedido(pedidoPosEditando as UnifiedPedido)
+                                            : posRef.current?.clearDraft()}
                                         onClearMesa={() => setMesaPosAsignada(null)}
                                         editingPedidoId={pedidoPosEditando?.id}
                                         mesaAsignada={mesaPosAsignada}
@@ -3057,7 +3082,7 @@ const Dashboard = () => {
                                                 {/* Eliminar siempre disponible — también en el historial (archived/despachado) */}
                                                 <div className="flex items-center gap-2">
                                                     <button
-                                                        onClick={() => setShowDeleteDialog(true)}
+                                                        onClick={() => abrirDialogoEliminarPedido(selectedUnifiedPedido)}
                                                         className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 cursor-pointer"
                                                     >
                                                         <Trash2 className="h-5 w-5" />
@@ -3109,6 +3134,7 @@ const Dashboard = () => {
                                         onClose={closePOS}
                                         onCreated={handlePedidoManualCreado}
                                         onUpdated={handlePedidoManualActualizado}
+                                        onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando as UnifiedPedido)}
                                         sucursalActivaId={sucursalActivaId}
                                         sucursalNombre={sucursalNombre}
                                         onDraftChange={setDraftPos}
@@ -3272,7 +3298,10 @@ const Dashboard = () => {
             </Dialog>
 
             {/* ── DIÁLOGO ELIMINAR ── */}
-            <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <Dialog open={showDeleteDialog} onOpenChange={(open) => {
+                setShowDeleteDialog(open)
+                if (!open) setPedidoAEliminar(null)
+            }}>
                 <DialogContent className="max-w-sm rounded-[32px] p-6 sm:p-8 border border-border bg-background text-center">
                     <div className="h-16 w-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Trash2 className="h-8 w-8 text-red-500" />
