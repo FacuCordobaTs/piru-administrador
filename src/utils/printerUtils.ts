@@ -13,6 +13,7 @@ interface ItemPedidoLike {
     varianteNombre?: string
     varianteSecundariaNombre?: string
     clienteNombre?: string | null
+    nota?: string | null
 }
 
 // Interface for factura items - includes clienteNombre for grouping
@@ -108,6 +109,17 @@ const getNombreProductoConVariantes = (item: ItemPedidoLike): string => {
 const formatPrecioComanda = (value: number): string =>
     `$${value.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+/**
+ * El nombre de mesa puede venir como "1", "Mesa 1" o con el nombre que el
+ * local le haya asignado. La comanda de salón siempre debe identificarla de
+ * forma inequívoca y uniforme para cocina.
+ */
+const formatMesaComanda = (mesaNombre: string | null | undefined): string => {
+    const mesa = mesaNombre?.trim()
+    if (!mesa) return 'MESA'
+    return /^mesa\b/i.test(mesa) ? mesa.toUpperCase() : `MESA ${mesa.toUpperCase()}`
+}
+
 export const formatComanda = (
     pedido: PedidoLike,
     items: ItemPedidoLike[],
@@ -116,6 +128,7 @@ export const formatComanda = (
     const ESC = '\x1B';
     const GS = '\x1D';
     const LINE_WIDTH = 32;
+    const esComandaMesa = pedido.tipo === 'mesa'
 
     // Total consistente con la vista: itemsSubtotal + deliveryFee - descuento
     const itemsSubtotal = items.reduce((acc, item) => acc + (item.cantidad * getItemPrice(item)), 0)
@@ -125,13 +138,14 @@ export const formatComanda = (
         ESC + '@', // Initialize
         ESC + 't' + '\x00', // Table PC437
 
-        // HEADER - Igual al original pero con estilo de la imagen
+        // Las comandas de salón tienen una identidad propia: la mesa es el
+        // dato prioritario de cocina y reemplaza por completo al local.
         ESC + 'a' + '\x01', // Center
         ESC + '!' + '\x30', // Doble alto y ancho (Mayúsculas)
-        `${restauranteNombre.toUpperCase()}\n`,
+        `${(esComandaMesa ? formatMesaComanda(pedido.mesaNombre) : restauranteNombre.toUpperCase())}\n`,
 
         ESC + '!' + '\x00', // Normal
-        '--------------------------------\n',
+        esComandaMesa ? '================================\n' : '--------------------------------\n',
 
         // INFO DEL PEDIDO
         ESC + 'a' + '\x00', // Left
@@ -142,32 +156,39 @@ export const formatComanda = (
     const dateStr = now.toLocaleDateString('es-AR');
     const timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     commands.push(`Fecha: ${dateStr} ${timeStr}\n`);
-    if (pedido.sucursalNombre) {
+    if (!esComandaMesa && pedido.sucursalNombre) {
         commands.push(`Sucursal: ${pedido.sucursalNombre}\n`);
     }
-    commands.push('--------------------------------\n');
+    commands.push(esComandaMesa ? '================================\n' : '--------------------------------\n');
 
-    // --- Encabezado tipo pedido: Bold compacto (la cocina no necesita esto gigante) ---
-    commands.push(ESC + '!' + '\x08'); // Solo Negrita
-    commands.push(`PEDIDO #${pedido.id}\n`);
+    if (esComandaMesa) {
+        // No se imprime número de pedido ni método de pago en salón: no son
+        // información operativa para cocina y la mesa ya identifica la orden.
+        commands.push(ESC + '!' + '\x18'); // Doble alto + negrita
+        commands.push('COMANDA DE COCINA\n');
+        commands.push(ESC + '!' + '\x00');
+        commands.push('================================\n');
+    } else {
+        // --- Encabezado tipo pedido: Bold compacto (la cocina no necesita esto gigante) ---
+        commands.push(ESC + '!' + '\x08'); // Solo Negrita
+        commands.push(`PEDIDO #${pedido.id}\n`);
 
-    if (pedido.tipo === 'delivery') {
-        commands.push(`DELIVERY\n`);
-    } else if (pedido.tipo === 'takeaway') {
-        commands.push(`TAKE AWAY\n`);
-    } else if (pedido.tipo === 'mesa') {
-        commands.push(`${pedido.mesaNombre?.toUpperCase() || 'MESA'}\n`);
-    } else if (pedido.mesaNombre) {
-        commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
+        if (pedido.tipo === 'delivery') {
+            commands.push(`DELIVERY\n`);
+        } else if (pedido.tipo === 'takeaway') {
+            commands.push(`TAKE AWAY\n`);
+        } else if (pedido.mesaNombre) {
+            commands.push(`${pedido.mesaNombre.toUpperCase()}\n`);
+        }
+
+        commands.push(ESC + '!' + '\x00'); // Normal
+        commands.push('--------------------------------\n');
     }
-
-    commands.push(ESC + '!' + '\x00'); // Normal
-    commands.push('--------------------------------\n');
 
     if (pedido.nombrePedido) {
         commands.push(`Cliente: ${pedido.nombrePedido}\n`);
     }
-    if (pedido.telefono) {
+    if (pedido.telefono && !esComandaMesa) {
         commands.push(`Tel: ${pedido.telefono}\n`);
     }
 
@@ -192,7 +213,7 @@ export const formatComanda = (
         commands.push('--------------------------------\n');
     }
 
-    if (pedido.metodoPago) {
+    if (pedido.metodoPago && !esComandaMesa) {
         const metodoFormateado = formatMetodoPagoPrinter(pedido.metodoPago);
         commands.push(ESC + '!' + '\x08');
         commands.push(`PAGO: ${metodoFormateado}\n`);
@@ -235,6 +256,11 @@ export const formatComanda = (
             item.ingredientesExcluidosNombres.forEach((n: string) => {
                 commands.push(`${indent}   - ${n}\n`);
             });
+            commands.push(ESC + '!' + '\x00');
+        }
+        if (item.nota?.trim()) {
+            commands.push(ESC + '!' + '\x18');
+            commands.push(`${indent}  NOTA: ${item.nota.trim()}\n`);
             commands.push(ESC + '!' + '\x00');
         }
     };
@@ -292,7 +318,7 @@ export const formatComanda = (
 
     commands.push(ESC + '!' + '\x00');
     commands.push(ESC + 'a' + '\x01'); // Center
-    commands.push('\nGracias por elegirnos.\n');
+    commands.push(esComandaMesa ? '\n--- SALON / COCINA ---\n' : '\nGracias por elegirnos.\n');
 
     commands.push('\n\n\n\n');
     commands.push(GS + 'V' + '\x41' + '\x00'); // Cut
@@ -441,6 +467,11 @@ export const formatFactura = (
                 item.ingredientesExcluidosNombres.forEach((nombre: string) => {
                     commands.push(`     - ${nombre}\n`);
                 });
+                commands.push(ESC + '!' + '\x00');
+            }
+            if (item.nota?.trim()) {
+                commands.push(ESC + '!' + '\x18');
+                commands.push(`    NOTA: ${item.nota.trim()}\n`);
                 commands.push(ESC + '!' + '\x00');
             }
         });

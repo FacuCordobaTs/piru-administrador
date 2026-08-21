@@ -32,8 +32,12 @@ interface CierreTurnoData {
   cantidades: { mesa: number; delivery: number; takeaway: number; total: number; manual?: number; web?: number }
   productosVendidos: ProductoVendido[]
   fechasDisponibles: string[]
+  modoManual?: boolean
+  turno?: TurnoCaja | null
+  turnosDisponibles?: TurnoCaja[]
 }
-interface CierreTurnoProps { open: boolean; onClose: () => void; fechaInicial?: string }
+interface TurnoCaja { id: number; aperturaAt: string; cierreAt: string | null; abierto: boolean }
+interface CierreTurnoProps { open: boolean; onClose: () => void; fechaInicial?: string; turnoIdInicial?: number }
 
 /* ==========================================================================
    HELPERS
@@ -51,6 +55,19 @@ const formatDateLabel = (dateString: string) => {
   if (date.getTime() === today.getTime()) return 'Hoy'
   if (date.getTime() === yesterday.getTime()) return 'Ayer'
   return date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+const formatTurnoLabel = (turno: TurnoCaja) => {
+  const apertura = new Date(turno.aperturaAt)
+  const cierre = turno.cierreAt ? new Date(turno.cierreAt) : null
+  // La conexión MySQL entrega timestamps locales etiquetados como UTC; misma
+  // corrección aplicada a los horarios de pedidos en este reporte.
+  apertura.setHours(apertura.getHours() + 3)
+  if (cierre) cierre.setHours(cierre.getHours() + 3)
+  const fecha = apertura.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+  const hora = (d: Date) => d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  if (turno.abierto) return `Turno actual · ${fecha}, ${hora(apertura)}`
+  const fechaCierre = cierre!.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+  return `${fecha}, ${hora(apertura)} — ${fechaCierre}, ${hora(cierre!)}`
 }
 
 /* ==========================================================================
@@ -469,11 +486,12 @@ function HourlyChart({ pedidos }: { pedidos: CierreTurnoPedido[] }) {
 /* ==========================================================================
    MAIN COMPONENT
    ========================================================================== */
-export default function CierreTurnoSimple({ open, onClose, fechaInicial }: CierreTurnoProps) {
+export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoIdInicial }: CierreTurnoProps) {
   const token = useAuthStore(s => s.token)
   const [data, setData] = useState<CierreTurnoData | null>(null)
   const [loading, setLoading] = useState(false)
   const [selectedFecha, setSelectedFecha] = useState<string>('')
+  const [selectedTurnoId, setSelectedTurnoId] = useState<number | undefined>(turnoIdInicial)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [filterTipo, setFilterTipo] = useState<'takeaway' | 'delivery' | null>(null)
@@ -482,14 +500,15 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial }: Cierr
   const [activeModal, setActiveModal] = useState<'facturacion' | 'envios' | 'ranking' | null>(null)
   const [showDateModal, setShowDateModal] = useState(false)
 
-  const fetchCierreTurno = useCallback(async (fecha?: string) => {
+  const fetchCierreTurno = useCallback(async (fecha?: string, turnoId?: number) => {
     if (!token) return
     setLoading(true)
     try {
-      const res = await pedidosApi.cierreTurno(token, fecha) as { success: boolean; data: CierreTurnoData }
+      const res = await pedidosApi.cierreTurno(token, fecha, turnoId) as { success: boolean; data: CierreTurnoData }
       if (res.success) {
         setData(res.data)
         if (!selectedFecha) setSelectedFecha(res.data.fecha)
+        if (res.data.turno) setSelectedTurnoId(res.data.turno.id)
       }
     } catch (e) {
       console.error(e)
@@ -498,8 +517,8 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial }: Cierr
 
   useEffect(() => {
     if (!open) return
-    setQuery(''); setExpanded(new Set()); setSelectedFecha(fechaInicial || ''); setFilterTipo(null); setFilterOrigen(null)
-    fetchCierreTurno(fechaInicial)
+    setQuery(''); setExpanded(new Set()); setSelectedFecha(fechaInicial || ''); setSelectedTurnoId(turnoIdInicial); setFilterTipo(null); setFilterOrigen(null)
+    fetchCierreTurno(fechaInicial, turnoIdInicial)
     if (token) {
       facturacionApi.getEstado(token)
         .then((res: any) => { if (res.success) setAfipHabilitado(res.data.habilitado) })
@@ -698,7 +717,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial }: Cierr
               pagos={pagosDesglosados}
               pedidosTotal={allPedidos.length}
               pedidosPagados={allPedidos.filter(p => p.pagado).length}
-              fechaLabel={formatDateLabel(data.fecha)}
+              fechaLabel={data.modoManual && data.turno ? formatTurnoLabel(data.turno) : formatDateLabel(data.fecha)}
               onDateClick={() => setShowDateModal(true)}
             />
 
@@ -867,13 +886,22 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial }: Cierr
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <span className="text-sm font-semibold text-foreground">Seleccionar día</span>
+              <span className="text-sm font-semibold text-foreground">{data.modoManual ? 'Seleccionar turno' : 'Seleccionar día'}</span>
               <button onClick={() => setShowDateModal(false)} className="p-1.5 rounded-lg hover:opacity-70 text-muted-foreground">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="p-3 max-h-[60vh] overflow-auto">
-              {groupedFechas.map(({ label, dates }) => (
+              {data.modoManual ? (data.turnosDisponibles || []).map(turno => (
+                <button
+                  key={turno.id}
+                  onClick={() => { setSelectedTurnoId(turno.id); fetchCierreTurno(undefined, turno.id); setShowDateModal(false) }}
+                  className={cn('w-full text-left px-3 py-3 rounded-lg text-sm transition-colors mb-1',
+                    turno.id === selectedTurnoId ? 'bg-foreground text-background font-medium' : 'text-foreground hover:bg-muted')}
+                >
+                  {formatTurnoLabel(turno)}
+                </button>
+              )) : groupedFechas.map(({ label, dates }) => (
                 <div key={label} className="mb-4 last:mb-0">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 px-2 mb-1.5">{label}</p>
                   <div className="space-y-0.5">

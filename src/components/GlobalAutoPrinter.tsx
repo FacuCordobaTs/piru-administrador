@@ -15,7 +15,7 @@ interface DeliveryItem {
     id: number; productoId: number; cantidad: number; precioUnitario: string;
     nombreProducto: string; imagenUrl: string | null;
     ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
-    agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null;
+    agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null; nota?: string | null;
     categoriaEsBebida?: boolean;
 }
 interface UnifiedPedido {
@@ -111,6 +111,10 @@ const GlobalAutoPrinter = () => {
             ) as any
             if (response.success && response.data) {
                 const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway' || p.tipo === 'mesa') as UnifiedPedido[]
+                // Una carga inicial sin pedidos también es una carga completa.
+                // Si no se marca, el primer pedido posterior se toma por backlog
+                // y queda sin impresión automática mientras se navega fuera del Dashboard.
+                if (validPedidos.length === 0) initialLoadDoneRef.current = true
                 setUnifiedPedidos(validPedidos)
             }
         } catch (error) {

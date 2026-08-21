@@ -83,6 +83,8 @@ const Productos = () => {
     tituloVariantesSecundarias: string
     tituloExtrasPrimarios: string
     tituloExtrasSecundarios: string
+    permiteNota: boolean
+    tituloNota: string
   }>({
     nombre: '',
     descripcion: '',
@@ -98,7 +100,9 @@ const Productos = () => {
     tituloVariantesPrimarias: 'Elegí una opción',
     tituloVariantesSecundarias: 'Elegí también una segunda opción',
     tituloExtrasPrimarios: 'Extras',
-    tituloExtrasSecundarios: 'Extras'
+    tituloExtrasSecundarios: 'Extras',
+    permiteNota: false,
+    tituloNota: '¿Querés aclarar algo?'
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [etiquetasProducto, setEtiquetasProducto] = useState<string[]>([])
@@ -215,7 +219,7 @@ const Productos = () => {
     setPanelNuevo(true)
     setActivePanelType('product')
     setPanelModo('edicion')
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras' })
+    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras', permiteNota: false, tituloNota: '¿Querés aclarar algo?' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
@@ -242,7 +246,9 @@ const Productos = () => {
       tituloVariantesPrimarias: (producto as any).tituloVariantesPrimarias || 'Elegí una opción',
       tituloVariantesSecundarias: (producto as any).tituloVariantesSecundarias || 'Elegí también una segunda opción',
       tituloExtrasPrimarios: (producto as any).tituloExtrasPrimarios || 'Extras',
-      tituloExtrasSecundarios: (producto as any).tituloExtrasSecundarios || 'Extras'
+      tituloExtrasSecundarios: (producto as any).tituloExtrasSecundarios || 'Extras',
+      permiteNota: (producto as any).permiteNota === true,
+      tituloNota: (producto as any).tituloNota || '¿Querés aclarar algo?'
     })
     setImageBase64(producto.imagenUrl || null)
     setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
@@ -404,6 +410,10 @@ const Productos = () => {
       formData.tituloExtrasSecundarios,
     ].some(titulo => !titulo.trim())
     if (titulosInvalidos) { toast.error('Las frases de cada paso no pueden estar vacías'); return }
+    if (formData.permiteNota && !formData.tituloNota.trim()) {
+      toast.error('La frase del paso de nota no puede estar vacía')
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -425,6 +435,8 @@ const Productos = () => {
         tituloVariantesSecundarias: formData.tituloVariantesSecundarias.trim(),
         tituloExtrasPrimarios: formData.tituloExtrasPrimarios.trim(),
         tituloExtrasSecundarios: formData.tituloExtrasSecundarios.trim(),
+        permiteNota: formData.permiteNota,
+        tituloNota: formData.tituloNota.trim() || '¿Querés aclarar algo?',
         puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
         puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
         descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,
@@ -1661,6 +1673,48 @@ const Productos = () => {
                       })
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* ── SECCIÓN: NOTA DEL CLIENTE ── */}
+              <div
+                className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
+                onClick={() => toggleSeccion('nota')}
+              >
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Nota del cliente</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground dark:text-zinc-500">{formData.permiteNota ? 'Activada' : 'Desactivada'}</span>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('nota') && "rotate-180")} />
+                </div>
+              </div>
+              {seccionesAbiertas.has('nota') && (
+                <div className="px-6 py-4 space-y-4 border-b border-zinc-200 dark:border-white/5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-white">Permitir una aclaración</p>
+                      <p className="text-xs text-muted-foreground dark:text-zinc-500">Se mostrará como último paso al personalizar este producto.</p>
+                    </div>
+                    <Switch
+                      checked={formData.permiteNota}
+                      onCheckedChange={(checked) => {
+                        setFormData({ ...formData, permiteNota: checked })
+                        markDirty()
+                      }}
+                    />
+                  </div>
+                  {formData.permiteNota && (
+                    <div>
+                      <Label className={panelLabelClass}>Frase para el cliente</Label>
+                      <Input
+                        value={formData.tituloNota}
+                        maxLength={120}
+                        onChange={(e) => { setFormData({ ...formData, tituloNota: e.target.value }); markDirty() }}
+                        placeholder="¿Querés aclarar algo?"
+                        className={panelInputClass}
+                      />
+                      <p className="mt-1.5 text-xs text-muted-foreground dark:text-zinc-500">La respuesta es opcional y admite hasta 500 caracteres.</p>
+                    </div>
+                  )}
                 </div>
               )}
 

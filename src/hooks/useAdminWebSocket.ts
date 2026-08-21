@@ -33,6 +33,7 @@ export interface ItemPedido {
   imagenUrl?: string | null
   ingredientesExcluidos?: number[]
   ingredientesExcluidosNombres?: string[]
+  nota?: string | null
   postConfirmacion?: boolean
   createdAt?: string
 }

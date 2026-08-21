@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
-import { pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi, type MesaLocal } from '@/lib/api'
+import { pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi, mesasLocalesApi, type MesaLocal } from '@/lib/api'
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
@@ -21,7 +21,7 @@ import {
     Phone, ShoppingBag, CalendarDays, Tag, Settings,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
-    Copy, ExternalLink, MoreVertical, Armchair, Pencil,
+    Copy, ExternalLink, MoreVertical, Armchair,
 } from 'lucide-react'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -62,7 +62,7 @@ interface DeliveryItem {
     id: number; productoId: number; cantidad: number; precioUnitario: string;
     nombreProducto: string; imagenUrl: string | null;
     ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
-    agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null;
+    agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null; nota?: string | null;
 }
 type PedidoTipo = 'delivery' | 'takeaway' | 'mesa'
 
@@ -79,6 +79,7 @@ interface UnifiedPedido {
     mesaLocalId?: number | null; mesaNombre?: string | null; consumoEnLocal?: boolean | null;
     version?: number; editable?: boolean; motivosNoEditable?: string[];
 }
+interface TurnoCajaDashboard { id: number; aperturaAt: string; cierreAt: string | null; abierto: boolean }
 interface Repartidor { id: number; nombre: string; estado: 'activo' | 'inactivo'; restauranteId: number }
 interface ClienteContexto {
     identificado: boolean; matchedBy: 'telefono' | 'nombre'; nombre: string | null;
@@ -92,8 +93,111 @@ const STORAGE_SUCURSAL = 'sucursal_activa_id'
 const pedidoTipoLabel = (pedido: Pick<UnifiedPedido, 'tipo' | 'mesaNombre'>) =>
     pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'mesa' ? (pedido.mesaNombre || 'Mesa') : 'Takeaway'
 
+const pedidoTitulo = (pedido: Pick<UnifiedPedido, 'id' | 'tipo' | 'mesaLocalId' | 'mesaNombre'>) =>
+    pedido.tipo === 'mesa'
+        ? (pedido.mesaNombre || (pedido.mesaLocalId != null ? `Mesa ${pedido.mesaLocalId}` : 'Mesa'))
+        : `Pedido #${pedido.id}`
+
 const PedidoTipoIcon = ({ tipo, className }: { tipo: PedidoTipo; className: string }) =>
     tipo === 'delivery' ? <Truck className={className} /> : tipo === 'mesa' ? <Armchair className={className} /> : <ShoppingBag className={className} />
+
+const numeroMesa = (mesa: MesaLocal, index: number): string => {
+    const numeroEnNombre = mesa.nombre.match(/\d+/)?.[0]
+    return numeroEnNombre || String(mesa.orden || index + 1)
+}
+
+function MesasGrid({
+    token,
+    sucursalId,
+    pedidos,
+    refreshKey,
+    onMesaLibre,
+    onMesaOcupada,
+    selectedMesaId,
+}: {
+    token: string | null
+    sucursalId: number | null
+    pedidos: UnifiedPedido[]
+    refreshKey?: number
+    onMesaLibre: (mesa: MesaLocal) => void
+    onMesaOcupada: (pedido: UnifiedPedido) => void
+    selectedMesaId?: number | null
+}) {
+    const [mesas, setMesas] = useState<MesaLocal[]>([])
+    const [cargando, setCargando] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+    // Las actualizaciones posteriores son silenciosas: la grilla ya tiene datos
+    // útiles y no debe reemplazarse por un spinner al cambiar de pestaña.
+    const tokenMesasCargadoRef = useRef<string | null>(null)
+
+    const cargarMesas = useCallback(async () => {
+        if (!token) {
+            setMesas([])
+            setCargando(false)
+            tokenMesasCargadoRef.current = null
+            return
+        }
+        const esPrimeraCarga = tokenMesasCargadoRef.current !== token
+        if (esPrimeraCarga) setCargando(true)
+        try {
+            const response = await mesasLocalesApi.list(token, false)
+            setMesas(response.data)
+            setError(null)
+            tokenMesasCargadoRef.current = token
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : 'No se pudieron cargar las mesas')
+        } finally {
+            if (esPrimeraCarga) setCargando(false)
+        }
+    }, [token])
+
+    useEffect(() => { void cargarMesas() }, [cargarMesas, refreshKey])
+
+    const mesasVisibles = useMemo(() => mesas
+        .filter((mesa) => sucursalId == null || mesa.sucursalId == null || mesa.sucursalId === sucursalId)
+        .sort((a, b) => a.orden - b.orden || a.id - b.id), [mesas, sucursalId])
+
+    const pedidosPorMesa = useMemo(() => {
+        const resultado = new Map<number, UnifiedPedido>()
+        pedidos.forEach((pedido) => {
+            if (pedido.mesaLocalId != null && (pedido.tipo === 'mesa' || pedido.consumoEnLocal)) {
+                resultado.set(pedido.mesaLocalId, pedido)
+            }
+        })
+        return resultado
+    }, [pedidos])
+
+    if (cargando) return <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Cargando mesas…</div>
+    if (error) return <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-4 text-sm"><p>{error}</p><button type="button" onClick={() => void cargarMesas()} className="mt-2 font-medium underline">Reintentar</button></div>
+    if (mesasVisibles.length === 0) return <div className="flex h-32 items-center justify-center rounded-2xl border-2 border-dashed border-border px-5 text-center text-sm text-muted-foreground">No hay mesas configuradas para esta sucursal.</div>
+
+    return (
+        <div className="grid grid-cols-5 gap-2">
+            {mesasVisibles.map((mesa, index) => {
+                const pedido = pedidosPorMesa.get(mesa.id)
+                const ocupada = !!pedido
+                return (
+                    <button
+                        key={mesa.id}
+                        type="button"
+                        aria-label={`${mesa.nombre}, ${ocupada ? `ocupada con el pedido ${pedido.id}` : 'libre'}`}
+                        title={`${mesa.nombre} · ${ocupada ? `Ocupada · pedido #${pedido.id}` : 'Libre'}`}
+                        onClick={() => pedido ? onMesaOcupada(pedido) : onMesaLibre(mesa)}
+                        className={cn(
+                            'aspect-square min-h-11 rounded-lg border text-base font-black tabular-nums shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]',
+                            ocupada
+                                ? 'border-[#FF7A00]/35 bg-[#FF7A00]/15 text-[#C45F00] dark:text-orange-300'
+                                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+                            selectedMesaId === mesa.id && 'ring-2 ring-[#FF7A00] ring-offset-2 ring-offset-background',
+                        )}
+                    >
+                        {numeroMesa(mesa, index)}
+                    </button>
+                )
+            })}
+        </div>
+    )
+}
 
 function readStoredSucursalId(): number | null {
     try {
@@ -526,7 +630,7 @@ const OrderMapView = ({ orders, onClose, externalSelected, onSelectPedido, onApr
                             <div className="flex items-start justify-between p-4 pb-3 border-b border-border">
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                                        <p className="font-black text-base text-foreground">Pedido #{selected.id}</p>
+                                        <p className="font-black text-base text-foreground">{pedidoTitulo(selected)}</p>
                                         {selected.horarioProgramado && (
                                             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-0.5 font-bold">
                                                 <Clock className="h-2.5 w-2.5 shrink-0" />{selected.horarioProgramado}
@@ -883,6 +987,24 @@ const POS_METODO_LABEL: Record<string, string> = {
     mercadopago: 'Mercado Pago',
 }
 
+const crearBorradorMesaVacio = (mesa: Pick<MesaLocal, 'id' | 'nombre'>): PosDraft => ({
+    tipo: 'mesa',
+    nombreCliente: '',
+    telefono: '',
+    direccion: '',
+    notas: '',
+    metodoPago: 'cash',
+    pagado: false,
+    deliveryFee: 0,
+    items: [],
+    subtotal: 0,
+    total: 0,
+    submitting: false,
+    hasChanges: false,
+    mesaLocalId: mesa.id,
+    mesaNombre: mesa.nombre,
+})
+
 const PosComandaPreview = ({
     draft,
     onEditItem,
@@ -890,10 +1012,11 @@ const PosComandaPreview = ({
     onUpdate,
     onSubmit,
     onClear,
-    mesasActivas = false,
-    onRequestMesa,
     onClearMesa,
     editingPedidoId,
+    mesaAsignada,
+    catalogoAbierto = false,
+    onToggleCatalogo,
 }: {
     draft: PosDraft | null
     onEditItem?: (key: string) => void
@@ -901,32 +1024,37 @@ const PosComandaPreview = ({
     onUpdate?: (changes: PosDraftUpdate) => void
     onSubmit?: () => void
     onClear?: () => void
-    mesasActivas?: boolean
-    onRequestMesa?: () => void
     onClearMesa?: () => void
     editingPedidoId?: number
+    /** La mesa se actualiza antes que el snapshot del POS; evita un título transitorio. */
+    mesaAsignada?: Pick<MesaLocal, 'id' | 'nombre'> | null
+    catalogoAbierto?: boolean
+    onToggleCatalogo?: () => void
 }) => {
     // Qué datos/opciones muestra la comanda según la configuración del POS.
     const config = usePosConfig()
-    const tiposHabilitados = POS_TIPOS_ORDER.filter((tipo) => config.tipos[tipo])
+    const tiposHabilitados = POS_TIPOS_ORDER.filter((tipo) => tipo !== 'mesa' && config.tipos[tipo])
     const metodosPagoHabilitados = POS_METODOS_ORDER.filter((id) => config.metodosPago[id])
     const nombreEditable = config.camposCliente.nombre
     const telefonoEditable = config.camposCliente.telefono
+
+    const mesaTitulo = mesaAsignada?.nombre || (mesaAsignada?.id ? `Mesa ${mesaAsignada.id}` : null)
 
     if (!draft) {
         return (
             <div className="h-full flex flex-col">
                 <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6">
-                    <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">Borrador</h2>
+                    <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">{mesaTitulo || 'Nuevo pedido'}</h2>
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
                     <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
                         <ShoppingCart className="h-7 w-7 text-muted-foreground/60" />
                     </div>
                     <p className="text-base font-bold text-foreground">Comanda en blanco</p>
-                    <p className="text-xs text-muted-foreground max-w-[260px] leading-relaxed">
-                        Agregá productos desde el panel central: el pedido se va reflejando acá en vivo.
-                    </p>
+                    <Button onClick={onToggleCatalogo} className="mt-2 h-11 rounded-xl bg-[#FF7A00] px-5 font-bold text-white hover:bg-[#E66E00]">
+                        <Plus className="mr-2 h-4 w-4" /> Agregar producto
+                    </Button>
+                    <div id="pos-catalogo-compacto" className="mt-3 w-full max-w-[520px]" />
                 </div>
             </div>
         )
@@ -940,7 +1068,13 @@ const PosComandaPreview = ({
                     <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6 pb-[26rem]">
 
                         <div className="relative mb-6 text-left">
-                            <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">{editingPedidoId ? `Pedido #${editingPedidoId}` : 'Borrador'}</h2>
+                            <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">
+                                {mesaTitulo || (editingPedidoId
+                                    ? (draft.tipo === 'mesa' ? (draft.mesaNombre || (draft.mesaLocalId ? `Mesa ${draft.mesaLocalId}` : 'Mesa')) : `Pedido #${editingPedidoId}`)
+                                    : draft.tipo === 'mesa'
+                                        ? (draft.mesaNombre || (draft.mesaLocalId ? `Mesa ${draft.mesaLocalId}` : 'Mesa'))
+                                        : 'Nuevo pedido')}
+                            </h2>
                         </div>
 
                         <Separator className="bg-border/60 mb-6" />
@@ -948,6 +1082,21 @@ const PosComandaPreview = ({
                         {/* Comanda */}
                         <div className="mb-6">
                             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Comanda · {totalItems} ítems</h3>
+                            <button
+                                type="button"
+                                onClick={onToggleCatalogo}
+                                aria-expanded={catalogoAbierto}
+                                className={cn(
+                                    'mb-2 flex h-11 w-full items-center justify-between rounded-xl border border-dashed px-3 text-sm font-bold transition-colors',
+                                    catalogoAbierto
+                                        ? 'border-[#FF7A00] bg-[#FF7A00]/5 text-[#FF7A00]'
+                                        : 'border-border text-foreground hover:border-[#FF7A00]/60 hover:bg-muted/40'
+                                )}
+                            >
+                                <span className="flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar producto</span>
+                                <ChevronDown className={cn('h-4 w-4 transition-transform', catalogoAbierto && 'rotate-180')} />
+                            </button>
+                            <div id="pos-catalogo-compacto" className={cn(catalogoAbierto && 'mb-2')} />
                             {draft.items.length === 0 ? (
                                 <p className="text-sm text-muted-foreground/60 py-8 text-center border border-dashed border-border rounded-xl">
                                     Todavía no hay productos
@@ -1011,15 +1160,10 @@ const PosComandaPreview = ({
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 z-40 bg-[#FFFBF0] dark:bg-background">
                     <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
-                        <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
+                        {draft.tipo !== 'mesa' && tiposHabilitados.length > 0 && <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
                             {tiposHabilitados.includes('delivery') && (
                                 <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'delivery' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'delivery' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
                                     <Truck className="h-4 w-4" />Delivery
-                                </button>
-                            )}
-                            {tiposHabilitados.includes('mesa') && (
-                                <button disabled={!mesasActivas} onClick={onRequestMesa} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40', draft.tipo === 'mesa' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
-                                    <Armchair className="h-4 w-4" />Mesa
                                 </button>
                             )}
                             {tiposHabilitados.includes('takeaway') && (
@@ -1027,8 +1171,7 @@ const PosComandaPreview = ({
                                     <ShoppingBag className="h-4 w-4" />Takeaway
                                 </button>
                             )}
-                        </div>
-                        {draft.tipo === 'mesa' && draft.mesaNombre && <p className="text-center text-xs font-semibold text-[#FF7A00]">Asignado a {draft.mesaNombre}</p>}
+                        </div>}
                         {/* Con un único método habilitado no se muestra ningún botón:
                             el pedido se guarda directo con ese método. */}
                         {metodosPagoHabilitados.length > 1 && (
@@ -1041,19 +1184,18 @@ const PosComandaPreview = ({
                             </div>
                         )}
                         <div className="relative text-left">
-                            {/* Dirección: siempre visible, desactivada cuando el pedido es mesa o takeaway. */}
-                            {config.camposCliente.direccion && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', (nombreEditable || telefonoEditable) && 'mb-3')}>
+                            {nombreEditable && <div className="flex h-11 items-center gap-2 border-b border-border focus-within:border-[#FF7A00]">
+                                <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent text-2xl font-black tracking-tight focus-visible:ring-0" />
+                            </div>}
+                            {draft.tipo !== 'mesa' && config.camposCliente.direccion && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', (nombreEditable || telefonoEditable) && 'mt-3')}>
                                 <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                 <Input
                                     value={draft.direccion}
                                     onChange={(event) => onUpdate?.({ direccion: event.target.value })}
                                     placeholder="Dirección de entrega"
                                     disabled={draft.tipo !== 'delivery'}
-                                    className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0"
+                                    className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-45"
                                 />
-                            </div>}
-                            {nombreEditable && <div className="flex h-11 items-center gap-2 border-b border-border focus-within:border-[#FF7A00]">
-                                <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent text-2xl font-black tracking-tight focus-visible:ring-0" />
                             </div>}
                             {telefonoEditable && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', nombreEditable && 'mt-3')}>
                                 <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -1084,7 +1226,7 @@ const PosComandaPreview = ({
                             </button>
                             <Button
                                 onClick={onSubmit}
-                                disabled={draft.items.length === 0 || draft.submitting}
+                                disabled={draft.items.length === 0 || draft.submitting || (!!editingPedidoId && !draft.hasChanges)}
                                 className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
                             >
                                 {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : editingPedidoId ? 'Guardar cambios' : 'Anotar pedido'}
@@ -1106,6 +1248,7 @@ const Dashboard = () => {
     const { restaurante: restauranteStore, productos: allProductos, suscripcion } = useRestauranteStore()
     const posActivo = useModuloActivo('pos')
     const mesasActivo = useModuloActivo('mesas')
+    const cierreManualActivo = useModuloActivo('cierre_turno_manual')
     const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
     const puedeAvisarWhatsapp = useModuloActivo('avisos_automaticos_whatsapp')
 
@@ -1117,6 +1260,10 @@ const Dashboard = () => {
     const isDesktopViewport = useDesktopViewport()
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
     const initialLoadDoneRef = useRef(false)
+    // Los pedidos creados desde el POS no deben depender de que el WebSocket y
+    // el refetch lleguen en un orden particular. El id queda pendiente hasta
+    // que el auto-printer lo reclama (o detecta que lo reclamó otro equipo).
+    const posOrdersPendingPrintRef = useRef<Set<number>>(new Set())
     const { lastUpdate } = useAdminContext()
 
     // Estados Principales
@@ -1139,8 +1286,12 @@ const Dashboard = () => {
     const showPOS = posActivo
     const [showPosMovil, setShowPosMovil] = useState(false)
     const [pedidoPosEditando, setPedidoPosEditando] = useState<PosEditablePedido | null>(null)
+    // Evita que el borrador activo se vea mientras se carga un pedido existente
+    // (por ejemplo, al elegir una mesa ocupada).
+    const [cargandoPedidoPos, setCargandoPedidoPos] = useState(false)
     const [mesaPosAsignada, setMesaPosAsignada] = useState<Pick<MesaLocal, 'id' | 'nombre'> | null>(null)
     const [posContext, setPosContext] = useState<'borrador' | 'pedidoExistente'>('borrador')
+    const [catalogoPosAbierto, setCatalogoPosAbierto] = useState(false)
     // Borrador del pedido que se está anotando en el POS flotante: se espeja
     // en vivo en la comanda de la derecha (PosComandaPreview).
     const [draftPos, setDraftPos] = useState<PosDraft | null>(null)
@@ -1152,7 +1303,13 @@ const Dashboard = () => {
     const [mobileView, setMobileView] = useState<'orders' | 'detail'>('orders')
     const [showMobileOrdersSheet, setShowMobileOrdersSheet] = useState(false)
     const [showCierreTurno, setShowCierreTurno] = useState(false)
+    const [turnoActual, setTurnoActual] = useState<{ id: number; aperturaAt: string; cierreAt: string | null } | null>(null)
+    const [turnosCaja, setTurnosCaja] = useState<TurnoCajaDashboard[]>([])
+    const [selectedTurnoId, setSelectedTurnoId] = useState<number | null>(null)
+    const [showCerrarTurno, setShowCerrarTurno] = useState(false)
+    const [cerrandoTurno, setCerrandoTurno] = useState(false)
     const [showArchived, setShowArchived] = useState(false)
+    const [listadoActivo, setListadoActivo] = useState<'pedidos' | 'mesas'>('pedidos')
     const [selectedDay, setSelectedDay] = useState<string>(() => getArDayString(new Date()))
     const [showDayPicker, setShowDayPicker] = useState(false)
     const [pickerDay, setPickerDay] = useState<string>(() => getArDayString(new Date()))
@@ -1168,6 +1325,17 @@ const Dashboard = () => {
     const [showMapaDialog, setShowMapaDialog] = useState(false)
     const [showMesasDialog, setShowMesasDialog] = useState(false)
     const [mesasDialogMode, setMesasDialogMode] = useState<'operar' | 'asignar-borrador'>('operar')
+
+    useEffect(() => {
+        if (!token || !cierreManualActivo) { setTurnoActual(null); setTurnosCaja([]); setSelectedTurnoId(null); return }
+        pedidoUnificadoApi.turnos(token).then((res: any) => {
+            if (res.success) {
+                setTurnoActual(res.data.actual)
+                setTurnosCaja(res.data.turnos)
+                setSelectedTurnoId((actual) => actual ?? res.data.actual.id)
+            }
+        }).catch((error) => console.error('Error cargando turno:', error))
+    }, [token, cierreManualActivo])
 
     const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
     const [sucursalNombre, setSucursalNombre] = useState<string>('')
@@ -1286,8 +1454,10 @@ const Dashboard = () => {
 
     // Si el día seleccionado no es "Hoy", abrir el Historial por defecto
     useEffect(() => {
-        setShowArchived(selectedDay !== getArDayString(new Date()))
-    }, [selectedDay])
+        setShowArchived(cierreManualActivo
+            ? selectedTurnoId != null && selectedTurnoId !== turnoActual?.id
+            : selectedDay !== getArDayString(new Date()))
+    }, [selectedDay, cierreManualActivo, selectedTurnoId, turnoActual?.id])
 
     // ─────────────────────────────────────────────
     // FETCH Y WEBSOCKETS
@@ -1306,9 +1476,17 @@ const Dashboard = () => {
                 50,
                 undefined,
                 sucursalActivaId,
+                cierreManualActivo ? selectedTurnoId : null,
             ) as any
             if (response.success && response.data) {
                 const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway' || p.tipo === 'mesa') as UnifiedPedido[]
+
+                // Con una lista inicial vacía no habrá un render con pedidos que
+                // pueda cerrar la carga inicial. Sin esto, el primer pedido del
+                // día se confundía con backlog y no se imprimía.
+                if (!append && validPedidos.length === 0) {
+                    initialLoadDoneRef.current = true
+                }
 
                 setUnifiedPedidos(prev => {
                     const combined: UnifiedPedido[] = append ? [...prev, ...validPedidos] : validPedidos
@@ -1334,7 +1512,24 @@ const Dashboard = () => {
             setIsLoading(false)
             setIsLoadingMore(false)
         }
-    }, [token, sucursalActivaId, selectedDay])
+    }, [token, sucursalActivaId, selectedDay, cierreManualActivo, selectedTurnoId])
+
+    const confirmarCierreTurno = async () => {
+        if (!token || !turnoActual) return
+        setCerrandoTurno(true)
+        try {
+            const res: any = await pedidoUnificadoApi.cerrarTurno(token)
+            if (!res.success) throw new Error(res.message || 'No se pudo cerrar el turno')
+            setTurnoActual(res.data.actual)
+            setTurnosCaja((turnos) => [res.data.actual, res.data.cerrado, ...turnos.filter((turno) => turno.id !== res.data.cerrado.id)])
+            setSelectedTurnoId(res.data.actual.id)
+            setShowCerrarTurno(false)
+            setSelectedUnifiedPedido(null)
+            toast.success('Turno cerrado. Ya comenzó uno nuevo.')
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'No se pudo cerrar el turno')
+        } finally { setCerrandoTurno(false) }
+    }
 
     useEffect(() => {
         if (!token || !prefsReady) return
@@ -1393,22 +1588,28 @@ const Dashboard = () => {
             const currentPagado = pedido.pagado
             const prevData = processedOrdersRef.current.get(pedidoKey)
             const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
+            const pendingFromPos = posOrdersPendingPrintRef.current.has(pedido.id)
 
             // Archivado → registrar y nunca imprimir
             if (pedido.estado === 'archived') {
+                posOrdersPendingPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
 
             // Ya impreso en la DB → registrar y saltar
             if (pedido.impreso) {
+                posOrdersPendingPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
 
-            let shouldPrint = false
+            // Un alta confirmada por el POS es evidencia explícita de que el
+            // pedido es nuevo, incluso si un refetch del WebSocket lo alcanzó
+            // antes y ya lo registró en processedOrdersRef.
+            let shouldPrint = pendingFromPos && (!deferUntilPaid || !!currentPagado)
 
-            if (!prevData) {
+            if (!shouldPrint && !prevData) {
                 // Primera vez que vemos este pedido
                 if (!initialLoadDoneRef.current) {
                     // Carga inicial (F5, apertura): solo registrar, NO imprimir
@@ -1423,9 +1624,9 @@ const Dashboard = () => {
                     // Método no-deferred (efectivo, transf manual): imprimir inmediatamente
                     shouldPrint = true
                 }
-            } else {
+            } else if (!shouldPrint) {
                 // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
-                if (deferUntilPaid && currentPagado && !prevData.pagado) {
+                if (deferUntilPaid && currentPagado && !prevData?.pagado) {
                     shouldPrint = true
                 }
             }
@@ -1435,7 +1636,10 @@ const Dashboard = () => {
                 // restaurante conectado, solo uno de los dos debe ganar la carrera e imprimir.
                 pedidoUnificadoApi.claimImpreso(token, pedido.id)
                     .then((res: any) => {
-                        if (!res?.claimed) return
+                        if (!res?.claimed) {
+                            posOrdersPendingPrintRef.current.delete(pedido.id)
+                            return
+                        }
 
                         const itemsToPrint = pedido.items.map(item => {
                             const producto = allProductos.find(p => p.id === item.productoId)
@@ -1462,6 +1666,7 @@ const Dashboard = () => {
                             })
                         }
 
+                        posOrdersPendingPrintRef.current.delete(pedido.id)
                         setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
                     })
                     .catch(console.error)
@@ -1702,6 +1907,11 @@ const Dashboard = () => {
     }
 
     const openPedidoInPOS = (pedido: UnifiedPedido) => {
+        if (showPOS) {
+            void editarPedidoEnPos(pedido)
+            return
+        }
+        setCatalogoPosAbierto(false)
         setMesaPosAsignada(null)
         setSelectedUnifiedPedido(pedido)
         if (showPOS) setPosContext('pedidoExistente')
@@ -1711,6 +1921,31 @@ const Dashboard = () => {
     const volverAlBorrador = () => {
         setSelectedUnifiedPedido(null)
         setPosContext('borrador')
+        setMobileView('detail')
+    }
+
+    // Al editar desde la comanda se repliega el buscador: el configurador del
+    // ítem queda como única capa activa y permite ajustar ingredientes y extras.
+    const editarItemComanda = useCallback((key: string) => {
+        setCatalogoPosAbierto(false)
+        posRef.current?.editItem(key)
+    }, [])
+
+    const abrirNuevoPedido = () => {
+        if (!posActivo) return
+        // El alta parte siempre de una comanda vacía, incluso si había un
+        // borrador persistido o se estaba editando otro pedido.
+        try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId)) } catch { /* noop */ }
+        posRef.current?.clearDraft()
+        setDraftPos(null)
+        setListadoActivo('pedidos')
+        setShowOrderMap(false)
+        setSelectedUnifiedPedido(null)
+        setPedidoPosEditando(null)
+        setMesaPosAsignada(null)
+        setCatalogoPosAbierto(false)
+        setPosContext('borrador')
+        setShowPosMovil(true)
         setMobileView('detail')
     }
 
@@ -1732,10 +1967,12 @@ const Dashboard = () => {
         if (posActivo) setShowPosMovil(true)
     }, [posActivo])
 
-    const handlePedidoManualCreado = () => {
+    const handlePedidoManualCreado = (pedidoId: number) => {
         // El POS es un flujo de carga continua: después de anotar un pedido el
-        // componente ya limpió su borrador. Sólo sincronizamos la lista, sin
-        // alterar el POS ni su vista para que se pueda cargar el siguiente.
+        // componente ya limpió su borrador. Marcamos el id antes de sincronizar
+        // para que siempre se imprima aunque el WebSocket haya llegado primero.
+        posOrdersPendingPrintRef.current.add(pedidoId)
+        setMesaPosAsignada(null)
         fetchPedidos(1, false)
     }
 
@@ -1743,6 +1980,7 @@ const Dashboard = () => {
         if (!token || !posActivo) return
         // Editar otro pedido abandona cualquier fusión de mesa pendiente de guardar.
         mesaMergeRef.current = false
+        setCargandoPedidoPos(true)
         try {
             const response = await pedidoUnificadoApi.getById(token, pedido.id) as { success?: boolean; data?: PosEditablePedido & { editable?: boolean; motivosNoEditable?: string[] } }
             const editable = response.data
@@ -1759,6 +1997,8 @@ const Dashboard = () => {
             setMobileView('detail')
         } catch (error) {
             toast.error('No se pudo abrir la edición', { description: error instanceof Error ? error.message : undefined })
+        } finally {
+            setCargandoPedidoPos(false)
         }
     }
 
@@ -1771,11 +2011,13 @@ const Dashboard = () => {
         }
         const actualizado = pedido as UnifiedPedido
         setUnifiedPedidos((prev) => prev.map((item) => item.id === actualizado.id ? { ...item, ...actualizado } : item))
-        setPedidoPosEditando(null)
-        setMesaPosAsignada(null)
-        setShowPosMovil(false)
-        setPosContext('pedidoExistente')
-        setSelectedUnifiedPedido(actualizado)
+        setPedidoPosEditando(pedido)
+        setMesaPosAsignada(actualizado.tipo === 'mesa' && actualizado.mesaLocalId
+            ? { id: actualizado.mesaLocalId, nombre: actualizado.mesaNombre || `Mesa ${actualizado.mesaLocalId}` }
+            : null)
+        setShowPosMovil(true)
+        setPosContext('borrador')
+        setSelectedUnifiedPedido(null)
         setMobileView('detail')
         fetchPedidos(1, false)
     }
@@ -1786,14 +2028,17 @@ const Dashboard = () => {
     // El backend ya devuelve solo los pedidos del día seleccionado (endpoint /list-dia),
     // así que acá solo separamos activos de archivados.
     const activeOrders = unifiedPedidos.filter(p => p.estado !== 'archived')
+    // Los consumos de mesa se operan exclusivamente desde la pestaña Mesas.
+    // Una vez archivados permanecen en el historial general para su consulta.
+    const activeOrdersListado = activeOrders.filter(p => p.tipo !== 'mesa' && !p.consumoEnLocal)
+    const mesasOcupadas = new Set(
+        activeOrders
+            .filter(p => p.mesaLocalId != null && (p.tipo === 'mesa' || p.consumoEnLocal))
+            .map(p => p.mesaLocalId),
+    ).size
     const archivedOrders = unifiedPedidos.filter(p => p.estado === 'archived')
 
     const hoyDay = getArDayString(new Date())
-    const abrirSelectorMesaBorrador = () => {
-        if (!mesasActivo) return
-        setMesasDialogMode('asignar-borrador')
-        setShowMesasDialog(true)
-    }
     const abrirMesaLibre = (mesa: MesaLocal) => {
         if (mesasDialogMode === 'asignar-borrador') {
             setMesaPosAsignada({ id: mesa.id, nombre: mesa.nombre })
@@ -1812,6 +2057,29 @@ const Dashboard = () => {
         setShowPosMovil(true)
         setMobileView('detail')
     }
+
+    const abrirMesaLibreDesdeListado = (mesa: MesaLocal) => {
+        if (!posActivo) return
+        // Una mesa libre siempre empieza una comanda nueva. No se arrastran los
+        // productos ni los datos del borrador general o de otra mesa.
+        try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId)) } catch { /* noop */ }
+        posRef.current?.clearDraft()
+        // El POS emite el snapshot vacío en el siguiente efecto. Lo anticipamos
+        // para no mostrar el estado transitorio "Comanda en blanco".
+        setDraftPos(crearBorradorMesaVacio(mesa))
+        setShowOrderMap(false)
+        setSelectedUnifiedPedido(null)
+        setPedidoPosEditando(null)
+        setMesaPosAsignada({ id: mesa.id, nombre: mesa.nombre })
+        setPosContext('borrador')
+        setShowPosMovil(true)
+        setMobileView('detail')
+    }
+
+    const abrirPedidoMesaDesdeListado = (pedido: UnifiedPedido) => {
+        setMesaPosAsignada(null)
+        openPedidoInPOS(pedido)
+    }
     const abrirPedidoMesa = async (pedidoMesa: { id: number }) => {
         if (mesasDialogMode === 'asignar-borrador') {
             // Mesa ocupada durante un borrador: el borrador se suma al pedido
@@ -1825,11 +2093,7 @@ const Dashboard = () => {
                 if (!pedido) return
                 setShowMesasDialog(false)
                 setMesaPosAsignada(null)
-                setShowOrderMap(false)
-                setSelectedUnifiedPedido(pedido)
-                setPosContext('pedidoExistente')
-                setShowPosMovil(true)
-                setMobileView('detail')
+                openPedidoInPOS(pedido)
                 return
             }
             if (!token) return
@@ -1842,7 +2106,7 @@ const Dashboard = () => {
                 setShowMesasDialog(false)
                 setShowOrderMap(false)
                 setSelectedUnifiedPedido(null)
-                setPedidoPosEditando({ ...editable, items: [...editable.items, ...itemsBorrador] })
+                setPedidoPosEditando({ ...editable, items: [...editable.items, ...itemsBorrador], dirtyOnLoad: true })
                 setMesaPosAsignada(editable.tipo === 'mesa' && editable.mesaLocalId
                     ? { id: editable.mesaLocalId, nombre: editable.mesaNombre || `Mesa ${editable.mesaLocalId}` }
                     : null)
@@ -1858,11 +2122,7 @@ const Dashboard = () => {
         if (!pedido) return
         setShowMesasDialog(false)
         setMesaPosAsignada(null)
-        setShowOrderMap(false)
-        setSelectedUnifiedPedido(pedido)
-        setPosContext('pedidoExistente')
-        setShowPosMovil(true)
-        setMobileView('detail')
+        openPedidoInPOS(pedido)
     }
     // El selector del día sigue disponible al abrir el POS; solo el mapa lo reemplaza.
     const isDayTitle = !(mobileView === 'detail' && showOrderMap)
@@ -1926,16 +2186,24 @@ const Dashboard = () => {
                     {isDayTitle ? (
                         <button
                             onClick={() => setShowDayPicker(true)}
-                            className="flex items-center gap-1.5 rounded-xl px-2 py-1 -my-1 hover:bg-accent transition-colors cursor-pointer"
+                            className="flex items-center gap-1.5 rounded-xl px-2 py-1 -my-1 transition-colors hover:bg-accent cursor-pointer"
                         >
                             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                                {formatDayTitle(selectedDay)}
+                                {cierreManualActivo
+                                    ? (selectedTurnoId === turnoActual?.id ? 'Turno actual' : 'Turno cerrado')
+                                    : formatDayTitle(selectedDay)}
                             </h1>
                             <ChevronsUpDown className="h-5 w-5 text-muted-foreground" />
                         </button>
                     ) : (
                         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                            {showPOS && !showOrderMap ? (pedidoPosEditando ? `Editar #${pedidoPosEditando.id}` : 'Anotar pedido') : 'Mapa de pedidos'}
+                            {showPOS && !showOrderMap
+                                ? (pedidoPosEditando
+                                    ? (pedidoPosEditando.tipo === 'mesa'
+                                        ? (pedidoPosEditando.mesaNombre || (pedidoPosEditando.mesaLocalId != null ? `Mesa ${pedidoPosEditando.mesaLocalId}` : 'Mesa'))
+                                        : `Editar #${pedidoPosEditando.id}`)
+                                    : 'Anotar pedido')
+                                : 'Mapa de pedidos'}
                         </h1>
                     )}
                     {/* En desktop el POS queda siempre abierto con el módulo activo;
@@ -1953,19 +2221,24 @@ const Dashboard = () => {
                 </div>
 
                 <div className="flex items-center gap-2 flex-1 justify-end">
-                    {mobileView === 'detail' && activeOrders.length > 0 && (
+                    {mobileView === 'detail' && activeOrdersListado.length > 0 && (
                         <button
                             onClick={() => setShowMobileOrdersSheet(true)}
                             className="lg:hidden flex items-center gap-1.5 h-8 px-3 rounded-xl bg-muted border border-border text-xs font-bold text-foreground hover:bg-accent transition-colors"
                         >
                             <List className="h-3.5 w-3.5" />
-                            {activeOrders.length}
+                            {activeOrdersListado.length}
                         </button>
                     )}
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
-                    {mesasActivo && selectedDay === hoyDay && (
+                    {cierreManualActivo && turnoActual && selectedTurnoId === turnoActual.id && (
+                        <Button className="h-10 rounded-xl" onClick={() => setShowCerrarTurno(true)}>
+                            <Clock className="mr-2 h-4 w-4" /> Cerrar turno
+                        </Button>
+                    )}
+                    {mesasActivo && !posActivo && selectedDay === hoyDay && (
                         <Button variant="outline" className="h-10 rounded-xl" onClick={() => { setMesasDialogMode('operar'); setShowMesasDialog(true) }}>
                             <Armchair className="mr-2 h-4 w-4" /> Mesas
                         </Button>
@@ -1992,11 +2265,23 @@ const Dashboard = () => {
             >
                 <DialogContent className="max-w-xs">
                     <DialogHeader>
-                        <DialogTitle className="text-center text-3xl font-bold">Elegí el día</DialogTitle>
-                        <DialogDescription className="sr-only">Se muestran solo los pedidos del día que elijas.</DialogDescription>
+                        <DialogTitle className="text-center text-3xl font-bold">{cierreManualActivo ? 'Elegí el turno' : 'Elegí el día'}</DialogTitle>
+                        <DialogDescription className="sr-only">Se muestran solo los pedidos del {cierreManualActivo ? 'turno' : 'día'} que elijas.</DialogDescription>
                     </DialogHeader>
 
-                    {(() => {
+                    {cierreManualActivo ? (
+                        <div className="max-h-[60vh] space-y-1 overflow-auto">
+                            {turnosCaja.map((turno) => {
+                                const apertura = new Date(turno.aperturaAt); apertura.setHours(apertura.getHours() + 3)
+                                const cierre = turno.cierreAt ? new Date(turno.cierreAt) : null; if (cierre) cierre.setHours(cierre.getHours() + 3)
+                                const hora = (fecha: Date) => fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                const label = turno.abierto
+                                    ? `Turno actual · desde ${hora(apertura)}`
+                                    : `${apertura.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}, ${hora(apertura)} a ${cierre!.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}, ${hora(cierre!)}`
+                                return <button key={turno.id} onClick={() => { setSelectedTurnoId(turno.id); setShowDayPicker(false) }} className={cn('w-full rounded-xl px-4 py-3 text-left text-sm', selectedTurnoId === turno.id ? 'bg-[#FF7A00] text-white font-semibold' : 'hover:bg-muted')}>{label}</button>
+                            })}
+                        </div>
+                    ) : (() => {
                         const canNewer = pickerDay < hoyDay
                         const goNewer = () => { if (pickerDay < hoyDay) setPickerDay(shiftDayString(pickerDay, 1)) }
                         const goOlder = () => setPickerDay(shiftDayString(pickerDay, -1))
@@ -2086,21 +2371,53 @@ const Dashboard = () => {
             {/* ── MAIN CONTENT ── */}
             <div className="relative flex-1 flex overflow-hidden lg:justify-center lg:gap-4 lg:p-4">
 
+                {dashboardMode === 'orders' && posActivo && (
+                    <Button
+                        type="button"
+                        onClick={abrirNuevoPedido}
+                        className="absolute left-3 right-3 top-2 z-[60] h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00] lg:left-auto lg:right-auto lg:top-4 lg:w-[calc(100%-2rem)] lg:max-w-[1016px] xl:w-[1136px] xl:max-w-none 2xl:w-[1216px]"
+                    >
+                        + Nuevo pedido
+                    </Button>
+                )}
+
                 {dashboardMode === 'orders' ? (
                     <>
                         {/* ── PANEL IZQUIERDO: LISTA COMPACTA DE PEDIDOS ── */}
                         <div className={cn(
-                            "w-full flex-col shrink-0 bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:overflow-hidden",
-                            showPOS
-                                ? "lg:w-[280px] xl:w-[340px] 2xl:w-[400px]"
-                                : "lg:w-[400px] xl:w-[520px] 2xl:w-[600px]",
+                            "mt-14 min-h-0 w-full flex-col shrink-0 bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:overflow-hidden",
+                            "lg:w-[400px] xl:w-[520px] 2xl:w-[600px]",
                             mobileView === 'orders' ? 'flex' : 'hidden lg:flex'
                         )}>
                             <div className="p-3 flex items-center justify-between bg-[#FFFBF0]/95 dark:bg-background/95 backdrop-blur">
-                                <div className="flex items-center gap-2">
-                                    <h2 className="font-bold text-base">Pedidos</h2>
-                                    <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0">{activeOrders.length}</Badge>
-                                </div>
+                                {posActivo && mesasActivo ? (
+                                    <div className="flex items-center gap-1 rounded-xl bg-muted/60 p-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => setListadoActivo('pedidos')}
+                                            className={cn('flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-bold transition-colors', listadoActivo === 'pedidos' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                                        >
+                                            Pedidos
+                                            <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0">{activeOrdersListado.length}</Badge>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setListadoActivo('mesas')
+                                                if (selectedDay !== hoyDay) setSelectedDay(hoyDay)
+                                            }}
+                                            className={cn('flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-bold transition-colors', listadoActivo === 'mesas' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                                        >
+                                            <Armchair className="h-3.5 w-3.5" /> Mesas
+                                            <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0">{mesasOcupadas}</Badge>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="font-bold text-base">Pedidos</h2>
+                                        <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0">{activeOrdersListado.length}</Badge>
+                                    </div>
+                                )}
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button variant="outline" size="sm" className="h-8 w-8 p-0">
@@ -2126,18 +2443,31 @@ const Dashboard = () => {
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                {activeOrders.length === 0 ? (
+                                {posActivo && mesasActivo && (
+                                    <div className={cn(listadoActivo !== 'mesas' && 'hidden')}>
+                                        <MesasGrid
+                                            token={token}
+                                            sucursalId={sucursalActivaId}
+                                            pedidos={activeOrders}
+                                            refreshKey={lastUpdate?.timestamp}
+                                            onMesaLibre={abrirMesaLibreDesdeListado}
+                                            onMesaOcupada={abrirPedidoMesaDesdeListado}
+                                            selectedMesaId={mesaPosAsignada?.id}
+                                        />
+                                    </div>
+                                )}
+                                {!(posActivo && mesasActivo && listadoActivo === 'mesas') && (activeOrdersListado.length === 0 ? (
                                     <div className="h-32 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-2xl">
                                         <Receipt className="h-6 w-6 mb-2 opacity-40" />
                                         <p className="text-sm font-medium">No hay pedidos activos</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-2">
-                                        {activeOrders.map((pedido, index) => {
+                                        {activeOrdersListado.map((pedido, index) => {
                                             const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo;
                                             const pagoBadge = metodoPagoListBadge(pedido.metodoPago);
                                             const dateLabel = getDateLabel(pedido.createdAt);
-                                            const prevDateLabel = index > 0 ? getDateLabel(activeOrders[index - 1].createdAt) : null;
+                                            const prevDateLabel = index > 0 ? getDateLabel(activeOrdersListado[index - 1].createdAt) : null;
                                             const showDateSeparator = dateLabel !== prevDateLabel;
 
                                             return (
@@ -2253,10 +2583,10 @@ const Dashboard = () => {
                                             )
                                         })}
                                     </div>
-                                )}
+                                ))}
 
                                 {/* Pedidos Archivados */}
-                                {archivedOrders.length > 0 && (
+                                {listadoActivo === 'pedidos' && archivedOrders.length > 0 && (
                                     <div className="pt-6 pb-2">
                                         <button
                                             type="button"
@@ -2314,17 +2644,18 @@ const Dashboard = () => {
                             </div>
                         </div>
 
-                        {/* ── PANEL DEL MEDIO: POS (ANOTAR PEDIDO) ──
-                            El selector ocupa todo el panel central. El borrador y la
-                            confirmación quedan concentrados en la comanda de la derecha. */}
-                        {showPOS && isDesktopViewport && (
-                            <div
-                                onClick={handlePosBackgroundClick}
-                                className={cn(
-                                    "hidden lg:flex flex-col flex-1 min-w-0 rounded-2xl bg-background overflow-hidden transition-[filter,opacity] duration-200",
-                                    posContext === 'pedidoExistente' && "grayscale opacity-50"
-                                )}
-                            >
+                        {/* ── PANEL DERECHO: DETALLE OPERATIVO ──
+                            Ancho fijo al del ticket (≈600px) para que el panel no sea más grande
+                            que su contenido. El margen derecho en xl/2xl compensa el ensanche de la
+                            lista: mantiene el centro del detalle en el mismo punto para que NO se
+                            mueva a la derecha cuando la lista crece. El POS activo reutiliza este
+                            mismo layout de dos columnas y despliega el catálogo dentro del borrador. */}
+                        <div className={cn(
+                            "mt-14 min-h-0 w-full bg-[#FFFBF0] dark:bg-background relative overflow-hidden lg:rounded-2xl",
+                            "lg:flex-1 lg:max-w-[600px] xl:flex-none xl:w-[600px]",
+                            mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+                        )}>
+                            {showPOS && isDesktopViewport && (
                                 <PuntoDeVenta
                                     key={pedidoPosEditando ? `pos-edit-${pedidoPosEditando.id}-${pedidoPosEditando.version}` : 'pos-activo'}
                                     ref={posRef}
@@ -2336,47 +2667,45 @@ const Dashboard = () => {
                                     onDraftChange={setDraftPos}
                                     onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                     mesaAsignada={mesaPosAsignada}
-                                    onRequestMesa={abrirSelectorMesaBorrador}
                                     onClearMesa={() => setMesaPosAsignada(null)}
-                                    autoFocusSearch={posContext === 'borrador'}
+                                    autoFocusSearch={posContext === 'borrador' && catalogoPosAbierto}
                                     initialPedido={pedidoPosEditando}
                                     mostrarBotonCerrar={false}
+                                    catalogoCompacto
+                                    catalogoAbierto={posContext === 'borrador' && catalogoPosAbierto}
+                                    onProductSelected={() => setCatalogoPosAbierto(false)}
                                 />
-                            </div>
-                        )}
-
-                        {/* ── PANEL DERECHO: DETALLE OPERATIVO ──
-                            Ancho fijo al del ticket (≈600px) para que el panel no sea más grande
-                            que su contenido. El margen derecho en xl/2xl compensa el ensanche de la
-                            lista: mantiene el centro del detalle en el mismo punto para que NO se
-                            mueva a la derecha cuando la lista crece. Con el POS abierto los márgenes
-                            se quitan: los tres paneles ocupan todo el ancho. */}
-                        <div className={cn(
-                            "w-full bg-[#FFFBF0] dark:bg-background relative overflow-hidden lg:rounded-2xl",
-                            showPOS
-                                ? "lg:flex-1 lg:max-w-[600px]"
-                                : "lg:flex-1 lg:max-w-[600px] xl:flex-none xl:w-[600px] xl:mr-[80px] 2xl:mr-[160px]",
-                            mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
-                        )}>
+                            )}
                             {showPOS && posContext === 'borrador' ? (
-                                <PosComandaPreview
-                                    draft={draftPos}
-                                    onEditItem={(key) => posRef.current?.editItem(key)}
-                                    onRemoveItem={(key) => posRef.current?.removeItem(key)}
-                                    onUpdate={(changes) => posRef.current?.updateDraft(changes)}
-                                    onSubmit={() => posRef.current?.submitDraft()}
-                                    onClear={() => posRef.current?.clearDraft()}
-                                    mesasActivas={mesasActivo}
-                                    onRequestMesa={abrirSelectorMesaBorrador}
-                                    onClearMesa={() => setMesaPosAsignada(null)}
-                                    editingPedidoId={pedidoPosEditando?.id}
-                                />
+                                cargandoPedidoPos ? (
+                                    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                                        <Loader2 className="h-6 w-6 animate-spin text-[#FF7A00]" />
+                                        <span className="text-sm font-medium">Cargando pedido…</span>
+                                    </div>
+                                ) : (
+                                    <PosComandaPreview
+                                        draft={draftPos}
+                                        onEditItem={editarItemComanda}
+                                        onRemoveItem={(key) => posRef.current?.removeItem(key)}
+                                        onUpdate={(changes) => posRef.current?.updateDraft(changes)}
+                                        onSubmit={() => posRef.current?.submitDraft()}
+                                        onClear={() => posRef.current?.clearDraft()}
+                                        onClearMesa={() => setMesaPosAsignada(null)}
+                                        editingPedidoId={pedidoPosEditando?.id}
+                                        mesaAsignada={mesaPosAsignada}
+                                        catalogoAbierto={catalogoPosAbierto}
+                                        onToggleCatalogo={() => setCatalogoPosAbierto((abierto) => !abierto)}
+                                    />
+                                )
                             ) : showOrderMap ? (
                                 <OrderMapView
                                     orders={activeOrders}
                                     onClose={() => { setShowOrderMap(false); setMobileView('orders') }}
                                     externalSelected={selectedUnifiedPedido}
-                                    onSelectPedido={(pedido) => setSelectedUnifiedPedido(pedido)}
+                                    onSelectPedido={(pedido) => {
+                                        if (pedido) openPedidoInPOS(pedido)
+                                        else setSelectedUnifiedPedido(null)
+                                    }}
                                     onAprobarPago={handleAprobarPago}
                                     onNotificar={puedeAvisarWhatsapp ? handleNotificarCliente : undefined}
                                     onDespachar={(pedido) => handleDespachar(pedido.tipo, pedido.id)}
@@ -2399,16 +2728,11 @@ const Dashboard = () => {
                                                     <PedidoTipoIcon tipo={selectedUnifiedPedido.tipo} className="h-3.5 w-3.5" />
                                                     {pedidoTipoLabel(selectedUnifiedPedido)}
                                                 </span>
-                                                {showPOS && posContext === 'pedidoExistente' && (
-                                                    <Button variant="outline" size="sm" className="h-8 rounded-lg text-xs font-bold" onClick={() => void editarPedidoEnPos(selectedUnifiedPedido)}>
-                                                        <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar pedido
-                                                    </Button>
-                                                )}
                                             </div>
 
                                             {/* Identidad: quién y dónde — orden de lectura del ticket */}
                                             <div className="mb-6 text-left">
-                                                <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">Pedido #{selectedUnifiedPedido.id}</h2>
+                                                <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">{pedidoTitulo(selectedUnifiedPedido)}</h2>
                                                 {selectedUnifiedPedido.nombreCliente && (
                                                     <p className="mt-3 text-xl font-bold text-foreground leading-snug">{selectedUnifiedPedido.nombreCliente}</p>
                                                 )}
@@ -2602,6 +2926,7 @@ const Dashboard = () => {
                                                                                             ))}
                                                                                         </div>
                                                                                     )}
+                                                                                    {item.nota && <p className="mt-1 text-sm font-semibold text-amber-700 dark:text-amber-400">Nota: {item.nota}</p>}
                                                                                 </div>
                                                                             </div>
                                                                             <span className="font-semibold text-base tabular-nums text-foreground shrink-0">
@@ -2637,6 +2962,7 @@ const Dashboard = () => {
                                                                                     ))}
                                                                                 </div>
                                                                             )}
+                                                                            {item.nota && <p className="mt-1 text-sm font-semibold text-amber-700 dark:text-amber-400">Nota: {item.nota}</p>}
                                                                         </div>
                                                                     </div>
                                                                     <span className="font-semibold text-base tabular-nums text-foreground shrink-0">
@@ -2728,7 +3054,7 @@ const Dashboard = () => {
                                                     ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                 </span>
                                             </div>
-                                                    {selectedUnifiedPedido.estado !== 'archived' && (
+                                                {/* Eliminar siempre disponible — también en el historial (archived/despachado) */}
                                                 <div className="flex items-center gap-2">
                                                     <button
                                                         onClick={() => setShowDeleteDialog(true)}
@@ -2736,25 +3062,28 @@ const Dashboard = () => {
                                                     >
                                                         <Trash2 className="h-5 w-5" />
                                                     </button>
-                                                    {selectedUnifiedPedido.pagado && puedeAvisarWhatsapp && (
-                                                        <button
-                                                            onClick={() => handleNotificarCliente(selectedUnifiedPedido)}
-                                                            disabled={sendingNotification === selectedUnifiedPedido.id.toString()}
-                                                            className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:bg-accent transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
-                                                        >
-                                                            {sendingNotification === selectedUnifiedPedido.id.toString()
-                                                                ? <Loader2 className="h-5 w-5 animate-spin" />
-                                                                : <MessageCircle className="h-5 w-5" />}
-                                                        </button>
+                                                    {selectedUnifiedPedido.estado !== 'archived' && (
+                                                        <>
+                                                            {selectedUnifiedPedido.pagado && puedeAvisarWhatsapp && (
+                                                                <button
+                                                                    onClick={() => handleNotificarCliente(selectedUnifiedPedido)}
+                                                                    disabled={sendingNotification === selectedUnifiedPedido.id.toString()}
+                                                                    className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:bg-accent transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
+                                                                >
+                                                                    {sendingNotification === selectedUnifiedPedido.id.toString()
+                                                                        ? <Loader2 className="h-5 w-5 animate-spin" />
+                                                                        : <MessageCircle className="h-5 w-5" />}
+                                                                </button>
+                                                            )}
+                                                            <Button
+                                                                className="flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98] bg-[#FF7A00] hover:bg-[#E66E00]"
+                                                                onClick={() => void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)}
+                                                            >
+                                                                Despachar Pedido
+                                                            </Button>
+                                                        </>
                                                     )}
-                                                    <Button
-                                                        className="flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98] bg-[#FF7A00] hover:bg-[#E66E00]"
-                                                        onClick={() => void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)}
-                                                    >
-                                                        Despachar Pedido
-                                                    </Button>
                                                 </div>
-                                            )}
                                         </div>
                                     </div>
 
@@ -2769,7 +3098,7 @@ const Dashboard = () => {
                             En lg+ el POS es la columna inline del medio (arriba). En móvil, en
                             cambio, cubre la pantalla como overlay y la comanda queda detrás. */}
                         {showPosMovil && !isDesktopViewport && (
-                            <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center p-3 sm:p-6 pointer-events-none">
+                            <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center px-3 pb-3 pt-16 sm:px-6 sm:pb-6 pointer-events-none">
                                 <div
                                     onClick={handlePosBackgroundClick}
                                     className="pointer-events-auto w-full max-w-5xl h-full max-h-[860px] rounded-2xl bg-background shadow-2xl overflow-hidden"
@@ -2785,7 +3114,6 @@ const Dashboard = () => {
                                         onDraftChange={setDraftPos}
                                         onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
                                         mesaAsignada={mesaPosAsignada}
-                                        onRequestMesa={abrirSelectorMesaBorrador}
                                         onClearMesa={() => setMesaPosAsignada(null)}
                                         autoFocusSearch={posContext === 'borrador'}
                                         initialPedido={pedidoPosEditando}
@@ -2828,7 +3156,7 @@ const Dashboard = () => {
                             <div className="flex items-center gap-2">
                                 <span className="font-bold text-base">Pedidos activos</span>
                                 <Badge className="bg-[#FF7A00] hover:bg-[#FF7A00] text-white rounded-full px-2 py-0 text-[10px]">
-                                    {activeOrders.length}
+                                    {activeOrdersListado.length}
                                 </Badge>
                             </div>
                             <button
@@ -2839,13 +3167,13 @@ const Dashboard = () => {
                             </button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-2 pb-safe">
-                            {activeOrders.length === 0 ? (
+                            {activeOrdersListado.length === 0 ? (
                                 <div className="text-center py-10 text-muted-foreground text-sm">
                                     <Receipt className="h-8 w-8 mx-auto mb-2 opacity-30" />
                                     No hay pedidos activos
                                 </div>
                             ) : (
-                                activeOrders.map(pedido => {
+                                activeOrdersListado.map(pedido => {
                                     const isSelected = selectedUnifiedPedido?.id === pedido.id && selectedUnifiedPedido?.tipo === pedido.tipo
                                     const pagoBadge = metodoPagoListBadge(pedido.metodoPago)
                                     return (
@@ -3225,7 +3553,19 @@ const Dashboard = () => {
                 </DialogContent>
             </Dialog>
 
-            <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} fechaInicial={selectedDay} />
+            <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} fechaInicial={cierreManualActivo ? undefined : selectedDay} turnoIdInicial={cierreManualActivo ? selectedTurnoId ?? undefined : undefined} />
+            <Dialog open={showCerrarTurno} onOpenChange={setShowCerrarTurno}>
+                <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                        <DialogTitle>Cerrar el turno actual</DialogTitle>
+                        <DialogDescription>Los pedidos recibidos desde la apertura quedarán agrupados en este turno. Se abrirá uno nuevo inmediatamente.</DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowCerrarTurno(false)} disabled={cerrandoTurno}>Cancelar</Button>
+                        <Button onClick={confirmarCierreTurno} disabled={cerrandoTurno}>{cerrandoTurno && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Cerrar turno</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <SucursalSelector
                 open={showSucursalSelector && sucursalesList.filter((s) => s.activo).length > 0 && prefsReady}

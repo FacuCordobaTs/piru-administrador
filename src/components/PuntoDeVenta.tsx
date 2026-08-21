@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,7 +19,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
 import {
-    X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2, Armchair,
+    X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2,
     Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight, Eye, EyeOff,
     WifiOff, Printer,
 } from 'lucide-react'
@@ -77,6 +78,8 @@ export interface PosDraft {
     subtotal: number
     total: number
     submitting: boolean
+    /** En edición, indica si la comanda difiere del pedido que se cargó. */
+    hasChanges: boolean
     mesaLocalId?: number
     mesaNombre?: string
 }
@@ -109,6 +112,8 @@ export interface PosEditablePedido {
         ingredientesExcluidos?: number[] | null
         agregados?: unknown
     }>
+    /** El pedido se cargó con cambios locales ya aplicados (p. ej. fusión de mesa). */
+    dirtyOnLoad?: boolean
 }
 
 export type PosDraftUpdate = Partial<Pick<PosDraft,
@@ -146,8 +151,6 @@ interface PuntoDeVentaProps {
     /** Volver al grid desde un pedido existente conserva el borrador. */
     onStartDraft?: () => void
     mesaAsignada?: { id: number; nombre: string } | null
-    /** Abre el plano para elegir una mesa libre sin alterar todavía el borrador. */
-    onRequestMesa?: () => void
     /** Desasigna la mesa al cambiar el borrador a delivery o takeaway. */
     onClearMesa?: () => void
     /** Sólo el borrador activo captura la escritura rápida para buscar productos. */
@@ -158,6 +161,12 @@ interface PuntoDeVentaProps {
     mostrarBotonCerrar?: boolean
     /** Nombre de la sucursal activa, para la comanda impresa sin conexión. */
     sucursalNombre?: string
+    /** En desktop, integra el catálogo como desplegable dentro de la comanda. */
+    catalogoCompacto?: boolean
+    /** Controla la apertura del catálogo compacto sin desmontar el motor del POS. */
+    catalogoAbierto?: boolean
+    /** Se invoca al elegir un producto del catálogo compacto. */
+    onProductSelected?: () => void
 }
 
 const METODOS_PAGO: Array<{ id: PosMetodoPago; label: string; icon: React.ElementType }> = [
@@ -169,6 +178,64 @@ const METODOS_PAGO: Array<{ id: PosMetodoPago; label: string; icon: React.Elemen
 
 const itemUnitPrice = (it: CartItem) =>
     it.precioBase + it.agregados.reduce((s, a) => s + (parseFloat(String(a.precio)) || 0), 0)
+
+interface PedidoSignatureValues {
+    tipo: 'delivery' | 'takeaway' | 'mesa'
+    mesaLocalId?: number | null
+    nombre: string
+    telefono: string
+    direccion: string
+    latitud?: number | string | null
+    longitud?: number | string | null
+    notas: string
+    metodoPago: string
+    pagado: boolean
+    deliveryFee?: number | string | null
+    items: Array<{
+        productoId: number
+        varianteId?: number | null
+        varianteSecundariaId?: number | null
+        cantidad: number
+        ingredientesExcluidos?: number[] | null
+        agregados?: unknown
+    }>
+}
+
+const normalizeAgregadosForSignature = (value: unknown): Array<{ id: number; nombre: string; precio: string }> => {
+    if (typeof value === 'string') {
+        try { return normalizeAgregadosForSignature(JSON.parse(value)) } catch { return [] }
+    }
+    if (!Array.isArray(value)) return []
+    return value.flatMap((agregado) => {
+        if (!agregado || typeof agregado !== 'object') return []
+        const candidate = agregado as { id?: unknown; nombre?: unknown; precio?: unknown }
+        const id = Number(candidate.id)
+        if (!Number.isInteger(id) || id <= 0) return []
+        return [{ id, nombre: String(candidate.nombre ?? ''), precio: String(candidate.precio ?? 0) }]
+    })
+}
+
+const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
+    tipo: values.tipo,
+    mesaLocalId: values.tipo === 'mesa' ? values.mesaLocalId ?? null : null,
+    nombreCliente: values.nombre.trim(),
+    telefono: values.telefono.trim(),
+    direccion: values.tipo === 'delivery' ? values.direccion.trim() : null,
+    latitud: values.tipo === 'delivery' && values.latitud != null ? Number(values.latitud) : null,
+    longitud: values.tipo === 'delivery' && values.longitud != null ? Number(values.longitud) : null,
+    notas: values.notas.trim(),
+    metodoPago: values.metodoPago,
+    pagado: values.pagado,
+    deliveryFee: values.tipo === 'delivery' ? Number(values.deliveryFee) || 0 : 0,
+    items: values.items.map((item) => ({
+        productoId: item.productoId,
+        varianteId: item.varianteId ?? null,
+        varianteSecundariaId: item.varianteSecundariaId ?? null,
+        cantidad: item.cantidad,
+        ingredientesExcluidos: item.ingredientesExcluidos ?? [],
+        agregados: normalizeAgregadosForSignature(item.agregados),
+    })),
+})
 
 /** El toggle se usa sólo con puntero: no interrumpe el recorrido de carga del pedido. */
 const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: boolean; fieldName: string; onToggle: () => void }) => (
@@ -185,7 +252,7 @@ const FieldVisibilityButton = ({ visible, fieldName, onToggle }: { visible: bool
 )
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onRequestMesa, onClearMesa, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '' },
+    { onClose, onCreated, onUpdated, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false, catalogoAbierto = false, onProductSelected },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -194,10 +261,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const restauranteNombre = useAuthStore((s) => s.restaurante?.nombre) || 'Restaurante'
     const { productos } = useRestauranteStore()
     const cucuruConfigurado = useRestauranteStore((s) => s.restaurante?.cucuruConfigurado) ?? false
+    const direccionSoloTexto = useRestauranteStore((s) => s.restaurante?.direccionSoloTexto === true)
     // La configuración del POS (qué datos/opciones se cargan) vive en localStorage.
     const config = usePosConfig()
     const tiposHabilitados = useMemo(
-        () => POS_TIPOS_ORDER.filter((tipo) => config.tipos[tipo]),
+        () => POS_TIPOS_ORDER.filter((tipo) => tipo !== 'mesa' && config.tipos[tipo]),
         [config],
     )
     const metodosHabilitados = useMemo(
@@ -244,6 +312,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // costo a propósito (envío gratis puntual), no se vuelve a reponer.
     const prefillEnvioRef = useRef(false)
     const [submitting, setSubmitting] = useState(false)
+    const [hydratedPedidoId, setHydratedPedidoId] = useState<number | null>(null)
     const modoEdicion = initialPedido != null
     // Una edición no comparte almacenamiento con el borrador de alta. El borrador
     // es uno solo por sucursal: asignar una mesa cambia el tipo pero conserva los
@@ -388,8 +457,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             setMetodoPago(initialPedido.metodoPago || 'cash')
             setDeliveryFee(initialPedido.deliveryFee == null ? '' : String(initialPedido.deliveryFee))
             setHydratedStorageKey(null)
+            setHydratedPedidoId(initialPedido.id)
             return
         }
+        setHydratedPedidoId(null)
         try {
             const saved = sessionStorage.getItem(storageKey)
             if (saved) {
@@ -539,6 +610,43 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const deliveryFeeNum = tipo === 'delivery' ? parseFloat(deliveryFee) || 0 : 0
     const totalFinal = cartTotal + deliveryFeeNum
 
+    // La comparación usa únicamente los datos que efectivamente se envían al
+    // backend. Así, claves locales del carrito o cambios de formato no habilitan
+    // "Guardar cambios" si la comanda sigue siendo idéntica.
+    const hasChanges = useMemo(() => {
+        if (!initialPedido || hydratedPedidoId !== initialPedido.id) return !initialPedido
+        if (initialPedido.dirtyOnLoad) return true
+        const current = pedidoSignature({
+            tipo,
+            mesaLocalId: mesaAsignada?.id,
+            nombre,
+            telefono,
+            direccion,
+            latitud: lat,
+            longitud: lng,
+            notas,
+            metodoPago,
+            pagado,
+            deliveryFee: deliveryFeeNum,
+            items: cart,
+        })
+        const original = pedidoSignature({
+            tipo: initialPedido.tipo,
+            mesaLocalId: initialPedido.mesaLocalId,
+            nombre: initialPedido.nombreCliente || '',
+            telefono: initialPedido.telefono || '',
+            direccion: initialPedido.direccion || '',
+            latitud: initialPedido.latitud,
+            longitud: initialPedido.longitud,
+            notas: initialPedido.notas || '',
+            metodoPago: initialPedido.metodoPago || 'cash',
+            pagado: initialPedido.pagado ?? true,
+            deliveryFee: initialPedido.deliveryFee,
+            items: initialPedido.items,
+        })
+        return current !== original
+    }, [initialPedido, hydratedPedidoId, tipo, mesaAsignada?.id, nombre, telefono, direccion, lat, lng, notas, metodoPago, pagado, deliveryFeeNum, cart])
+
     // ── Borrador en vivo ──
     // Snapshot del borrador tal como se ve: lo espeja el padre en la comanda
     // de la derecha y, en modo offline, se guarda junto al pedido pendiente
@@ -573,6 +681,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         subtotal: cartTotal,
         total: totalFinal,
         submitting,
+        hasChanges,
         mesaLocalId: mesaAsignada?.id,
         mesaNombre: mesaAsignada?.nombre,
     })
@@ -580,7 +689,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     useEffect(() => {
         if (!onDraftChange) return
         onDraftChange(buildDraftSnapshot(submitting))
-    }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, pagado, deliveryFeeNum, cart, cartTotal, totalFinal, submitting, mesaAsignada?.nombre, productos])
+    }, [onDraftChange, tipo, nombre, telefono, direccion, notas, metodoPago, pagado, deliveryFeeNum, cart, cartTotal, totalFinal, submitting, hasChanges, mesaAsignada?.nombre, productos])
 
     const addToCart = (
         producto: Producto,
@@ -613,9 +722,13 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const handleProductClick = (producto: Producto, anchor: DOMRect) => {
         onStartDraft?.()
-        const tieneVariantes = !!producto.variantes && producto.variantes.length > 0
+        // En el dashboard el catálogo compacto es un buscador desplegable: una
+        // vez elegido el producto, se repliega aunque requiera elegir variante.
+        if (catalogoCompacto) onProductSelected?.()
+        const tieneVariantes = (producto.variantes?.length ?? 0) > 0 || (producto.variantesSecundarias?.length ?? 0) > 0
         // Durante la carga sólo las variantes requieren elegir una opción. Los
-        // ingredientes se ajustan después, desde la edición del ítem agregado.
+        // ingredientes y extras se ajustan después, desde la edición del ítem
+        // agregado en la comanda.
         if (tieneVariantes) {
             setConfigProducto({ producto, anchor })
         } else {
@@ -785,6 +898,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const handleSubmit = async () => {
         if (!token) return
+        if (modoEdicion && !hasChanges) return
         if (cart.length === 0) return toast.error('Agregá al menos un producto')
         if (tipo === 'delivery' && config.camposCliente.direccion && !direccion.trim()) return toast.error('Ingresá la dirección de entrega')
 
@@ -948,7 +1062,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 </div>
 
                 {/* En desktop estos controles viven en la comanda; en mobile este panel es la comanda. */}
-                <div className="lg:hidden">
+                {tipo !== 'mesa' && tiposHabilitados.length > 0 && <div className="lg:hidden">
                     <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Tipo</Label>
                     <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
                         {tiposHabilitados.includes('delivery') && (
@@ -958,15 +1072,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     tipo === 'delivery' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
                             >
                                 <Truck className="h-4 w-4" /> Delivery
-                            </button>
-                        )}
-                        {tiposHabilitados.includes('mesa') && (
-                            <button
-                                onClick={onRequestMesa}
-                                className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
-                                    tipo === 'mesa' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                            >
-                                <Armchair className="h-4 w-4" /> Mesa
                             </button>
                         )}
                         {tiposHabilitados.includes('takeaway') && (
@@ -979,40 +1084,44 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                             </button>
                         )}
                     </div>
-                    {mesaAsignada && <p className="mt-2 text-center text-xs font-semibold text-[#FF7A00]">Asignado a {mesaAsignada.nombre}</p>}
-                </div>
-
+                </div>}
                 {/* Datos del cliente */}
                 <div className="relative space-y-3 lg:hidden">
-                    {/* Dirección: siempre visible, desactivada cuando el pedido es mesa o takeaway. */}
-                    {config.camposCliente.direccion && (
-                        <>
-                            <div className="space-y-1.5">
-                                <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Dirección</Label>
-                                <AddressAutocomplete
-                                    value={direccion}
-                                    onChange={(addr, newLat, newLng) => { setDireccion(addr); setLat(newLat); setLng(newLng) }}
-                                    placeholder="Calle y número..."
-                                    disabled={tipo !== 'delivery'}
-                                />
-                            </div>
-                            {tipo === 'delivery' && (
-                                <div className="space-y-1.5">
-                                    <Label className="text-xs font-semibold text-muted-foreground">Costo de envío</Label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
-                                        <Input value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0" inputMode="decimal" className="h-11 rounded-xl pl-7 bg-transparent dark:bg-transparent" />
-                                    </div>
-                                </div>
-                            )}
-                        </>
-                    )}
                     {nombreEditable && <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
                             <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
                         </div>
                         <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
                     </div>}
+                    {tipo !== 'mesa' && config.camposCliente.direccion && <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Dirección</Label>
+                        {direccionSoloTexto ? (
+                            <Input
+                                value={direccion}
+                                onChange={(event) => { setDireccion(event.target.value); setLat(null); setLng(null) }}
+                                placeholder="Calle, número, barrio y ciudad..."
+                                disabled={tipo !== 'delivery'}
+                                autoComplete="street-address"
+                                className="h-11 rounded-xl bg-transparent dark:bg-transparent"
+                            />
+                        ) : (
+                            <AddressAutocomplete
+                                value={direccion}
+                                onChange={(addr, newLat, newLng) => { setDireccion(addr); setLat(newLat); setLng(newLng) }}
+                                placeholder="Calle y número..."
+                                disabled={tipo !== 'delivery'}
+                            />
+                        )}
+                    </div>}
+                    {tipo === 'delivery' && (
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-muted-foreground">Costo de envío</Label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
+                                <Input value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0" inputMode="decimal" className="h-11 rounded-xl pl-7 bg-transparent dark:bg-transparent" />
+                            </div>
+                        </div>
+                    )}
                     {telefonoEditable && <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
                             <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Celular</Label>
@@ -1068,7 +1177,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 </div>
                 <Button
                     onClick={handleSubmit}
-                    disabled={submitting || cart.length === 0}
+                    disabled={submitting || cart.length === 0 || (modoEdicion && !hasChanges)}
                     className="w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
                 >
                     {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
@@ -1076,6 +1185,101 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             </div>
         </div>
     )
+
+    if (catalogoCompacto) {
+        const catalogoTarget = typeof document === 'undefined' ? null : document.getElementById('pos-catalogo-compacto')
+        return (
+            <>
+                {catalogoAbierto && catalogoTarget && createPortal(
+                    <div className="flex h-[min(42vh,360px)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
+                        <div className="shrink-0 border-b border-border/70 p-2.5">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+                                <Input
+                                    ref={searchInputRef}
+                                    value={query}
+                                    onChange={(event) => setQuery(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && productosOrdenados.length > 0) {
+                                            event.preventDefault()
+                                            const delta = event.key === 'ArrowDown' ? 1 : -1
+                                            setIndiceSeleccionado((current) => (current + delta + productosOrdenados.length) % productosOrdenados.length)
+                                            return
+                                        }
+                                        if (event.key === 'Enter' && productosOrdenados.length > 0) {
+                                            event.preventDefault()
+                                            const producto = productosOrdenados[Math.min(indiceSeleccionado, productosOrdenados.length - 1)] ?? productosOrdenados[0]
+                                            handleProductClick(producto, event.currentTarget.getBoundingClientRect())
+                                        }
+                                    }}
+                                    placeholder="Buscar productos..."
+                                    className="h-10 rounded-full border-border bg-muted/40 pl-10 shadow-none focus-visible:ring-[#FF7A00]"
+                                />
+                            </div>
+                        </div>
+                        <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {productosFiltrados.length === 0 ? (
+                                <p className="py-10 text-center text-sm text-muted-foreground">No se encontraron productos.</p>
+                            ) : (
+                                <div className="space-y-0.5">
+                                    {porCategoria.map(([categoria, items]) => (
+                                        <div key={categoria}>
+                                            <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{categoria}</p>
+                                            {items.map((producto) => {
+                                                const flatIndex = indicePorId.get(producto.id)
+                                                const seleccionado = flatIndex === indiceSeleccionado
+                                                return (
+                                                    <button
+                                                        key={producto.id}
+                                                        type="button"
+                                                        tabIndex={-1}
+                                                        data-flat-index={flatIndex}
+                                                        onMouseEnter={() => flatIndex != null && setIndiceSeleccionado(flatIndex)}
+                                                        onClick={(event) => handleProductClick(producto, event.currentTarget.getBoundingClientRect())}
+                                                        className={cn(
+                                                            'flex h-10 w-full items-center justify-between gap-3 rounded-lg border px-3 text-left transition-colors',
+                                                            seleccionado
+                                                                ? 'border-[#FF7A00] bg-[#FF7A00]/5'
+                                                                : 'border-transparent hover:bg-muted/60'
+                                                        )}
+                                                    >
+                                                        <span className="min-w-0 truncate text-sm font-semibold text-foreground">{producto.nombre}</span>
+                                                        <span className="shrink-0 text-sm font-bold tabular-nums text-[#FF7A00]">
+                                                            ${parseFloat(producto.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                        </span>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>,
+                    catalogoTarget,
+                )}
+
+                {configProducto && (
+                    <ProductConfigOverlay
+                        producto={configProducto.producto}
+                        anchor={configProducto.anchor}
+                        onClose={() => setConfigProducto(null)}
+                        initialItem={configProducto.initialItem}
+                        onConfirm={(variante, varianteSecundaria, agregados, ingredientesExcluidos) => {
+                            addToCart(configProducto.producto, variante, varianteSecundaria, agregados, ingredientesExcluidos)
+                            setConfigProducto(null)
+                        }}
+                        onChange={configProducto.editKey ? (variante, varianteSecundaria, agregados, ingredientesExcluidos) => {
+                            const precioBase = (variante ? parseFloat(variante.precio) : parseFloat(configProducto.producto.precio)) + (varianteSecundaria ? parseFloat(varianteSecundaria.precio) : 0)
+                            setCart((prev) => prev.map((item) => item.key === configProducto.editKey ? {
+                                ...item, varianteId: variante?.id, varianteNombre: variante?.nombre, varianteSecundariaId: varianteSecundaria?.id, varianteSecundariaNombre: varianteSecundaria?.nombre, precioBase, agregados, ingredientesExcluidos,
+                            } : item))
+                        } : undefined}
+                    />
+                )}
+            </>
+        )
+    }
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-background">
@@ -1339,9 +1543,10 @@ function ProductConfigOverlay({
     const variantesSecundarias = producto.variantesSecundarias ?? []
     const ingredientes = producto.ingredientes ?? []
     const agregadosDisp = producto.agregados ?? []
-    // Los ingredientes se modifican sobre un ítem ya agregado. Al cargar uno
-    // nuevo, las variantes se confirman directamente sin abrir esa columna.
+    // Los ingredientes y extras se modifican sobre un ítem ya agregado. Al
+    // cargar uno nuevo, el configurador sólo muestra las variantes.
     const mostrarIngredientes = !!initialItem && ingredientes.length > 0
+    const mostrarExtras = !!initialItem && agregadosDisp.length > 0
     const [varianteId, setVarianteId] = useState<number | null>(initialItem?.varianteId ?? (variantes.length > 0 ? variantes[0].id : null))
     const [varianteSecundariaId, setVarianteSecundariaId] = useState<number | null>(initialItem?.varianteSecundariaId ?? (variantesSecundarias.length > 0 ? variantesSecundarias[0].id : null))
     const [ingredientesExcluidos, setIngredientesExcluidos] = useState<number[]>(initialItem?.ingredientesExcluidos ?? [])
@@ -1403,7 +1608,19 @@ function ProductConfigOverlay({
         return () => window.removeEventListener('keydown', onKeyDown)
     }, [variantes, varianteId, agregadosObj, ingredientesExcluidos])
 
-    const width = 360
+    const columnasConfiguracion = [
+        variantes.length > 0,
+        variantesSecundarias.length > 0,
+        mostrarIngredientes,
+        mostrarExtras,
+    ].filter(Boolean).length
+    // En edición, ingredientes y extras ocupan columnas propias. El ancho extra
+    // evita que "Extras" se vaya a una segunda fila cuando hay tres secciones.
+    const width = columnasConfiguracion >= 4
+        ? Math.min(1120, window.innerWidth - 24)
+        : columnasConfiguracion >= 3
+            ? Math.min(920, window.innerWidth - 24)
+            : 360
     const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12))
     const top = Math.max(12, Math.min(anchor.bottom + 10, window.innerHeight - 480))
     const panelClass = isCompact
@@ -1431,7 +1648,13 @@ function ProductConfigOverlay({
                 </div>
                 <div className="p-4 space-y-4 max-h-[55vh] overflow-y-auto">
                     <div className={cn(
-                        variantes.length > 0 && mostrarIngredientes ? 'grid grid-cols-2 gap-4' : 'space-y-4'
+                        columnasConfiguracion >= 4
+                            ? 'grid grid-cols-1 gap-4 sm:grid-cols-4'
+                            : columnasConfiguracion >= 3
+                            ? 'grid grid-cols-1 gap-4 sm:grid-cols-3'
+                            : columnasConfiguracion === 2
+                                ? 'grid grid-cols-1 gap-4 sm:grid-cols-2'
+                                : 'space-y-4'
                     )}>
                     {variantes.length > 0 && (
                         <div>
@@ -1493,8 +1716,7 @@ function ProductConfigOverlay({
                             </div>
                         </div>
                     )}
-                    </div>
-                    {agregadosDisp.length > 0 && (
+                    {mostrarExtras && (
                         <div>
                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Extras</Label>
                             <div className="space-y-1.5">
@@ -1524,6 +1746,7 @@ function ProductConfigOverlay({
                             </div>
                         </div>
                     )}
+                    </div>
                 </div>
                 {(!initialItem && (variantes.length === 0 || variantesSecundarias.length > 0)) && (
                     <div className="p-4 border-t border-border">

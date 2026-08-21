@@ -325,6 +325,7 @@ export const restauranteApi = {
       direccionTexto?: string | null
       direccionLat?: number | null
       direccionLng?: number | null
+      direccionSoloTexto?: boolean
       deliveryFee?: string
     }
   ) => {
@@ -733,6 +734,8 @@ export const productosApi = {
       tituloVariantesSecundarias?: string
       tituloExtrasPrimarios?: string
       tituloExtrasSecundarios?: string
+      permiteNota?: boolean
+      tituloNota?: string
       etiquetas?: string[]
       puntosGanados?: number
       puntosNecesarios?: number
@@ -766,6 +769,8 @@ export const productosApi = {
       tituloVariantesSecundarias?: string
       tituloExtrasPrimarios?: string
       tituloExtrasSecundarios?: string
+      permiteNota?: boolean
+      tituloNota?: string
       activo?: boolean
       etiquetas?: string[]
       puntosGanados?: number
@@ -1072,9 +1077,10 @@ export const pedidosApi = {
   },
 
   // Cierre de turno - obtener resumen de ventas del día
-  cierreTurno: async (token: string, fecha?: string) => {
+  cierreTurno: async (token: string, fecha?: string, turnoId?: number) => {
     const params = new URLSearchParams()
     if (fecha) params.append('fecha', fecha)
+    if (turnoId) params.append('turnoId', String(turnoId))
     const query = params.toString() ? `?${params}` : ''
     return fetchApi(`/pedido/cierre-turno${query}`, {
       method: 'GET',
@@ -1337,6 +1343,7 @@ export const pedidoUnificadoApi = {
     limit = 50,
     estado?: string,
     sucursalId?: number | null,
+    turnoId?: number | null,
   ) => {
     const params = new URLSearchParams({
       dia,
@@ -1346,11 +1353,18 @@ export const pedidoUnificadoApi = {
     })
     if (estado) params.append('estado', estado)
     if (sucursalId != null) params.append('sucursalId', String(sucursalId))
+    if (turnoId != null) params.append('turnoId', String(turnoId))
     return fetchApi(`/pedido-unificado/list-dia?${params}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+  turnos: async (token: string) => fetchApi('/pedido-unificado/turnos', {
+    method: 'GET', headers: { Authorization: `Bearer ${token}` },
+  }),
+  cerrarTurno: async (token: string) => fetchApi('/pedido-unificado/turnos/cerrar', {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  }),
   getById: async (token: string, id: number) => {
     return fetchApi(`/pedido-unificado/${id}`, {
       method: 'GET',

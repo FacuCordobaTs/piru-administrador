@@ -45,6 +45,8 @@ interface Producto {
   tituloVariantesSecundarias?: string
   tituloExtrasPrimarios?: string
   tituloExtrasSecundarios?: string
+  permiteNota?: boolean
+  tituloNota?: string
 }
 
 export interface RestauranteData {
@@ -96,6 +98,7 @@ export interface RestauranteData {
   modoConfirmacionManual: boolean | null
   orderGroupEnabled: boolean | null
   deliveryEnabled: boolean | null
+  direccionSoloTexto: boolean | null
   takeawayEnabled: boolean | null
   permitirPedidosProgramados: boolean | null
   usarFranjasHorario: boolean | null
