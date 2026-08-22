@@ -98,6 +98,10 @@ interface Cliente {
 }
 
 // --- Utility functions ---
+// El backend y la operación de los locales trabajan en hora Argentina. Fijarla
+// evita que el historial cambie de hora según la zona configurada en el equipo.
+const RESTAURANT_TIME_ZONE = 'America/Argentina/Buenos_Aires'
+
 const formatCurrency = (value: number | string) => {
     const num = typeof value === 'string' ? parseFloat(value) : value
     return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(num)
@@ -105,20 +109,22 @@ const formatCurrency = (value: number | string) => {
 
 const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Sin datos'
-    return new Date(dateString).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })
+    return new Date(dateString).toLocaleDateString('es-AR', {
+        day: 'numeric', month: 'short', year: 'numeric', timeZone: RESTAURANT_TIME_ZONE,
+    })
 }
 
 const formatDateLong = (dateString: string | null) => {
     if (!dateString) return '—'
     return new Date(dateString).toLocaleDateString('es-AR', {
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: RESTAURANT_TIME_ZONE,
     })
 }
 
 const formatTime = (dateString: string | null) => {
     if (!dateString) return ''
     return new Date(dateString).toLocaleTimeString('es-AR', {
-        hour: '2-digit', minute: '2-digit'
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: RESTAURANT_TIME_ZONE,
     })
 }
 
