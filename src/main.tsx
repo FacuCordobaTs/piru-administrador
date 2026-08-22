@@ -31,6 +31,7 @@ import PagoLink from './pages/PagoLink';
 import ClaimTienda from './pages/ClaimTienda';
 import Modulos from './pages/Modulos';
 import Mesas from './pages/Mesas';
+import { initializeDesktopZoom } from './utils/desktopZoom';
 
 
 
@@ -216,6 +217,8 @@ function App() {
   );
 }
 
+
+await initializeDesktopZoom()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

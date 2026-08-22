@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "piru",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "identifier": "app.piru.admin",
   "build": {
     "frontendDist": "../dist",
@@ -18,7 +18,7 @@
         "resizable": true,
         "fullscreen": false,
         "devtools": true,
-        "zoomHotkeysEnabled": true
+        "zoomHotkeysEnabled": false
       }
     ],
     "security": {

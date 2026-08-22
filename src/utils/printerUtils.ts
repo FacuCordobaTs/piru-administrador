@@ -45,7 +45,7 @@ interface PedidoLike {
 export const COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY = 'piru_comanda_grande_mayusculas'
 
 export interface ComandaFormatOptions {
-    /** Convierte todo el texto a mayúsculas y usa doble altura en toda la comanda. */
+    /** Usa mayúsculas y destaca en tamaño grande sólo productos y detalles. */
     grandeMayusculas?: boolean
 }
 
@@ -160,7 +160,7 @@ export const formatComanda = (
         // Las comandas de salón tienen una identidad propia: la mesa es el
         // dato prioritario de cocina y reemplaza por completo al local.
         ESC + 'a' + '\x01', // Center
-        ESC + '!' + '\x30', // Doble alto y ancho (Mayúsculas)
+        ESC + '!' + (grandeMayusculas ? '\x08' : '\x30'), // En modo especial, encabezado pequeño y en negrita
         `${(esComandaMesa ? formatMesaComanda(pedido.mesaNombre) : restauranteNombre.toUpperCase())}\n`,
 
         ESC + '!' + '\x00', // Normal
@@ -183,7 +183,7 @@ export const formatComanda = (
     if (esComandaMesa) {
         // No se imprime número de pedido ni método de pago en salón: no son
         // información operativa para cocina y la mesa ya identifica la orden.
-        commands.push(ESC + '!' + '\x18'); // Doble alto + negrita
+        commands.push(ESC + '!' + (grandeMayusculas ? '\x08' : '\x18'));
         commands.push('COMANDA DE COCINA\n');
         commands.push(ESC + '!' + '\x00');
         commands.push('================================\n');
@@ -219,7 +219,9 @@ export const formatComanda = (
     }
 
     if (pedido.notas) {
-        commands.push(ESC + '!' + '\x08');
+        // Las notas son información operativa de cocina y se destacan junto a
+        // productos, variantes, ingredientes y extras.
+        commands.push(ESC + '!' + (grandeMayusculas ? '\x18' : '\x08'));
         commands.push(`NOTAS: ${pedido.notas}\n`);
         commands.push(ESC + '!' + '\x00');
         commands.push('--------------------------------\n');
@@ -243,20 +245,25 @@ export const formatComanda = (
     const printItem = (item: ItemPedidoLike, indent = '') => {
         const nombre = getNombreProductoConVariantes(item);
         const esBebida = item.categoriaEsBebida === true || item.producto?.categoriaEsBebida === true;
-        // Bebidas: doble ancho + doble alto + negrita. Resto: doble alto + negrita.
-        commands.push(ESC + '!' + (esBebida ? '\x38' : '\x18'));
-        commands.push(`${indent}${item.cantidad}x ${nombre}\n`);
-        commands.push(ESC + '!' + '\x00'); // Normal
-
-        // precioUnitario es el importe final congelado en el pedido: ya contempla
-        // promociones del producto, variantes y agregados. El descuento por cupón
-        // se informa por separado al pie porque aplica al pedido completo.
         const precioUnitarioFinal = getItemPrice(item);
         const subtotalItem = item.cantidad * precioUnitarioFinal;
-        if (item.cantidad > 1) {
-            commands.push(`${indent}  Precio: ${item.cantidad} x ${formatPrecioComanda(precioUnitarioFinal)} = ${formatPrecioComanda(subtotalItem)}\n`);
+        const nombreLinea = `${indent}${item.cantidad}x ${nombre}`;
+        const precioLinea = formatPrecioComanda(subtotalItem);
+        // Bebidas usan doble ancho; el resto conserva ancho normal y doble alto.
+        // El cálculo se hace en columnas reales para no forzar un salto feo.
+        const anchoNombre = nombreLinea.length * (esBebida ? 2 : 1);
+        const precioEnMismaLinea = anchoNombre + 1 + precioLinea.length <= LINE_WIDTH;
+
+        // Bebidas: doble ancho + doble alto + negrita. Resto: doble alto + negrita.
+        commands.push(ESC + '!' + (esBebida ? '\x38' : '\x18'));
+        commands.push(nombreLinea + (precioEnMismaLinea ? '' : '\n'));
+        commands.push(ESC + '!' + '\x00'); // El precio siempre queda pequeño
+
+        if (precioEnMismaLinea) {
+            const espacios = Math.max(1, LINE_WIDTH - anchoNombre - precioLinea.length);
+            commands.push(`${' '.repeat(espacios)}${precioLinea}\n`);
         } else {
-            commands.push(`${indent}  Precio: ${formatPrecioComanda(precioUnitarioFinal)}\n`);
+            commands.push(`${indent}  ${precioLinea}\n`);
         }
 
         const agregados = getAgregados(item.agregados);
@@ -332,7 +339,7 @@ export const formatComanda = (
     // TOTAL FINAL
     commands.push('--------------------------------\n');
     commands.push(ESC + 'a' + '\x02'); // Right align
-    commands.push(ESC + '!' + '\x10'); // Double height
+    commands.push(ESC + '!' + (grandeMayusculas ? '\x08' : '\x10')); // Total pequeño en el modo especial
     commands.push(`Total : $ ${totalGeneral.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n`);
 
     commands.push(ESC + '!' + '\x00');
@@ -347,10 +354,6 @@ export const formatComanda = (
     return commands.map((command) => {
         // Los comandos y los textos se agregan en entradas separadas. No se
         // debe aplicar uppercase a ESC + "t", porque cambiaría el comando.
-        if (command.startsWith(ESC + '!') && command.length >= 3) {
-            // 0x10 = doble altura; conserva negrita/doble ancho ya existentes.
-            return command.slice(0, 2) + String.fromCharCode(command.charCodeAt(2) | 0x10) + command.slice(3)
-        }
         if (command.startsWith(ESC) || command.startsWith(GS)) return command
         return command.toLocaleUpperCase('es-AR')
     })

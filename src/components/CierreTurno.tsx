@@ -494,7 +494,8 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
   const [selectedTurnoId, setSelectedTurnoId] = useState<number | undefined>(turnoIdInicial)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [filterTipo, setFilterTipo] = useState<'takeaway' | 'delivery' | null>(null)
+  const [filterTipos, setFilterTipos] = useState<Record<CierreTurnoPedido['tipo'], boolean>>({ mesa: true, delivery: true, takeaway: true })
+  const toggleTipo = (tipo: CierreTurnoPedido['tipo']) => setFilterTipos(prev => ({ ...prev, [tipo]: !prev[tipo] }))
   const [filterOrigen, setFilterOrigen] = useState<'manual' | 'web' | null>(null)
   const [afipHabilitado, setAfipHabilitado] = useState(false)
   const [activeModal, setActiveModal] = useState<'facturacion' | 'envios' | 'ranking' | null>(null)
@@ -517,7 +518,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
 
   useEffect(() => {
     if (!open) return
-    setQuery(''); setExpanded(new Set()); setSelectedFecha(fechaInicial || ''); setSelectedTurnoId(turnoIdInicial); setFilterTipo(null); setFilterOrigen(null)
+    setQuery(''); setExpanded(new Set()); setSelectedFecha(fechaInicial || ''); setSelectedTurnoId(turnoIdInicial); setFilterTipos({ mesa: true, delivery: true, takeaway: true }); setFilterOrigen(null)
     fetchCierreTurno(fechaInicial, turnoIdInicial)
     if (token) {
       facturacionApi.getEstado(token)
@@ -536,9 +537,15 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
   }, [data])
 
+  // Pedidos visibles según los tipos seleccionados (mesa / delivery / takeaway).
+  // Se aplica tanto al listado como a la facturación batch.
+  const pedidosVisibles = useMemo(
+    () => allPedidos.filter(p => filterTipos[p.tipo]),
+    [allPedidos, filterTipos]
+  )
+
   const filtered = useMemo(() => {
-    let result = allPedidos
-    if (filterTipo) result = result.filter(p => p.tipo === filterTipo)
+    let result = pedidosVisibles
     if (filterOrigen) {
       result = result.filter(p => {
         const manual = (p.tipo !== 'mesa') && (p as CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway).anotadoManualmente === true
@@ -554,7 +561,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
       if (label.toLowerCase().includes(q)) return true
       return p.items.some(i => (i.nombreProducto || '').toLowerCase().includes(q))
     })
-  }, [allPedidos, query, filterTipo, filterOrigen])
+  }, [pedidosVisibles, query, filterOrigen])
 
   const allExpanded = filtered.length > 0 && filtered.every(p => expanded.has(`${p.tipo}-${p.id}`))
 
@@ -566,7 +573,8 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
     }
   }
 
-  const total = useMemo(() => data ? parseFloat(data.totales.general) : 0, [data])
+  // Total recalculado sobre los pedidos visibles según los tipos seleccionados
+  const total = useMemo(() => pedidosVisibles.reduce((s, p) => s + (parseFloat(p.total) || 0), 0), [pedidosVisibles])
 
   // Diferenciación origen: pedidos anotados manualmente (POS local) vs tomados por la web
   const origenStats = useMemo(() => {
@@ -587,7 +595,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
     const res = { efectivo: 0, mercadopago: 0, transferencia: 0 };
     if (!data) return res;
 
-    allPedidos.forEach(p => {
+    pedidosVisibles.forEach(p => {
       const baseMonto = parseFloat(p.total);
 
       const mapMetodo = (raw: string | null | undefined) => {
@@ -634,7 +642,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
       }
     })
     return res;
-  }, [allPedidos, data])
+  }, [pedidosVisibles, data])
 
   const topProducts = useMemo(() => {
     if (!data) return []
@@ -715,13 +723,13 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
             <DashboardMetricas
               total={total}
               pagos={pagosDesglosados}
-              pedidosTotal={allPedidos.length}
-              pedidosPagados={allPedidos.filter(p => p.pagado).length}
+              pedidosTotal={pedidosVisibles.length}
+              pedidosPagados={pedidosVisibles.filter(p => p.pagado).length}
               fechaLabel={data.modoManual && data.turno ? formatTurnoLabel(data.turno) : formatDateLabel(data.fecha)}
               onDateClick={() => setShowDateModal(true)}
             />
 
-            <HourlyChart pedidos={allPedidos} />
+            <HourlyChart pedidos={pedidosVisibles} />
 
             {/* Diferenciación: pedidos por la web vs anotados manualmente (POS local) */}
             {(origenStats.manualCount > 0 || origenStats.webCount > 0) && (
@@ -791,31 +799,44 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
               </div>
 
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
-                    onClick={() => setFilterTipo(filterTipo === 'takeaway' ? null : 'takeaway')}
+                    onClick={() => toggleTipo('mesa')}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                      filterTipo === 'takeaway'
+                      filterTipos.mesa
                         ? 'bg-foreground text-background'
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                        : 'bg-muted text-muted-foreground/40'
                     )}
                   >
-                    {filterTipo === 'takeaway' ? <X className="h-3 w-3" /> : <ShoppingBag className="h-3 w-3" />}
-                    Takeaway
+                    <UtensilsCrossed className="h-3 w-3" />
+                    Mesa
                   </button>
                   <button
-                    onClick={() => setFilterTipo(filterTipo === 'delivery' ? null : 'delivery')}
+                    onClick={() => toggleTipo('delivery')}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                      filterTipo === 'delivery'
+                      filterTipos.delivery
                         ? 'bg-foreground text-background'
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                        : 'bg-muted text-muted-foreground/40'
                     )}
                   >
-                    {filterTipo === 'delivery' ? <X className="h-3 w-3" /> : <Truck className="h-3 w-3" />}
+                    <Truck className="h-3 w-3" />
                     Delivery
                   </button>
+                  <button
+                    onClick={() => toggleTipo('takeaway')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      filterTipos.takeaway
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted text-muted-foreground/40'
+                    )}
+                  >
+                    <ShoppingBag className="h-3 w-3" />
+                    Takeaway
+                  </button>
+                  <div className="w-px h-4 bg-border mx-1" />
                   <button
                     onClick={() => setFilterOrigen(filterOrigen === 'web' ? null : 'web')}
                     className={cn(
@@ -946,7 +967,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
             </div>
             <div className="p-6 max-h-[70vh] overflow-auto">
               {activeModal === 'facturacion' && (
-                <FacturacionBatchCierre pedidos={allPedidos} />
+                <FacturacionBatchCierre pedidos={pedidosVisibles} />
               )}
               {activeModal === 'envios' && (
                 data.pedidosDelivery.length === 0 ? (

@@ -1140,7 +1140,7 @@ const PosComandaPreview = ({
 
                     </div>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 z-40 bg-[#FFFBF0] dark:bg-background">
+                <div data-pos-comanda-footer className="absolute bottom-0 left-0 right-0 z-40 bg-[#FFFBF0] dark:bg-background">
                     <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
                         {draft.tipo !== 'mesa' && tiposHabilitados.length > 0 && <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
                             {tiposHabilitados.includes('delivery') && (
@@ -1214,7 +1214,7 @@ const PosComandaPreview = ({
                             >
                                 {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : editingPedidoId ? 'Guardar cambios' : 'Anotar pedido'}
                             </Button>
-                            {mesaAsignada && onDispatchMesa && (
+                            {editingPedidoId && draft.tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
                                 <button
                                     type="button"
                                     onClick={() => void onDispatchMesa()}
@@ -1309,6 +1309,8 @@ const Dashboard = () => {
     const [pickerDay, setPickerDay] = useState<string>(() => getArDayString(new Date()))
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [pedidoAEliminar, setPedidoAEliminar] = useState<Pick<UnifiedPedido, 'id' | 'tipo'> | null>(null)
+    const [showDespacharMesaDialog, setShowDespacharMesaDialog] = useState(false)
+    const [despachandoMesa, setDespachandoMesa] = useState(false)
     // La lista principal respeta el día/turno elegido, pero la ocupación de una
     // mesa depende de todos los pedidos abiertos, incluso si nacieron ayer.
     const [pedidosMesaAbiertos, setPedidosMesaAbiertos] = useState<UnifiedPedido[]>([])
@@ -1703,7 +1705,7 @@ const Dashboard = () => {
     // ACCIONES DE PEDIDO
     // ─────────────────────────────────────────────
     const handleEstadoChange = async (tipo: PedidoTipo, id: number, nuevoEstado: string) => {
-        if (!token) return
+        if (!token) return false
         try {
             await pedidoUnificadoApi.updateEstado(token, id, nuevoEstado)
             setUnifiedPedidos(prev => prev.map(p => p.id === id && p.tipo === tipo ? { ...p, estado: nuevoEstado } : p))
@@ -1712,7 +1714,11 @@ const Dashboard = () => {
                 setMobileView('orders')
                 toast.success('Pedido despachado')
             }
-        } catch (error) { toast.error('Error al actualizar estado') }
+            return true
+        } catch (error) {
+            toast.error('Error al actualizar estado')
+            return false
+        }
     }
 
     const loadRepartidores = useCallback(async () => {
@@ -1747,10 +1753,10 @@ const Dashboard = () => {
             if (activos.length >= 2) {
                 setPendingDispatchPedido({ tipo, id })
                 setRepartidorSelectorOpen(true)
-                return
+                return false
             }
         }
-        await handleEstadoChange(tipo, id, 'archived')
+        return handleEstadoChange(tipo, id, 'archived')
     }
 
     const handleRepartidorSelected = async (tipo: PedidoTipo, id: number, repartidorId: number | null) => {
@@ -2056,6 +2062,64 @@ const Dashboard = () => {
         setMobileView('detail')
         fetchPedidos(1, false)
         fetchPedidosMesaAbiertos()
+    }
+
+    const imprimirPedidoMesaCompleto = async (pedidoId: number, draft: PosDraft) => {
+        const itemsToPrint = draft.items.map((item) => ({
+            cantidad: item.cantidad,
+            precioUnitario: item.precioUnitario,
+            nombreProducto: item.nombre,
+            varianteNombre: item.varianteNombre,
+            varianteSecundariaNombre: item.varianteSecundariaNombre,
+            ingredientesExcluidosNombres: item.ingredientesExcluidosNombres,
+            agregados: item.agregados,
+            categoriaEsBebida: item.categoriaEsBebida,
+        }))
+        const comandaData = formatComanda({
+            id: pedidoId,
+            nombrePedido: draft.nombreCliente,
+            telefono: draft.telefono,
+            tipo: 'mesa',
+            mesaNombre: draft.mesaNombre || mesaPosAsignada?.nombre,
+            total: String(draft.total),
+            notas: draft.notas,
+            metodoPago: draft.metodoPago,
+            sucursalNombre: sucursalNombre || undefined,
+        }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
+            grandeMayusculas: comandaGrandeMayusculas,
+        })
+        await printRaw(commandsToBytes(comandaData))
+    }
+
+    const confirmarDespachoMesa = async () => {
+        if (despachandoMesa || !draftPos || draftPos.tipo !== 'mesa' || !pedidoPosEditando) return
+        if (!selectedPrinter) {
+            toast.error('Configurá una impresora antes de despachar la mesa')
+            return
+        }
+
+        setDespachandoMesa(true)
+        try {
+            const snapshotCompleto = draftPos
+            const pedidoId = await posRef.current?.submitDraft()
+            if (!pedidoId) return
+
+            await imprimirPedidoMesaCompleto(pedidoId, snapshotCompleto)
+            const despachado = await handleDespachar('mesa', pedidoId)
+            if (!despachado) return
+            setShowDespacharMesaDialog(false)
+            setPedidoPosEditando(null)
+            setMesaPosAsignada(null)
+            setDraftPos(null)
+            setPosContext('borrador')
+            fetchPedidosMesaAbiertos()
+        } catch (error) {
+            toast.error('No se pudo imprimir el ticket', {
+                description: 'El pedido quedó guardado y no fue despachado. Podés volver a intentarlo.',
+            })
+        } finally {
+            setDespachandoMesa(false)
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -2730,10 +2794,7 @@ const Dashboard = () => {
                                         onRemoveItem={(key) => posRef.current?.removeItem(key)}
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
-                                        onDispatchMesa={async () => {
-                                            const pedidoId = await posRef.current?.submitDraft()
-                                            if (pedidoId) await handleDespachar('mesa', pedidoId)
-                                        }}
+                                        onDispatchMesa={() => setShowDespacharMesaDialog(true)}
                                         onClear={() => pedidoPosEditando
                                             ? abrirDialogoEliminarPedido(pedidoPosEditando)
                                             : posRef.current?.clearDraft()}
@@ -3321,6 +3382,29 @@ const Dashboard = () => {
             </Dialog>
 
             {/* ── DIÁLOGO ELIMINAR ── */}
+            <Dialog open={showDespacharMesaDialog} onOpenChange={(open) => {
+                if (!despachandoMesa) setShowDespacharMesaDialog(open)
+            }}>
+                <DialogContent className="max-w-sm rounded-[32px] p-6 sm:p-8 border border-border bg-background text-center">
+                    <div className="h-16 w-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Printer className="h-8 w-8 text-[#FF7A00]" />
+                    </div>
+                    <DialogTitle className="text-2xl font-bold mb-2 text-center">DESPACHAR E IMPRIMIR TICKET</DialogTitle>
+                    <DialogDescription className="text-base text-center mb-8">
+                        Se guardarán los cambios y se imprimirá nuevamente el pedido completo de la mesa antes de despacharlo.
+                    </DialogDescription>
+                    <div className="flex gap-3">
+                        <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-border" disabled={despachandoMesa} onClick={() => setShowDespacharMesaDialog(false)}>
+                            Cancelar
+                        </Button>
+                        <Button className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold" disabled={despachandoMesa || !selectedPrinter} onClick={() => void confirmarDespachoMesa()}>
+                            {despachandoMesa ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Despachar e imprimir'}
+                        </Button>
+                    </div>
+                    {!selectedPrinter && <p className="mt-3 text-sm text-destructive">No hay una impresora configurada.</p>}
+                </DialogContent>
+            </Dialog>
+
             <Dialog open={showDeleteDialog} onOpenChange={(open) => {
                 setShowDeleteDialog(open)
                 if (!open) setPedidoAEliminar(null)

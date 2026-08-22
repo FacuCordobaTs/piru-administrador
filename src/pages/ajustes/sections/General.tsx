@@ -92,15 +92,15 @@ export default function General() {
         />
         <div className="flex items-center justify-between gap-4 border-b border-border py-4">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">Comandas grandes en mayúsculas</p>
+            <p className="text-sm font-medium text-foreground">Productos grandes en mayúsculas</p>
             <p className="mt-0.5 text-[13px] font-normal text-muted-foreground">
-              Imprime toda la comanda en mayúsculas y con letras más grandes en este dispositivo.
+              Usa mayúsculas y agranda sólo productos, variantes, ingredientes, extras y notas.
             </p>
           </div>
           <Switch
             checked={comandaGrandeMayusculas}
             onCheckedChange={setComandaGrandeMayusculas}
-            aria-label="Comandas grandes en mayúsculas"
+            aria-label="Productos grandes en mayúsculas"
           />
         </div>
       </div>

@@ -278,6 +278,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // Producto destacado del resultado: es el que Enter agrega al pedido y el
     // que las flechitas recorren durante la búsqueda (indicado con el marquito).
     const [indiceSeleccionado, setIndiceSeleccionado] = useState(0)
+    const navegacionTecladoRef = useRef(false)
 
     // Datos del cliente
     const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('takeaway')
@@ -577,11 +578,44 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }, [productosOrdenados])
 
     // El producto destacado se mantiene a la vista aunque el listado haya hecho scroll.
+    // No usamos scrollIntoView: en el catálogo compacto (renderizado por portal)
+    // también puede mover el panel/página. Ajustamos únicamente el scroll del listado.
     useEffect(() => {
         if (!mostrarListado) return
-        const card = scrollRef.current?.querySelector<HTMLElement>(`[data-flat-index="${indiceSeleccionado}"]`)
-        card?.scrollIntoView({ block: 'nearest' })
-    }, [indiceSeleccionado, mostrarListado])
+        const listado = scrollRef.current
+        const card = listado?.querySelector<HTMLElement>(`[data-flat-index="${indiceSeleccionado}"]`)
+        if (!listado || !card) return
+
+        let listadoRect = listado.getBoundingClientRect()
+        if (catalogoCompacto) {
+            const footer = document.querySelector<HTMLElement>('[data-pos-comanda-footer]')
+            if (footer) {
+                // En Dashboard el footer de cobro es absoluto: no reduce la altura
+                // del portal y puede tapar resultados que el listado cree visibles.
+                // Convertimos el espacio realmente libre en su altura máxima para
+                // que exista overflow y las flechas puedan desplazar los productos.
+                const alturaVisible = Math.floor(footer.getBoundingClientRect().top - listadoRect.top - 8)
+                if (alturaVisible > 80) {
+                    listado.style.maxHeight = `${alturaVisible}px`
+                    listadoRect = listado.getBoundingClientRect()
+                }
+            }
+        }
+        const cardRect = card.getBoundingClientRect()
+        if (navegacionTecladoRef.current) {
+            navegacionTecladoRef.current = false
+            // El footer del POS se superpone visualmente al catálogo compacto.
+            // Al navegar con flechas, subimos el resultado activo hasta el borde
+            // superior para que nunca quede escondido detrás de esos controles.
+            listado.scrollTop += cardRect.top - listadoRect.top - 8
+            return
+        }
+        if (cardRect.top < listadoRect.top) {
+            listado.scrollTop -= listadoRect.top - cardRect.top
+        } else if (cardRect.bottom > listadoRect.bottom) {
+            listado.scrollTop += cardRect.bottom - listadoRect.bottom
+        }
+    }, [catalogoCompacto, indiceSeleccionado, mostrarListado])
 
     // Columnas reales del grid de resultados: las flechitas verticales saltan
     // de fila en fila y las horizontales de producto en producto.
@@ -1225,6 +1259,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     onKeyDown={(event) => {
                                         if (mostrarListado && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && productosOrdenados.length > 0) {
                                             event.preventDefault()
+                                            navegacionTecladoRef.current = true
                                             const delta = event.key === 'ArrowDown' ? 1 : -1
                                             setIndiceSeleccionado((current) => (current + delta + productosOrdenados.length) % productosOrdenados.length)
                                             return
@@ -1418,6 +1453,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                                         if (!mostrarListado || productosOrdenados.length === 0) return
                                         e.preventDefault()
+                                        navegacionTecladoRef.current = true
                                         setIndiceSeleccionado((prev) => {
                                             const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
                                             const columnas = horizontal ? 1 : calcularColumnas()
