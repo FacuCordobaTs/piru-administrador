@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Copy, Loader2, Plus, Users } from 'lucide-react'
+import { Loader2, Plus, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,8 +14,6 @@ import { staffApi, type UsuarioStaff } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { useSucursales } from '../hooks/useSucursales'
-
-const PIN_REGEX = /^\d{4,8}$/
 
 const ROL_LABEL: Record<UsuarioStaff['rol'], string> = {
   owner: 'Dueño',
@@ -48,14 +46,14 @@ export default function Mozos() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
 
-  // Dialog de creación: formulario → código generado (una sola vista destacada).
+  // Dialog de creación: el backend asigna un numero corto dentro del local.
   const [crearAbierto, setCrearAbierto] = useState(false)
-  const [form, setForm] = useState({ nombre: '', rol: 'mozo' as 'mozo' | 'admin', sucursalId: '', pin: '' })
-  const [codigoCreado, setCodigoCreado] = useState<{ nombre: string; codigo: string } | null>(null)
+  const [form, setForm] = useState({ nombre: '', rol: 'mozo' as 'mozo' | 'admin', sucursalId: '' })
+  const [numeroCreado, setNumeroCreado] = useState<{ nombre: string; numero: number } | null>(null)
   const [guardando, setGuardando] = useState(false)
 
   const [editando, setEditando] = useState<UsuarioStaff | null>(null)
-  const [formEditar, setFormEditar] = useState({ nombre: '', sucursalId: '', activo: true, pinNuevo: '' })
+  const [formEditar, setFormEditar] = useState({ nombre: '', sucursalId: '', activo: true })
 
   const cargar = useCallback(async () => {
     if (!token) return
@@ -75,15 +73,9 @@ export default function Mozos() {
     void cargar()
   }, [cargar])
 
-  const copiarCodigo = (codigo: string) => {
-    navigator.clipboard.writeText(codigo)
-      .then(() => toast.success('Código copiado al portapapeles'))
-      .catch(() => toast.error('No pudimos copiar el código'))
-  }
-
   const abrirCrear = () => {
-    setForm({ nombre: '', rol: 'mozo', sucursalId: sucursales.length === 1 ? String(sucursales[0].id) : '__ninguna__', pin: '' })
-    setCodigoCreado(null)
+    setForm({ nombre: '', rol: 'mozo', sucursalId: sucursales.length === 1 ? String(sucursales[0].id) : '__ninguna__' })
+    setNumeroCreado(null)
     setCrearAbierto(true)
   }
 
@@ -91,16 +83,14 @@ export default function Mozos() {
     if (!token) return
     const nombre = form.nombre.trim()
     if (!nombre) return toast.error('Ingresá el nombre del mozo')
-    if (!PIN_REGEX.test(form.pin)) return toast.error('El PIN debe tener entre 4 y 8 dígitos')
     setGuardando(true)
     try {
       const res = await staffApi.create(token, {
         nombre,
         rol: form.rol,
         sucursalId: form.sucursalId && form.sucursalId !== '__ninguna__' ? Number(form.sucursalId) : null,
-        pin: form.pin,
       })
-      setCodigoCreado({ nombre, codigo: res.data.codigoAcceso })
+      setNumeroCreado({ nombre, numero: res.data.numeroMozo })
       void cargar()
     } catch (e) {
       toast.error('No pudimos crear el usuario', { description: e instanceof Error ? e.message : 'Intentá de nuevo.' })
@@ -115,7 +105,6 @@ export default function Mozos() {
       nombre: usuario.nombre,
       sucursalId: usuario.sucursalId != null ? String(usuario.sucursalId) : '__ninguna__',
       activo: usuario.activo,
-      pinNuevo: '',
     })
   }
 
@@ -123,15 +112,12 @@ export default function Mozos() {
     if (!editando || !token) return
     const nombre = formEditar.nombre.trim()
     if (!nombre) return toast.error('El nombre no puede quedar vacío')
-    const pin = formEditar.pinNuevo.trim()
-    if (pin && !PIN_REGEX.test(pin)) return toast.error('El PIN debe tener entre 4 y 8 dígitos')
     setGuardando(true)
     try {
       await staffApi.update(token, editando.id, {
         nombre,
         sucursalId: formEditar.sucursalId && formEditar.sucursalId !== '__ninguna__' ? Number(formEditar.sucursalId) : null,
         activo: formEditar.activo,
-        ...(pin ? { pin } : {}),
       })
       setEditando(null)
       toast.success('Mozo actualizado')
@@ -143,7 +129,7 @@ export default function Mozos() {
     }
   }
 
-  const hayCambiosSensibles = editando != null && (!formEditar.activo || formEditar.pinNuevo.trim().length > 0)
+  const hayCambiosSensibles = editando != null && !formEditar.activo
   const modulosFaltan = !posActivo || !mesasActivo
   // Owner primero, luego admins y mozos; por antigüedad dentro de cada rol.
   const ordenados = useMemo(() => (usuarios ?? []).slice().sort(ordenarStaff), [usuarios])
@@ -154,7 +140,7 @@ export default function Mozos() {
       <header className="space-y-1">
         <h2 className="text-lg font-medium text-foreground">Mozos</h2>
         <p className="text-sm font-normal text-muted-foreground">
-          Usuarios de staff y códigos de acceso para la app de mozos.
+          Cada mozo entra con su número y un código enviado al WhatsApp del local.
         </p>
       </header>
 
@@ -185,7 +171,7 @@ export default function Mozos() {
             <div className="rounded-2xl border border-dashed p-8 text-center">
               <Users className="mx-auto h-8 w-8 text-muted-foreground/50" />
               <p className="mt-3 font-medium text-foreground">Todavía no hay mozos</p>
-              <p className="mt-1 text-sm text-muted-foreground">Creá el primer acceso: cada mozo entra a la app con su código y su PIN.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Creá el primer acceso. Piru le asigna un número simple dentro de tu local.</p>
               <Button className="mt-4" onClick={abrirCrear}><Plus className="h-4 w-4" />Agregar mozo</Button>
             </div>
           ) : (
@@ -205,17 +191,9 @@ export default function Mozos() {
                         </Badge>
                         <EstadoUsuario usuario={usuario} />
                       </div>
-                      {usuario.codigoAcceso ? (
-                        <button
-                          type="button"
-                          onClick={() => copiarCodigo(usuario.codigoAcceso!)}
-                          className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-brand"
-                          title="Copiar código de acceso"
-                        >
-                          <span className="font-mono tracking-wide">{usuario.codigoAcceso}</span>
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      ) : null}
+                      {usuario.numeroMozo != null && (
+                        <p className="mt-1 text-sm text-muted-foreground">Número de mozo <span className="font-mono font-semibold text-foreground">#{usuario.numeroMozo}</span></p>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
                       <span>{usuario.sucursalId != null ? `Sucursal: ${sucursalDe(usuario.sucursalId) ?? `#${usuario.sucursalId}`}` : 'Sin sucursal'}</span>
@@ -233,24 +211,22 @@ export default function Mozos() {
       )}
 
       {/* ── Crear: formulario ── */}
-      <Dialog open={crearAbierto} onOpenChange={(abierto) => { if (!abierto && !guardando) { setCrearAbierto(false); setCodigoCreado(null) } }}>
+      <Dialog open={crearAbierto} onOpenChange={(abierto) => { if (!abierto && !guardando) { setCrearAbierto(false); setNumeroCreado(null) } }}>
         <DialogContent className="sm:max-w-md">
-          {codigoCreado ? (
+          {numeroCreado ? (
             <>
               <DialogHeader>
-                <DialogTitle>Acceso de {codigoCreado.nombre} listo</DialogTitle>
+                <DialogTitle>{numeroCreado.nombre} ya puede entrar</DialogTitle>
                 <DialogDescription>
-                  Este código se muestra una sola vez. Copialo y compartílo con el mozo; su PIN es personal.
+                  Sólo necesita este número y el WhatsApp del local. Piru enviará un código de 6 dígitos al iniciar el turno.
                 </DialogDescription>
               </DialogHeader>
               <div className="rounded-2xl bg-muted/55 p-5 text-center">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Código de acceso</p>
-                <p className="mt-2 select-all font-mono text-2xl font-semibold tracking-[0.15em] text-foreground">{codigoCreado.codigo}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Número de mozo</p>
+                <p className="mt-2 font-mono text-4xl font-semibold text-foreground">#{numeroCreado.numero}</p>
               </div>
               <DialogFooter>
-                <Button onClick={() => { copiarCodigo(codigoCreado.codigo); setCrearAbierto(false); setCodigoCreado(null) }}>
-                  <Copy className="h-4 w-4" />Copiar y cerrar
-                </Button>
+                <Button onClick={() => { setCrearAbierto(false); setNumeroCreado(null) }}>Listo</Button>
               </DialogFooter>
             </>
           ) : (
@@ -258,7 +234,7 @@ export default function Mozos() {
               <DialogHeader>
                 <DialogTitle>Agregar mozo</DialogTitle>
                 <DialogDescription>
-                  El mozo ingresa a la app con el código de acceso que te vamos a mostrar y su PIN personal.
+                  Le asignaremos automáticamente el próximo número disponible en tu local.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -294,17 +270,6 @@ export default function Mozos() {
                     <p className="text-xs font-normal text-muted-foreground">Sin sucursal, el mozo opera sobre todo el restaurante.</p>
                   </div>
                 )}
-                <div className="space-y-1.5">
-                  <Label className="font-medium">PIN personal</Label>
-                  <Input
-                    value={form.pin}
-                    onChange={(e) => setForm((p) => ({ ...p, pin: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
-                    inputMode="numeric"
-                    placeholder="4 a 8 dígitos"
-                    className="h-11"
-                  />
-                  <p className="text-xs font-normal text-muted-foreground">Lo ingresa junto al código cada vez que abre su turno.</p>
-                </div>
               </div>
               <DialogFooter className="gap-2 sm:gap-2">
                 <Button variant="outline" disabled={guardando} onClick={() => setCrearAbierto(false)}>Cancelar</Button>
@@ -321,7 +286,7 @@ export default function Mozos() {
           <DialogHeader>
             <DialogTitle>Editar {editando?.nombre}</DialogTitle>
             <DialogDescription>
-              El código de acceso no cambia; compartí el nuevo PIN si lo reseteás.
+              El número de mozo no cambia. El acceso se valida por WhatsApp en cada dispositivo nuevo.
             </DialogDescription>
           </DialogHeader>
           {editando && (
@@ -346,16 +311,6 @@ export default function Mozos() {
                   </Select>
                 </div>
               )}
-              <div className="space-y-1.5">
-                <Label className="font-medium">Cambiar PIN <span className="font-normal text-muted-foreground">(opcional)</span></Label>
-                <Input
-                  value={formEditar.pinNuevo}
-                  onChange={(e) => setFormEditar((p) => ({ ...p, pinNuevo: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
-                  inputMode="numeric"
-                  placeholder="4 a 8 dígitos"
-                  className="h-11"
-                />
-              </div>
               <div className="flex items-center justify-between gap-4 rounded-xl border border-border p-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">Acceso activo</p>
@@ -370,7 +325,7 @@ export default function Mozos() {
               </div>
               {hayCambiosSensibles && (
                 <p className="text-xs text-amber-700 dark:text-amber-400">
-                  Al cambiar el PIN o desactivar el acceso, las sesiones abiertas del mozo se revocan al instante.
+                  Al desactivar el acceso, las sesiones abiertas del mozo se revocan al instante.
                 </p>
               )}
             </div>

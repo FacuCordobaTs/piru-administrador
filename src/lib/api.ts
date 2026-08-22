@@ -2274,14 +2274,15 @@ export interface ClaimConfig {
   }>
 }
 
-// Usuarios de staff para la PWA de mozos (T37). El backend genera el código de
-// acceso al crear y lo devuelve una sola vez; el resto de la gestión es vía PUT.
+// Usuarios de staff para la PWA de mozos. numeroMozo es el identificador corto
+// por local; codigoAcceso sólo se conserva para clientes legacy.
 export interface UsuarioStaff {
   id: number
   nombre: string
   rol: 'owner' | 'admin' | 'mozo'
   sucursalId: number | null
   codigoAcceso: string | null
+  numeroMozo: number | null
   activo: boolean
   bloqueadoHasta: string | null
   ultimoAccesoAt: string | null
@@ -2294,8 +2295,8 @@ export const staffApi = {
       '/staff/usuarios',
       { headers: { Authorization: `Bearer ${token}` } },
     ),
-  create: (token: string, data: { nombre: string; rol: 'admin' | 'mozo'; sucursalId?: number | null; pin: string }) =>
-    fetchApi<{ success: boolean; data: { id: number; codigoAcceso: string } }>(
+  create: (token: string, data: { nombre: string; rol: 'admin' | 'mozo'; sucursalId?: number | null }) =>
+    fetchApi<{ success: boolean; data: { id: number; codigoAcceso: string | null; numeroMozo: number } }>(
       '/staff/usuarios',
       { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) },
     ),
