@@ -20,7 +20,16 @@ function extraerCiudad(components: google.maps.GeocoderAddressComponent[] | unde
     const tiposPreferidos = ['locality', 'postal_town', 'administrative_area_level_2']
     for (const tipo of tiposPreferidos) {
         const component = components.find((c) => c.types.includes(tipo))
-        if (component?.long_name) return component.long_name
+        if (component?.long_name) {
+            // El CPA argentino (p. ej. S3000FRX) identifica una zona, no la
+            // ciudad. Evitamos persistirlo porque la tienda usa este campo
+            // para limitar las sugerencias de delivery.
+            const ciudad = component.long_name
+                .replace(/\b[A-Za-z]?\d{4}[A-Za-z0-9]{0,3}\b/gi, '')
+                .replace(/\s{2,}/g, ' ')
+                .trim()
+            return ciudad || null
+        }
     }
     return null
 }
