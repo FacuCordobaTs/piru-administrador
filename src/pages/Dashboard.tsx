@@ -1207,13 +1207,20 @@ const PosComandaPreview = ({
                             >
                                 <Trash2 className="h-5 w-5" />
                             </button>
-                            <Button
-                                onClick={onSubmit}
-                                disabled={draft.items.length === 0 || draft.submitting || (!!editingPedidoId && !draft.hasChanges)}
-                                className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
-                            >
-                                {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : editingPedidoId ? 'Guardar cambios' : 'Anotar pedido'}
-                            </Button>
+                            {draft.tipo === 'mesa' ? (
+                                <div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                                    {draft.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                                    {draft.submitting ? 'Guardando…' : draft.hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
+                                </div>
+                            ) : (
+                                <Button
+                                    onClick={onSubmit}
+                                    disabled={draft.items.length === 0 || draft.submitting || (!!editingPedidoId && !draft.hasChanges)}
+                                    className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
+                                >
+                                    {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : editingPedidoId ? 'Guardar cambios' : 'Anotar pedido'}
+                                </Button>
+                            )}
                             {editingPedidoId && draft.tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
                                 <button
                                     type="button"
@@ -2007,12 +2014,25 @@ const Dashboard = () => {
         if (posActivo) setShowPosMovil(true)
     }, [posActivo])
 
-    const handlePedidoManualCreado = (pedidoId: number) => {
+    const handlePedidoManualCreado = (pedidoId: number, pedido?: PosEditablePedido, automatico = false) => {
         // El POS es un flujo de carga continua: después de anotar un pedido el
         // componente ya limpió su borrador. Marcamos el id antes de sincronizar
         // para que siempre se imprima aunque el WebSocket haya llegado primero.
-        posOrdersPendingPrintRef.current.add(pedidoId)
-        setMesaPosAsignada(null)
+        // La apertura automática de una mesa sólo persiste la comanda. Su
+        // impresión ocurre al despacharla, no al cargar el primer producto.
+        if (!(automatico && pedido?.tipo === 'mesa')) posOrdersPendingPrintRef.current.add(pedidoId)
+        if (pedido?.tipo === 'mesa' && pedido.mesaLocalId) {
+            // La primera modificación de una mesa libre crea el pedido. Desde
+            // ese momento el mismo POS continúa editándolo y los próximos
+            // cambios se guardan sobre esa fila, sin crear pedidos duplicados.
+            setPedidoPosEditando(pedido)
+            setMesaPosAsignada({
+                id: pedido.mesaLocalId,
+                nombre: pedido.mesaNombre || `Mesa ${pedido.mesaLocalId}`,
+            })
+        } else {
+            setMesaPosAsignada(null)
+        }
         fetchPedidos(1, false)
         fetchPedidosMesaAbiertos()
     }
@@ -2184,7 +2204,7 @@ const Dashboard = () => {
         if (mesasDialogMode === 'asignar-borrador') {
             // Mesa ocupada durante un borrador: el borrador se suma al pedido
             // abierto. Se carga ese pedido en el POS en modo edición, con los
-            // ítems del borrador ya fusionados, y se guarda con "Guardar cambios".
+            // ítems del borrador ya fusionados; el POS los guarda automáticamente.
             const itemsBorrador = posRef.current?.getCartItems() ?? []
             const pedido = pedidosMesaAbiertos.find((candidato) => candidato.id === pedidoMesa.id)
             if (itemsBorrador.length === 0) {

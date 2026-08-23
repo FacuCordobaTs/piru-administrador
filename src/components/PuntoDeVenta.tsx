@@ -21,7 +21,7 @@ import { POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, type PosMetodoPago }
 import {
     X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2,
     Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight,
-    WifiOff, Printer,
+    WifiOff, Printer, CheckCircle,
 } from 'lucide-react'
 
 type Producto = ReturnType<typeof useRestauranteStore.getState>['productos'][number]
@@ -144,7 +144,7 @@ export interface PuntoDeVentaHandle {
 
 interface PuntoDeVentaProps {
     onClose: () => void
-    onCreated: (pedidoId: number) => void
+    onCreated: (pedidoId: number, pedido?: PosEditablePedido, automatico?: boolean) => void
     onUpdated?: (pedido: PosEditablePedido) => void
     /** Solicita eliminar el pedido persistido que se está editando. */
     onDeletePedido?: (pedidoId: number) => void
@@ -300,6 +300,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // costo a propósito (envío gratis puntual), no se vuelve a reponer.
     const prefillEnvioRef = useRef(false)
     const [submitting, setSubmitting] = useState(false)
+    const autoSaveRef = useRef<(automatico?: boolean) => Promise<number | null>>(async () => null)
+    const lastAutoSaveAttemptRef = useRef<string | null>(null)
     const [hydratedPedidoId, setHydratedPedidoId] = useState<number | null>(null)
     const modoEdicion = initialPedido != null
     // Una edición no comparte almacenamiento con el borrador de alta. El borrador
@@ -638,10 +640,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // La comparación usa únicamente los datos que efectivamente se envían al
     // backend. Así, claves locales del carrito o cambios de formato no habilitan
     // "Guardar cambios" si la comanda sigue siendo idéntica.
-    const hasChanges = useMemo(() => {
-        if (!initialPedido || hydratedPedidoId !== initialPedido.id) return !initialPedido
-        if (initialPedido.dirtyOnLoad) return true
-        const current = pedidoSignature({
+    const currentSignature = useMemo(() => pedidoSignature({
             tipo,
             mesaLocalId: mesaAsignada?.id,
             nombre,
@@ -654,7 +653,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             pagado,
             deliveryFee: deliveryFeeNum,
             items: cart,
-        })
+        }), [tipo, mesaAsignada?.id, nombre, telefono, direccion, lat, lng, notas, metodoPago, pagado, deliveryFeeNum, cart])
+
+    const hasChanges = useMemo(() => {
+        if (!initialPedido || hydratedPedidoId !== initialPedido.id) return !initialPedido
+        if (initialPedido.dirtyOnLoad) return true
         const original = pedidoSignature({
             tipo: initialPedido.tipo,
             mesaLocalId: initialPedido.mesaLocalId,
@@ -669,8 +672,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             deliveryFee: initialPedido.deliveryFee,
             items: initialPedido.items,
         })
-        return current !== original
-    }, [initialPedido, hydratedPedidoId, tipo, mesaAsignada?.id, nombre, telefono, direccion, lat, lng, notas, metodoPago, pagado, deliveryFeeNum, cart])
+        return currentSignature !== original
+    }, [initialPedido, hydratedPedidoId, currentSignature])
 
     // ── Borrador en vivo ──
     // Snapshot del borrador tal como se ve: lo espeja el padre en la comanda
@@ -723,6 +726,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         agregados: CartItem['agregados'] = [],
         ingredientesExcluidos: number[] = []
     ) => {
+        if (submitting) return
         const precioBase = (variante ? parseFloat(variante.precio) : parseFloat(producto.precio)) + (varianteSecundaria ? parseFloat(varianteSecundaria.precio) : 0)
         // Cada toque es una fila independiente: dos pedidos iguales pueden requerir
         // cambios distintos después y no deben fusionarse silenciosamente.
@@ -762,6 +766,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     const changeQty = (key: string, delta: number) => {
+        if (submitting) return
         setCart((prev) =>
             prev
                 .map((it) => (it.key === key ? { ...it, cantidad: it.cantidad + delta } : it))
@@ -769,7 +774,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         )
     }
 
-    const removeItem = (key: string) => setCart((prev) => prev.filter((it) => it.key !== key))
+    const removeItem = (key: string) => {
+        if (submitting) return
+        setCart((prev) => prev.filter((it) => it.key !== key))
+    }
 
     const editItem = (key: string) => {
         const item = cart.find((candidate) => candidate.key === key)
@@ -786,6 +794,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     const updateDraft = (changes: PosDraftUpdate) => {
+        if (submitting) return
         if (changes.tipo) setTipo(changes.tipo)
         if (changes.nombreCliente !== undefined) setNombre(changes.nombreCliente)
         if (changes.telefono !== undefined) setTelefono(changes.telefono.replace(/\D/g, ''))
@@ -921,7 +930,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
     useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: resetForm, focusProductSearch, getCartItems }))
 
-    const handleSubmit = async (): Promise<number | null> => {
+    const handleSubmit = async (automatico = false): Promise<number | null> => {
         if (!token) return null
         // Despachar una mesa ya guardada no exige introducir un cambio artificial.
         if (modoEdicion && !hasChanges) return initialPedido.id
@@ -988,7 +997,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     items,
                 }) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
                 if (res.success) {
-                    toast.success('Pedido actualizado correctamente')
+                    if (!automatico) toast.success('Pedido actualizado correctamente')
                     if (res.data) onUpdated?.(res.data)
                     return res.data?.id ?? initialPedido.id
                 } else {
@@ -1007,11 +1016,12 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             try {
                 const res = await pedidoUnificadoApi.create(token, data) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
                 if (res.success) {
-                    toast.success('Pedido anotado correctamente')
-                    resetForm()
+                    if (!automatico) toast.success('Pedido anotado correctamente')
+                    const esMesa = data.tipo === 'mesa'
+                    if (!esMesa) resetForm()
                     // El POS queda listo para anotar el siguiente pedido. El Dashboard
                     // sólo sincroniza el listado; cerrar el POS acá interrumpía ese flujo.
-                    if (res.data?.id) onCreated(res.data.id)
+                    if (res.data?.id) onCreated(res.data.id, res.data, automatico)
                     return res.data?.id ?? null
                 } else {
                     toast.error(res.message || 'No se pudo crear el pedido')
@@ -1039,6 +1049,21 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             setSubmitting(false)
         }
     }
+
+    // Las comandas de mesa son persistentes: una mesa libre se crea al agregar
+    // el primer producto y las mesas ocupadas actualizan su pedido después de
+    // cada cambio. El pequeño debounce agrupa ediciones rápidas de una misma
+    // fila y evita una petición por cada pulsación en campos de texto.
+    autoSaveRef.current = handleSubmit
+    useEffect(() => {
+        if (!online || tipo !== 'mesa' || !mesaAsignada || cart.length === 0 || !hasChanges || submitting) return
+        if (lastAutoSaveAttemptRef.current === currentSignature) return
+        const timeout = window.setTimeout(() => {
+            lastAutoSaveAttemptRef.current = currentSignature
+            void autoSaveRef.current(true)
+        }, 450)
+        return () => window.clearTimeout(timeout)
+    }, [online, tipo, mesaAsignada?.id, cart.length, hasChanges, submitting, currentSignature])
 
     // Con la configuración del POS, un campo desactivado se oculta por completo
     // y no participa de los datos del borrador.
@@ -1229,13 +1254,20 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                             <Trash2 className="h-5 w-5" />
                         </button>
                     )}
-                    <Button
-                        onClick={handleSubmit}
-                        disabled={submitting || cart.length === 0 || (modoEdicion && !hasChanges)}
-                        className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
-                    >
-                        {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
-                    </Button>
+                    {tipo === 'mesa' ? (
+                        <div className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                            {submitting ? 'Guardando…' : hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
+                        </div>
+                    ) : (
+                        <Button
+                            onClick={() => void handleSubmit()}
+                            disabled={submitting || cart.length === 0 || (modoEdicion && !hasChanges)}
+                            className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
+                        >
+                            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
+                        </Button>
+                    )}
                 </div>
             </div>
         </div>
