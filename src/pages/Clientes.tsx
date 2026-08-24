@@ -438,7 +438,7 @@ function ClientesPanel() {
         if (!token) return
         setLoading(true)
         try {
-            const response = await clientesApi.getAll(token) as { success: boolean, data: Cliente[] }
+            const response = await clientesApi.getAll(token, { soloDespachados: true }) as { success: boolean, data: Cliente[] }
             if (response.success && response.data) {
                 setClientes(response.data)
             }

@@ -219,8 +219,9 @@ export const cartaIaApi = {
 }
 
 export const clientesApi = {
-  getAll: async (token: string) => {
-    return fetchApi('/clientes/list', {
+  getAll: async (token: string, options?: { soloDespachados?: boolean }) => {
+    const query = options?.soloDespachados ? '?soloDespachados=true' : ''
+    return fetchApi(`/clientes/list${query}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
