@@ -104,6 +104,10 @@ const ESTADO_PEDIDO_LABEL: Record<string, string> = {
     dispatched: 'Despachado', delivered: 'Entregado', cancelled: 'Cancelado', archived: 'Cerrado',
 }
 
+// Debe coincidir con POS_ESTADOS_EDITABLES del backend. Fuera de estos estados
+// el pedido se abre como detalle de solo lectura, donde sigue siendo eliminable.
+const POS_ESTADOS_EDITABLES = new Set(['pending', 'received', 'preparing'])
+
 const pedidoTitulo = (pedido: Pick<UnifiedPedido, 'id' | 'tipo' | 'mesaLocalId' | 'mesaNombre'>) =>
     pedido.tipo === 'mesa'
         ? (pedido.mesaNombre || (pedido.mesaLocalId != null ? `Mesa ${pedido.mesaLocalId}` : 'Mesa'))
@@ -2000,14 +2004,22 @@ const Dashboard = () => {
 
     const openPedidoInPOS = (pedido: UnifiedPedido) => {
         // Sólo los pedidos anotados manualmente se editan desde el POS. Los de
-        // la web se abren en el detalle operativo, donde también se eliminan.
-        if (showPOS && pedido.anotadoManualmente) {
+        // la web y los manuales que ya cerraron su etapa editable se abren en
+        // el detalle de solo lectura, donde también pueden eliminarse.
+        const puedeEditarEnPos = pedido.anotadoManualmente
+            && pedido.editable !== false
+            && POS_ESTADOS_EDITABLES.has(pedido.estado)
+        if (showPOS && puedeEditarEnPos) {
             void editarPedidoEnPos(pedido)
             return
         }
+        mesaMergeRef.current = false
+        setShowOrderMap(false)
+        setPedidoPosEditando(null)
         setMesaPosAsignada(null)
         setSelectedUnifiedPedido(pedido)
         if (showPOS) setPosContext('pedidoExistente')
+        setShowPosMovil(false)
         if (!showOrderMap) setMobileView('detail')
     }
 
