@@ -22,6 +22,13 @@ interface CierreTurnoPedidoDelivery { id: number; direccion: string; nombreClien
 interface CierreTurnoPedidoTakeaway { id: number; nombreCliente: string | null; telefono: string | null; estado: string; total: string; notas: string | null; createdAt: string; deliveredAt: string | null; tipo: 'takeaway'; items: CierreTurnoItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null; montoDescuento?: string | null; afipFacturado?: boolean; afipCae?: string | null; afipNumeroComprobante?: number | null; afipPdfUrl?: string | null; anotadoManualmente?: boolean }
 type CierreTurnoPedido = CierreTurnoPedidoMesa | CierreTurnoPedidoDelivery | CierreTurnoPedidoTakeaway
 
+// Defensa adicional para clientes que hablen con un backend anterior: en el
+// modelo actual una mesa queda despachada como `archived`. Los otros estados
+// finales pertenecen al flujo legacy de mesas y se mantienen para poder
+// consultar cierres históricos. Esta regla nunca se aplica a delivery/takeaway.
+const mesaFueDespachada = (pedido: CierreTurnoPedidoMesa) =>
+  ['archived', 'closed', 'served', 'delivered'].includes(pedido.estado)
+
 interface ProductoVendido { nombre: string; cantidad: number; totalVendido: number }
 interface CierreTurnoData {
   fecha: string
@@ -533,7 +540,11 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
 
   const allPedidos = useMemo<CierreTurnoPedido[]>(() => {
     if (!data) return []
-    return [...data.pedidosMesa.filter(p => p.totalItems > 0), ...data.pedidosDelivery, ...data.pedidosTakeaway]
+    return [
+      ...data.pedidosMesa.filter(p => p.totalItems > 0 && mesaFueDespachada(p)),
+      ...data.pedidosDelivery,
+      ...data.pedidosTakeaway,
+    ]
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
   }, [data])
 

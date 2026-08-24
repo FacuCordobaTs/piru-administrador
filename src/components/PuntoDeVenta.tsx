@@ -291,7 +291,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const navegacionTecladoRef = useRef(false)
 
     // Datos del cliente
-    const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('takeaway')
+    const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('delivery')
     const [nombre, setNombre] = useState('')
     const [telefono, setTelefono] = useState('')
     const [direccion, setDireccion] = useState('')
@@ -473,7 +473,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 prefillEnvioRef.current = false
                 const parsed = JSON.parse(saved) as Partial<PersistedPosDraft>
                 setCart(Array.isArray(parsed.cart) ? parsed.cart : [])
-                setTipo(mesaAsignada ? 'mesa' : parsed.tipo === 'delivery' ? 'delivery' : 'takeaway')
+                setTipo(mesaAsignada ? 'mesa' : parsed.tipo === 'takeaway' ? 'takeaway' : 'delivery')
                 setNombre(typeof parsed.nombre === 'string' ? parsed.nombre : '')
                 setTelefono(typeof parsed.telefono === 'string' ? parsed.telefono : '')
                 setDireccion(typeof parsed.direccion === 'string' ? parsed.direccion : '')
@@ -483,7 +483,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             } else {
                 prefillEnvioRef.current = false
                 setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
-                setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
+                setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'delivery')
             }
         } catch {
             sessionStorage.removeItem(storageKey)
@@ -493,7 +493,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }, [storageKey, initialPedido])
 
     useEffect(() => {
-        setTipo((current) => mesaAsignada ? 'mesa' : current === 'mesa' ? 'takeaway' : current)
+        setTipo((current) => mesaAsignada ? 'mesa' : current === 'mesa' ? 'delivery' : current)
     }, [mesaAsignada])
 
     useEffect(() => {
@@ -513,7 +513,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // borrador, se pasa al primero habilitado. Al editar se respeta el pedido.
     useEffect(() => {
         if (modoEdicion || mesaAsignada) return
-        setTipo((current) => config.tipos[current] ? current : (tiposHabilitados[0] ?? 'takeaway'))
+        setTipo((current) => config.tipos[current] ? current : (tiposHabilitados[0] ?? 'delivery'))
     }, [modoEdicion, mesaAsignada, config, tiposHabilitados])
 
     useEffect(() => {
@@ -820,7 +820,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const resetForm = () => {
         prefillEnvioRef.current = false
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
-        setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
+        setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'delivery')
         setQuery(''); setMobileStep('productos')
         if (!modoEdicion) {
             try { sessionStorage.removeItem(storageKey) } catch { /* noop */ }

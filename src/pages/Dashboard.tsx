@@ -1571,6 +1571,15 @@ const Dashboard = () => {
         } finally { setCerrandoTurno(false) }
     }
 
+    const mesasSinDespacharDelTurno = useMemo(() => {
+        if (!turnoActual) return 0
+        const apertura = new Date(turnoActual.aperturaAt).getTime()
+        return pedidosMesaAbiertos.filter((pedido) => {
+            const creado = new Date(pedido.createdAt).getTime()
+            return Number.isFinite(creado) && creado >= apertura
+        }).length
+    }, [pedidosMesaAbiertos, turnoActual])
+
     useEffect(() => {
         if (!token || !prefsReady) return
         fetchPedidos(1, false)
@@ -3904,7 +3913,14 @@ const Dashboard = () => {
                 <DialogContent className="max-w-sm">
                     <DialogHeader>
                         <DialogTitle>Cerrar el turno actual</DialogTitle>
-                        <DialogDescription>Los pedidos recibidos desde la apertura quedarán agrupados en este turno. Se abrirá uno nuevo inmediatamente.</DialogDescription>
+                        <DialogDescription>
+                            Los pedidos recibidos desde la apertura quedarán agrupados en este turno. Los pedidos de mesa sin despachar no se incluirán en las estadísticas de Caja. Se abrirá un turno nuevo inmediatamente.
+                            {mesasSinDespacharDelTurno > 0 && (
+                                <span className="mt-2 block font-medium text-foreground">
+                                    {mesasSinDespacharDelTurno} {mesasSinDespacharDelTurno === 1 ? 'mesa queda' : 'mesas quedan'} fuera de este cierre por estar sin despachar.
+                                </span>
+                            )}
+                        </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowCerrarTurno(false)} disabled={cerrandoTurno}>Cancelar</Button>
