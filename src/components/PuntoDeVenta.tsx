@@ -144,7 +144,7 @@ export interface PuntoDeVentaHandle {
 
 interface PuntoDeVentaProps {
     onClose: () => void
-    onCreated: (pedidoId: number, pedido?: PosEditablePedido, automatico?: boolean) => void
+    onCreated: (pedidoId: number, pedido?: Partial<PosEditablePedido>) => void | Promise<void>
     onUpdated?: (pedido: PosEditablePedido) => void
     /** Solicita eliminar el pedido persistido que se está editando. */
     onDeletePedido?: (pedidoId: number) => void
@@ -1021,7 +1021,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     if (!esMesa) resetForm()
                     // El POS queda listo para anotar el siguiente pedido. El Dashboard
                     // sólo sincroniza el listado; cerrar el POS acá interrumpía ese flujo.
-                    if (res.data?.id) onCreated(res.data.id, res.data, automatico)
+                    if (res.data?.id) await onCreated(res.data.id, res.data)
                     return res.data?.id ?? null
                 } else {
                     toast.error(res.message || 'No se pudo crear el pedido')
@@ -1257,7 +1257,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     {tipo === 'mesa' ? (
                         <div className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
                             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                            {submitting ? 'Guardando…' : hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
+                            {submitting ? 'Guardando…' : cart.length === 0 ? 'Agregá un producto para abrir la mesa' : hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
                         </div>
                     ) : (
                         <Button

@@ -1210,7 +1210,7 @@ const PosComandaPreview = ({
                             {draft.tipo === 'mesa' ? (
                                 <div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
                                     {draft.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                                    {draft.submitting ? 'Guardando…' : draft.hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
+                                    {draft.submitting ? 'Guardando…' : draft.items.length === 0 ? 'Agregá un producto para abrir la mesa' : draft.hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
                                 </div>
                             ) : (
                                 <Button
@@ -2014,22 +2014,31 @@ const Dashboard = () => {
         if (posActivo) setShowPosMovil(true)
     }, [posActivo])
 
-    const handlePedidoManualCreado = (pedidoId: number, pedido?: PosEditablePedido, automatico = false) => {
+    const handlePedidoManualCreado = async (pedidoId: number, pedido?: Partial<PosEditablePedido>) => {
         // El POS es un flujo de carga continua: después de anotar un pedido el
         // componente ya limpió su borrador. Marcamos el id antes de sincronizar
         // para que siempre se imprima aunque el WebSocket haya llegado primero.
-        // La apertura automática de una mesa sólo persiste la comanda. Su
-        // impresión ocurre al despacharla, no al cargar el primer producto.
-        if (!(automatico && pedido?.tipo === 'mesa')) posOrdersPendingPrintRef.current.add(pedidoId)
-        if (pedido?.tipo === 'mesa' && pedido.mesaLocalId) {
+        posOrdersPendingPrintRef.current.add(pedidoId)
+        if (pedido?.tipo === 'mesa') {
             // La primera modificación de una mesa libre crea el pedido. Desde
             // ese momento el mismo POS continúa editándolo y los próximos
             // cambios se guardan sobre esa fila, sin crear pedidos duplicados.
-            setPedidoPosEditando(pedido)
-            setMesaPosAsignada({
-                id: pedido.mesaLocalId,
-                nombre: pedido.mesaNombre || `Mesa ${pedido.mesaLocalId}`,
-            })
+            try {
+                if (!token) throw new Error('Sesión no disponible')
+                // El alta histórica devuelve una respuesta resumida. Se carga
+                // el pedido editable para obtener su versión, mesa e ítems.
+                const response = await pedidoUnificadoApi.getById(token, pedidoId) as { success?: boolean; data?: PosEditablePedido }
+                if (!response.success || !response.data) throw new Error('Respuesta incompleta')
+                const editable = response.data
+                setPedidoPosEditando(editable)
+                setMesaPosAsignada(editable.mesaLocalId
+                    ? { id: editable.mesaLocalId, nombre: editable.mesaNombre || `Mesa ${editable.mesaLocalId}` }
+                    : mesaPosAsignada)
+            } catch (error) {
+                toast.error('La mesa se guardó, pero no se pudo continuar la edición', {
+                    description: 'Volvé a abrirla desde el listado de mesas.',
+                })
+            }
         } else {
             setMesaPosAsignada(null)
         }
