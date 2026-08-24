@@ -39,20 +39,44 @@ export function CheckoutSuscripcionOpciones({
       {pack && <p className="mt-3 text-sm font-medium">Total del único pago: {fmtARS(total)}</p>}
     </section>}
 
-    <section>
-      <p className="text-sm font-medium">¿Dónde querés recibir el link de pago?</p>
-      <div className="mt-3 space-y-2 text-sm">
-        <label className="flex cursor-pointer items-center gap-2">
-          <input type="radio" name="telefono-pago" checked={!usarOtroTelefono} onChange={() => onUsarOtroTelefono(false)} />
-          Mi número asociado {telefonoCuenta ? <strong className="font-medium">({telefonoCuenta})</strong> : '(sin número cargado)'}
-        </label>
-        <label className="flex cursor-pointer items-center gap-2">
-          <input type="radio" name="telefono-pago" checked={usarOtroTelefono} onChange={() => onUsarOtroTelefono(true)} />
-          Otro número
-        </label>
-      </div>
-      {usarOtroTelefono && <Input className="mt-3" type="tel" inputMode="tel" value={otroTelefono} onChange={(event) => onOtroTelefono(event.target.value)} placeholder="Ej. 5491123456789" autoComplete="tel" />}
-      <p className="mt-2 text-xs text-muted-foreground">El número alternativo se usa sólo para este link y no cambia los datos de tu cuenta.</p>
-    </section>
+    <TelefonoPagoOpciones
+      telefonoCuenta={telefonoCuenta}
+      usarOtroTelefono={usarOtroTelefono}
+      onUsarOtroTelefono={onUsarOtroTelefono}
+      otroTelefono={otroTelefono}
+      onOtroTelefono={onOtroTelefono}
+    />
   </div>
+}
+
+export function TelefonoPagoOpciones({
+  telefonoCuenta,
+  usarOtroTelefono,
+  onUsarOtroTelefono,
+  otroTelefono,
+  onOtroTelefono,
+  radioName = 'telefono-pago',
+}: {
+  telefonoCuenta: string | null | undefined
+  usarOtroTelefono: boolean
+  onUsarOtroTelefono: (value: boolean) => void
+  otroTelefono: string
+  onOtroTelefono: (value: string) => void
+  radioName?: string
+}) {
+  return <section>
+    <p className="text-sm font-medium">¿Dónde querés recibir el link de pago?</p>
+    <div className="mt-3 space-y-2 text-sm">
+      <label className="flex cursor-pointer items-center gap-2">
+        <input type="radio" name={radioName} checked={!usarOtroTelefono} disabled={!telefonoCuenta} onChange={() => onUsarOtroTelefono(false)} />
+        Mi número asociado {telefonoCuenta ? <strong className="font-medium">({telefonoCuenta})</strong> : '(sin número cargado)'}
+      </label>
+      <label className="flex cursor-pointer items-center gap-2">
+        <input type="radio" name={radioName} checked={usarOtroTelefono} onChange={() => onUsarOtroTelefono(true)} />
+        Otro número
+      </label>
+    </div>
+    {usarOtroTelefono && <Input className="mt-3" type="tel" inputMode="tel" value={otroTelefono} onChange={(event) => onOtroTelefono(event.target.value)} placeholder="Ej. 5491123456789" autoComplete="tel" />}
+    <p className="mt-2 text-xs text-muted-foreground">El número alternativo se usa sólo para este link y no cambia los datos de tu cuenta.</p>
+  </section>
 }

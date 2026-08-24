@@ -18,7 +18,7 @@ import {
     X,
     Clock, Truck, Package, Star, Ticket,
     Sparkles, Crown, AlertTriangle, Moon, UserX,
-    Repeat, Timer, Utensils, Rocket, Gift, Loader2, Send, CheckCircle2, BellOff, Copy
+    Repeat, Timer, Utensils, Rocket, Gift, Loader2, Send, CheckCircle2, BellOff, Copy, Trash2
 } from 'lucide-react'
 import CodigosDescuento from './CodigosDescuento'
 import MotorRecompra from './MotorRecompra'
@@ -101,6 +101,12 @@ interface Cliente {
 // El backend y la operación de los locales trabajan en hora Argentina. Fijarla
 // evita que el historial cambie de hora según la zona configurada en el equipo.
 const RESTAURANT_TIME_ZONE = 'America/Argentina/Buenos_Aires'
+// En este endpoint los DATETIME de MySQL llegan serializados como UTC aunque
+// representan hora local. El ajuste se limita deliberadamente a esta pantalla.
+const CLIENTES_DATE_OFFSET_MS = 3 * 60 * 60 * 1000
+
+const parseClientesDate = (dateString: string) =>
+    new Date(new Date(dateString).getTime() + CLIENTES_DATE_OFFSET_MS)
 
 const formatCurrency = (value: number | string) => {
     const num = typeof value === 'string' ? parseFloat(value) : value
@@ -109,21 +115,21 @@ const formatCurrency = (value: number | string) => {
 
 const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Sin datos'
-    return new Date(dateString).toLocaleDateString('es-AR', {
+    return parseClientesDate(dateString).toLocaleDateString('es-AR', {
         day: 'numeric', month: 'short', year: 'numeric', timeZone: RESTAURANT_TIME_ZONE,
     })
 }
 
 const formatDateLong = (dateString: string | null) => {
     if (!dateString) return '—'
-    return new Date(dateString).toLocaleDateString('es-AR', {
+    return parseClientesDate(dateString).toLocaleDateString('es-AR', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: RESTAURANT_TIME_ZONE,
     })
 }
 
 const formatTime = (dateString: string | null) => {
     if (!dateString) return ''
-    return new Date(dateString).toLocaleTimeString('es-AR', {
+    return parseClientesDate(dateString).toLocaleTimeString('es-AR', {
         hour: '2-digit', minute: '2-digit', hour12: false, timeZone: RESTAURANT_TIME_ZONE,
     })
 }
@@ -524,6 +530,15 @@ function ClientesPanel() {
         setClientes(prev => prev.map(c => c.id === clienteId ? { ...c, recupero } : c))
     }, [])
 
+    const refrescarTrasBorrado = useCallback(async () => {
+        await fetchClientes()
+    }, [fetchClientes])
+
+    const refrescarTrasBorrarCliente = useCallback(async () => {
+        setSelectedClientId(null)
+        await fetchClientes()
+    }, [fetchClientes])
+
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
             {/* ============================================================= */}
@@ -649,6 +664,8 @@ function ClientesPanel() {
                         onClose={() => setSelectedClientId(null)}
                         copiarWhatsApp={copiarWhatsApp}
                         onRecuperoSent={actualizarRecupero}
+                        onPedidoEliminado={refrescarTrasBorrado}
+                        onClienteEliminado={refrescarTrasBorrarCliente}
                     />
                 ) : (
                     /* ===== EMPTY STATE — No client selected (desktop) ===== */
@@ -743,11 +760,13 @@ function ClienteRow({ cliente, selected, onSelect }: {
 // =============================================================================
 // CLIENT DETAIL (panel derecho)
 // =============================================================================
-function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent }: {
+function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent, onPedidoEliminado, onClienteEliminado }: {
     cliente: Cliente
     onClose: () => void
     copiarWhatsApp: (phone: string) => Promise<void>
     onRecuperoSent: (clienteId: number, recupero: EstadoRecupero) => void
+    onPedidoEliminado: () => Promise<void>
+    onClienteEliminado: () => Promise<void>
 }) {
     const seg = getSegmento(cliente)
     const meta = SEGMENTOS[seg]
@@ -758,6 +777,9 @@ function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent }: {
     const [confirmOpen, setConfirmOpen] = useState(false)
     const [enviando, setEnviando] = useState(false)
     const [copiado, setCopiado] = useState(false)
+    const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoHistorial | null>(null)
+    const [eliminarClienteOpen, setEliminarClienteOpen] = useState(false)
+    const [eliminando, setEliminando] = useState(false)
 
     const recupero = cliente.recupero
     const proximoNivel = recupero?.proximoNivel ?? 1
@@ -799,6 +821,38 @@ function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent }: {
             setConfirmOpen(false)
         } finally {
             setEnviando(false)
+        }
+    }
+
+    const handleEliminarPedido = async () => {
+        if (!token || !pedidoAEliminar) return
+        setEliminando(true)
+        try {
+            await clientesApi.eliminarPedido(token, cliente.id, pedidoAEliminar.id)
+            toast.success(`Pedido #${pedidoAEliminar.id} eliminado`)
+            setPedidoAEliminar(null)
+            await onPedidoEliminado()
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : 'No se pudo eliminar el pedido')
+        } finally {
+            setEliminando(false)
+        }
+    }
+
+    const handleEliminarCliente = async () => {
+        if (!token) return
+        setEliminando(true)
+        try {
+            await clientesApi.eliminar(token, cliente.id)
+            toast.success('Cliente eliminado', {
+                description: `También se eliminaron sus ${cliente.pedidos.length} pedidos.`,
+            })
+            setEliminarClienteOpen(false)
+            await onClienteEliminado()
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : 'No se pudo eliminar el cliente')
+        } finally {
+            setEliminando(false)
         }
     }
 
@@ -849,6 +903,16 @@ function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent }: {
                     </div>
 
                     <div className="flex items-center gap-1.5">
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEliminarClienteOpen(true)}
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            title="Eliminar cliente"
+                            aria-label={`Eliminar a ${cliente.nombre}`}
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </Button>
                         <Button
                             size="sm"
                             variant="outline"
@@ -1071,7 +1135,11 @@ function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent }: {
                         ) : (
                             <div className="p-3 space-y-2">
                                 {cliente.pedidos.map((pedido) => (
-                                    <OrderRow key={pedido.id} pedido={pedido} />
+                                    <OrderRow
+                                        key={pedido.id}
+                                        pedido={pedido}
+                                        onDelete={() => setPedidoAEliminar(pedido)}
+                                    />
                                 ))}
                             </div>
                         )}
@@ -1112,6 +1180,42 @@ function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent }: {
                         <Button onClick={handleEnviarRecupero} disabled={enviando} className="gap-2">
                             {enviando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                             {enviando ? 'Enviando…' : 'Enviar ahora'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!pedidoAEliminar} onOpenChange={(open) => !open && !eliminando && setPedidoAEliminar(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Eliminar pedido #{pedidoAEliminar?.id}</DialogTitle>
+                        <DialogDescription>
+                            Se eliminará definitivamente este pedido y sus productos del historial de {cliente.nombre}. Esta acción no se puede deshacer.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-2">
+                        <Button variant="outline" onClick={() => setPedidoAEliminar(null)} disabled={eliminando}>Cancelar</Button>
+                        <Button variant="destructive" onClick={handleEliminarPedido} disabled={eliminando} className="gap-2">
+                            {eliminando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            {eliminando ? 'Eliminando…' : 'Eliminar pedido'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={eliminarClienteOpen} onOpenChange={(open) => !eliminando && setEliminarClienteOpen(open)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Eliminar a {cliente.nombre}</DialogTitle>
+                        <DialogDescription>
+                            Se eliminarán definitivamente el cliente y sus {cliente.pedidos.length} pedidos, incluyendo productos, pagos asociados y su historial del Motor de Recompra. Esta acción no se puede deshacer.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-2">
+                        <Button variant="outline" onClick={() => setEliminarClienteOpen(false)} disabled={eliminando}>Cancelar</Button>
+                        <Button variant="destructive" onClick={handleEliminarCliente} disabled={eliminando} className="gap-2">
+                            {eliminando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            {eliminando ? 'Eliminando…' : 'Eliminar cliente y pedidos'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -1199,17 +1303,18 @@ function ContactRow({ icon, label, value, action }: {
     )
 }
 
-function OrderRow({ pedido }: { pedido: PedidoHistorial }) {
+function OrderRow({ pedido, onDelete }: { pedido: PedidoHistorial; onDelete: () => void }) {
     const [expanded, setExpanded] = useState(false)
     const isDelivery = pedido.tipo === 'delivery'
     const hasItems = pedido.items && pedido.items.length > 0
 
     return (
         <div>
+            <div className="flex items-center gap-1">
             <button
                 onClick={() => hasItems && setExpanded(!expanded)}
                 className={`
-                    w-full text-left px-4 py-3.5 flex items-center gap-3 rounded-xl
+                    flex-1 min-w-0 text-left px-4 py-3.5 flex items-center gap-3 rounded-xl
                     transition-colors duration-100
                     ${hasItems ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'}
                     ${expanded ? "bg-white dark:bg-muted/20 shadow-sm" : ''}
@@ -1259,6 +1364,18 @@ function OrderRow({ pedido }: { pedido: PedidoHistorial }) {
                     )}
                 </div>
             </button>
+            <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={onDelete}
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                title={`Eliminar pedido #${pedido.id}`}
+                aria-label={`Eliminar pedido #${pedido.id}`}
+            >
+                <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+            </div>
 
             {/* Expanded Items */}
             {expanded && hasItems && (

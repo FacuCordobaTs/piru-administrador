@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { TelefonoPagoOpciones } from '@/components/CheckoutSuscripcionOpciones'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
@@ -226,7 +227,7 @@ function SaldoCard({ data, avisosActivos, onDone }: { data: Sub; avisosActivos: 
         <AutoRecargaToggle inicial={w.autoRecarga.habilitada} onDone={onDone} />
       </div>
 
-      <RecargaSheet open={recargaOpen} onOpenChange={setRecargaOpen} />
+      <RecargaSheet open={recargaOpen} onOpenChange={setRecargaOpen} telefonoCuenta={data.telefonoPago} />
     </div>
   )
 }
@@ -306,7 +307,7 @@ function SaldoMarketingCard({ data }: { data: Sub }) {
         )}
       </div>
 
-      <RecargaSheet open={recargaOpen} onOpenChange={setRecargaOpen} categoria="marketing" />
+      <RecargaSheet open={recargaOpen} onOpenChange={setRecargaOpen} categoria="marketing" telefonoCuenta={data.telefonoPago} />
     </div>
   )
 }
@@ -368,13 +369,17 @@ function RecargaSheet({
   open,
   onOpenChange,
   categoria = 'utility',
+  telefonoCuenta,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   categoria?: 'utility' | 'marketing'
+  telefonoCuenta?: string | null
 }) {
   const [packs, setPacks] = useState<PackRecarga[] | null>(null)
   const [enviandoLink, setEnviandoLink] = useState<number | null>(null)
+  const [usarOtroTelefono, setUsarOtroTelefono] = useState(!telefonoCuenta)
+  const [otroTelefono, setOtroTelefono] = useState('')
   const esMarketing = categoria === 'marketing'
   const unidad = esMarketing ? 'mensajes de campaña' : 'avisos'
 
@@ -389,12 +394,20 @@ function RecargaSheet({
   const enviarLink = async (packId: number) => {
     const token = useAuthStore.getState().token
     if (!token) return
+    if (usarOtroTelefono && otroTelefono.replace(/\D/g, '').length < 8) {
+      toast.error('Ingresá un número de WhatsApp válido')
+      return
+    }
     setEnviandoLink(packId)
     try {
-      const res = await mensajesApi.enviarPagoLinkWhatsapp(token, packId)
-      toast.success(`Te enviamos el link de pago a tu WhatsApp (${res.data.telefono})`)
-    } catch (e: any) {
-      toast.error(e?.message || 'No se pudo enviar el link por WhatsApp')
+      const res = await mensajesApi.enviarPagoLinkWhatsapp(
+        token,
+        packId,
+        usarOtroTelefono ? { telefonoDestino: otroTelefono } : undefined,
+      )
+      toast.success(`Te enviamos el link de pago a WhatsApp (${res.data.telefono})`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo enviar el link por WhatsApp')
     } finally {
       setEnviandoLink(null)
     }
@@ -418,9 +431,18 @@ function RecargaSheet({
       ) : packs.length === 0 ? (
         <p className="text-sm text-muted-foreground">No hay packs disponibles por ahora.</p>
       ) : (
-        <div className="space-y-3">
-          {packs.map((p) => (
-            <div key={p.id} className="space-y-3 rounded-xl bg-muted/40 p-4">
+        <div className="space-y-5">
+          <TelefonoPagoOpciones
+            telefonoCuenta={telefonoCuenta}
+            usarOtroTelefono={usarOtroTelefono}
+            onUsarOtroTelefono={setUsarOtroTelefono}
+            otroTelefono={otroTelefono}
+            onOtroTelefono={setOtroTelefono}
+            radioName={`telefono-recarga-${categoria}`}
+          />
+          <div className="space-y-3">
+            {packs.map((p) => (
+              <div key={p.id} className="space-y-3 rounded-xl bg-muted/40 p-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">{p.cantidad} {unidad}</p>
                 <p className="text-[13px] text-muted-foreground">{fmtARS(p.precio)}</p>
@@ -438,8 +460,9 @@ function RecargaSheet({
                   </>
                 )}
               </Button>
-            </div>
-          ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </AjusteEditor>

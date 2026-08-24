@@ -227,6 +227,18 @@ export const clientesApi = {
       },
     })
   },
+  eliminarPedido: async (token: string, clienteId: number, pedidoId: number) => {
+    return fetchApi(`/clientes/${clienteId}/pedidos/${pedidoId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  eliminar: async (token: string, clienteId: number) => {
+    return fetchApi(`/clientes/${clienteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
   // Motor de Recompra · 4.2 — envía el próximo toque de la escalera de recupero al cliente.
   enviarRecupero: async (token: string, clienteId: number) => {
     return fetchApi(`/clientes/${clienteId}/recupero`, {
@@ -1305,12 +1317,14 @@ export const notificacionesApi = {
 
 // Pedido Unificado API (delivery + takeaway + mesa) - backend único
 export type PedidoUnificadoItemInput = {
+  id?: number
   productoId: number
   varianteId?: number
   varianteSecundariaId?: number
   cantidad: number
   ingredientesExcluidos?: number[]
   agregados?: Array<{ id: number; nombre: string; precio: string | number }>
+  nota?: string
 }
 
 export const pedidoUnificadoApi = {
@@ -1367,6 +1381,14 @@ export const pedidoUnificadoApi = {
     const params = new URLSearchParams({ tipo })
     if (sucursalId != null) params.append('sucursalId', String(sucursalId))
     return fetchApi(`/pedido-unificado/activos?${params}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  historialMesa: async (token: string, mesaId: number, dia: string, turnoId?: number | null) => {
+    const params = new URLSearchParams({ dia })
+    if (turnoId != null) params.append('turnoId', String(turnoId))
+    return fetchApi(`/pedido-unificado/mesa/${mesaId}/historial?${params}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -2176,13 +2198,13 @@ export const mensajesApi = {
       },
     ),
   // Envía el link de pago del pack al WhatsApp del dueño (para pagar desde el celular).
-  enviarPagoLinkWhatsapp: async (token: string, packId: number) =>
+  enviarPagoLinkWhatsapp: async (token: string, packId: number, opciones?: { telefonoDestino?: string }) =>
     fetchApi<{ success: boolean; data: { enviado: boolean; telefono: string } }>(
       '/mensajes/pago-link-whatsapp',
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ packId }),
+        body: JSON.stringify({ packId, ...opciones }),
       },
     ),
 }

@@ -83,7 +83,7 @@ const getMontoDescuentoPedido = (pedido: PedidoLike): number => {
 const getItemPrice = (item: ItemPedidoLike): number => {
     if (item.precio !== undefined) {
         const basePrice = typeof item.precio === 'string' ? parseFloat(item.precio) || 0 : item.precio;
-        const agregadosTotal = getAgregados(item.agregados)
+        const agregadosTotal = parseAgregadosPedido(item.agregados)
             .reduce((total, ag) => total + (parseFloat(String(ag.precio ?? 0)) || 0), 0)
         return basePrice + agregadosTotal;
     }
@@ -96,32 +96,39 @@ const getItemPrice = (item: ItemPedidoLike): number => {
     return 0;
 }
 
-const getAgregados = (raw: ItemPedidoLike['agregados']): Array<{ nombre: string; precio?: string | number }> => {
+export const parseAgregadosPedido = (raw: ItemPedidoLike['agregados']): Array<{ nombre: string; precio?: string | number }> => {
     let parsed: unknown = raw
     if (typeof raw === 'string') {
         try { parsed = JSON.parse(raw) } catch { return [] }
     }
     if (!Array.isArray(parsed)) return []
-    const vistos = new Set<string>()
+    // El backend conserva a propósito el orden y las repeticiones: un mismo
+    // extra puede elegirse en ambos grupos o más de una vez y cada aparición
+    // forma parte del precio. No deduplicar acá, porque ocultaría unidades en
+    // la comanda y, para pedidos legacy, también alteraría el total impreso.
     return parsed.filter((ag: any) => {
         if (!ag || typeof ag !== 'object' || typeof ag.nombre !== 'string' || !ag.nombre.trim()) return false
-        const key = ag.id != null ? `id:${ag.id}` : `nombre:${ag.nombre.trim().toLowerCase()}:${ag.precio ?? ''}`
-        if (vistos.has(key)) return false
-        vistos.add(key)
         return true
     })
 }
 
-const getNombreProductoConVariantes = (item: ItemPedidoLike): string => {
-    const base = (item.nombreProducto || 'Producto').trim()
-    const baseNormalizado = base.toLocaleLowerCase('es-AR')
-    const variantes = [item.varianteNombre, item.varianteSecundariaNombre]
+export const formatNombreProductoConVariantes = (
+    nombreProducto: string | null | undefined,
+    varianteNombre?: string | null,
+    varianteSecundariaNombre?: string | null,
+): string => {
+    const base = (nombreProducto || 'Producto').trim()
+    // Primaria y secundaria son elecciones independientes. Aunque tengan el
+    // mismo texto (o coincidan con parte del nombre del producto), las dos se
+    // deben imprimir para que cocina vea la configuración completa.
+    const variantes = [varianteNombre, varianteSecundariaNombre]
         .map(nombre => nombre?.trim())
         .filter((nombre): nombre is string => !!nombre)
-        .filter((nombre, index, all) => all.findIndex(v => v.toLocaleLowerCase('es-AR') === nombre.toLocaleLowerCase('es-AR')) === index)
-        .filter(nombre => !baseNormalizado.includes(nombre.toLocaleLowerCase('es-AR')))
     return variantes.length > 0 ? `${base} (${variantes.join(' · ')})` : base
 }
+
+const getNombreProductoConVariantes = (item: ItemPedidoLike): string =>
+    formatNombreProductoConVariantes(item.nombreProducto, item.varianteNombre, item.varianteSecundariaNombre)
 
 const formatPrecioComanda = (value: number): string =>
     `$${value.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -266,7 +273,7 @@ export const formatComanda = (
             commands.push(`${indent}  ${precioLinea}\n`);
         }
 
-        const agregados = getAgregados(item.agregados);
+        const agregados = parseAgregadosPedido(item.agregados);
         if (agregados.length > 0) {
             commands.push(ESC + '!' + '\x10'); // Doble alto
             commands.push(`${indent}  CON:\n`);
@@ -483,7 +490,7 @@ export const formatFactura = (
             commands.push(`    ${item.cantidad} x $${pUnit.toFixed(2)} = ${subtotalStr}\n`);
 
             // Agregados (CON:)
-            const agregados = getAgregados(item.agregados);
+            const agregados = parseAgregadosPedido(item.agregados);
             if (agregados.length > 0) {
                 commands.push(ESC + '!' + '\x10'); // Doble alto
                 commands.push(`    CON:\n`);

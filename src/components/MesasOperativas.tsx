@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Armchair, Banknote, ChefHat, CircleDot, Loader2, Maximize2, Minus, Plus, UtensilsCrossed, Users } from 'lucide-react'
+import { Armchair, Banknote, ChefHat, CircleDot, Loader2, Maximize2, Minus, MoreVertical, Plus, UtensilsCrossed, Users } from 'lucide-react'
 import { mesasLocalesApi, type MesaLocal } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -41,6 +41,7 @@ export function MesasOperativas({
   refreshKey,
   onMesaLibre,
   onMesaOcupada,
+  onMesaHistorial,
   selectionMode = false,
   selectedMesaId,
 }: {
@@ -50,6 +51,7 @@ export function MesasOperativas({
   refreshKey?: number
   onMesaLibre: (mesa: MesaLocal) => void
   onMesaOcupada: (pedido: PedidoMesa) => void
+  onMesaHistorial?: (mesa: MesaLocal) => void
   selectionMode?: boolean
   selectedMesaId?: number | null
 }) {
@@ -81,7 +83,7 @@ export function MesasOperativas({
     const mapa = new Map<number, PedidoMesa>()
     for (const pedido of pedidos) {
       const sigueAbierto = !['archived', 'cancelled', 'delivered'].includes(pedido.estado)
-      if (sigueAbierto && pedido.mesaLocalId != null && (pedido.tipo === 'mesa' || pedido.consumoEnLocal)) mapa.set(pedido.mesaLocalId, pedido)
+      if (sigueAbierto && pedido.mesaLocalId != null && !mapa.has(pedido.mesaLocalId) && (pedido.tipo === 'mesa' || pedido.consumoEnLocal)) mapa.set(pedido.mesaLocalId, pedido)
     }
     return mapa
   }, [pedidos])
@@ -164,10 +166,13 @@ export function MesasOperativas({
         // En modo selección una mesa ocupada también es elegible: su pedido
         // recibe los productos del borrador que se está armando.
         const sumarAlPedido = selectionMode && !!pedido
-        return <button key={mesa.id} type="button" aria-label={`${mesa.nombre}, ${sumarAlPedido ? 'sumar productos del borrador a su pedido' : meta.label}`} title={sumarAlPedido ? `${mesa.nombre} · sumar productos del borrador a su pedido` : mesa.nombre} onClick={() => pedido ? onMesaOcupada(pedido) : onMesaLibre(mesa)} className={cn('absolute flex min-h-20 flex-col justify-between overflow-hidden rounded-xl border p-2.5 text-left shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', meta.className, selectedMesaId === mesa.id && 'ring-2 ring-[#FF7A00] ring-offset-2')} style={{ left: (mesa.posicionX - limitesPlano.minX) * CELL_SIZE + 16, top: (mesa.posicionY - limitesPlano.minY) * CELL_SIZE + 16, width: Math.max(104, mesa.ancho * CELL_SIZE - 8), height: Math.max(88, mesa.alto * CELL_SIZE - 8) }}>
+        return <div key={mesa.id} className="absolute min-h-20" style={{ left: (mesa.posicionX - limitesPlano.minX) * CELL_SIZE + 16, top: (mesa.posicionY - limitesPlano.minY) * CELL_SIZE + 16, width: Math.max(104, mesa.ancho * CELL_SIZE - 8), height: Math.max(88, mesa.alto * CELL_SIZE - 8) }}>
+        <button type="button" aria-label={`${mesa.nombre}, ${sumarAlPedido ? 'sumar productos del borrador a su pedido' : meta.label}`} title={sumarAlPedido ? `${mesa.nombre} · sumar productos del borrador a su pedido` : mesa.nombre} onClick={() => pedido ? onMesaOcupada(pedido) : onMesaLibre(mesa)} className={cn('flex h-full w-full min-h-20 flex-col justify-between overflow-hidden rounded-xl border p-2.5 text-left shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', meta.className, selectedMesaId === mesa.id && 'ring-2 ring-[#FF7A00] ring-offset-2')}>
           <span className="line-clamp-2 w-full break-words text-sm font-bold leading-tight">{mesa.nombre}</span>
           <div><span className="flex items-center gap-1 text-xs font-medium"><Icon className="h-3.5 w-3.5 shrink-0" />{meta.label}{pedido ? ` · #${pedido.id}` : ''}</span><span className="mt-1 flex items-center gap-1 text-[11px] opacity-75"><Users className="h-3 w-3" />{mesa.capacidad}</span></div>
         </button>
+        {!selectionMode && onMesaHistorial && <button type="button" aria-label={`Ver pedidos de ${mesa.nombre}`} title={`Pedidos de ${mesa.nombre}`} onClick={(event) => { event.stopPropagation(); onMesaHistorial(mesa) }} className="absolute right-1 top-1 z-20 grid h-7 w-7 place-items-center rounded-lg bg-background/90 text-muted-foreground shadow-sm hover:text-foreground"><MoreVertical className="h-4 w-4" /></button>}
+        </div>
       })}
         </div>
       </div>

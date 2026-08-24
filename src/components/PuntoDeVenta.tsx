@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { pedidoUnificadoApi, type PedidoUnificadoItemInput } from '@/lib/api'
+import { ApiError, pedidoUnificadoApi, type PedidoUnificadoItemInput } from '@/lib/api'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
@@ -28,6 +28,7 @@ type Producto = ReturnType<typeof useRestauranteStore.getState>['productos'][num
 
 interface CartItem {
     key: string
+    serverItemId?: number
     productoId: number
     nombre: string
     varianteId?: number
@@ -38,6 +39,7 @@ interface CartItem {
     ingredientesExcluidos: number[]
     agregados: Array<{ id: number; nombre: string; precio: string }>
     cantidad: number
+    nota?: string
 }
 
 interface PersistedPosDraft {
@@ -63,6 +65,7 @@ export interface PosDraftItem {
     cantidad: number
     precioUnitario: number
     categoriaEsBebida?: boolean
+    nota?: string
 }
 
 export interface PosDraft {
@@ -108,9 +111,12 @@ export interface PosEditablePedido {
         varianteSecundariaId?: number | null
         varianteSecundariaNombre?: string | null
         cantidad: number
+        cantidadImpresa?: number
         precioUnitario: string | number
         ingredientesExcluidos?: number[] | null
+        ingredientesExcluidosNombres?: string[]
         agregados?: unknown
+        nota?: string | null
     }>
     /** El pedido se cargó con cambios locales ya aplicados (p. ej. fusión de mesa). */
     dirtyOnLoad?: boolean
@@ -148,6 +154,8 @@ interface PuntoDeVentaProps {
     onUpdated?: (pedido: PosEditablePedido) => void
     /** Solicita eliminar el pedido persistido que se está editando. */
     onDeletePedido?: (pedidoId: number) => void
+    onPrintNewMesa?: () => void | Promise<void>
+    onPrintAllMesa?: () => void | Promise<void>
     sucursalActivaId: number | null
     /** El padre (Dashboard) espeja este borrador en la comanda de la derecha en vivo. */
     onDraftChange?: (draft: PosDraft | null) => void
@@ -199,6 +207,7 @@ interface PedidoSignatureValues {
         cantidad: number
         ingredientesExcluidos?: number[] | null
         agregados?: unknown
+        nota?: string | null
     }>
 }
 
@@ -235,11 +244,12 @@ const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
         cantidad: item.cantidad,
         ingredientesExcluidos: item.ingredientesExcluidos ?? [],
         agregados: normalizeAgregadosForSignature(item.agregados),
+        nota: item.nota ?? null,
     })),
 })
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, onDeletePedido, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
+    { onClose, onCreated, onUpdated, onDeletePedido, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -429,6 +439,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 const precioUnitario = Number(item.precioUnitario) || 0
                 return {
                     key: `pedido-${initialPedido.id}-item-${item.id}`,
+                    serverItemId: item.id > 0 ? item.id : undefined,
                     productoId: item.productoId,
                     nombre: item.nombreProducto,
                     varianteId: item.varianteId ?? undefined,
@@ -439,6 +450,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     ingredientesExcluidos: Array.isArray(item.ingredientesExcluidos) ? item.ingredientesExcluidos : [],
                     agregados,
                     cantidad: item.cantidad,
+                    nota: item.nota ?? undefined,
                 }
             }))
             setTipo(initialPedido.tipo)
@@ -702,6 +714,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 ?.filter((ingrediente) => it.ingredientesExcluidos.includes(ingrediente.id))
                 .map((ingrediente) => ingrediente.nombre),
             agregados: it.agregados.map((agregado) => ({ nombre: agregado.nombre })),
+            nota: it.nota,
             cantidad: it.cantidad,
             precioUnitario: itemUnitPrice(it),
             categoriaEsBebida: productos.find((producto) => producto.id === it.productoId)?.categoriaEsBebida ?? false,
@@ -815,11 +828,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     // Los ítems del borrador convertidos al formato de pedido editable: el
-    // Dashboard los fusiona en la edición del pedido de una mesa ocupada. El id
-    // es negativo y único porque sólo sirve de key del carrito; al guardar el
-    // backend reemplaza el set completo de ítems (el id nunca se envía).
+    // Dashboard los fusiona en la edición del pedido de una mesa ocupada. Las
+    // filas persistidas conservan su id; las nuevas usan uno negativo sólo en
+    // memoria hasta que el backend les asigna su identidad definitiva.
     const getCartItems = (): PosEditablePedido['items'] => cart.map((it, index) => ({
-        id: -1 - index,
+        id: it.serverItemId ?? -1 - index,
         productoId: it.productoId,
         nombreProducto: it.nombre,
         varianteId: it.varianteId ?? null,
@@ -830,6 +843,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         precioUnitario: itemUnitPrice(it),
         ingredientesExcluidos: it.ingredientesExcluidos,
         agregados: it.agregados,
+        nota: it.nota,
     }))
 
     const requestClose = () => {
@@ -944,12 +958,14 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         }
 
         const items: PedidoUnificadoItemInput[] = cart.map((it) => ({
+            id: it.serverItemId,
             productoId: it.productoId,
             varianteId: it.varianteId,
             varianteSecundariaId: it.varianteSecundariaId,
             cantidad: it.cantidad,
             ingredientesExcluidos: it.ingredientesExcluidos.length ? it.ingredientesExcluidos : undefined,
             agregados: it.agregados.length ? it.agregados : undefined,
+            nota: it.nota,
         }))
 
         const common = {
@@ -1043,6 +1059,21 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             }
         } catch (error: unknown) {
             // Sólo llega acá el path de edición: el de alta ya manejó sus errores.
+            if (modoEdicion && error instanceof ApiError && error.response?.code === 'VERSION_CONFLICT') {
+                const latest = error.response?.data?.pedido as PosEditablePedido | undefined
+                if (latest) {
+                    const locales = getCartItems()
+                    const localesPorId = new Map(locales.filter((item) => item.id > 0).map((item) => [item.id, item]))
+                    const fusionados = latest.items.map((item) => localesPorId.get(item.id) ?? item)
+                    fusionados.push(...locales.filter((item) => item.id <= 0))
+                    onUpdated?.({ ...latest, items: fusionados, dirtyOnLoad: true })
+                    toast.info('La mesa cambió en otro equipo; combinamos los cambios y volvemos a guardarlos')
+                    return null
+                }
+            }
+            // Un fallo transitorio no bloquea para siempre esta misma firma:
+            // al salir de `submitting`, el autosave vuelve a intentarla.
+            lastAutoSaveAttemptRef.current = null
             toast.error('Error al actualizar el pedido', { description: error instanceof Error ? error.message : undefined })
             return null
         } finally {
@@ -1241,6 +1272,16 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     <span className="text-sm font-bold text-foreground">Total</span>
                     <span className="text-2xl font-black text-[#FF7A00]">${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                 </div>
+                {modoEdicion && tipo === 'mesa' && (onPrintNewMesa || onPrintAllMesa) && (
+                    <div className="mb-2 grid grid-cols-2 gap-2">
+                        <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintNewMesa?.()}>
+                            <Printer className="mr-1.5 h-4 w-4" /> Nuevos productos
+                        </Button>
+                        <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintAllMesa?.()}>
+                            <Printer className="mr-1.5 h-4 w-4" /> Toda la comanda
+                        </Button>
+                    </div>
+                )}
                 <div className="flex items-center gap-2">
                     {modoEdicion && onDeletePedido && (
                         <button

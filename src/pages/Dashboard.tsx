@@ -32,7 +32,12 @@ import 'leaflet/dist/leaflet.css'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { usePrinter } from '@/context/PrinterContext'
-import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
+import {
+    formatComanda,
+    commandsToBytes,
+    formatNombreProductoConVariantes,
+    parseAgregadosPedido,
+} from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig } from '@/lib/posConfig'
@@ -60,6 +65,7 @@ function formatDireccionCorta(direccion?: string | null): string {
 // ─────────────────────────────────────────────
 interface DeliveryItem {
     id: number; productoId: number; cantidad: number; precioUnitario: string;
+    cantidadImpresa?: number;
     nombreProducto: string; imagenUrl: string | null;
     ingredientesExcluidos: number[]; ingredientesExcluidosNombres?: string[];
     agregados?: any; varianteNombre?: string; varianteSecundariaNombre?: string; clienteNombre?: string | null; nota?: string | null;
@@ -93,6 +99,11 @@ const STORAGE_SUCURSAL = 'sucursal_activa_id'
 const pedidoTipoLabel = (pedido: Pick<UnifiedPedido, 'tipo' | 'mesaNombre'>) =>
     pedido.tipo === 'delivery' ? 'Delivery' : pedido.tipo === 'mesa' ? (pedido.mesaNombre || 'Mesa') : 'Takeaway'
 
+const ESTADO_PEDIDO_LABEL: Record<string, string> = {
+    pending: 'Pendiente', received: 'Recibido', preparing: 'Preparando', ready: 'Listo',
+    dispatched: 'Despachado', delivered: 'Entregado', cancelled: 'Cancelado', archived: 'Cerrado',
+}
+
 const pedidoTitulo = (pedido: Pick<UnifiedPedido, 'id' | 'tipo' | 'mesaLocalId' | 'mesaNombre'>) =>
     pedido.tipo === 'mesa'
         ? (pedido.mesaNombre || (pedido.mesaLocalId != null ? `Mesa ${pedido.mesaLocalId}` : 'Mesa'))
@@ -113,6 +124,7 @@ function MesasGrid({
     refreshKey,
     onMesaLibre,
     onMesaOcupada,
+    onMesaHistory,
     selectedMesaId,
 }: {
     token: string | null
@@ -121,6 +133,7 @@ function MesasGrid({
     refreshKey?: number
     onMesaLibre: (mesa: MesaLocal) => void
     onMesaOcupada: (pedido: UnifiedPedido) => void
+    onMesaHistory: (mesa: MesaLocal) => void
     selectedMesaId?: number | null
 }) {
     const [mesas, setMesas] = useState<MesaLocal[]>([])
@@ -160,7 +173,7 @@ function MesasGrid({
     const pedidosPorMesa = useMemo(() => {
         const resultado = new Map<number, UnifiedPedido>()
         pedidos.forEach((pedido) => {
-            if (pedido.mesaLocalId != null && (pedido.tipo === 'mesa' || pedido.consumoEnLocal)) {
+            if (pedido.mesaLocalId != null && !resultado.has(pedido.mesaLocalId) && (pedido.tipo === 'mesa' || pedido.consumoEnLocal)) {
                 resultado.set(pedido.mesaLocalId, pedido)
             }
         })
@@ -177,14 +190,14 @@ function MesasGrid({
                 const pedido = pedidosPorMesa.get(mesa.id)
                 const ocupada = !!pedido
                 return (
+                    <div key={mesa.id} className="relative aspect-square min-h-11">
                     <button
-                        key={mesa.id}
                         type="button"
                         aria-label={`${mesa.nombre}, ${ocupada ? `ocupada con el pedido ${pedido.id}` : 'libre'}`}
                         title={`${mesa.nombre} · ${ocupada ? `Ocupada · pedido #${pedido.id}` : 'Libre'}`}
                         onClick={() => pedido ? onMesaOcupada(pedido) : onMesaLibre(mesa)}
                         className={cn(
-                            'aspect-square min-h-11 rounded-lg border text-base font-black tabular-nums shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]',
+                            'h-full w-full rounded-lg border text-base font-black tabular-nums shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]',
                             ocupada
                                 ? 'border-[#FF7A00]/35 bg-[#FF7A00]/15 text-[#C45F00] dark:text-orange-300'
                                 : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
@@ -193,6 +206,16 @@ function MesasGrid({
                     >
                         {numeroMesa(mesa, index)}
                     </button>
+                    <button
+                        type="button"
+                        aria-label={`Ver pedidos de ${mesa.nombre}`}
+                        title={`Pedidos de ${mesa.nombre}`}
+                        onClick={(event) => { event.stopPropagation(); onMesaHistory(mesa) }}
+                        className="absolute right-0.5 top-0.5 grid h-6 w-6 place-items-center rounded-md bg-background/85 text-muted-foreground shadow-sm hover:text-foreground"
+                    >
+                        <MoreVertical className="h-3.5 w-3.5" />
+                    </button>
+                    </div>
                 )
             })}
         </div>
@@ -327,38 +350,14 @@ const formatUltimaVez = (iso: string): string => {
     const y = Math.floor(days / 365); return `hace ${y} ${y === 1 ? 'año' : 'años'}`
 }
 
-const formatAgregados = (agregadosData: any): any[] => {
-    if (!agregadosData) return []
-    let parsed: unknown = agregadosData
-    if (typeof agregadosData === 'string') {
-        try {
-            parsed = JSON.parse(agregadosData)
-        } catch { return [] }
-    }
-    if (!Array.isArray(parsed)) return []
-    const vistos = new Set<string>()
-    return parsed.filter((ag: any) => {
-        if (!ag || typeof ag !== 'object' || typeof ag.nombre !== 'string' || !ag.nombre.trim()) return false
-        const key = ag.id != null ? `id:${ag.id}` : `nombre:${ag.nombre.trim().toLowerCase()}:${ag.precio ?? ''}`
-        if (vistos.has(key)) return false
-        vistos.add(key)
-        return true
-    })
-}
+const formatAgregados = parseAgregadosPedido
 
 const formatNombreConVariantes = (
     nombreBase: string,
     varianteNombre?: string | null,
     varianteSecundariaNombre?: string | null,
 ): string => {
-    const base = (nombreBase || 'Producto').trim()
-    const baseNormalizado = base.toLocaleLowerCase('es-AR')
-    const variantes = [varianteNombre, varianteSecundariaNombre]
-        .map(nombre => nombre?.trim())
-        .filter((nombre): nombre is string => !!nombre)
-        .filter((nombre, index, all) => all.findIndex(v => v.toLocaleLowerCase('es-AR') === nombre.toLocaleLowerCase('es-AR')) === index)
-        .filter(nombre => !baseNormalizado.includes(nombre.toLocaleLowerCase('es-AR')))
-    return variantes.length > 0 ? `${base} (${variantes.join(' · ')})` : base
+    return formatNombreProductoConVariantes(nombreBase, varianteNombre, varianteSecundariaNombre)
 }
 
 const getOrderDeliveryFee = (pedido: { total: string; items: any[]; montoDescuento?: string | number | null; deliveryFee?: string | null }) => {
@@ -1012,6 +1011,8 @@ const PosComandaPreview = ({
     onUpdate,
     onSubmit,
     onDispatchMesa,
+    onPrintNewMesa,
+    onPrintAllMesa,
     onClear,
     onClearMesa,
     editingPedidoId,
@@ -1024,6 +1025,8 @@ const PosComandaPreview = ({
     onSubmit?: () => void
     /** Guarda primero la comanda y luego despacha el pedido de la mesa. */
     onDispatchMesa?: () => void | Promise<void>
+    onPrintNewMesa?: () => void | Promise<void>
+    onPrintAllMesa?: () => void | Promise<void>
     onClear?: () => void
     onClearMesa?: () => void
     editingPedidoId?: number
@@ -1234,6 +1237,16 @@ const PosComandaPreview = ({
                                 </button>
                             )}
                         </div>
+                        {editingPedidoId && draft.tipo === 'mesa' && (onPrintNewMesa || onPrintAllMesa) && (
+                            <div className="grid grid-cols-2 gap-2">
+                                <Button type="button" variant="outline" className="h-11 rounded-xl text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintNewMesa?.()}>
+                                    <Printer className="mr-2 h-4 w-4" /> Reimprimir nuevos productos
+                                </Button>
+                                <Button type="button" variant="outline" className="h-11 rounded-xl text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintAllMesa?.()}>
+                                    <Printer className="mr-2 h-4 w-4" /> Reimprimir toda la comanda
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1321,6 +1334,9 @@ const Dashboard = () => {
     // La lista principal respeta el día/turno elegido, pero la ocupación de una
     // mesa depende de todos los pedidos abiertos, incluso si nacieron ayer.
     const [pedidosMesaAbiertos, setPedidosMesaAbiertos] = useState<UnifiedPedido[]>([])
+    const [mesaHistorial, setMesaHistorial] = useState<MesaLocal | null>(null)
+    const [pedidosMesaHistorial, setPedidosMesaHistorial] = useState<UnifiedPedido[]>([])
+    const [cargandoMesaHistorial, setCargandoMesaHistorial] = useState(false)
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
     const [demoraInputs, setDemoraInputs] = useState<Record<string, string>>({})
     const [confirmandoDemora, setConfirmandoDemora] = useState<string | null>(null)
@@ -1609,7 +1625,16 @@ const Dashboard = () => {
     useEffect(() => {
         if (!selectedPrinter) return
 
-        unifiedPedidos.forEach(pedido => {
+        // Una mesa puede seguir abierta desde el día anterior. También debe
+        // participar de la impresión aunque no esté en la lista del día actual.
+        const pedidosParaImprimir = [...unifiedPedidos]
+        const claves = new Set(pedidosParaImprimir.map((pedido) => `${pedido.tipo}-${pedido.id}`))
+        for (const pedido of pedidosMesaAbiertos) {
+            const key = `${pedido.tipo}-${pedido.id}`
+            if (!claves.has(key)) pedidosParaImprimir.push(pedido)
+        }
+
+        pedidosParaImprimir.forEach(pedido => {
             const pedidoKey = `${pedido.tipo}-${pedido.id}`
             const currentPagado = pedido.pagado
             const prevData = processedOrdersRef.current.get(pedidoKey)
@@ -1654,6 +1679,10 @@ const Dashboard = () => {
                 // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
                 if (deferUntilPaid && currentPagado && !prevData?.pagado) {
                     shouldPrint = true
+                } else if (prevData && pedido.impreso === false) {
+                    // Una edición de mesa vuelve a abrir el claim. Antes se
+                    // ignoraba porque el pedido ya existía en este Dashboard.
+                    shouldPrint = true
                 }
             }
 
@@ -1667,7 +1696,13 @@ const Dashboard = () => {
                             return
                         }
 
-                        const itemsToPrint = pedido.items.map(item => {
+                        const pendientes = Array.isArray(res?.pendingItems)
+                            ? new Map<number, number>(res.pendingItems.map((item: { id: number; cantidad: number }) => [item.id, item.cantidad]))
+                            : null
+                        const baseItems = pendientes && !res?.printFull
+                            ? pedido.items.filter((item) => pendientes.has(item.id)).map((item) => ({ ...item, cantidad: pendientes.get(item.id)! }))
+                            : pedido.items
+                        const itemsToPrint = baseItems.map(item => {
                             const producto = allProductos.find(p => p.id === item.productoId)
                             return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
                         })
@@ -1706,7 +1741,7 @@ const Dashboard = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas])
+    }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas])
 
     // ─────────────────────────────────────────────
     // ACCIONES DE PEDIDO
@@ -2102,6 +2137,7 @@ const Dashboard = () => {
             varianteSecundariaNombre: item.varianteSecundariaNombre,
             ingredientesExcluidosNombres: item.ingredientesExcluidosNombres,
             agregados: item.agregados,
+            nota: item.nota,
             categoriaEsBebida: item.categoriaEsBebida,
         }))
         const comandaData = formatComanda({
@@ -2118,6 +2154,70 @@ const Dashboard = () => {
             grandeMayusculas: comandaGrandeMayusculas,
         })
         await printRaw(commandsToBytes(comandaData))
+    }
+
+    const imprimirPedidoMesaDesdeServidor = async (
+        pedido: PosEditablePedido & { total?: string | number; sucursalNombre?: string | null },
+        cantidades?: Map<number, number>,
+    ) => {
+        const items = cantidades
+            ? pedido.items.filter((item) => cantidades.has(item.id)).map((item) => ({ ...item, cantidad: cantidades.get(item.id)! }))
+            : pedido.items
+        if (items.length === 0) return false
+        const itemsToPrint = items.map((item) => {
+            const producto = allProductos.find((candidate) => candidate.id === item.productoId)
+            return {
+                cantidad: item.cantidad,
+                precioUnitario: item.precioUnitario,
+                nombreProducto: item.nombreProducto,
+                varianteNombre: item.varianteNombre ?? undefined,
+                varianteSecundariaNombre: item.varianteSecundariaNombre ?? undefined,
+                ingredientesExcluidosNombres: item.ingredientesExcluidosNombres,
+                agregados: item.agregados as any,
+                nota: item.nota ?? undefined,
+                categoriaEsBebida: producto?.categoriaEsBebida ?? false,
+            }
+        })
+        const data = formatComanda({
+            id: pedido.id,
+            nombrePedido: pedido.nombreCliente || '',
+            telefono: pedido.telefono,
+            tipo: 'mesa',
+            mesaNombre: pedido.mesaNombre || mesaPosAsignada?.nombre,
+            total: String(pedido.total ?? draftPos?.total ?? 0),
+            notas: pedido.notas,
+            metodoPago: pedido.metodoPago,
+            sucursalNombre: pedido.sucursalNombre || sucursalNombre || undefined,
+        }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
+            grandeMayusculas: comandaGrandeMayusculas,
+        })
+        await printRaw(commandsToBytes(data))
+        return true
+    }
+
+    const reimprimirMesa = async (soloNuevos: boolean): Promise<void> => {
+        if (!token || !pedidoPosEditando) return
+        if (!selectedPrinter) { toast.error('Configurá una impresora antes de reimprimir'); return }
+        try {
+            const pedidoId = await posRef.current?.submitDraft()
+            if (!pedidoId) return
+            let cantidades: Map<number, number> | undefined
+            if (soloNuevos) {
+                const claim: any = await pedidoUnificadoApi.claimImpreso(token, pedidoId)
+                const pendientes = Array.isArray(claim?.pendingItems) ? claim.pendingItems : []
+                if (!claim?.claimed || pendientes.length === 0) {
+                    toast.info('No hay productos nuevos pendientes de impresión'); return
+                }
+                cantidades = new Map(pendientes.map((item: { id: number; cantidad: number }) => [item.id, item.cantidad]))
+            }
+            const response = await pedidoUnificadoApi.getById(token, pedidoId) as { success?: boolean; data?: PosEditablePedido & { total?: string; sucursalNombre?: string | null } }
+            if (!response.success || !response.data) throw new Error('No se pudo cargar la comanda guardada')
+            const impresa = await imprimirPedidoMesaDesdeServidor(response.data, cantidades)
+            if (!impresa) { toast.info('No hay productos nuevos pendientes de impresión'); return }
+            toast.success(soloNuevos ? 'Productos nuevos enviados a cocina' : 'Comanda completa enviada a imprimir')
+        } catch (error) {
+            toast.error('No se pudo reimprimir la comanda', { description: error instanceof Error ? error.message : undefined })
+        }
     }
 
     const confirmarDespachoMesa = async () => {
@@ -2208,6 +2308,25 @@ const Dashboard = () => {
     const abrirPedidoMesaDesdeListado = (pedido: UnifiedPedido) => {
         setMesaPosAsignada(null)
         openPedidoInPOS(pedido)
+    }
+    const abrirHistorialMesa = async (mesa: MesaLocal) => {
+        if (!token) return
+        setMesaHistorial(mesa)
+        setPedidosMesaHistorial([])
+        setCargandoMesaHistorial(true)
+        try {
+            const response: any = await pedidoUnificadoApi.historialMesa(
+                token,
+                mesa.id,
+                selectedDay,
+                cierreManualActivo ? selectedTurnoId : null,
+            )
+            setPedidosMesaHistorial(Array.isArray(response?.data) ? response.data : [])
+        } catch (error) {
+            toast.error('No se pudo cargar el historial de la mesa', { description: error instanceof Error ? error.message : undefined })
+        } finally {
+            setCargandoMesaHistorial(false)
+        }
     }
     const abrirPedidoMesa = async (pedidoMesa: { id: number }) => {
         if (mesasDialogMode === 'asignar-borrador') {
@@ -2586,6 +2705,7 @@ const Dashboard = () => {
                                             refreshKey={lastUpdate?.timestamp}
                                             onMesaLibre={abrirMesaLibreDesdeListado}
                                             onMesaOcupada={abrirPedidoMesaDesdeListado}
+                                            onMesaHistory={abrirHistorialMesa}
                                             selectedMesaId={mesaPosAsignada?.id}
                                         />
                                     </div>
@@ -2797,6 +2917,8 @@ const Dashboard = () => {
                                     onCreated={handlePedidoManualCreado}
                                     onUpdated={handlePedidoManualActualizado}
                                     onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
+                                    onPrintNewMesa={() => reimprimirMesa(true)}
+                                    onPrintAllMesa={() => reimprimirMesa(false)}
                                     sucursalActivaId={sucursalActivaId}
                                     sucursalNombre={sucursalNombre}
                                     onDraftChange={setDraftPos}
@@ -2824,6 +2946,8 @@ const Dashboard = () => {
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
                                         onDispatchMesa={() => setShowDespacharMesaDialog(true)}
+                                        onPrintNewMesa={() => reimprimirMesa(true)}
+                                        onPrintAllMesa={() => reimprimirMesa(false)}
                                         onClear={() => pedidoPosEditando
                                             ? abrirDialogoEliminarPedido(pedidoPosEditando)
                                             : posRef.current?.clearDraft()}
@@ -3247,6 +3371,8 @@ const Dashboard = () => {
                                         onCreated={handlePedidoManualCreado}
                                         onUpdated={handlePedidoManualActualizado}
                                         onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
+                                        onPrintNewMesa={() => reimprimirMesa(true)}
+                                        onPrintAllMesa={() => reimprimirMesa(false)}
                                         sucursalActivaId={sucursalActivaId}
                                         sucursalNombre={sucursalNombre}
                                         onDraftChange={setDraftPos}
@@ -3369,6 +3495,57 @@ const Dashboard = () => {
                 </div>
             )}
 
+            {/* ── HISTORIAL DE LA MESA SELECCIONADA ── */}
+            <Dialog open={mesaHistorial != null} onOpenChange={(open) => { if (!open) setMesaHistorial(null) }}>
+                <DialogContent className="max-w-lg overflow-hidden rounded-[28px] border border-border bg-background p-0">
+                    <DialogHeader className="px-5 pt-5 pb-3">
+                        <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                            <Armchair className="h-5 w-5 text-[#FF7A00]" /> Pedidos de {mesaHistorial?.nombre}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {cierreManualActivo && selectedTurnoId != null
+                                ? `Pedidos asociados al turno seleccionado.`
+                                : `Pedidos asociados del ${selectedDay.split('-').reverse().join('/')}.`}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="max-h-[60vh] overflow-y-auto px-5 pb-5">
+                        {cargandoMesaHistorial ? (
+                            <div className="flex h-28 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Cargando pedidos…</div>
+                        ) : pedidosMesaHistorial.length === 0 ? (
+                            <div className="flex h-28 items-center justify-center rounded-2xl border border-dashed text-sm text-muted-foreground">No hubo pedidos asociados en este período.</div>
+                        ) : (
+                            <div className="space-y-2">
+                                {pedidosMesaHistorial.map((pedido) => (
+                                    <button
+                                        key={pedido.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setMesaHistorial(null)
+                                            if (pedido.estado === 'archived' || pedido.estado === 'cancelled' || pedido.estado === 'delivered') {
+                                                setPedidoPosEditando(null)
+                                                setMesaPosAsignada(null)
+                                                setSelectedUnifiedPedido(pedido)
+                                                setPosContext('pedidoExistente')
+                                                setMobileView('detail')
+                                            } else {
+                                                void editarPedidoEnPos(pedido)
+                                            }
+                                        }}
+                                        className="flex w-full items-center justify-between gap-3 rounded-xl border bg-card p-3 text-left transition hover:bg-muted/50"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="font-bold">Pedido #{pedido.id}</p>
+                                            <p className="text-xs text-muted-foreground">{formatTimeAgo(pedido.createdAt)} · {pedido.totalItems} ítems · {ESTADO_PEDIDO_LABEL[pedido.estado] || pedido.estado}</p>
+                                        </div>
+                                        <span className="shrink-0 font-black text-[#FF7A00]">${computeOrderTotal(pedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
             {/* ── MAPA FLOTANTE (ubicación del pedido) ── */}
             <Dialog open={showMapaDialog} onOpenChange={setShowMapaDialog}>
                 <DialogContent className="max-w-lg p-0 overflow-hidden rounded-[28px] border border-border bg-background">
@@ -3403,6 +3580,7 @@ const Dashboard = () => {
                             refreshKey={lastUpdate?.timestamp}
                             onMesaLibre={abrirMesaLibre}
                             onMesaOcupada={abrirPedidoMesa}
+                            onMesaHistorial={(mesa) => { setShowMesasDialog(false); void abrirHistorialMesa(mesa) }}
                             selectionMode={mesasDialogMode === 'asignar-borrador'}
                             selectedMesaId={mesasDialogMode === 'asignar-borrador' ? mesaPosAsignada?.id : null}
                         />
