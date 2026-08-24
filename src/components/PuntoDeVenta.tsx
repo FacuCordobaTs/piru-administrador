@@ -154,6 +154,8 @@ interface PuntoDeVentaProps {
     onUpdated?: (pedido: PosEditablePedido) => void
     /** Solicita eliminar el pedido persistido que se está editando. */
     onDeletePedido?: (pedidoId: number) => void
+    /** Abre la confirmación para despachar el pedido de una mesa. */
+    onDispatchMesa?: () => void | Promise<void>
     onPrintNewMesa?: () => void | Promise<void>
     onPrintAllMesa?: () => void | Promise<void>
     sucursalActivaId: number | null
@@ -249,7 +251,7 @@ const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
 })
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, onDeletePedido, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
+    { onClose, onCreated, onUpdated, onDeletePedido, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -1308,6 +1310,18 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                         >
                             {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
                         </Button>
+                    )}
+                    {modoEdicion && tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
+                        <button
+                            type="button"
+                            onClick={() => void onDispatchMesa()}
+                            disabled={cart.length === 0 || submitting}
+                            aria-label="Despachar pedido de la mesa"
+                            title="Despachar"
+                            className="h-12 w-12 shrink-0 rounded-xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
+                        >
+                            <Truck className="h-5 w-5" />
+                        </button>
                     )}
                 </div>
             </div>

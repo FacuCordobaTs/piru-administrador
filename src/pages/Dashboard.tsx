@@ -2229,10 +2229,10 @@ const Dashboard = () => {
         }
     }
 
-    const confirmarDespachoMesa = async () => {
+    const confirmarDespachoMesa = async (imprimir: boolean) => {
         if (despachandoMesa || !draftPos || draftPos.tipo !== 'mesa' || !pedidoPosEditando) return
-        if (!selectedPrinter) {
-            toast.error('Configurá una impresora antes de despachar la mesa')
+        if (imprimir && !selectedPrinter) {
+            toast.error('Configurá una impresora para despachar e imprimir')
             return
         }
 
@@ -2242,7 +2242,7 @@ const Dashboard = () => {
             const pedidoId = await posRef.current?.submitDraft()
             if (!pedidoId) return
 
-            await imprimirPedidoMesaCompleto(pedidoId, snapshotCompleto)
+            if (imprimir) await imprimirPedidoMesaCompleto(pedidoId, snapshotCompleto)
             const despachado = await handleDespachar('mesa', pedidoId)
             if (!despachado) return
             setShowDespacharMesaDialog(false)
@@ -2251,8 +2251,8 @@ const Dashboard = () => {
             setDraftPos(null)
             setPosContext('borrador')
             fetchPedidosMesaAbiertos()
-        } catch (error) {
-            toast.error('No se pudo imprimir el ticket', {
+        } catch {
+            toast.error(imprimir ? 'No se pudo imprimir el ticket' : 'No se pudo despachar la mesa', {
                 description: 'El pedido quedó guardado y no fue despachado. Podés volver a intentarlo.',
             })
         } finally {
@@ -2926,6 +2926,7 @@ const Dashboard = () => {
                                     onCreated={handlePedidoManualCreado}
                                     onUpdated={handlePedidoManualActualizado}
                                     onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
+                                    onDispatchMesa={() => setShowDespacharMesaDialog(true)}
                                     onPrintNewMesa={() => reimprimirMesa(true)}
                                     onPrintAllMesa={() => reimprimirMesa(false)}
                                     sucursalActivaId={sucursalActivaId}
@@ -3380,6 +3381,7 @@ const Dashboard = () => {
                                         onCreated={handlePedidoManualCreado}
                                         onUpdated={handlePedidoManualActualizado}
                                         onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
+                                        onDispatchMesa={() => setShowDespacharMesaDialog(true)}
                                         onPrintNewMesa={() => reimprimirMesa(true)}
                                         onPrintAllMesa={() => reimprimirMesa(false)}
                                         sucursalActivaId={sucursalActivaId}
@@ -3597,27 +3599,36 @@ const Dashboard = () => {
                 </DialogContent>
             </Dialog>
 
-            {/* ── DIÁLOGO ELIMINAR ── */}
+            {/* ── DIÁLOGO DESPACHAR MESA ── */}
             <Dialog open={showDespacharMesaDialog} onOpenChange={(open) => {
                 if (!despachandoMesa) setShowDespacharMesaDialog(open)
             }}>
                 <DialogContent className="max-w-sm rounded-[32px] p-6 sm:p-8 border border-border bg-background text-center">
                     <div className="h-16 w-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Printer className="h-8 w-8 text-[#FF7A00]" />
+                        <Truck className="h-8 w-8 text-[#FF7A00]" />
                     </div>
-                    <DialogTitle className="text-2xl font-bold mb-2 text-center">DESPACHAR E IMPRIMIR TICKET</DialogTitle>
+                    <DialogTitle className="text-2xl font-bold mb-2 text-center">DESPACHAR PEDIDO</DialogTitle>
                     <DialogDescription className="text-base text-center mb-8">
-                        Se guardarán los cambios y se imprimirá nuevamente el pedido completo de la mesa antes de despacharlo.
+                        {selectedPrinter
+                            ? 'Se guardarán los cambios. Elegí si también querés imprimir nuevamente el pedido completo de la mesa.'
+                            : 'Se guardarán los cambios y se despachará el pedido de la mesa.'}
                     </DialogDescription>
-                    <div className="flex gap-3">
+                    <div className="flex flex-col gap-3">
+                        <div className={selectedPrinter ? 'grid grid-cols-2 gap-3' : ''}>
+                            <Button variant={selectedPrinter ? 'outline' : 'default'} className={selectedPrinter ? 'h-12 rounded-xl font-bold border-border' : 'w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold'} disabled={despachandoMesa} onClick={() => void confirmarDespachoMesa(false)}>
+                                {despachandoMesa ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Solo despachar'}
+                            </Button>
+                            {selectedPrinter && (
+                                <Button className="h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold" disabled={despachandoMesa} onClick={() => void confirmarDespachoMesa(true)}>
+                                    {despachandoMesa ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Despachar e imprimir'}
+                                </Button>
+                            )}
+                        </div>
                         <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-border" disabled={despachandoMesa} onClick={() => setShowDespacharMesaDialog(false)}>
                             Cancelar
                         </Button>
-                        <Button className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold" disabled={despachandoMesa || !selectedPrinter} onClick={() => void confirmarDespachoMesa()}>
-                            {despachandoMesa ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Despachar e imprimir'}
-                        </Button>
                     </div>
-                    {!selectedPrinter && <p className="mt-3 text-sm text-destructive">No hay una impresora configurada.</p>}
+                    {!selectedPrinter && <p className="mt-3 text-sm text-muted-foreground">No hay una impresora configurada; el pedido se despachará sin imprimir.</p>}
                 </DialogContent>
             </Dialog>
 
