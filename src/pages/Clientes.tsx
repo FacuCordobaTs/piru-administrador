@@ -550,7 +550,7 @@ function ClientesPanel() {
                     <div className="mb-4">
                         <h1 className="text-xl font-semibold tracking-tight text-foreground">Base de clientes</h1>
                         <p className="text-[13px] text-muted-foreground mt-0.5">
-                            {stats.totalClients} clientes · cada uno clasificado por su propio ritmo de pedidos
+                            {stats.totalClients} clientes con pedidos despachados · cada uno clasificado por su propio ritmo
                         </p>
                     </div>
 
@@ -639,7 +639,9 @@ function ClientesPanel() {
                                 <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
                                     {segmentoFiltro !== 'todos'
                                         ? 'No hay clientes en este segmento.'
-                                        : 'No se encontraron clientes. Probá ajustando tu búsqueda.'}
+                                        : query
+                                            ? 'No se encontraron clientes. Probá ajustando tu búsqueda.'
+                                            : 'Todavía no hay clientes con pedidos despachados.'}
                                 </p>
                             </div>
                         ) : (
