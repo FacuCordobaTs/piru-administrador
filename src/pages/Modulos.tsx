@@ -468,7 +468,10 @@ export default function Modulos() {
   }
 
   const totalMensualCon = (modulo: Modulo) => {
-    const actual = Number(useModulosStore.getState().suscripcion?.montoTotalMensual ?? 0)
+    const suscripcion = useModulosStore.getState().suscripcion
+    // La cotización viene del catálogo vigente; `montoTotalMensual` es el
+    // snapshot de la última factura y puede tener un precio base anterior.
+    const actual = Number(suscripcion?.cotizacionProximaFactura?.montoTotalMensual ?? suscripcion?.montoTotalMensual ?? 0)
     return actual + Number(modulo.precioMensual)
   }
 

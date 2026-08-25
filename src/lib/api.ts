@@ -1628,6 +1628,21 @@ export const sucursalesApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+  create: async (token: string, data: {
+    nombre: string
+    direccion?: string | null
+    direccionLat?: number | null
+    direccionLng?: number | null
+    direccionCiudad?: string | null
+    transferenciaAlias?: string | null
+    whatsappEnabled?: boolean
+    whatsappNumber?: string | null
+    activo?: boolean
+  }) => fetchApi<{ success: boolean; data: { id: number } }>('/sucursales/create', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  }),
 }
 
 export interface MesaLocal {
@@ -2281,6 +2296,8 @@ export interface ClaimConfig {
   }
   delivery: {
     deliveryEnabled: boolean
+    /** Opcional para mantener compatibilidad con backends previos a este campo aditivo. */
+    takeawayEnabled?: boolean
     lat: number | null
     lng: number | null
     zonas: ClaimZona[]
@@ -2291,9 +2308,19 @@ export interface ClaimConfig {
     precio: string
     descripcion: string | null
     imagenUrl: string | null
+    tituloVariantesPrimarias?: string
+    tituloVariantesSecundarias?: string
+    tituloExtrasPrimarios?: string
+    tituloExtrasSecundarios?: string
+    permiteNota?: boolean
+    tituloNota?: string
     variantes: Array<{ nombre: string; precio: number }>
+    variantesPrimarias?: Array<{ nombre: string; precio: number }>
+    variantesSecundarias?: Array<{ nombre: string; precio: number }>
     ingredientes: string[]
     extras: Array<{ nombre: string; precio: number }>
+    extrasPrimarios?: Array<{ nombre: string; precio: number }>
+    extrasSecundarios?: Array<{ nombre: string; precio: number }>
   }>
 }
 

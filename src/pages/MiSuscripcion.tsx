@@ -72,7 +72,9 @@ export default function MiSuscripcion() {
   if (loading || !data) return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
 
   const descuento = descuentoAnualEfectivo(data.suscripcionBase?.descuentoAnual ?? 0)
-  const precioBase = Number(data.precioBaseMensual ?? data.suscripcionBase?.precioMensual ?? 0)
+  // La configuración comercial es la fuente vigente; `precioBaseMensual` es
+  // sólo el snapshot de la última factura y puede conservar un precio anterior.
+  const precioBase = Number(data.suscripcionBase?.precioMensual ?? data.cotizacionProximaFactura?.montoBaseMensual ?? data.precioBaseMensual ?? 0)
   const sinSuscripcion = data.sinSuscripcion || !data.suscripcionId
   const cancelacionProgramada = !!data.fechaCancelacion && new Date(data.fechaCancelacion) > new Date()
   const necesitaCheckout = sinSuscripcion || data.estado === 'trial' || data.estado === 'pago_pendiente' || data.estado === 'suspendida' || data.estado === 'cancelada'
@@ -81,9 +83,7 @@ export default function MiSuscripcion() {
   // el importe vigente se arma con los entitlements activos para que el primer
   // checkout muestre exactamente lo que el backend va a cobrar.
   const modulosMensuales = modulosPagos.reduce((total, modulo) => total + Number(modulo.precioMensualCongelado ?? modulo.precioMensual), 0)
-  const totalMensual = sinSuscripcion
-    ? precioBase + modulosMensuales
-    : Number(data.montoTotalMensual ?? (precioBase + modulosMensuales))
+  const totalMensual = Number(data.cotizacionProximaFactura?.montoTotalMensual ?? (precioBase + modulosMensuales))
   const totalCiclo = ciclo === 'anual' ? precioAnual(totalMensual, descuento) : totalMensual
   const tieneAvisos = modulosPagos.some((modulo) => modulo.codigo === 'avisos_automaticos_whatsapp' && modulo.estado === 'activo')
 

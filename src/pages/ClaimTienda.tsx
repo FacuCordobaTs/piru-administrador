@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router'
 import { MapContainer, TileLayer, Circle, Polygon, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -8,14 +9,15 @@ import 'leaflet-draw'
 import {
   Loader2, Check, Store, MessageCircle, ArrowLeft, Pencil, ImagePlus, X, Save,
   Banknote, MapPin, UtensilsCrossed, CreditCard, Wallet, PencilRuler, Minus, Plus, AlertTriangle,
-  ShoppingBag, Settings, Rocket, ArrowRight,
+  ShoppingBag, Settings, ArrowRight,
+  Printer, MonitorSmartphone, Armchair, ChevronDown, CircleCheck, Maximize2, Download,
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import {
-  claimApi, restauranteApi, zonasDeliveryApi, suscripcionApi, ApiError,
+  claimApi, restauranteApi, zonasDeliveryApi, suscripcionApi, modulosApi, sucursalesApi, mesasLocalesApi, ApiError,
   type ClaimTienda as ClaimTiendaData, type ClaimInventario, type ClaimConfig, type MiSuscripcion,
 } from '@/lib/api'
 
@@ -41,37 +43,89 @@ const DEFAULT_CENTER: [number, number] = [-31.4201, -64.1888]
  * (se editan en detalle adentro).
  *
  * Flujo: recorrido (`walk`) → verificación de WhatsApp → código (`codigo`) → persistir borrador →
- * pedido de prueba (`prueba`) → info de la suscripción y prueba gratis (`plan`) → panel.
+ * pedido de prueba (`prueba`) → modos de uso (`modos`) → configuración elegida (impresión y/o
+ * mesas) → info de la suscripción y prueba gratis (`plan`) → panel.
  */
-type Paso = 'walk' | 'codigo' | 'prueba' | 'plan'
+type Paso = 'walk' | 'codigo' | 'prueba' | 'modos' | 'configImpresion' | 'configMesas' | 'plan'
+type ModoUso = 'impresion' | 'pos'
+type PasoPostClaim = Exclude<Paso, 'walk' | 'codigo'>
+
+type ProgresoClaim = {
+  restauranteId: number
+  paso: PasoPostClaim
+  tienda: ClaimTiendaData
+  telefono: string
+  modosActivos: ModoUso[]
+  activarMesasConPos: boolean
+  mesasActivas: boolean
+  cantidadMesas: number
+}
 
 // Base de la tienda pública del local (mismo formato que el link que ve el dueño en el recorrido).
 const STORE_BASE = 'https://piru.app'
+const WHATSAPP_HELP_NUMBER = '5493408681915'
+const LATEST_DESKTOP_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
+const DESKTOP_DOWNLOAD_FALLBACK = 'https://piru.app'
+const PASOS_POST_CLAIM: PasoPostClaim[] = ['prueba', 'modos', 'configImpresion', 'configMesas', 'plan']
 
-// La suscripción base es única. El importe se obtiene del backend; los módulos se eligen después
-// desde el panel y no se activan durante el claim ni el trial.
-const SUSCRIPCION_BASE_INCLUYE = [
-  'Tu tienda online y centro de pedidos',
-  'Productos, categorías, fotos y horarios',
-  'Cobros y gestión diaria del local',
-  'Soporte para delivery, retiro y pedidos en grupo',
-]
+const progresoClaimKey = (claimToken: string) => `piru:claim-progress:${claimToken}`
+
+function leerProgresoClaim(claimToken: string, restauranteId?: number): ProgresoClaim | null {
+  if (!claimToken || !restauranteId || typeof localStorage === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(progresoClaimKey(claimToken))
+    if (!raw) return null
+    const progreso = JSON.parse(raw) as Partial<ProgresoClaim>
+    if (progreso.restauranteId !== restauranteId) return null
+    if (!progreso.paso || !PASOS_POST_CLAIM.includes(progreso.paso as PasoPostClaim)) return null
+    if (!progreso.tienda || typeof progreso.tienda !== 'object') return null
+    return {
+      restauranteId,
+      paso: progreso.paso as PasoPostClaim,
+      tienda: progreso.tienda as ClaimTiendaData,
+      telefono: typeof progreso.telefono === 'string' ? progreso.telefono : '',
+      modosActivos: Array.isArray(progreso.modosActivos)
+        ? progreso.modosActivos.filter((modo): modo is ModoUso => modo === 'impresion' || modo === 'pos')
+        : [],
+      activarMesasConPos: progreso.activarMesasConPos === true,
+      mesasActivas: progreso.mesasActivas === true,
+      cantidadMesas: Math.min(100, Math.max(1, Number(progreso.cantidadMesas) || 10)),
+    }
+  } catch {
+    return null
+  }
+}
 
 // Motivos de link no reclamable, para mostrar el mensaje correcto (y a dónde mandar al dueño).
 type Bloqueo = { titulo: string; detalle: string; irALogin?: boolean } | null
+type WhatsAppHelp = { label: string; message: string }
 
 // ── Borrador local de ediciones (se persiste al confirmar el WhatsApp) ──
 type PagosDraft = { efectivo: boolean; transferenciaManual: boolean; transferenciaAlias: string }
 type ZonaDraft = { nombre: string; precio: string; poligono: { lat: number; lng: number }[]; color: string }
+type TiposPedidoDraft = { delivery: boolean; takeaway: boolean }
 type DeliveryDraft =
   | { mode: 'radio'; precio: string; radius: number; center: { lat: number; lng: number }; address: string }
   | { mode: 'zonas'; zonas: ZonaDraft[]; center: { lat: number; lng: number }; address: string }
+type ModalidadSucursales = 'unica' | 'multiple'
+type SucursalDraft = {
+  localId: string
+  nombre: string
+  address: string
+  center: { lat: number; lng: number } | null
+  pagos: PagosDraft
+  whatsappNumber: string
+  delivery?: DeliveryDraft
+}
 type Draft = {
   nombre?: string
   username?: string
   logo?: string
   pagos?: PagosDraft
+  tiposPedido?: TiposPedidoDraft
   delivery?: DeliveryDraft
+  modalidadSucursales?: ModalidadSucursales
+  sucursales?: SucursalDraft[]
 }
 
 // ── Tarjeta del recorrido ──
@@ -80,9 +134,14 @@ type Card =
   | { kind: 'link' }
   | { kind: 'logo' }
   | { kind: 'productos' }
+  | { kind: 'modalidadSucursales' }
+  | { kind: 'sucursales' }
   | { kind: 'pagos' }
   | { kind: 'delivery' }
+  | { kind: 'pagosSucursal'; sucursalIdx: number }
+  | { kind: 'deliverySucursal'; sucursalIdx: number }
   | { kind: 'mensaje' }
+  | { kind: 'whatsapps' }
   | { kind: 'reassure'; id: string; icon: LucideIcon; titulo: string; valor: string }
   | { kind: 'verificar' }
 
@@ -206,20 +265,35 @@ export default function ClaimTienda() {
   const { token = '' } = useParams()
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
+  const restauranteAutenticado = useAuthStore((s) => s.restaurante)
+  const progresoInicial = useRef<ProgresoClaim | null>(leerProgresoClaim(token, restauranteAutenticado?.id))
 
   const [loading, setLoading] = useState(true)
   const [bloqueo, setBloqueo] = useState<Bloqueo>(null)
-  const [tienda, setTienda] = useState<ClaimTiendaData | null>(null)
+  const [tienda, setTienda] = useState<ClaimTiendaData | null>(progresoInicial.current?.tienda ?? null)
   const [inventario, setInventario] = useState<ClaimInventario | null>(null)
   const [config, setConfig] = useState<ClaimConfig | null>(null)
 
-  const [paso, setPaso] = useState<Paso>('walk')
+  const [paso, setPaso] = useState<Paso>(progresoInicial.current?.paso ?? 'walk')
   const [cardIdx, setCardIdx] = useState(0)
   const [enviando, setEnviando] = useState(false)
   // Suscripción base + trial para la pantalla informativa final; se trae tras verificar.
   const [miSusc, setMiSusc] = useState<MiSuscripcion | null>(null)
   // Pago inmediato de la suscripción base desde el claim (opcional: saltear la prueba y pagar ya).
   const [pagandoSuscripcion, setPagandoSuscripcion] = useState(false)
+
+  // WhatsApp es el funcionamiento base y siempre está disponible. Sólo Impresión y POS son
+  // alternativas desplegables que activan módulos incluidos.
+  const [modosAbiertos, setModosAbiertos] = useState<ModoUso[]>([])
+  const [modosActivos, setModosActivos] = useState<ModoUso[]>(progresoInicial.current?.modosActivos ?? [])
+  const [activandoModo, setActivandoModo] = useState<ModoUso | null>(null)
+  const [activarMesasConPos, setActivarMesasConPos] = useState(progresoInicial.current?.activarMesasConPos ?? false)
+  const [mesasActivas, setMesasActivas] = useState(progresoInicial.current?.mesasActivas ?? false)
+  const [cantidadMesas, setCantidadMesas] = useState(progresoInicial.current?.cantidadMesas ?? 10)
+  const [creandoMesas, setCreandoMesas] = useState(false)
+  const [desktopDownloadUrl, setDesktopDownloadUrl] = useState(DESKTOP_DOWNLOAD_FALLBACK)
+  const [desktopVersion, setDesktopVersion] = useState<string | null>(null)
+  const [buscandoDescarga, setBuscandoDescarga] = useState(false)
 
   // Borrador de ediciones inline, se persiste al confirmar el WhatsApp.
   const [draft, setDraft] = useState<Draft>({})
@@ -230,7 +304,7 @@ export default function ClaimTienda() {
   const [tmpPagos, setTmpPagos] = useState<PagosDraft>({ efectivo: true, transferenciaManual: false, transferenciaAlias: '' })
   const [subiendoLogo, setSubiendoLogo] = useState(false)
 
-  const [telefono, setTelefono] = useState('')
+  const [telefono, setTelefono] = useState(progresoInicial.current?.telefono ?? '')
 
   // Estado del OTP (paso 2)
   const [verificationId, setVerificationId] = useState<string | null>(null)
@@ -241,14 +315,42 @@ export default function ClaimTienda() {
   const inputsRef = useRef<Array<HTMLInputElement | null>>([])
   const submittingRef = useRef(false)
 
-  // Tema del sistema (esta ruta vive fuera del layout que ya lo aplica)
+  // Esta ruta pública vive fuera de DashboardLayout, así que aplica por sí misma la preferencia
+  // guardada del panel. También escucha cambios para mantenerse sincronizada si Ajustes está
+  // abierto en otra pestaña.
   useEffect(() => {
-    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    document.documentElement.classList.toggle('dark', isDark)
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const applyTheme = () => {
+      const stored = localStorage.getItem('piru-theme')
+      document.documentElement.classList.toggle('dark', stored ? stored === 'dark' : media.matches)
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === 'piru-theme') applyTheme()
+    }
+    const handleSystemTheme = () => {
+      if (!localStorage.getItem('piru-theme')) applyTheme()
+    }
+
+    applyTheme()
+    window.addEventListener('storage', handleStorage)
+    media.addEventListener('change', handleSystemTheme)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      media.removeEventListener('change', handleSystemTheme)
+    }
   }, [])
 
   // Preview de la tienda reclamable
   useEffect(() => {
+    // Después de verificar el teléfono el preview público deja de estar disponible por diseño. Si
+    // este navegador conserva la sesión del mismo restaurante, retomamos el progreso guardado sin
+    // volver a consultar el endpoint público ni mostrar el falso bloqueo "ya es tuya".
+    const tokenReanudacion = useAuthStore.getState().token
+    if (progresoInicial.current && tokenReanudacion) {
+      setLoading(false)
+      suscripcionApi.miSuscripcion(tokenReanudacion).then((res) => setMiSusc(res.data)).catch(() => {})
+      return
+    }
     let cancel = false
     setLoading(true)
     claimApi
@@ -269,12 +371,48 @@ export default function ClaimTienda() {
     }
   }, [token])
 
+  // Guarda sólo el tramo autenticado. El ID evita que una sesión de otro restaurante pueda
+  // reanudar el claim aunque conozca o abra este mismo link.
+  useEffect(() => {
+    if (!restauranteAutenticado?.id || !tienda || !PASOS_POST_CLAIM.includes(paso as PasoPostClaim)) return
+    const progreso: ProgresoClaim = {
+      restauranteId: restauranteAutenticado.id,
+      paso: paso as PasoPostClaim,
+      tienda,
+      telefono,
+      modosActivos,
+      activarMesasConPos,
+      mesasActivas,
+      cantidadMesas,
+    }
+    localStorage.setItem(progresoClaimKey(token), JSON.stringify(progreso))
+  }, [token, restauranteAutenticado?.id, tienda, telefono, paso, modosActivos, activarMesasConPos, mesasActivas, cantidadMesas])
+
   // Cuenta regresiva para reenviar el código
   useEffect(() => {
     if (cooldown <= 0) return
     const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
     return () => clearTimeout(t)
   }, [cooldown])
+
+  // La URL del instalador cambia con cada release. Usamos la misma fuente que el banner de Ajustes
+  // y conservamos la landing como fallback si el manifiesto no responde.
+  useEffect(() => {
+    if (paso !== 'configImpresion') return
+    let vigente = true
+    setBuscandoDescarga(true)
+    fetch(LATEST_DESKTOP_JSON_URL)
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { version?: string; platforms?: { 'windows-x86_64'?: { url?: string } } }) => {
+        if (!vigente) return
+        const url = data.platforms?.['windows-x86_64']?.url
+        if (url) setDesktopDownloadUrl(url)
+        if (data.version) setDesktopVersion(data.version)
+      })
+      .catch(() => {})
+      .finally(() => vigente && setBuscandoDescarga(false))
+    return () => { vigente = false }
+  }, [paso])
 
   // Valores mostrados: el borrador pisa lo que vino del backend.
   const dispNombre = draft.nombre ?? tienda?.nombre ?? ''
@@ -287,6 +425,10 @@ export default function ClaimTienda() {
     transferenciaManual: config?.pagos.transferenciaManual ?? false,
     transferenciaAlias: config?.pagos.transferenciaAlias ?? '',
   }
+  const tiposPedidoView: TiposPedidoDraft = draft.tiposPedido ?? {
+    delivery: config?.delivery.deliveryEnabled ?? true,
+    takeaway: config?.delivery.takeawayEnabled ?? true,
+  }
 
   // Centro del mapa: dirección del local → 1ª zona → default.
   const mapCenter = useMemo<[number, number]>(() => {
@@ -296,7 +438,7 @@ export default function ClaimTienda() {
     return DEFAULT_CENTER
   }, [config])
 
-  // ── Recorrido: intro + link + logo + productos + pagos + delivery + ejemplo de pedido + verificación ──
+  // ── Recorrido: después del menú se bifurca entre local único y múltiples sucursales. ──
   const cards = useMemo<Card[]>(() => {
     if (!tienda) return []
     const inv = inventario
@@ -308,8 +450,18 @@ export default function ClaimTienda() {
     if (config) {
       // Preview extendido: tarjetas ricas (ver/editar).
       if (config.productos.length > 0) list.push({ kind: 'productos' })
-      list.push({ kind: 'pagos' })
-      if (config.delivery.deliveryEnabled || config.delivery.zonas.length > 0) list.push({ kind: 'delivery' })
+      list.push({ kind: 'modalidadSucursales' })
+      if (draft.modalidadSucursales === 'multiple') {
+        list.push({ kind: 'sucursales' })
+        for (let i = 0; i < (draft.sucursales?.length ?? 0); i++) {
+          list.push({ kind: 'pagosSucursal', sucursalIdx: i })
+          list.push({ kind: 'deliverySucursal', sucursalIdx: i })
+        }
+      } else if (draft.modalidadSucursales === 'unica') {
+        list.push({ kind: 'pagos' })
+        // Siempre se revisan las formas de entrega, aunque el prospecto no tenga delivery armado.
+        list.push({ kind: 'delivery' })
+      }
     } else {
       // Backend viejo sin `config`: caemos al resumen no editable.
       if ((inv?.productos ?? 0) > 0) {
@@ -326,11 +478,82 @@ export default function ClaimTienda() {
     // Después de revisar la configuración, mostramos el resultado concreto: cómo le llega un pedido
     // al WhatsApp del local. Queda antes del claim para que el dueño entienda qué está activando.
     list.push({ kind: 'mensaje' })
+    list.push({ kind: 'whatsapps' })
     list.push({ kind: 'verificar' })
     return list
-  }, [tienda, inventario, config])
+  }, [tienda, inventario, config, draft.modalidadSucursales, draft.sucursales])
 
   const card = cards[cardIdx]
+
+  // El CTA de ayuda acompaña todo el onboarding. Tanto el texto visible como el mensaje que llega
+  // a WhatsApp explican en qué pantalla está el dueño, para poder asistirlo sin pedirle contexto.
+  const whatsappHelp = useMemo<WhatsAppHelp>(() => {
+    const local = dispNombre ? ` de ${dispNombre}` : ''
+    const help = (label: string, context: string): WhatsAppHelp => ({
+      label,
+      message: `Hola Facu, estoy reclamando mi tienda${local} en Piru. ${context}`,
+    })
+
+    if (loading) return help('Consultar por mi tienda', 'Quería consultarte por el acceso a mi tienda.')
+    if (bloqueo) return help('Ayuda para ingresar', `Me aparece este mensaje: “${bloqueo.titulo}”. ¿Me ayudás a ingresar?`)
+
+    if (paso === 'codigo') return help('Ayuda con el código', 'Estoy en la verificación de WhatsApp y necesito ayuda con el código.')
+    if (paso === 'prueba') return help('Ayuda con el pedido de prueba', 'Estoy por hacer el pedido de prueba y tengo una consulta.')
+    if (paso === 'modos') return help('Ayuda para elegir', 'Estoy eligiendo cómo usar Piru y necesito que me recomiendes la mejor configuración para mi local.')
+    if (paso === 'configImpresion') return help('Ayuda con la impresión', 'Estoy configurando la impresión automática y necesito ayuda para instalar o conectar la app.')
+    if (paso === 'configMesas') return help('Ayuda con mis mesas', 'Estoy armando el plano inicial de mesas y necesito ayuda para configurarlo.')
+    if (paso === 'plan') return help('Consultar por la suscripción', 'Estoy viendo la prueba gratis y la suscripción. Tengo una consulta antes de continuar.')
+
+    if (!card) return help('Hablar con Facu', 'Necesito ayuda para continuar con la configuración.')
+
+    if (editing) {
+      const editingContext: Record<string, string> = {
+        intro: 'Estoy modificando el nombre de mi local y necesito ayuda.',
+        link: 'Estoy modificando el link público de mi tienda y necesito ayuda.',
+        logo: 'Estoy cambiando el logo de mi tienda y necesito ayuda.',
+        pagos: 'Estoy modificando los medios de pago y necesito ayuda.',
+        delivery: 'Estoy modificando las formas de entrega o la zona de delivery y necesito ayuda.',
+        sucursales: 'Estoy cargando las sucursales y necesito ayuda.',
+      }
+      const editingKey = editing.split(':')[0]
+      return help('Ayuda con este cambio', editingContext[editingKey] ?? 'Estoy modificando esta configuración y necesito ayuda.')
+    }
+
+    switch (card.kind) {
+      case 'intro':
+        return help('Consultar por mis datos', 'Estoy revisando el nombre y los datos iniciales de mi tienda.')
+      case 'link':
+        return help('Consultar por mi link', `Estoy revisando el link piru.app/${dispUsername || 'mi-tienda'} y tengo una consulta.`)
+      case 'logo':
+        return help('Ayuda con mi logo', 'Estoy revisando el logo de mi tienda y necesito ayuda.')
+      case 'productos':
+        return help('Consultar por mi menú', 'Estoy revisando los productos que cargaron en mi menú y tengo una consulta.')
+      case 'modalidadSucursales':
+        return help('Ayuda con mis sucursales', 'Estoy eligiendo si configurar una o varias sucursales y necesito ayuda.')
+      case 'sucursales':
+        return help('Configurar mis sucursales', 'Estoy cargando los nombres y direcciones de mis sucursales y necesito ayuda.')
+      case 'pagos':
+        return help('Ayuda con los cobros', 'Estoy revisando los medios de pago de mi tienda y tengo una consulta.')
+      case 'pagosSucursal': {
+        const sucursal = draft.sucursales?.[card.sucursalIdx]?.nombre ?? `Sucursal ${card.sucursalIdx + 1}`
+        return help('Ayuda con los cobros', `Estoy configurando los medios de pago de ${sucursal} y necesito ayuda.`)
+      }
+      case 'delivery':
+        return help('Ayuda con el delivery', 'Estoy configurando takeaway, delivery, precios y zonas de entrega y necesito ayuda.')
+      case 'deliverySucursal': {
+        const sucursal = draft.sucursales?.[card.sucursalIdx]?.nombre ?? `Sucursal ${card.sucursalIdx + 1}`
+        return help('Ayuda con el delivery', `Estoy configurando la zona de delivery de ${sucursal} y necesito ayuda.`)
+      }
+      case 'mensaje':
+        return help('Consultar por los pedidos', 'Estoy viendo cómo me van a llegar los pedidos y tengo una consulta.')
+      case 'whatsapps':
+        return help('Ayuda con los números', 'Estoy configurando los números de WhatsApp que recibirán los pedidos y necesito ayuda.')
+      case 'verificar':
+        return help('Ayuda para verificar', 'Estoy por verificar mi WhatsApp y reclamar la tienda. Necesito ayuda para continuar.')
+      case 'reassure':
+        return help('Consultar esta configuración', `Estoy revisando “${card.titulo}” y tengo una consulta.`)
+    }
+  }, [bloqueo, card, dispNombre, dispUsername, draft.sucursales, editing, loading, paso])
 
   const goCard = (i: number) => {
     setEditing(null)
@@ -345,6 +568,11 @@ export default function ClaimTienda() {
     if (kind === 'link') setTmpText(dispUsername)
     if (kind === 'logo') setTmpLogo(dispLogo)
     if (kind === 'pagos') setTmpPagos({ ...pagosView })
+    if (kind.startsWith('pagosSucursal:')) {
+      const idx = Number(kind.split(':')[1])
+      const sucursal = draft.sucursales?.[idx]
+      if (sucursal) setTmpPagos({ ...sucursal.pagos })
+    }
     setEditing(kind)
   }
   const cancelarEditor = () => setEditing(null)
@@ -387,8 +615,59 @@ export default function ClaimTienda() {
     setEditing(null)
   }
 
-  const guardarDelivery = (d: DeliveryDraft) => {
-    setDraft((prev) => ({ ...prev, delivery: d }))
+  const guardarPagosSucursal = (idx: number) => {
+    if (tmpPagos.transferenciaManual && !tmpPagos.transferenciaAlias.trim())
+      return toast.error('Poné el alias o CBU de esta sucursal')
+    if (!tmpPagos.efectivo && !tmpPagos.transferenciaManual && !config?.pagos.autoTransferAvailable && !config?.pagos.mpConnected)
+      return toast.error('Dejá al menos un método de pago activo')
+    setDraft((prev) => ({
+      ...prev,
+      sucursales: prev.sucursales?.map((s, i) => i === idx
+        ? { ...s, pagos: { ...tmpPagos, transferenciaAlias: tmpPagos.transferenciaAlias.trim() } }
+        // Efectivo/transferencia son capacidades generales; el alias sí pertenece a cada sucursal.
+        : { ...s, pagos: { ...s.pagos, efectivo: tmpPagos.efectivo, transferenciaManual: tmpPagos.transferenciaManual } }),
+    }))
+    setEditing(null)
+  }
+
+  const elegirModalidadSucursales = (modalidad: ModalidadSucursales) => {
+    const basePagos = { ...pagosView }
+    const firstCenter = { lat: mapCenter[0], lng: mapCenter[1] }
+    setDraft((prev) => ({
+      ...prev,
+      modalidadSucursales: modalidad,
+      sucursales: modalidad === 'multiple'
+        ? (prev.sucursales?.length ? prev.sucursales : [
+            { localId: crypto.randomUUID(), nombre: 'Casa central', address: '', center: firstCenter, pagos: { ...basePagos }, whatsappNumber: '' },
+            { localId: crypto.randomUUID(), nombre: 'Sucursal 2', address: '', center: null, pagos: { ...basePagos }, whatsappNumber: '' },
+          ])
+        : undefined,
+    }))
+    setCardIdx((idx) => idx + 1)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const guardarSucursales = (sucursales: SucursalDraft[]) => {
+    setDraft((prev) => ({ ...prev, sucursales }))
+    setEditing(null)
+    continuar()
+  }
+
+  const guardarEntregaSucursal = (idx: number, _tipos: TiposPedidoDraft, delivery?: DeliveryDraft) => {
+    if (!delivery) return toast.error('Configurá una zona de delivery para esta sucursal')
+    setDraft((prev) => ({
+      ...prev,
+      tiposPedido: { delivery: true, takeaway: prev.tiposPedido?.takeaway ?? (config?.delivery.takeawayEnabled ?? true) },
+      sucursales: prev.sucursales?.map((s, i) => i === idx
+        ? { ...s, address: delivery.address, center: delivery.center, delivery }
+        : s),
+    }))
+    setEditing(null)
+  }
+
+  const guardarEntrega = (tiposPedido: TiposPedidoDraft, delivery?: DeliveryDraft) => {
+    // Al pasar a sólo takeaway descartamos una edición previa de zonas del borrador.
+    setDraft((prev) => ({ ...prev, tiposPedido, delivery }))
     setEditing(null)
   }
 
@@ -398,6 +677,22 @@ export default function ClaimTienda() {
     if (limpio.length < 8) return null
     if (!limpio.startsWith('54')) limpio = `54${limpio}`
     return limpio
+  }
+
+  const guardarWhatsapps = () => {
+    if (draft.modalidadSucursales === 'multiple') {
+      const sucursales = draft.sucursales ?? []
+      const normalizados = sucursales.map((s) => normalizarTelefono(s.whatsappNumber))
+      if (normalizados.some((tel) => !tel)) return toast.error('Ingresá un WhatsApp válido para cada sucursal')
+      const actualizadas = sucursales.map((s, i) => ({ ...s, whatsappNumber: normalizados[i]! }))
+      setDraft((prev) => ({ ...prev, sucursales: actualizadas }))
+      if (!normalizados.includes(normalizarTelefono(telefono))) setTelefono(normalizados[0]!)
+    } else {
+      const normalizado = normalizarTelefono(telefono)
+      if (!normalizado) return toast.error('Ingresá un número de WhatsApp válido')
+      setTelefono(normalizado)
+    }
+    continuar()
   }
 
   const iniciarReclamo = async () => {
@@ -439,11 +734,14 @@ export default function ClaimTienda() {
       perfil.image = draft.logo
       perfil.imageLight = draft.logo
     }
-    if (draft.delivery?.address) {
-      perfil.direccion = draft.delivery.address
-      perfil.direccionTexto = draft.delivery.address
-      perfil.direccionLat = draft.delivery.center.lat
-      perfil.direccionLng = draft.delivery.center.lng
+    const direccionPrincipal = draft.modalidadSucursales === 'multiple'
+      ? draft.sucursales?.[0]
+      : draft.delivery
+    if (direccionPrincipal?.address && direccionPrincipal.center) {
+      perfil.direccion = direccionPrincipal.address
+      perfil.direccionTexto = direccionPrincipal.address
+      perfil.direccionLat = direccionPrincipal.center.lat
+      perfil.direccionLng = direccionPrincipal.center.lng
     }
     let algoFallo = false
     if (Object.keys(perfil).length > 0) {
@@ -451,18 +749,68 @@ export default function ClaimTienda() {
     }
 
     // 2) Métodos de pago + alias.
-    if (draft.pagos) {
+    const pagosPersistir = draft.modalidadSucursales === 'multiple'
+      ? draft.sucursales?.[0]?.pagos
+      : draft.pagos
+    if (pagosPersistir) {
       try {
         await restauranteApi.updateMetodosPago(nuevoToken, {
-          efectivo: draft.pagos.efectivo,
-          transferenciaManual: draft.pagos.transferenciaManual,
-          transferenciaAlias: draft.pagos.transferenciaManual ? draft.pagos.transferenciaAlias : '',
+          efectivo: pagosPersistir.efectivo,
+          transferenciaManual: pagosPersistir.transferenciaManual,
+          transferenciaAlias: pagosPersistir.transferenciaManual ? pagosPersistir.transferenciaAlias : '',
         })
       } catch { algoFallo = true }
     }
 
-    // 3) Delivery: creamos las zonas nuevas y recién ahí borramos las viejas (nunca dejar sin zonas).
-    if (draft.delivery) {
+    // 3) Tipos de pedido: se persisten con los mismos endpoints que usa Ajustes. Los endpoints son
+    // toggles, por eso sólo los llamamos cuando el valor elegido difiere del que mostró el preview.
+    if (draft.tiposPedido) {
+      const deliveryActual = config?.delivery.deliveryEnabled ?? true
+      const takeawayActual = config?.delivery.takeawayEnabled ?? true
+      if (draft.tiposPedido.delivery !== deliveryActual) {
+        try { await restauranteApi.toggleDeliveryEnabled(nuevoToken) } catch { algoFallo = true }
+      }
+      if (draft.tiposPedido.takeaway !== takeawayActual) {
+        try { await restauranteApi.toggleTakeawayEnabled(nuevoToken) } catch { algoFallo = true }
+      }
+    }
+
+    // 4) Multisucursal: el módulo es incluido y opt-in. Se activa antes de crear la segunda
+    // sucursal; luego cada zona queda vinculada al id que devolvió el backend.
+    if (draft.modalidadSucursales === 'multiple' && draft.sucursales?.length) {
+      let zonasCreadas = 0
+      try { await modulosApi.activar(nuevoToken, 'multisucursal') } catch { algoFallo = true }
+      for (const sucursal of draft.sucursales) {
+        try {
+          const creada = await sucursalesApi.create(nuevoToken, {
+            nombre: sucursal.nombre,
+            direccion: sucursal.address,
+            direccionLat: sucursal.center?.lat ?? null,
+            direccionLng: sucursal.center?.lng ?? null,
+            transferenciaAlias: sucursal.pagos.transferenciaManual ? sucursal.pagos.transferenciaAlias : null,
+            whatsappEnabled: true,
+            whatsappNumber: sucursal.whatsappNumber,
+            activo: true,
+          })
+          if (!sucursal.delivery) continue
+          const targets = sucursal.delivery.mode === 'radio'
+            ? [{ nombre: 'Radio de reparto', precio: sucursal.delivery.precio || '0', poligono: circleToPolygon(sucursal.delivery.center, sucursal.delivery.radius), color: '#FF7A00' }]
+            : sucursal.delivery.zonas.map((z) => ({ nombre: z.nombre, precio: z.precio || '0', poligono: z.poligono, color: z.color }))
+          for (const zona of targets) {
+            await zonasDeliveryApi.create(nuevoToken, { ...zona, sucursalId: creada.data.id })
+            zonasCreadas++
+          }
+        } catch { algoFallo = true }
+      }
+      if (zonasCreadas > 0) {
+        for (const zona of config?.delivery.zonas ?? []) {
+          try { await zonasDeliveryApi.delete(nuevoToken, zona.id) } catch { algoFallo = true }
+        }
+      }
+    }
+
+    // 5) Local único: creamos las zonas nuevas y recién ahí borramos las viejas.
+    if (draft.modalidadSucursales !== 'multiple' && draft.delivery) {
       const targets: Array<{ nombre: string; precio: string; poligono: { lat: number; lng: number }[]; color: string }> =
         draft.delivery.mode === 'radio'
           ? [{ nombre: 'Radio de reparto', precio: draft.delivery.precio || '0', poligono: circleToPolygon(draft.delivery.center, draft.delivery.radius), color: '#FF7A00' }]
@@ -494,6 +842,21 @@ export default function ClaimTienda() {
       try {
         const r = await claimApi.verify(token, verificationId, codigo)
         setAuth(r.token, r.restaurante)
+        // El claim ya quedó confirmado en el servidor. Persistimos el primer paso autenticado antes
+        // de aplicar el borrador para que incluso una recarga inmediata pueda reanudar el recorrido.
+        if (tienda) {
+          const progreso: ProgresoClaim = {
+            restauranteId: r.restaurante.id,
+            paso: 'prueba',
+            tienda,
+            telefono,
+            modosActivos: [],
+            activarMesasConPos: false,
+            mesasActivas: false,
+            cantidadMesas: 10,
+          }
+          localStorage.setItem(progresoClaimKey(token), JSON.stringify(progreso))
+        }
         // Con el token en mano, aplicamos todo lo que tocó en el recorrido, de una sola vez.
         await persistirDraft(r.token)
         // Traemos la suscripción base + trial para la pantalla final (best-effort, no bloquea).
@@ -514,7 +877,7 @@ export default function ClaimTienda() {
       }
     },
     // persistirDraft depende de `draft`/`config`; los incluimos para la referencia actual.
-    [verificationId, token, setAuth, navigate, draft, config],
+    [verificationId, token, setAuth, draft, config, tienda, telefono],
   )
 
   const handleChange = (index: number, value: string) => {
@@ -587,6 +950,108 @@ export default function ClaimTienda() {
     }
   }
 
+  const toggleModoAbierto = (modo: ModoUso) => {
+    setModosAbiertos((actuales) => actuales.includes(modo)
+      ? actuales.filter((item) => item !== modo)
+      : [...actuales, modo])
+  }
+
+  const activarModoUso = async (modo: ModoUso) => {
+    const authToken = useAuthStore.getState().token
+    if (!authToken || modosActivos.includes(modo)) return
+    setActivandoModo(modo)
+    try {
+      if (modo === 'impresion') await modulosApi.activar(authToken, 'impresion_comandas')
+      if (modo === 'pos') {
+        await modulosApi.activar(authToken, 'pos')
+        if (activarMesasConPos) {
+          await modulosApi.activar(authToken, 'mesas')
+          setMesasActivas(true)
+        }
+      }
+      setModosActivos((actuales) => [...actuales, modo])
+      setModosAbiertos((actuales) => actuales.filter((item) => item !== modo))
+      toast.success(modo === 'impresion'
+          ? 'Impresión automática activada'
+          : activarMesasConPos ? 'Punto de Venta y Mesas activados' : 'Punto de Venta activado')
+    } catch (error) {
+      toast.error('No pudimos activar esta forma de trabajo', {
+        description: error instanceof Error ? error.message : 'Probá nuevamente en un momento.',
+      })
+    } finally {
+      setActivandoModo(null)
+    }
+  }
+
+  const avanzarDesdeModos = () => {
+    const siguiente: Paso = modosActivos.includes('impresion')
+      ? 'configImpresion'
+      : mesasActivas ? 'configMesas' : 'plan'
+    setPaso(siguiente)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const avanzarDesdeImpresion = () => {
+    setPaso(mesasActivas ? 'configMesas' : 'plan')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const volverDesdePlan = () => {
+    const anterior: Paso = mesasActivas
+      ? 'configMesas'
+      : modosActivos.includes('impresion') ? 'configImpresion' : 'modos'
+    setPaso(anterior)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const crearPlanoInicialMesas = async () => {
+    const authToken = useAuthStore.getState().token
+    if (!authToken || creandoMesas) return
+    setCreandoMesas(true)
+    try {
+      const existentes = (await mesasLocalesApi.list(authToken, true)).data
+      const activas = existentes.filter((mesa) => mesa.activo)
+      const faltantes = Math.max(0, cantidadMesas - activas.length)
+      if (faltantes > 0) {
+        const columnas = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(cantidadMesas))))
+        const inicioY = activas.length > 0
+          ? Math.max(...activas.map((mesa) => mesa.posicionY + mesa.alto)) + 1
+          : 0
+        await Promise.all(Array.from({ length: faltantes }, (_, indice) => {
+          const orden = activas.length + indice
+          return mesasLocalesApi.create(authToken, {
+            nombre: `Mesa ${orden + 1}`,
+            sucursalId: null,
+            posicionX: (indice % columnas) * 3,
+            posicionY: inicioY + Math.floor(indice / columnas) * 3,
+            ancho: 2,
+            alto: 2,
+            capacidad: 4,
+            estadoManual: null,
+            activo: true,
+            orden,
+          })
+        }))
+      }
+      toast.success(faltantes > 0
+        ? `${faltantes} ${faltantes === 1 ? 'mesa creada' : 'mesas creadas'} en tu plano inicial`
+        : `Ya tenés ${activas.length} mesas configuradas`)
+      setPaso('plan')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      toast.error('No pudimos crear el plano inicial', {
+        description: error instanceof Error ? error.message : 'Probá nuevamente en un momento.',
+      })
+    } finally {
+      setCreandoMesas(false)
+    }
+  }
+
+  const terminarClaim = () => {
+    localStorage.removeItem(progresoClaimKey(token))
+    navigate('/dashboard', { replace: true })
+  }
+
   const codigo = digits.join('')
   const progress = cards.length > 0 ? ((cardIdx + 1) / cards.length) * 100 : 0
 
@@ -637,7 +1102,7 @@ export default function ClaimTienda() {
   )
 
   return (
-    <div className="min-h-dvh flex items-center justify-center w-full bg-background px-6 py-10 selection:bg-orange-500/10 selection:text-[#FF7A00]">
+    <div className="min-h-dvh flex items-center justify-center w-full bg-[#FFFBF0] dark:bg-background px-6 pt-10 pb-32 sm:pb-36 selection:bg-orange-500/10 selection:text-[#FF7A00]">
       <div className="w-full max-w-sm animate-in fade-in duration-500">
         {loading ? (
           <div className="flex justify-center py-24">
@@ -768,7 +1233,7 @@ export default function ClaimTienda() {
                 <p className="text-[15px] text-muted-foreground mt-3">
                   {config.productos.length} {config.productos.length === 1 ? 'producto listo' : 'productos listos'} para vender.
                 </p>
-                <div className="mt-6 w-full max-h-[55vh] overflow-y-auto space-y-3 pr-0.5">
+                <div className="mt-6 w-full max-h-[55vh] overflow-y-auto space-y-3 pr-0.5 scrollbar-mini">
                   {config.productos.map((p) => (
                     <ProductoCard key={p.id} p={p} />
                   ))}
@@ -780,6 +1245,37 @@ export default function ClaimTienda() {
                 >
                   Continuar
                 </button>
+              </div>
+            )}
+
+            {/* ── Bifurcación del recorrido: un local o configuración por sucursal ── */}
+            {card?.kind === 'modalidadSucursales' && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                <div className="h-14 w-14 rounded-2xl bg-orange-500/10 flex items-center justify-center ring-1 ring-orange-500/15">
+                  <Store className="h-6 w-6 text-[#FF7A00]" />
+                </div>
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">¿Cuántos locales tenés?</h1>
+                <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+                  Así configuramos correctamente los cobros, direcciones y zonas de envío.
+                </p>
+                <div className="w-full space-y-2.5 mt-7">
+                  <button type="button" onClick={() => elegirModalidadSucursales('unica')} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left hover:border-[#FF7A00]/60 hover:bg-orange-500/[0.04] transition-colors">
+                    <span className="block text-sm font-semibold">Una única sucursal</span>
+                    <span className="block text-xs text-muted-foreground mt-1">Una dirección, sus medios de pago y su delivery.</span>
+                  </button>
+                  <button type="button" onClick={() => elegirModalidadSucursales('multiple')} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left hover:border-[#FF7A00]/60 hover:bg-orange-500/[0.04] transition-colors">
+                    <span className="block text-sm font-semibold">Múltiples sucursales</span>
+                    <span className="block text-xs text-muted-foreground mt-1">Cada local tendrá dirección, alias y zonas propias.</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {card?.kind === 'sucursales' && draft.sucursales && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight">Configurá tus sucursales</h1>
+                <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">Poné el nombre y la dirección exacta de cada local.</p>
+                <SucursalesClaimEditor initial={draft.sucursales} pagosDefault={pagosView} onGuardar={guardarSucursales} />
               </div>
             )}
 
@@ -839,20 +1335,56 @@ export default function ClaimTienda() {
               </div>
             )}
 
-            {/* ── Delivery (editable: radio o zonas + precio) ── */}
+            {card?.kind === 'pagosSucursal' && config && draft.sucursales?.[card.sucursalIdx] && (() => {
+              const sucursal = draft.sucursales![card.sucursalIdx]
+              const editorId = `pagosSucursal:${card.sucursalIdx}`
+              const pagos = sucursal.pagos
+              return (
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                  <span className="text-lg font-semibold tracking-tight text-[#FF7A00]">{sucursal.nombre}</span>
+                  <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">Cómo te pagan</h1>
+                  {editing === editorId ? (
+                    <div className="w-full mt-6 space-y-2.5 text-left">
+                      <ToggleRow icon={Wallet} label="Efectivo" checked={tmpPagos.efectivo} onToggle={() => setTmpPagos((p) => ({ ...p, efectivo: !p.efectivo }))} />
+                      <ToggleRow icon={Banknote} label="Transferencia manual" checked={tmpPagos.transferenciaManual} onToggle={() => setTmpPagos((p) => ({ ...p, transferenciaManual: !p.transferenciaManual }))} />
+                      {tmpPagos.transferenciaManual && <input autoFocus value={tmpPagos.transferenciaAlias} onChange={(e) => setTmpPagos((p) => ({ ...p, transferenciaAlias: e.target.value }))} placeholder={`Alias o CBU de ${sucursal.nombre}`} className="w-full h-12 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-0 px-4 text-sm outline-none focus:ring-2 focus:ring-[#FF7A00]/30" />}
+                      <p className="text-xs text-muted-foreground px-1">Los medios habilitados son generales; el alias de transferencia se guarda para esta sucursal.</p>
+                      <AccionesEditor onGuardar={() => guardarPagosSucursal(card.sucursalIdx)} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-2 space-y-1.5 text-left">
+                        <MetodoLinea icon={Wallet} label="Efectivo" on={pagos.efectivo} />
+                        <MetodoLinea icon={Banknote} label={pagos.transferenciaManual && pagos.transferenciaAlias ? `Transferencia · ${pagos.transferenciaAlias}` : 'Transferencia manual'} on={pagos.transferenciaManual} attention={pagos.transferenciaManual && !pagos.transferenciaAlias ? 'Falta el alias de esta sucursal' : undefined} />
+                        {config.pagos.autoTransferAvailable && <MetodoLinea icon={Banknote} label="Transferencia automática" on />}
+                        {config.pagos.mpConnected && <MetodoLinea icon={CreditCard} label="MercadoPago" on />}
+                      </div>
+                      <AccionesDato onModificar={() => abrirEditor(editorId)} />
+                    </>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* ── Formas de entrega + delivery (editable: radio o zonas + precio) ── */}
             {card?.kind === 'delivery' && config && (() => {
-              const configurado = !!draft.delivery || config.delivery.zonas.length > 0
+              const configurado = !!draft.tiposPedido || !!draft.delivery || config.delivery.deliveryEnabled || config.delivery.takeawayEnabled !== false
               return (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
                   {editing === 'delivery' ? (
                     <>
-                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight">Tu delivery</h1>
-                      <DeliveryEditor initial={draft.delivery} onGuardar={guardarDelivery} onCancelar={cancelarEditor} />
+                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight">¿Cómo entregás tus pedidos?</h1>
+                      <DeliveryEditor
+                        initial={draft.delivery}
+                        initialTipos={tiposPedidoView}
+                        onGuardar={guardarEntrega}
+                        onCancelar={cancelarEditor}
+                      />
                     </>
                   ) : configurado ? (
                     <>
-                      <Titulo>Tu delivery</Titulo>
-                      <DeliveryResumen draft={draft.delivery} zonas={config.delivery.zonas} center={mapCenter} />
+                      <Titulo>Cómo entregás tus pedidos</Titulo>
+                      <DeliveryResumen draft={draft.delivery} tipos={tiposPedidoView} zonas={config.delivery.zonas} center={mapCenter} />
                       <AccionesDato onModificar={() => abrirEditor('delivery')} />
                     </>
                   ) : (
@@ -861,15 +1393,15 @@ export default function ClaimTienda() {
                       <div className="h-14 w-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center ring-1 ring-black/[0.04] dark:ring-white/[0.06]">
                         <MapPin className="h-6 w-6 text-[#FF7A00]" strokeWidth={2} />
                       </div>
-                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">Sumá tu delivery</h1>
+                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">Definí cómo entregás</h1>
                       <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-                        Todavía no tenés zonas de reparto. Definí desde dónde entregás y hasta dónde llegás.
+                        Elegí si tus clientes pueden pedir delivery, takeaway o ambas opciones.
                       </p>
                       <button
                         onClick={() => abrirEditor('delivery')}
                         className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
                       >
-                        Configurar delivery
+                        Configurar entregas
                       </button>
                       <button
                         onClick={continuar}
@@ -877,6 +1409,45 @@ export default function ClaimTienda() {
                       >
                         Ahora no
                       </button>
+                    </>
+                  )}
+                </div>
+              )
+            })()}
+
+            {card?.kind === 'deliverySucursal' && config && draft.sucursales?.[card.sucursalIdx] && (() => {
+              const sucursal = draft.sucursales![card.sucursalIdx]
+              const editorId = `deliverySucursal:${card.sucursalIdx}`
+              const initial = sucursal.delivery ?? (sucursal.center ? {
+                mode: 'radio' as const,
+                precio: '0',
+                radius: 2500,
+                center: sucursal.center,
+                address: sucursal.address,
+              } : undefined)
+              return (
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                  {editing === editorId ? (
+                    <>
+                      <span className="text-lg font-semibold tracking-tight text-[#FF7A00]">{sucursal.nombre}</span>
+                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">Zona de envío</h1>
+                      <DeliveryEditor initial={initial} initialTipos={{ delivery: true, takeaway: tiposPedidoView.takeaway }} skipTipos onGuardar={(tipos, delivery) => guardarEntregaSucursal(card.sucursalIdx, tipos, delivery)} onCancelar={cancelarEditor} />
+                    </>
+                  ) : sucursal.delivery ? (
+                    <>
+                      <span className="text-lg font-semibold tracking-tight text-[#FF7A00]">{sucursal.nombre}</span>
+                      <Titulo>Zona de envío configurada</Titulo>
+                      <DeliveryResumen draft={sucursal.delivery} tipos={{ delivery: true, takeaway: tiposPedidoView.takeaway }} zonas={[]} center={[sucursal.delivery.center.lat, sucursal.delivery.center.lng]} />
+                      <AccionesDato onModificar={() => abrirEditor(editorId)} />
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-14 w-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"><MapPin className="h-6 w-6 text-[#FF7A00]" /></div>
+                      <span className="text-lg font-semibold tracking-tight text-[#FF7A00] mt-5">{sucursal.nombre}</span>
+                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">Definí su zona de envío</h1>
+                      <p className="text-[15px] text-muted-foreground mt-3">Podés usar un radio o dibujar zonas con distintos precios.</p>
+                      <button onClick={() => abrirEditor(editorId)} className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white">Configurar delivery</button>
+                      <button onClick={continuar} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Esta sucursal no hace delivery</button>
                     </>
                   )}
                 </div>
@@ -910,26 +1481,11 @@ export default function ClaimTienda() {
                   Cada compra te llega por WhatsApp con el detalle completo, para que puedas prepararla sin ir y venir con el cliente.
                 </p>
 
-                <div className="relative mt-6 w-full overflow-hidden rounded-[1.7rem] border border-[#25D366]/20 bg-gradient-to-b from-[#effbf3] to-white p-3 shadow-[0_16px_42px_-24px_rgba(20,185,87,0.5)] dark:from-[#10261a] dark:to-zinc-900">
-                  <div className="absolute inset-x-8 top-0 h-20 rounded-full bg-[#25D366]/10 blur-2xl" />
-                  <div className="relative flex items-center justify-between px-1 pb-3">
-                    <div className="flex items-center gap-2 text-left">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#25D366] text-[11px] font-bold text-white">✓</span>
-                      <div>
-                        <p className="text-xs font-semibold text-foreground">Así se ve en tu WhatsApp</p>
-                        <p className="text-[11px] text-muted-foreground">Listo para preparar</p>
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-[#25D366]/10 px-2.5 py-1 text-[10px] font-semibold text-[#168a40] dark:text-[#5ce58d]">Pedido nuevo</span>
-                  </div>
-                  <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-sm dark:border-white/[0.08] dark:bg-zinc-800">
-                    <img
-                      src="/Ejemplo_mensaje_basico.png"
-                      alt="Ejemplo de un pedido recibido por WhatsApp"
-                      className="block w-full"
-                    />
-                  </div>
-                </div>
+                <img
+                  src="/Ejemplo_mensaje_basico.png"
+                  alt="Ejemplo de un pedido recibido por WhatsApp"
+                  className="mt-6 block w-full rounded-2xl"
+                />
 
                 <div className="mt-4 flex w-full items-start gap-3 rounded-2xl bg-zinc-100/80 px-4 py-3.5 text-left dark:bg-zinc-900">
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#FF7A00]" strokeWidth={2.5} />
@@ -947,49 +1503,107 @@ export default function ClaimTienda() {
               </div>
             )}
 
+            {/* ── WhatsApp operativo: uno general o uno por sucursal ── */}
+            {card?.kind === 'whatsapps' && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
+                <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">¿Dónde querés recibir los pedidos?</h1>
+                <p className="text-[15px] text-muted-foreground mt-3">
+                  {draft.modalidadSucursales === 'multiple'
+                    ? 'Ingresá el WhatsApp de cada sucursal. Cada local recibirá directamente los pedidos que le correspondan.'
+                    : 'Ingresá el WhatsApp donde querés que lleguen los pedidos de tu tienda.'}
+                </p>
+
+                <div className="mt-7 space-y-3">
+                  {draft.modalidadSucursales === 'multiple' ? draft.sucursales?.map((sucursal, idx) => (
+                    <div key={sucursal.localId} className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4">
+                      <label htmlFor={`claim-whatsapp-${sucursal.localId}`} className="mb-2 block text-sm font-semibold text-foreground">{sucursal.nombre}</label>
+                      <div className="group flex items-center gap-3 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30">
+                        <MessageCircle className="h-4 w-4 shrink-0 text-[#20B957]" />
+                        <span className="text-sm text-muted-foreground">+54</span>
+                        <input
+                          id={`claim-whatsapp-${sucursal.localId}`}
+                          type="tel"
+                          inputMode="numeric"
+                          autoComplete="tel"
+                          value={sucursal.whatsappNumber}
+                          onChange={(e) => setDraft((prev) => ({ ...prev, sucursales: prev.sucursales?.map((s, i) => i === idx ? { ...s, whatsappNumber: e.target.value } : s) }))}
+                          placeholder="9 351 123 4567"
+                          className="flex-1 min-w-0 bg-transparent border-0 outline-none text-sm placeholder:text-zinc-400"
+                        />
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="group flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30">
+                      <MessageCircle className="h-4 w-4 shrink-0 text-[#20B957]" />
+                      <span className="text-base text-muted-foreground">+54</span>
+                      <input
+                        id="claim-whatsapp-unico"
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel"
+                        autoFocus
+                        value={telefono}
+                        onChange={(e) => setTelefono(e.target.value)}
+                        placeholder="9 351 123 4567"
+                        className="flex-1 min-w-0 bg-transparent border-0 outline-none text-base placeholder:text-zinc-400"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-start gap-3 rounded-2xl bg-zinc-100/80 px-4 py-3.5 dark:bg-zinc-900">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#FF7A00]" />
+                  <p className="text-[13px] leading-relaxed text-muted-foreground">
+                    Después sólo falta verificar uno de estos números para terminar de reclamar la tienda.
+                  </p>
+                </div>
+
+                <button onClick={guardarWhatsapps} className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
+                  Continuar
+                </button>
+              </div>
+            )}
+
             {/* ── Verificación del WhatsApp ── */}
             {card?.kind === 'verificar' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
-                <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Reclamá tu tienda</h1>
+                <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Terminá de reclamar tu tienda</h1>
                 <p className="text-[15px] text-muted-foreground mt-3">
-                  Poné tu WhatsApp: te mandamos un código y la tienda queda a tu nombre
-                  {Object.keys(draft).length > 0 ? ', con tus cambios aplicados.' : '.'}
+                  Te vamos a mandar un código de seguridad. Al verificarlo, la tienda queda a tu nombre con todos estos cambios aplicados.
                 </p>
 
                 <form onSubmit={(e) => { e.preventDefault(); iniciarReclamo() }} className="mt-7">
-                  <p className="mb-2 text-sm font-medium text-foreground">¿A qué WhatsApp te mandamos el código?</p>
-                  <label htmlFor="claim-telefono" className="group flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 transition-colors focus-within:bg-zinc-200/70 dark:focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-[#FF7A00]/30">
-                    <span className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500 select-none">
-                      <MessageCircle className="h-4 w-4 shrink-0" />
-                      <span className="text-base">+54</span>
-                      <span className="h-5 w-px bg-zinc-300 dark:bg-zinc-700" />
-                    </span>
-                    <input
-                      id="claim-telefono"
-                      type="tel"
-                      inputMode="numeric"
-                      autoComplete="tel"
-                      autoFocus
-                      placeholder="9 351 123 4567"
-                      value={telefono}
-                      onChange={(e) => setTelefono(e.target.value)}
-                      className="flex-1 bg-transparent border-0 outline-none text-base placeholder:text-zinc-400 dark:placeholder:text-zinc-600 w-full min-w-0"
-                    />
-                  </label>
+                  <p className="mb-3 text-sm font-medium text-foreground">
+                    {draft.modalidadSucursales === 'multiple' ? '¿A cuál número enviamos el código?' : 'Te enviaremos el código a este número:'}
+                  </p>
+                  {draft.modalidadSucursales === 'multiple' ? (
+                    <div className="space-y-2">
+                      {draft.sucursales?.map((sucursal) => {
+                        const numero = normalizarTelefono(sucursal.whatsappNumber) ?? sucursal.whatsappNumber
+                        const seleccionado = normalizarTelefono(telefono) === numero
+                        return (
+                          <button key={sucursal.localId} type="button" onClick={() => setTelefono(numero)} className={`w-full rounded-2xl border p-4 text-left transition-colors ${seleccionado ? 'border-[#FF7A00] bg-orange-500/[0.06]' : 'border-zinc-200 dark:border-zinc-800 hover:border-[#FF7A00]/50'}`}>
+                            <span className="block text-sm font-semibold">{sucursal.nombre}</span>
+                            <span className="block text-sm text-muted-foreground mt-1">+{numero}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4">
+                      <MessageCircle className="h-4 w-4 text-[#20B957]" />
+                      <span className="text-base font-semibold">+{normalizarTelefono(telefono) ?? telefono}</span>
+                    </div>
+                  )}
 
                   <button
                     type="submit"
                     disabled={enviando || telefono.replace(/\D/g, '').length < 8}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl h-14 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-[15px] font-semibold transition-all active:scale-[0.985] disabled:opacity-40"
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl h-14 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-[15px] font-semibold transition-all active:scale-[0.985] disabled:opacity-40"
                   >
-                    {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reclamar mi tienda'}
+                    {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Enviar código y terminar'}
                   </button>
                 </form>
-
-                <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  <MessageCircle className="h-3.5 w-3.5" />
-                  Te mandamos un código por WhatsApp para verificar el número.
-                </p>
               </div>
             )}
           </>
@@ -1048,9 +1662,9 @@ export default function ClaimTienda() {
             <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-500/15 flex items-center justify-center">
               <ShoppingBag className="h-7 w-7 text-emerald-600 dark:text-emerald-400" strokeWidth={2} />
             </div>
-            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">Probala como un cliente</h1>
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">¡Tu tienda ya está lista!</h1>
             <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-              Entrá a tu tienda, armá un pedido y mandalo. Vas a ver cómo te llega el pedido al panel, tal cual lo verá tu cliente.
+              Hacé un pedido de prueba completo para conocer la experiencia de tu cliente.
             </p>
 
             <a
@@ -1062,73 +1676,243 @@ export default function ClaimTienda() {
               <ShoppingBag className="h-4 w-4" /> Hacer mi primer pedido de prueba
             </a>
             <button
-              onClick={() => { setPaso('plan'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              onClick={() => { setPaso('modos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
             >
               Ya lo hice, seguir
             </button>
           </div>
+        ) : paso === 'modos' ? (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="text-center flex flex-col items-center">
+              <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
+                <Settings className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
+              </div>
+              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">¿Cómo querés usar Piru?</h1>
+              <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+                Elegí todas las formas que te sirvan. Podés combinarlas y cambiarlas después.
+              </p>
+            </div>
+
+            <div className="mt-7 space-y-3">
+              <div className="rounded-2xl bg-white dark:bg-zinc-900 p-4 flex items-center gap-3">
+                <span className="h-11 w-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                  <MessageCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                </span>
+                <span className="flex-1 min-w-0 text-left">
+                  <span className="block text-sm font-semibold leading-tight">Recibir pedidos al WhatsApp</span>
+                  <span className="block text-xs text-muted-foreground mt-1 leading-relaxed">Es el funcionamiento normal de Piru: cada pedido nuevo te llega al celular y queda guardado en el panel.</span>
+                </span>
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <Check className="h-3.5 w-3.5" /> Activo
+                </span>
+              </div>
+              <ModoUsoCard
+                id="impresion"
+                icon={Printer}
+                titulo="Quiero imprimir los pedidos automáticamente"
+                resumen="La comanda sale apenas entra el pedido, sin copiar nada a mano."
+                detalle="Conectás Piru a la impresora del local y cada pedido aceptado imprime su comanda automáticamente. Vas a poder elegir impresora, cantidad de copias y formato desde el panel."
+                imagenes={[{
+                  src: '/claim/modos/impresora-comanda.webp',
+                  alt: 'Impresora térmica imprimiendo una comanda generada por Piru',
+                }]}
+                abierto={modosAbiertos.includes('impresion')}
+                activo={modosActivos.includes('impresion')}
+                procesando={activandoModo === 'impresion'}
+                textoActivar="Activar impresión automática"
+                onToggle={() => toggleModoAbierto('impresion')}
+                onActivar={() => activarModoUso('impresion')}
+              />
+              <ModoUsoCard
+                id="pos"
+                icon={MonitorSmartphone}
+                titulo="Quiero anotar pedidos en el Punto de Venta"
+                resumen="Cargá desde Piru los pedidos que te hacen en persona o por teléfono."
+                detalle="El Punto de Venta convierte Piru en la caja del local: armás el pedido desde la carta, elegís cómo pagó y lo enviás a cocina. Los pedidos online y los anotados quedan juntos en una sola operación."
+                imagenes={[
+                  { src: '/claim/modos/punto-de-venta.webp', alt: 'Punto de Venta de Piru gestionando un pedido' },
+                  { src: '/claim/modos/mesas.webp', alt: 'Punto de Venta de Piru gestionando el pedido de una mesa' },
+                ]}
+                abierto={modosAbiertos.includes('pos')}
+                activo={modosActivos.includes('pos')}
+                procesando={activandoModo === 'pos'}
+                textoActivar="Activar Punto de Venta"
+                onToggle={() => toggleModoAbierto('pos')}
+                onActivar={() => activarModoUso('pos')}
+              >
+                <button
+                  type="button"
+                  disabled={modosActivos.includes('pos') || activandoModo === 'pos'}
+                  onClick={() => setActivarMesasConPos((valor) => !valor)}
+                  className="w-full rounded-2xl bg-zinc-100 dark:bg-zinc-800 p-3.5 flex items-center gap-3 text-left transition-colors disabled:cursor-default"
+                >
+                  <span className="h-9 w-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                    <Armchair className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold">También voy a usar mesas</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">Abrí cuentas por mesa y cerralas desde el POS.</span>
+                  </span>
+                  <span className={`h-6 w-10 rounded-full p-0.5 transition-colors ${activarMesasConPos || mesasActivas ? 'bg-[#FF7A00]' : 'bg-zinc-300 dark:bg-zinc-700'}`}>
+                    <span className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${activarMesasConPos || mesasActivas ? 'translate-x-4' : ''}`} />
+                  </span>
+                </button>
+              </ModoUsoCard>
+            </div>
+
+            <button
+              onClick={avanzarDesdeModos}
+              className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
+            >
+              Continuar <ArrowRight className="h-4 w-4" />
+            </button>
+            <p className="text-center text-xs text-muted-foreground mt-3">Lo que no actives ahora seguirá disponible en Módulos.</p>
+          </div>
+        ) : paso === 'configImpresion' ? (
+          <div className="text-center flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
+              <Printer className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
+            </div>
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">Descargá Piru en tu computadora</h1>
+            <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+              La impresión automática funciona desde la app de escritorio. Instalála en la computadora conectada a tu impresora térmica.
+            </p>
+
+            <div className="w-full rounded-2xl bg-white dark:bg-zinc-900 p-5 mt-7 text-left">
+              <div className="flex items-start gap-3">
+                <span className="h-10 w-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                  <Download className="h-5 w-5 text-[#FF7A00]" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Piru para Windows</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {desktopVersion ? `Versión ${desktopVersion}` : 'Buscando la última versión disponible…'}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[13px] leading-relaxed text-muted-foreground mt-4">
+                Cuando abras la app, entrá a Ajustes → Impresión para elegir la impresora y hacer una prueba.
+              </p>
+            </div>
+
+            <a
+              href={desktopDownloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              download
+              className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
+            >
+              {buscandoDescarga ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Descargar la app
+            </a>
+            <button
+              type="button"
+              onClick={avanzarDesdeImpresion}
+              className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+            >
+              Ya la descargué, continuar
+            </button>
+          </div>
+        ) : paso === 'configMesas' ? (
+          <div className="text-center flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
+              <Armchair className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
+            </div>
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">¿Cuántas mesas tenés?</h1>
+            <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+              Las vamos a crear y distribuir automáticamente en un plano inicial.
+            </p>
+
+            <div className="w-full rounded-2xl bg-white dark:bg-zinc-900 p-5 mt-7">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cantidad de mesas</p>
+              <div className="flex items-center justify-center gap-5 mt-4">
+                <button
+                  type="button"
+                  aria-label="Quitar una mesa"
+                  disabled={cantidadMesas <= 1 || creandoMesas}
+                  onClick={() => setCantidadMesas((cantidad) => Math.max(1, cantidad - 1))}
+                  className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  <Minus className="h-5 w-5" />
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={cantidadMesas}
+                  disabled={creandoMesas}
+                  onChange={(event) => setCantidadMesas(Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
+                  className="w-24 bg-transparent text-center text-4xl font-semibold tabular-nums outline-none"
+                  aria-label="Cantidad de mesas"
+                />
+                <button
+                  type="button"
+                  aria-label="Agregar una mesa"
+                  disabled={cantidadMesas >= 100 || creandoMesas}
+                  onClick={() => setCantidadMesas((cantidad) => Math.min(100, cantidad + 1))}
+                  className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  <Plus className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="text-[13px] leading-relaxed text-muted-foreground mt-5">
+                Empezarán como mesas compactas para 4 personas. Después podés moverlas, cambiar tamaño, capacidad y armar el mapa real de tu salón desde Mesas.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={crearPlanoInicialMesas}
+              disabled={creandoMesas}
+              className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {creandoMesas ? <><Loader2 className="h-4 w-4 animate-spin" /> Creando mesas…</> : <>Crear mis {cantidadMesas} mesas <ArrowRight className="h-4 w-4" /></>}
+            </button>
+          </div>
         ) : (
           // ── Último paso: info del período de prueba y suscripción base ──
           (() => {
-            const precioBase = miSusc?.precioBaseMensual ?? miSusc?.suscripcionBase?.precioMensual ?? miSusc?.precioMensual
+            // El catálogo del backend es la fuente del precio vigente. Los otros
+            // campos son snapshots/aliases de compatibilidad y pueden quedar viejos.
+            const precioBase = miSusc?.suscripcionBase?.precioMensual
+              ?? miSusc?.cotizacionProximaFactura?.montoBaseMensual
+              ?? miSusc?.precioBaseMensual
+              ?? miSusc?.precioMensual
             const precio = precioBase ? `$${fmtPrecio(precioBase)}` : null
             const trialDias = miSusc?.trialFin
               ? Math.max(0, Math.ceil((new Date(miSusc.trialFin).getTime() - Date.now()) / 86_400_000))
               : null
             return (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <button
+                  type="button"
+                  onClick={volverDesdePlan}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Volver
+                </button>
                 <div className="text-center flex flex-col items-center">
-                  <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
-                    <Rocket className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
-                  </div>
-                  <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">
+                  <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">
                     {trialDias != null ? `Tenés ${trialDias} días de prueba gratis` : 'Empezás con tu prueba gratis'}
                   </h1>
                   <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-                    Usá toda la operación base sin pagar nada. {trialDias != null ? 'Cuando termine' : 'Cuando termine la prueba'}, activás tu suscripción y elegís los módulos que te sirvan.
+                    Usá toda la operación base sin pagar nada. {trialDias != null ? 'Cuando termine' : 'Cuando termine la prueba'}, activás tu suscripción y seguís ofreciendo la mejor experiencia de compra.
                   </p>
-                </div>
 
-                {/* Suscripción base y precio */}
-                <div className="mt-6 rounded-2xl bg-white shadow-sm dark:bg-zinc-900 dark:shadow-none p-5">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-semibold text-muted-foreground">Suscripción Piru</span>
-                    {precio && <span className="text-[1.6rem] font-semibold tracking-tight tabular-nums">
-                      {precio}<span className="text-sm font-medium text-muted-foreground">/mes</span>
-                    </span>}
-                  </div>
-                  <p className="text-[13.5px] text-muted-foreground mt-1.5">Todo para vender online, con tu marca.</p>
-                  <div className="h-px bg-black/[0.06] dark:bg-white/[0.08] my-4" />
-                  <ul className="space-y-2.5">
-                    {SUSCRIPCION_BASE_INCLUYE.map((f, i) => (
-                      <li key={i} className="flex items-start gap-2.5 text-[13.5px]">
-                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FF7A00]/15">
-                          <Check className="h-3 w-3 text-[#FF7A00]" />
-                        </span>
-                        <span className="text-foreground/90">{f}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-xs text-muted-foreground mt-4">Cuota fija · sin comisión por venta.</p>
-                </div>
-
-                <p className="mt-4 text-center text-xs text-muted-foreground">
-                  Avisos automáticos, Motor de Recompra y otras capacidades se activan sólo si las elegís desde Módulos.
-                </p>
-
-                {/* Ajustes */}
-                <div className="mt-4 flex items-start gap-3 rounded-2xl bg-white shadow-sm dark:bg-zinc-900 dark:shadow-none p-4">
-                  <div className="h-9 w-9 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                    <Settings className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <p className="text-[13.5px] text-muted-foreground leading-relaxed">
-                    Desde el panel configurás tu tienda y elegís los módulos que quieras activar, sin cambiar de suscripción.
-                  </p>
+                  {precio && (
+                    <div className="mt-9">
+                      <p className="text-sm font-semibold text-muted-foreground">Suscripción Piru</p>
+                      <p className="mt-1 text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums">
+                        {precio}<span className="text-base font-medium text-muted-foreground">/mes</span>
+                      </p>
+                      <p className="mt-3 text-xs text-muted-foreground">Cuota fija · sin comisión por venta.</p>
+                    </div>
+                  )}
                 </div>
 
                 <button
-                  onClick={() => navigate('/dashboard', { replace: true })}
+                  onClick={terminarClaim}
                   className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
                 >
                   Empezar la prueba gratis <ArrowRight className="h-4 w-4" />
@@ -1147,7 +1931,157 @@ export default function ClaimTienda() {
           })()
         )}
       </div>
+      <WhatsAppHelpButton help={whatsappHelp} />
     </div>
+  )
+}
+
+function WhatsAppHelpButton({ help }: { help: WhatsAppHelp }) {
+  const href = `https://wa.me/${WHATSAPP_HELP_NUMBER}?text=${encodeURIComponent(help.message)}`
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${help.label}. Abre WhatsApp en una pestaña nueva`}
+      className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[1000] inline-flex min-h-12 max-w-[calc(100vw-2rem)] items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-950/20 transition-all hover:bg-[#20BD5A] hover:shadow-xl active:scale-[0.98] sm:bottom-6 sm:right-6"
+    >
+      <MessageCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
+      <span className="truncate">{help.label}</span>
+    </a>
+  )
+}
+
+function ModoUsoCard({
+  id,
+  icon: Icon,
+  titulo,
+  resumen,
+  detalle,
+  imagenes,
+  abierto,
+  activo,
+  procesando,
+  textoActivar,
+  onToggle,
+  onActivar,
+  children,
+}: {
+  id: ModoUso
+  icon: LucideIcon
+  titulo: string
+  resumen: string
+  detalle: string
+  imagenes: Array<{ src: string; alt: string }>
+  abierto: boolean
+  activo: boolean
+  procesando: boolean
+  textoActivar: string
+  onToggle: () => void
+  onActivar: () => void
+  children?: React.ReactNode
+}) {
+  const [imagenesConError, setImagenesConError] = useState<string[]>([])
+  const [imagenAmpliada, setImagenAmpliada] = useState<{ src: string; alt: string } | null>(null)
+
+  useEffect(() => {
+    if (!imagenAmpliada) return
+    const cerrarConEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImagenAmpliada(null)
+    }
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => document.removeEventListener('keydown', cerrarConEscape)
+  }, [imagenAmpliada])
+
+  return (
+    <section className="overflow-hidden rounded-2xl bg-white dark:bg-zinc-900">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={abierto}
+        aria-controls={`detalle-modo-${id}`}
+        className="w-full p-4 flex items-center gap-3 text-left"
+      >
+        <span className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ${activo ? 'bg-emerald-500/10' : 'bg-[#FF7A00]/10'}`}>
+          {activo ? <CircleCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /> : <Icon className="h-5 w-5 text-[#FF7A00]" />}
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-semibold leading-tight">{titulo}</span>
+          </span>
+          <span className="block text-xs text-muted-foreground mt-1 leading-relaxed">{resumen}</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+      </button>
+
+      {abierto && (
+        <div id={`detalle-modo-${id}`} className="px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="h-px bg-black/[0.06] dark:bg-white/[0.08] mb-4" />
+          <div className={imagenes.length > 1 ? 'grid grid-cols-2 gap-2' : ''}>
+            {imagenes.map((imagen) => imagenesConError.includes(imagen.src) ? (
+              <div key={imagen.src} className="w-full aspect-video rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center px-3 text-center">
+                <Icon className="h-6 w-6 text-[#FF7A00]" />
+                <p className="text-[11px] font-semibold mt-2">Imagen a colocar</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{imagen.alt}</p>
+              </div>
+            ) : (
+              <div key={imagen.src} className="relative group overflow-hidden rounded-xl">
+                <img
+                  src={imagen.src}
+                  alt={imagen.alt}
+                  onError={() => setImagenesConError((actuales) => [...actuales, imagen.src])}
+                  className={imagenes.length > 1 ? 'w-full aspect-video object-cover' : 'w-full h-auto'}
+                />
+                <button
+                  type="button"
+                  onClick={() => setImagenAmpliada(imagen)}
+                  className="absolute bottom-2 right-2 h-8 rounded-lg bg-black/70 hover:bg-black/85 px-2.5 text-[11px] font-semibold text-white backdrop-blur-sm flex items-center gap-1.5 transition-colors"
+                  aria-label={`Ver en grande: ${imagen.alt}`}
+                >
+                  <Maximize2 className="h-3.5 w-3.5" /> Ver en grande
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[13.5px] leading-relaxed text-muted-foreground mt-4">{detalle}</p>
+          {children && <div className="mt-4">{children}</div>}
+          <button
+            type="button"
+            onClick={onActivar}
+            disabled={activo || procesando}
+            className={`w-full h-12 mt-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${activo ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985]'} disabled:cursor-default`}
+          >
+            {procesando ? <><Loader2 className="h-4 w-4 animate-spin" /> Activando…</> : activo ? <><Check className="h-4 w-4" /> Activado</> : textoActivar}
+          </button>
+        </div>
+      )}
+      {imagenAmpliada && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={imagenAmpliada.alt}
+          className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center animate-in fade-in duration-200"
+          onClick={() => setImagenAmpliada(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setImagenAmpliada(null)}
+            className="fixed right-4 top-4 h-10 w-10 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center"
+            aria-label="Cerrar imagen"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={imagenAmpliada.src}
+            alt={imagenAmpliada.alt}
+            className="max-h-[92vh] max-w-[96vw] object-contain"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>,
+        document.body,
+      )}
+    </section>
   )
 }
 
@@ -1173,64 +2107,121 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-1.5">{children}</p>
 }
 
-// ── Tarjeta de producto (solo lectura), con el mismo formato que la revisión de carta del
-//    onboarding self-serve (ProductoRevisionCard): nombre, precio, descripción, variantes,
-//    ingredientes y extras. ──
+type OpcionProducto = { nombre: string; precio: number }
+
+function OpcionesProducto({ opciones, adicional = false }: { opciones: OpcionProducto[]; adicional?: boolean }) {
+  return (
+    <div className="mt-2.5 space-y-1.5 text-left">
+      {opciones.map((opcion, index) => (
+        <div key={`${opcion.nombre}-${index}`} className="flex items-baseline gap-2">
+          <span className="text-[13.5px] text-foreground/80 truncate">{opcion.nombre}</span>
+          <span className="flex-1 border-b border-dotted border-black/15 dark:border-white/15 -translate-y-[3px]" />
+          <span className="text-[13.5px] font-medium tabular-nums shrink-0">
+            {adicional ? '+' : ''}${fmtPrecio(opcion.precio)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PasoProducto({ titulo, opciones, adicional = false }: { titulo: string; opciones: OpcionProducto[]; adicional?: boolean }) {
+  if (opciones.length === 0) return null
+  return (
+    <div className="text-left">
+      <p className="text-[13px] font-semibold leading-snug text-foreground">{titulo}</p>
+      <OpcionesProducto opciones={opciones} adicional={adicional} />
+    </div>
+  )
+}
+
+// ── Tarjeta de producto (solo lectura). Refleja todos los pasos configurables del producto sin
+//    convertir el recorrido del claim en un formulario. ──
 function ProductoCard({ p }: { p: ClaimConfig['productos'][number] }) {
-  const variantes = p.variantes ?? []
+  // Los fallbacks mantienen el claim usable durante un deploy escalonado con backends anteriores.
+  const variantesPrimarias = p.variantesPrimarias ?? p.variantes ?? []
+  const variantesSecundarias = p.variantesSecundarias ?? []
   const ingredientes = p.ingredientes ?? []
-  const extras = p.extras ?? []
-  const tieneVariantes = variantes.length > 0
-  const hr = <div className="h-px bg-black/[0.06] dark:bg-white/[0.08] my-4" />
+  const extrasPrimarios = p.extrasPrimarios ?? p.extras ?? []
+  const extrasSecundarios = p.extrasSecundarios ?? []
+  const tieneVariantes = variantesPrimarias.length > 0
+  const secciones = [
+    variantesPrimarias.length > 0,
+    variantesSecundarias.length > 0,
+    ingredientes.length > 0,
+    extrasPrimarios.length > 0,
+    extrasSecundarios.length > 0,
+    p.permiteNota === true,
+  ].filter(Boolean).length
 
   return (
-    <div className="rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-5 py-5 text-center">
-      <h3 className="text-[21px] font-semibold leading-tight tracking-tight px-6">{p.nombre}</h3>
-
-      {!tieneVariantes && (
-        <p className="mt-2 text-[17px] font-semibold tabular-nums tracking-tight text-[#FF7A00]">${fmtPrecio(p.precio)}</p>
-      )}
-
-      {p.descripcion && (
-        <p className="text-[13.5px] text-muted-foreground mt-2 leading-relaxed max-w-[44ch] mx-auto">{p.descripcion}</p>
-      )}
-
-      {tieneVariantes && (
-        <div className="mt-4 max-w-xs mx-auto space-y-2 text-left">
-          {variantes.map((v, vi) => (
-            <div key={vi} className="flex items-baseline gap-2">
-              <span className="text-[13.5px] text-foreground/80 truncate">{v.nombre}</span>
-              <span className="flex-1 border-b border-dotted border-black/20 dark:border-white/20 -translate-y-[3px]" />
-              <span className="text-[13.5px] font-semibold tabular-nums shrink-0">${fmtPrecio(v.precio)}</span>
-            </div>
-          ))}
+    <article className="rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 text-center ring-1 ring-black/[0.03] dark:ring-white/[0.04]">
+      {p.imagenUrl && (
+        <div className="w-full aspect-[16/9] max-h-52 overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+          <img
+            src={p.imagenUrl}
+            alt={p.nombre}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
         </div>
       )}
 
-      {ingredientes.length > 0 && (
-        <>
-          {hr}
-          <FieldLabel>Ingredientes</FieldLabel>
-          <p className="text-[13px] text-muted-foreground leading-relaxed max-w-[44ch] mx-auto">{ingredientes.join(' · ')}</p>
-        </>
-      )}
+      <div className="px-5 py-5">
+        <h3 className="text-[21px] font-semibold leading-tight tracking-tight px-4">{p.nombre}</h3>
 
-      {extras.length > 0 && (
-        <>
-          {hr}
-          <FieldLabel>Para agregar</FieldLabel>
-          <div className="max-w-xs mx-auto space-y-1.5 text-left">
-            {extras.map((ex, k) => (
-              <div key={k} className="flex items-baseline gap-2">
-                <span className="text-[13.5px] text-foreground/80 truncate">{ex.nombre}</span>
-                <span className="flex-1 border-b border-dotted border-black/20 dark:border-white/20 -translate-y-[3px]" />
-                <span className="text-[13.5px] font-medium tabular-nums shrink-0 text-[#FF7A00]">+${fmtPrecio(ex.precio)}</span>
+        {!tieneVariantes && (
+          <p className="mt-2 text-[17px] font-semibold tabular-nums tracking-tight text-[#FF7A00]">${fmtPrecio(p.precio)}</p>
+        )}
+
+        {p.descripcion && (
+          <p className="text-[13.5px] text-muted-foreground mt-2 leading-relaxed max-w-[44ch] mx-auto">{p.descripcion}</p>
+        )}
+
+        {secciones > 0 && (
+          <div className="mt-5 pt-4 border-t border-black/[0.06] dark:border-white/[0.08] max-w-xs mx-auto space-y-4">
+            <PasoProducto
+              titulo={p.tituloVariantesPrimarias || 'Elegí una opción'}
+              opciones={variantesPrimarias}
+            />
+            <PasoProducto
+              titulo={p.tituloVariantesSecundarias || 'Elegí también una segunda opción'}
+              opciones={variantesSecundarias}
+              adicional
+            />
+
+            {ingredientes.length > 0 && (
+              <div>
+                <FieldLabel>Ingredientes que puede quitar</FieldLabel>
+                <p className="text-[13px] text-muted-foreground leading-relaxed">{ingredientes.join(' · ')}</p>
               </div>
-            ))}
+            )}
+
+            <PasoProducto
+              titulo={p.tituloExtrasPrimarios || 'Extras'}
+              opciones={extrasPrimarios}
+              adicional
+            />
+            <PasoProducto
+              titulo={p.tituloExtrasSecundarios || 'Extras'}
+              opciones={extrasSecundarios}
+              adicional
+            />
+
+            {p.permiteNota === true && (
+              <div className="text-left">
+                <p className="text-[13px] font-semibold leading-snug text-foreground">
+                  {p.tituloNota || '¿Querés aclarar algo?'}
+                </p>
+                <div className="mt-2 h-9 rounded-lg border border-black/[0.08] dark:border-white/[0.1] bg-white/60 dark:bg-white/[0.03] px-3 flex items-center">
+                  <span className="text-xs text-muted-foreground">Nota opcional del cliente</span>
+                </div>
+              </div>
+            )}
           </div>
-        </>
-      )}
-    </div>
+        )}
+      </div>
+    </article>
   )
 }
 
@@ -1253,7 +2244,12 @@ function MetodoLinea({ icon: Icon, label, on, attention }: { icon: LucideIcon; l
 }
 
 // ── Resumen (lectura) del delivery: mapa con las zonas + precios ──
-function DeliveryResumen({ draft, zonas, center }: { draft?: DeliveryDraft; zonas: ClaimConfig['delivery']['zonas']; center: [number, number] }) {
+function DeliveryResumen({ draft, tipos, zonas, center }: {
+  draft?: DeliveryDraft
+  tipos: TiposPedidoDraft
+  zonas: ClaimConfig['delivery']['zonas']
+  center: [number, number]
+}) {
   // Si hay borrador, mostramos lo que quedó configurado; si no, las zonas actuales del backend.
   const poligonos: { poligono: { lat: number; lng: number }[]; color: string; nombre: string; precio: string }[] = draft
     ? draft.mode === 'radio'
@@ -1263,37 +2259,123 @@ function DeliveryResumen({ draft, zonas, center }: { draft?: DeliveryDraft; zona
 
   return (
     <div className="w-full mt-6">
-      <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 h-52">
-        <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false} dragging={false} zoomControl={false} attributionControl={false}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <MapResizer />
-          <FitBounds poligonos={poligonos.map((p) => p.poligono)} />
-          {poligonos.map((p, i) => (
-            <Polygon key={i} positions={p.poligono.map((c) => [c.lat, c.lng] as [number, number])} pathOptions={{ color: p.color, fillColor: p.color, fillOpacity: 0.2, weight: 2 }} />
-          ))}
-        </MapContainer>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <TipoPedidoResumen icon={MapPin} label="Delivery" activo={tipos.delivery} />
+        <TipoPedidoResumen icon={ShoppingBag} label="Takeaway" activo={tipos.takeaway} />
       </div>
-      <div className="mt-3 space-y-1.5">
-        {poligonos.map((p, i) => (
-          <div key={i} className="flex items-center gap-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 px-3.5 h-11">
-            <span className="h-3 w-3 rounded-full shrink-0" style={{ background: p.color }} />
-            <span className="flex-1 text-left text-sm font-medium truncate">{p.nombre}</span>
-            <span className="text-sm font-semibold tabular-nums shrink-0">${fmtPrecio(p.precio)}</span>
+      {tipos.delivery && poligonos.length > 0 && (
+        <>
+          <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 h-52">
+            <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false} dragging={false} zoomControl={false} attributionControl={false}>
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <MapResizer />
+              <FitBounds poligonos={poligonos.map((p) => p.poligono)} />
+              {poligonos.map((p, i) => (
+                <Polygon key={i} positions={p.poligono.map((c) => [c.lat, c.lng] as [number, number])} pathOptions={{ color: p.color, fillColor: p.color, fillOpacity: 0.2, weight: 2 }} />
+              ))}
+            </MapContainer>
           </div>
-        ))}
-      </div>
+          <div className="mt-3 space-y-1.5">
+            {poligonos.map((p, i) => (
+              <div key={i} className="flex items-center gap-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 px-3.5 h-11">
+                <span className="h-3 w-3 rounded-full shrink-0" style={{ background: p.color }} />
+                <span className="flex-1 text-left text-sm font-medium truncate">{p.nombre}</span>
+                <span className="text-sm font-semibold tabular-nums shrink-0">${fmtPrecio(p.precio)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {tipos.delivery && poligonos.length === 0 && (
+        <p className="rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-3 text-sm text-muted-foreground text-left">
+          Falta configurar la zona y el costo de envío.
+        </p>
+      )}
     </div>
   )
 }
 
-// ── Editor de delivery: primero pide la dirección; con una dirección geolocalizada muestra el
-//    mapa centrado en el local para elegir un radio o dibujar zonas, con precio. ──
-function DeliveryEditor({ initial, onGuardar, onCancelar }: {
-  initial?: DeliveryDraft
-  onGuardar: (d: DeliveryDraft) => void
-  onCancelar: () => void
+function TipoPedidoResumen({ icon: Icon, label, activo }: { icon: LucideIcon; label: string; activo: boolean }) {
+  return (
+    <div className={`rounded-2xl border px-3 py-3 flex items-center gap-2 text-sm font-medium ${activo ? 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-foreground' : 'border-transparent bg-zinc-100 dark:bg-zinc-900 text-muted-foreground'}`}>
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="flex-1 text-left">{label}</span>
+      {activo ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+    </div>
+  )
+}
+
+// ── Alta de sucursales dentro del claim. Todavía no hay sesión: sólo arma el borrador local. ──
+function SucursalesClaimEditor({ initial, pagosDefault, onGuardar }: {
+  initial: SucursalDraft[]
+  pagosDefault: PagosDraft
+  onGuardar: (sucursales: SucursalDraft[]) => void
 }) {
-  // Dirección del local (paso 1): sin ubicación geolocalizada no mostramos el mapa. Si venimos a
+  const [items, setItems] = useState<SucursalDraft[]>(() => initial.map((s) => ({ ...s, pagos: { ...s.pagos } })))
+
+  const patchItem = (idx: number, patch: Partial<SucursalDraft>) => {
+    setItems((prev) => prev.map((s, i) => i === idx ? { ...s, ...patch } : s))
+  }
+  const agregar = () => setItems((prev) => [...prev, {
+    localId: crypto.randomUUID(),
+    nombre: `Sucursal ${prev.length + 1}`,
+    address: '',
+    center: null,
+    pagos: { ...pagosDefault },
+    whatsappNumber: '',
+  }])
+  const quitar = (idx: number) => {
+    if (items.length <= 2) return toast.error('Para elegir múltiples sucursales necesitás al menos dos')
+    setItems((prev) => prev.filter((_, i) => i !== idx))
+  }
+  const guardar = () => {
+    if (items.some((s) => s.nombre.trim().length < 2)) return toast.error('Poné un nombre para cada sucursal')
+    if (items.some((s) => !s.address.trim() || !s.center)) return toast.error('Elegí la dirección exacta de cada sucursal')
+    onGuardar(items.map((s) => ({ ...s, nombre: s.nombre.trim(), address: s.address.trim() })))
+  }
+
+  return (
+    <div className="w-full mt-6 space-y-3 text-left">
+      {items.map((sucursal, idx) => (
+        <div key={sucursal.localId} className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <span className="text-xs font-semibold text-muted-foreground">Local {idx + 1}</span>
+            <button type="button" onClick={() => quitar(idx)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-500/10" aria-label={`Quitar ${sucursal.nombre}`}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <input value={sucursal.nombre} onChange={(e) => patchItem(idx, { nombre: e.target.value })} placeholder="Ej: Centro" className="w-full h-11 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-0 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#FF7A00]/30" />
+          <div className="mt-2.5">
+            <AddressAutocomplete
+              value={sucursal.address}
+              onChange={(address, lat, lng) => patchItem(idx, { address, center: lat != null && lng != null ? { lat, lng } : null, delivery: undefined })}
+              placeholder="Dirección exacta del local"
+            />
+          </div>
+        </div>
+      ))}
+      <button type="button" onClick={agregar} className="w-full h-11 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-sm font-semibold text-muted-foreground hover:text-foreground hover:border-[#FF7A00]/60 flex items-center justify-center gap-2">
+        <Plus className="h-4 w-4" /> Agregar otra sucursal
+      </button>
+      <button type="button" onClick={guardar} className="w-full h-14 mt-3 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2">
+        <Check className="h-4 w-4" /> Continuar con estas sucursales
+      </button>
+    </div>
+  )
+}
+
+// ── Editor de entregas: primero define delivery/takeaway. Sólo si hay delivery pide la dirección
+//    y luego muestra el mapa para elegir un radio o dibujar zonas, con precio. ──
+function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipos = false }: {
+  initial?: DeliveryDraft
+  initialTipos: TiposPedidoDraft
+  onGuardar: (tipos: TiposPedidoDraft, delivery?: DeliveryDraft) => void
+  onCancelar: () => void
+  skipTipos?: boolean
+}) {
+  const [tipos, setTipos] = useState<TiposPedidoDraft>(initialTipos)
+  const [pasoTipos, setPasoTipos] = useState<'delivery' | 'takeaway' | 'configuracion'>(skipTipos ? 'configuracion' : 'delivery')
+  // Dirección del local (paso 2): sin ubicación geolocalizada no mostramos el mapa. Si venimos a
   // re-editar un borrador ya cargado, arrancamos con su dirección/ubicación y su configuración.
   const [address, setAddress] = useState(initial?.address ?? '')
   const [lat, setLat] = useState<number | null>(initial?.center.lat ?? null)
@@ -1332,19 +2414,81 @@ function DeliveryEditor({ initial, onGuardar, onCancelar }: {
   }
 
   const guardar = () => {
+    if (!tipos.delivery && !tipos.takeaway) return toast.error('Elegí al menos un tipo de pedido')
+    if (!tipos.delivery) {
+      onGuardar(tipos)
+      return
+    }
     if (!tieneUbicacion) return toast.error('Elegí tu dirección de la lista')
     if (mode === 'radio') {
-      onGuardar({ mode: 'radio', precio: precioRadio || '0', radius, center: centerObj, address })
+      onGuardar(tipos, { mode: 'radio', precio: precioRadio || '0', radius, center: centerObj, address })
     } else {
       if (zonas.length === 0) return toast.error('Dibujá al menos una zona')
-      onGuardar({ mode: 'zonas', zonas, center: centerObj, address })
+      onGuardar(tipos, { mode: 'zonas', zonas, center: centerObj, address })
     }
+  }
+
+  const responderDelivery = (delivery: boolean) => {
+    setTipos((actual) => ({ ...actual, delivery }))
+    setPasoTipos('takeaway')
+  }
+
+  const responderTakeaway = (takeaway: boolean) => {
+    if (!tipos.delivery && !takeaway) {
+      toast.error('Necesitás ofrecer delivery, takeaway o ambos')
+      return
+    }
+    setTipos((actual) => ({ ...actual, takeaway }))
+    setPasoTipos('configuracion')
   }
 
   return (
     <div className="w-full mt-6 text-left">
-      {/* Paso 1 — dirección del local */}
-      <p className="text-sm font-medium text-foreground mb-2">¿Desde dónde entregás?</p>
+      {/* Una sola pregunta por pantalla, con opciones visualmente neutras. */}
+      {pasoTipos === 'delivery' && (
+        <PreguntaTipoPedido
+          icon={MapPin}
+          pregunta="¿Hacés pedidos con delivery?"
+          aclaracion="Es decir, llevás el pedido hasta la dirección del cliente."
+          onSi={() => responderDelivery(true)}
+          onNo={() => responderDelivery(false)}
+          onCancelar={onCancelar}
+        />
+      )}
+
+      {pasoTipos === 'takeaway' && (
+        <PreguntaTipoPedido
+          icon={ShoppingBag}
+          pregunta="¿Hacés pedidos takeaway?"
+          aclaracion="Es decir, el cliente hace el pedido y lo retira en tu local."
+          onSi={() => responderTakeaway(true)}
+          onNo={() => responderTakeaway(false)}
+          onVolver={() => setPasoTipos('delivery')}
+          onCancelar={onCancelar}
+        />
+      )}
+
+      {pasoTipos === 'configuracion' && !tipos.delivery ? (
+        <>
+          <p className="mt-3 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-3 text-sm text-muted-foreground">
+            Como elegiste solo takeaway, no necesitás configurar dirección ni costos de envío.
+          </p>
+          <button onClick={guardar} className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2">
+            <Check className="h-4 w-4" /> Guardar tipos de pedido
+          </button>
+          <button onClick={onCancelar} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+            Cancelar
+          </button>
+        </>
+      ) : pasoTipos === 'configuracion' && tipos.delivery ? (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 mt-5">
+      {/* Paso 2 — dirección del local, únicamente si ofrece delivery. */}
+      <p className="text-sm font-medium text-foreground mb-1">¿Desde dónde entregás?</p>
+      {tipos.delivery && !tipos.takeaway && (
+        <p className="text-xs text-muted-foreground mb-2">
+          Te pedimos la dirección para configurar tus zonas y costos de envío.
+        </p>
+      )}
       <AddressAutocomplete
         value={address}
         onChange={(a, la, ln) => { setAddress(a); setLat(la); setLng(ln) }}
@@ -1466,6 +2610,46 @@ function DeliveryEditor({ initial, onGuardar, onCancelar }: {
       </button>
       </div>
       )}
+      </div>
+      ) : null}
+    </div>
+  )
+}
+
+function PreguntaTipoPedido({ icon: Icon, pregunta, aclaracion, onSi, onNo, onVolver, onCancelar }: {
+  icon: LucideIcon
+  pregunta: string
+  aclaracion: string
+  onSi: () => void
+  onNo: () => void
+  onVolver?: () => void
+  onCancelar: () => void
+}) {
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="h-12 w-12 mx-auto rounded-2xl bg-zinc-100 dark:bg-zinc-900 text-muted-foreground flex items-center justify-center">
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="mt-4 text-center text-lg font-semibold text-foreground">{pregunta}</p>
+      <p className="mt-1.5 text-center text-sm text-muted-foreground">{aclaracion}</p>
+      <div className="grid grid-cols-2 gap-2 mt-6">
+        <button type="button" onClick={onSi} className="h-12 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm font-semibold text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+          Sí
+        </button>
+        <button type="button" onClick={onNo} className="h-12 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm font-semibold text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+          No
+        </button>
+      </div>
+      <div className="flex items-center justify-center gap-2 mt-3">
+        {onVolver && (
+          <button type="button" onClick={onVolver} className="h-10 px-4 rounded-xl text-sm font-medium text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+            Volver
+          </button>
+        )}
+        <button type="button" onClick={onCancelar} className="h-10 px-4 rounded-xl text-sm font-medium text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+          Cancelar
+        </button>
+      </div>
     </div>
   )
 }
