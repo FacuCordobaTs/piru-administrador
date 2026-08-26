@@ -156,6 +156,7 @@ interface PuntoDeVentaProps {
     onDeletePedido?: (pedidoId: number) => void
     /** Abre la confirmación para despachar el pedido de una mesa. */
     onDispatchMesa?: () => void | Promise<void>
+    /** Guarda el borrador y manda en una sola comanda el delta aún no impreso. */
     onPrintNewMesa?: () => void | Promise<void>
     onPrintAllMesa?: () => void | Promise<void>
     sucursalActivaId: number | null
@@ -1277,7 +1278,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 {modoEdicion && tipo === 'mesa' && (onPrintNewMesa || onPrintAllMesa) && (
                     <div className="mb-2 grid grid-cols-2 gap-2">
                         <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintNewMesa?.()}>
-                            <Printer className="mr-1.5 h-4 w-4" /> Nuevos productos
+                            <Printer className="mr-1.5 h-4 w-4" /> Imprimir nuevos
                         </Button>
                         <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintAllMesa?.()}>
                             <Printer className="mr-1.5 h-4 w-4" /> Toda la comanda

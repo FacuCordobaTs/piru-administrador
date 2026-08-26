@@ -1244,7 +1244,7 @@ const PosComandaPreview = ({
                         {editingPedidoId && draft.tipo === 'mesa' && (onPrintNewMesa || onPrintAllMesa) && (
                             <div className="grid grid-cols-2 gap-2">
                                 <Button type="button" variant="outline" className="h-11 rounded-xl text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintNewMesa?.()}>
-                                    <Printer className="mr-2 h-4 w-4" /> Reimprimir nuevos productos
+                                    <Printer className="mr-2 h-4 w-4" /> Imprimir nuevos productos
                                 </Button>
                                 <Button type="button" variant="outline" className="h-11 rounded-xl text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintAllMesa?.()}>
                                     <Printer className="mr-2 h-4 w-4" /> Reimprimir toda la comanda
@@ -1385,7 +1385,11 @@ const Dashboard = () => {
     const [loadingRepartidores, setLoadingRepartidores] = useState(false)
     const [nuevoRepartidorNombre, setNuevoRepartidorNombre] = useState('')
     const [creandoRepartidor, setCreandoRepartidor] = useState(false)
-    const [pendingDispatchPedido, setPendingDispatchPedido] = useState<{ tipo: PedidoTipo; id: number } | null>(null)
+    const [pendingRepartidorPedido, setPendingRepartidorPedido] = useState<{
+        tipo: PedidoTipo
+        id: number
+        modo: 'despachar' | 'editar'
+    } | null>(null)
     const [repartidorSelectorOpen, setRepartidorSelectorOpen] = useState(false)
     const [asignandoRepartidor, setAsignandoRepartidor] = useState(false)
 
@@ -1692,9 +1696,11 @@ const Dashboard = () => {
                 // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
                 if (deferUntilPaid && currentPagado && !prevData?.pagado) {
                     shouldPrint = true
-                } else if (prevData && pedido.impreso === false) {
-                    // Una edición de mesa vuelve a abrir el claim. Antes se
-                    // ignoraba porque el pedido ya existía en este Dashboard.
+                } else if (prevData && pedido.impreso === false && pedido.tipo !== 'mesa') {
+                    // Las mesas se autoguardan después de cada cambio. Sus
+                    // deltas quedan pendientes para que cocina reciba juntos
+                    // todos los productos al pulsar "Imprimir nuevos productos",
+                    // en vez de una comanda por cada producto agregado.
                     shouldPrint = true
                 }
             }
@@ -1796,7 +1802,7 @@ const Dashboard = () => {
             setRepartidoresList([])
             setRepartidoresModalOpen(false)
             setRepartidorSelectorOpen(false)
-            setPendingDispatchPedido(null)
+            setPendingRepartidorPedido(null)
         }
     }, [token, gestionCadetesActiva, loadRepartidores])
 
@@ -1806,7 +1812,7 @@ const Dashboard = () => {
         if (gestionCadetesActiva && tipo === 'delivery') {
             const activos = repartidoresList.filter(r => r.estado === 'activo')
             if (activos.length >= 2) {
-                setPendingDispatchPedido({ tipo, id })
+                setPendingRepartidorPedido({ tipo, id, modo: 'despachar' })
                 setRepartidorSelectorOpen(true)
                 return false
             }
@@ -1814,24 +1820,32 @@ const Dashboard = () => {
         return handleEstadoChange(tipo, id, 'archived')
     }
 
-    const handleRepartidorSelected = async (tipo: PedidoTipo, id: number, repartidorId: number | null) => {
+    const handleRepartidorSelected = async (tipo: PedidoTipo, id: number, repartidorId: number | null, modo: 'despachar' | 'editar') => {
         if (!token) return
         setAsignandoRepartidor(true)
         try {
-            if (repartidorId !== null) {
-                try {
-                    await pedidoUnificadoApi.asignarRepartidor(token, id, repartidorId)
-                    setUnifiedPedidos(prev => prev.map(p =>
-                        p.id === id && p.tipo === tipo
-                            ? { ...p, repartidorId, repartidorNombre: repartidoresList.find(r => r.id === repartidorId)?.nombre ?? null }
-                            : p
-                    ))
-                } catch { }
+            await pedidoUnificadoApi.asignarRepartidor(token, id, repartidorId)
+            const repartidorNombre = repartidorId === null
+                ? null
+                : repartidoresList.find(r => r.id === repartidorId)?.nombre ?? null
+            const actualizarRepartidor = (pedido: UnifiedPedido) =>
+                pedido.id === id && pedido.tipo === tipo
+                    ? { ...pedido, repartidorId, repartidorNombre }
+                    : pedido
+
+            setUnifiedPedidos(prev => prev.map(actualizarRepartidor))
+            setSelectedUnifiedPedido(prev => prev ? actualizarRepartidor(prev) : prev)
+
+            if (modo === 'despachar') {
+                await handleEstadoChange(tipo, id, 'archived')
+            } else {
+                toast.success(repartidorId === null ? 'Se quitó el repartidor del pedido' : 'Repartidor actualizado')
             }
-            await handleEstadoChange(tipo, id, 'archived')
+        } catch {
+            toast.error('No se pudo actualizar el repartidor')
         } finally {
             setAsignandoRepartidor(false)
-            setPendingDispatchPedido(null)
+            setPendingRepartidorPedido(null)
             setRepartidorSelectorOpen(false)
         }
     }
@@ -2216,9 +2230,9 @@ const Dashboard = () => {
         return true
     }
 
-    const reimprimirMesa = async (soloNuevos: boolean): Promise<void> => {
+    const imprimirMesa = async (soloNuevos: boolean): Promise<void> => {
         if (!token || !pedidoPosEditando) return
-        if (!selectedPrinter) { toast.error('Configurá una impresora antes de reimprimir'); return }
+        if (!selectedPrinter) { toast.error('Configurá una impresora antes de imprimir'); return }
         try {
             const pedidoId = await posRef.current?.submitDraft()
             if (!pedidoId) return
@@ -2237,7 +2251,7 @@ const Dashboard = () => {
             if (!impresa) { toast.info('No hay productos nuevos pendientes de impresión'); return }
             toast.success(soloNuevos ? 'Productos nuevos enviados a cocina' : 'Comanda completa enviada a imprimir')
         } catch (error) {
-            toast.error('No se pudo reimprimir la comanda', { description: error instanceof Error ? error.message : undefined })
+            toast.error('No se pudo imprimir la comanda', { description: error instanceof Error ? error.message : undefined })
         }
     }
 
@@ -2939,8 +2953,8 @@ const Dashboard = () => {
                                     onUpdated={handlePedidoManualActualizado}
                                     onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
                                     onDispatchMesa={() => setShowDespacharMesaDialog(true)}
-                                    onPrintNewMesa={() => reimprimirMesa(true)}
-                                    onPrintAllMesa={() => reimprimirMesa(false)}
+                                    onPrintNewMesa={() => imprimirMesa(true)}
+                                    onPrintAllMesa={() => imprimirMesa(false)}
                                     sucursalActivaId={sucursalActivaId}
                                     sucursalNombre={sucursalNombre}
                                     onDraftChange={setDraftPos}
@@ -2968,8 +2982,8 @@ const Dashboard = () => {
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
                                         onDispatchMesa={() => setShowDespacharMesaDialog(true)}
-                                        onPrintNewMesa={() => reimprimirMesa(true)}
-                                        onPrintAllMesa={() => reimprimirMesa(false)}
+                                        onPrintNewMesa={() => imprimirMesa(true)}
+                                        onPrintAllMesa={() => imprimirMesa(false)}
                                         onClear={() => pedidoPosEditando
                                             ? abrirDialogoEliminarPedido(pedidoPosEditando)
                                             : posRef.current?.clearDraft()}
@@ -3065,6 +3079,38 @@ const Dashboard = () => {
                                                             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">Programado para las</p>
                                                             <p className="text-2xl font-black text-foreground leading-tight tracking-tight">{selectedUnifiedPedido.horarioProgramado}</p>
                                                         </div>
+                                                    </div>
+                                                )}
+
+                                                {gestionCadetesActiva && selectedUnifiedPedido.tipo === 'delivery' && (
+                                                    <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-muted/40 border border-border/60 p-3 text-left">
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div className="h-10 w-10 rounded-xl bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
+                                                                <UserRound className="h-5 w-5 text-[#FF7A00]" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">Repartidor</p>
+                                                                <p className="font-bold text-foreground truncate">
+                                                                    {selectedUnifiedPedido.repartidorNombre || 'Sin repartidor asignado'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="rounded-xl shrink-0"
+                                                            onClick={() => {
+                                                                setPendingRepartidorPedido({
+                                                                    tipo: selectedUnifiedPedido.tipo,
+                                                                    id: selectedUnifiedPedido.id,
+                                                                    modo: 'editar',
+                                                                })
+                                                                setRepartidorSelectorOpen(true)
+                                                            }}
+                                                        >
+                                                            {selectedUnifiedPedido.repartidorId == null ? 'Asignar' : 'Editar'}
+                                                        </Button>
                                                     </div>
                                                 )}
                                             </div>
@@ -3394,8 +3440,8 @@ const Dashboard = () => {
                                         onUpdated={handlePedidoManualActualizado}
                                         onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
                                         onDispatchMesa={() => setShowDespacharMesaDialog(true)}
-                                        onPrintNewMesa={() => reimprimirMesa(true)}
-                                        onPrintAllMesa={() => reimprimirMesa(false)}
+                                        onPrintNewMesa={() => imprimirMesa(true)}
+                                        onPrintAllMesa={() => imprimirMesa(false)}
                                         sucursalActivaId={sucursalActivaId}
                                         sucursalNombre={sucursalNombre}
                                         onDraftChange={setDraftPos}
@@ -3886,16 +3932,20 @@ const Dashboard = () => {
 
             {/* ── SELECTOR DE REPARTIDOR AL DESPACHAR ── */}
             <Dialog open={repartidorSelectorOpen} onOpenChange={(open) => {
-                if (!open) { setPendingDispatchPedido(null); setRepartidorSelectorOpen(false) }
+                if (!open) { setPendingRepartidorPedido(null); setRepartidorSelectorOpen(false) }
             }}>
                 <DialogContent className="max-w-sm mx-4 rounded-[32px] p-6 bg-background border border-border">
                     <DialogHeader className="mb-4 text-left">
                         <div className="h-12 w-12 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-3">
                             <Truck className="h-6 w-6 text-[#FF7A00]" />
                         </div>
-                        <DialogTitle className="text-xl font-bold">¿Quién hace el envío?</DialogTitle>
+                        <DialogTitle className="text-xl font-bold">
+                            {pendingRepartidorPedido?.modo === 'editar' ? 'Editar repartidor' : '¿Quién hace el envío?'}
+                        </DialogTitle>
                         <DialogDescription className="text-sm mt-1">
-                            Seleccioná el repartidor o despachá sin asignar.
+                            {pendingRepartidorPedido?.modo === 'editar'
+                                ? 'Seleccioná quién está asociado a este pedido.'
+                                : 'Seleccioná el repartidor o despachá sin asignar.'}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2">
@@ -3904,28 +3954,38 @@ const Dashboard = () => {
                                 key={r.id}
                                 disabled={asignandoRepartidor}
                                 onClick={() => {
-                                    if (!pendingDispatchPedido) return
-                                    const { tipo, id } = pendingDispatchPedido
-                                    void handleRepartidorSelected(tipo, id, r.id)
+                                    if (!pendingRepartidorPedido) return
+                                    const { tipo, id, modo } = pendingRepartidorPedido
+                                    void handleRepartidorSelected(tipo, id, r.id, modo)
                                 }}
-                                className="w-full flex items-center gap-3 p-4 rounded-2xl border border-border bg-card hover:bg-accent hover:border-[#FF7A00]/40 transition-all text-left font-semibold disabled:opacity-50 cursor-pointer"
+                                className={cn(
+                                    "w-full flex items-center gap-3 p-4 rounded-2xl border bg-card hover:bg-accent hover:border-[#FF7A00]/40 transition-all text-left font-semibold disabled:opacity-50 cursor-pointer",
+                                    selectedUnifiedPedido?.repartidorId === r.id ? "border-[#FF7A00]" : "border-border",
+                                )}
                             >
                                 <div className="h-9 w-9 rounded-full bg-[#FF7A00]/10 flex items-center justify-center shrink-0">
                                     <UserRound className="h-5 w-5 text-[#FF7A00]" />
                                 </div>
-                                {r.nombre}
+                                <span className="flex-1">{r.nombre}</span>
+                                {pendingRepartidorPedido?.modo === 'editar' && selectedUnifiedPedido?.repartidorId === r.id && (
+                                    <CheckCircle className="h-5 w-5 text-[#FF7A00]" />
+                                )}
                             </button>
                         ))}
                         <button
                             disabled={asignandoRepartidor}
                             onClick={() => {
-                                if (!pendingDispatchPedido) return
-                                const { tipo, id } = pendingDispatchPedido
-                                void handleRepartidorSelected(tipo, id, null)
+                                if (!pendingRepartidorPedido) return
+                                const { tipo, id, modo } = pendingRepartidorPedido
+                                void handleRepartidorSelected(tipo, id, null, modo)
                             }}
                             className="w-full p-3 rounded-2xl border border-dashed border-border text-muted-foreground hover:bg-muted/40 transition-all text-sm font-medium disabled:opacity-50 cursor-pointer"
                         >
-                            {asignandoRepartidor ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Despachar sin asignar repartidor'}
+                            {asignandoRepartidor
+                                ? <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                                : pendingRepartidorPedido?.modo === 'editar'
+                                    ? 'Quitar repartidor'
+                                    : 'Despachar sin asignar repartidor'}
                         </button>
                     </div>
                 </DialogContent>
