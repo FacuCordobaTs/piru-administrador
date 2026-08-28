@@ -15,7 +15,7 @@ import ImageUpload from '@/components/ImageUpload'
 import { cn } from '@/lib/utils'
 import {
   Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
-  X, AlertTriangle, Percent, Image as ImageIcon,
+  X, AlertTriangle, Percent,
   ChevronDown, GripVertical, ArrowUpDown, Check, SquareCheck
 } from 'lucide-react'
 
@@ -1012,15 +1012,11 @@ const Productos = () => {
                               <div className="h-6 w-6 shrink-0 rounded-md bg-white dark:bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-muted-foreground dark:text-zinc-400">
                                 {index + 1}
                               </div>
-                              <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
-                                {producto.imagenUrl ? (
+                              {producto.imagenUrl && (
+                                <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
                                   <img src={producto.imagenUrl} alt={producto.nombre} className="w-full h-full object-cover pointer-events-none" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <ImageIcon className="h-4 w-4 text-zinc-600" />
-                                  </div>
-                                )}
-                              </div>
+                                </div>
+                              )}
                               <span className="flex-1 text-sm font-medium text-zinc-950 dark:text-white truncate">{producto.nombre}</span>
                               <span className="text-sm font-bold text-muted-foreground dark:text-zinc-400 shrink-0">${parseFloat(producto.precio).toFixed(0)}</span>
                             </div>
@@ -1035,56 +1031,95 @@ const Productos = () => {
                       {porCategoria[categoriaNombre].map((producto) => {
                         const isSelected = activePanelType === 'product' && panelProductoId === producto.id
                         const isChecked = seleccionando && productosSeleccionados.includes(producto.id)
+                        const tieneDescuento = !!(producto.descuento && producto.descuento > 0)
+                        const precioOriginal = parseFloat(producto.precio)
+                        const precioFinal = tieneDescuento
+                          ? precioOriginal * (1 - producto.descuento / 100)
+                          : precioOriginal
                         return (
                           <div
                             key={producto.id}
                             onClick={() => seleccionando ? toggleSeleccionProducto(producto.id) : abrirPanel(producto)}
                             className={cn(
-                              "bg-white dark:bg-zinc-900 rounded-4xl overflow-hidden cursor-pointer transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800",
+                              "group relative bg-white dark:bg-zinc-900 cursor-pointer transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:shadow-md active:scale-[0.98]",
+                              producto.imagenUrl
+                                ? "rounded-4xl overflow-hidden"
+                                : "min-h-[140px] rounded-[24px] border border-zinc-200/70 dark:border-white/5 p-4 flex flex-col justify-between hover:border-orange-500/30",
                               seleccionando && isChecked && "ring-2 ring-[#FF7A00]",
                               !seleccionando && isSelected && "border-l-2 border-orange-500",
                               !producto.activo && "opacity-50"
                             )}
                           >
-                            {/* Imagen */}
-                            <div className="aspect-[3/2] w-full bg-white dark:bg-zinc-800 relative overflow-hidden">
-                              {producto.imagenUrl ? (
+                            {producto.imagenUrl ? (
+                              <>
+                                {/* Producto con imagen */}
+                                <div className="aspect-[3/2] w-full bg-white dark:bg-zinc-800 relative overflow-hidden">
                                 <img
                                   src={producto.imagenUrl}
                                   alt={producto.nombre}
-                                  className="w-full h-full object-cover"
+                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                 />
-                              ) : (
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                  <ImageIcon className="h-8 w-8 text-zinc-700" />
+                                  {tieneDescuento && (
+                                    <div className="absolute top-2 left-2">
+                                      <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm text-[10px] px-1.5 py-0.5">
+                                        -{producto.descuento}%
+                                      </Badge>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                              {producto.descuento && producto.descuento > 0 && (
-                                <div className="absolute top-2 left-2">
-                                  <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold border-none shadow-sm text-[10px] px-1.5 py-0.5">
-                                    -{producto.descuento}%
-                                  </Badge>
-                                </div>
-                              )}
-                              {seleccionando && (
-                                <div className={cn(
-                                  "absolute top-2 right-2 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors",
-                                  isChecked ? "bg-[#FF7A00] border-[#FF7A00]" : "bg-white/90 dark:bg-zinc-900/90 border-zinc-400 dark:border-zinc-600"
-                                )}>
-                                  {isChecked && <Check className="h-3.5 w-3.5 text-white" />}
-                                </div>
-                              )}
-                            </div>
 
-                            {/* Contenido */}
-                            <div className="px-3 pt-2 pb-3">
-                              <h3 className="text-xs font-semibold leading-tight pt-2 text-zinc-950 dark:text-white truncate pl-2">{producto.nombre}</h3>
-                              <p className="text-sm font-bold text-zinc-950 dark:text-white mt-1 pl-2 pb-2">
-                                ${producto.descuento && producto.descuento > 0
-                                  ? (parseFloat(producto.precio) * (1 - producto.descuento / 100)).toFixed(0)
-                                  : parseFloat(producto.precio).toFixed(0)}
-                              </p>
-                            </div>
+                                <div className="px-3 pt-2 pb-3">
+                                  <h3 className="text-xs font-semibold leading-tight pt-2 text-zinc-950 dark:text-white truncate pl-2">{producto.nombre}</h3>
+                                  <p className="text-sm font-bold text-zinc-950 dark:text-white mt-1 pl-2 pb-2">
+                                    ${precioFinal.toFixed(0)}
+                                  </p>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                {/* Producto sin imagen: tarjeta tipografica, como en MenuDelivery */}
+                                <div className="flex-1">
+                                  <div className="flex items-start justify-between gap-2 mb-2">
+                                    <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-zinc-950 dark:text-white [overflow-wrap:anywhere]">
+                                      {producto.nombre}
+                                    </h3>
+                                    {tieneDescuento && (
+                                      <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                                        -{producto.descuento}%
+                                      </span>
+                                    )}
+                                  </div>
+                                  {producto.descripcion && (
+                                    <p className="line-clamp-3 text-xs font-medium leading-relaxed text-muted-foreground dark:text-zinc-400">
+                                      {producto.descripcion}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="mt-4 flex items-end gap-1.5">
+                                  <span className={cn(
+                                    "text-lg font-black",
+                                    tieneDescuento ? "text-emerald-600 dark:text-emerald-400" : "text-[#FF7A00]"
+                                  )}>
+                                    ${precioFinal.toFixed(0)}
+                                  </span>
+                                  {tieneDescuento && (
+                                    <span className="mb-0.5 text-[11px] font-semibold text-muted-foreground line-through opacity-70">
+                                      ${precioOriginal.toFixed(0)}
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            )}
+
+                            {seleccionando && (
+                              <div className={cn(
+                                "absolute top-2 right-2 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors",
+                                isChecked ? "bg-[#FF7A00] border-[#FF7A00]" : "bg-white/90 dark:bg-zinc-900/90 border-zinc-400 dark:border-zinc-600"
+                              )}>
+                                {isChecked && <Check className="h-3.5 w-3.5 text-white" />}
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -1160,16 +1195,12 @@ const Productos = () => {
         {/* ── PANEL: PRODUCT VISTA ── */}
         {activePanelType === 'product' && panelModo === 'vista' && panelProducto && (
           <div className="h-full flex flex-col overflow-y-auto">
-            {/* Image */}
-            <div className="h-48 w-full bg-white dark:bg-zinc-800 shrink-0 overflow-hidden relative">
-              {panelProducto.imagenUrl ? (
+            {/* La cabecera visual solo existe cuando el producto tiene imagen. */}
+            {panelProducto.imagenUrl && (
+              <div className="h-48 w-full bg-white dark:bg-zinc-800 shrink-0 overflow-hidden relative">
                 <img src={panelProducto.imagenUrl} alt={panelProducto.nombre} className="w-full h-full object-cover" />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-zinc-800">
-                  <ImageIcon className="h-12 w-12 text-zinc-600" />
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="p-6 flex flex-col gap-4 flex-1">
               <div>

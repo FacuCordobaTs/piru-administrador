@@ -31,11 +31,18 @@ import PagoLink from './pages/PagoLink';
 import ClaimTienda from './pages/ClaimTienda';
 import Modulos from './pages/Modulos';
 import Mesas from './pages/Mesas';
+import AccesoInterno from './pages/AccesoInterno';
 import { initializeDesktopZoom } from './utils/desktopZoom';
 
 
 
 const router = createBrowserRouter([
+  {
+    // Sesión corta emitida exclusivamente desde interno/. Fuera de GuestLayout para
+    // poder reemplazar una sesión ya abierta en este navegador.
+    path: "/acceso-interno",
+    element: <AccesoInterno />,
+  },
   {
     // Página pública de pago por link/QR (sin login): el celular paga lo que la compu muestra.
     path: "/pago/:token",
