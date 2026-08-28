@@ -1034,7 +1034,7 @@ const Productos = () => {
                         const tieneDescuento = !!(producto.descuento && producto.descuento > 0)
                         const precioOriginal = parseFloat(producto.precio)
                         const precioFinal = tieneDescuento
-                          ? precioOriginal * (1 - producto.descuento / 100)
+                          ? precioOriginal * (1 - (producto.descuento ?? 0) / 100)
                           : precioOriginal
                         return (
                           <div
