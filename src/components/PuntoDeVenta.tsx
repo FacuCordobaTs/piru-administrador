@@ -152,6 +152,10 @@ interface PuntoDeVentaProps {
     onClose: () => void
     onCreated: (pedidoId: number, pedido?: Partial<PosEditablePedido>) => void | Promise<void>
     onUpdated?: (pedido: PosEditablePedido) => void
+    /** Avisa antes del autosave que una mesa existente sumó productos. El
+     *  Dashboard usa esta señal para reservar ese delta para la impresión
+     *  manual de "Imprimir nuevos", sin afectar el claim de esos ítems. */
+    onExistingMesaProductsAdded?: (pedidoId: number) => void
     /** Solicita eliminar el pedido persistido que se está editando. */
     onDeletePedido?: (pedidoId: number) => void
     /** Abre la confirmación para despachar el pedido de una mesa. */
@@ -252,7 +256,7 @@ const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
 })
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, onDeletePedido, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
+    { onClose, onCreated, onUpdated, onExistingMesaProductsAdded, onDeletePedido, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -1000,6 +1004,21 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             // Editar un pedido existente requiere el servidor: la cola offline
             // es sólo para altas nuevas del POS.
             if (modoEdicion) {
+                const agregoProductosAMesaExistente =
+                    initialPedido.tipo === 'mesa' &&
+                    initialPedido.items.length > 0 &&
+                    cart.some((item) => {
+                        if (item.serverItemId == null) return true
+                        const itemOriginal = initialPedido.items.find((original) => original.id === item.serverItemId)
+                        return !!itemOriginal && item.cantidad > itemOriginal.cantidad
+                    })
+
+                // Se avisa antes del request para cubrir la carrera en la que
+                // el WebSocket publica la actualización antes que la respuesta
+                // de updateFromPos llegue al Dashboard.
+                if (agregoProductosAMesaExistente) {
+                    onExistingMesaProductsAdded?.(initialPedido.id)
+                }
                 const res = await pedidoUnificadoApi.updateFromPos(token, initialPedido.id, {
                     version: initialPedido.version,
                     tipo: data.tipo,

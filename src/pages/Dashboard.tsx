@@ -1283,6 +1283,10 @@ const Dashboard = () => {
     // el refetch lleguen en un orden particular. El id queda pendiente hasta
     // que el auto-printer lo reclama (o detecta que lo reclamó otro equipo).
     const posOrdersPendingPrintRef = useRef<Set<number>>(new Set())
+    // Los deltas agregados desde el POS a una mesa que ya tenía productos se
+    // reservan para el botón "Imprimir nuevos productos". La marca se crea
+    // antes del autosave para ganarle a una eventual actualización por WS.
+    const mesaOrdersPendingManualPrintRef = useRef<Set<number>>(new Set())
     const { lastUpdate } = useAdminContext()
 
     // Estados Principales
@@ -1353,16 +1357,36 @@ const Dashboard = () => {
     const [showMesasDialog, setShowMesasDialog] = useState(false)
     const [mesasDialogMode, setMesasDialogMode] = useState<'operar' | 'asignar-borrador'>('operar')
 
-    useEffect(() => {
-        if (!token || !cierreManualActivo) { setTurnoActual(null); setTurnosCaja([]); setSelectedTurnoId(null); return }
-        pedidoUnificadoApi.turnos(token).then((res: any) => {
+    const cargarTurnosCaja = useCallback(async () => {
+        if (!token || !cierreManualActivo) {
+            setTurnoActual(null)
+            setTurnosCaja([])
+            setSelectedTurnoId(null)
+            return
+        }
+        try {
+            const res: any = await pedidoUnificadoApi.turnos(token)
             if (res.success) {
                 setTurnoActual(res.data.actual)
                 setTurnosCaja(res.data.turnos)
-                setSelectedTurnoId((actual) => actual ?? res.data.actual.id)
+                setSelectedTurnoId((seleccionado) => {
+                    const sigueExistiendo = res.data.turnos.some((turno: TurnoCajaDashboard) => turno.id === seleccionado)
+                    return sigueExistiendo ? seleccionado : res.data.actual.id
+                })
             }
-        }).catch((error) => console.error('Error cargando turno:', error))
+        } catch (error) {
+            console.error('Error cargando turno:', error)
+        }
     }, [token, cierreManualActivo])
+
+    useEffect(() => { void cargarTurnosCaja() }, [cargarTurnosCaja])
+
+    useEffect(() => {
+        if (!cierreManualActivo) return
+        const refrescarAlVolver = () => { void cargarTurnosCaja() }
+        window.addEventListener('focus', refrescarAlVolver)
+        return () => window.removeEventListener('focus', refrescarAlVolver)
+    }, [cierreManualActivo, cargarTurnosCaja])
 
     const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
     const [sucursalNombre, setSucursalNombre] = useState<string>('')
@@ -1566,7 +1590,7 @@ const Dashboard = () => {
         if (!token || !turnoActual) return
         setCerrandoTurno(true)
         try {
-            const res: any = await pedidoUnificadoApi.cerrarTurno(token)
+            const res: any = await pedidoUnificadoApi.cerrarTurno(token, turnoActual.id)
             if (!res.success) throw new Error(res.message || 'No se pudo cerrar el turno')
             setTurnoActual(res.data.actual)
             setTurnosCaja((turnos) => [res.data.actual, res.data.cerrado, ...turnos.filter((turno) => turno.id !== res.data.cerrado.id)])
@@ -1575,6 +1599,9 @@ const Dashboard = () => {
             setSelectedUnifiedPedido(null)
             toast.success('Turno cerrado. Ya comenzó uno nuevo.')
         } catch (error) {
+            // Si otro equipo cerró el turno primero, el 409 evita crear un
+            // segundo corte y esta recarga alinea de inmediato ambos reportes.
+            await cargarTurnosCaja()
             toast.error(error instanceof Error ? error.message : 'No se pudo cerrar el turno')
         } finally { setCerrandoTurno(false) }
     }
@@ -1657,6 +1684,25 @@ const Dashboard = () => {
             const prevData = processedOrdersRef.current.get(pedidoKey)
             const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
             const pendingFromPos = posOrdersPendingPrintRef.current.has(pedido.id)
+            const pendingManualMesaPrint = pedido.tipo === 'mesa' && mesaOrdersPendingManualPrintRef.current.has(pedido.id)
+
+            // Una mesa ya abierta no debe sacar una comanda automática por cada
+            // producto que agrega el mozo. Sólo registramos la versión nueva;
+            // claimImpreso queda sin tocar para que "Imprimir nuevos productos"
+            // siga encontrando e imprimiendo el delta completo.
+            if (pendingManualMesaPrint) {
+                mesaOrdersPendingManualPrintRef.current.delete(pedido.id)
+                // Si el alta inicial de la mesa todavía esperaba su turno de
+                // autoimpresión, el nuevo delta pasa a gobernar: todo queda
+                // acumulado para una única impresión manual.
+                posOrdersPendingPrintRef.current.delete(pedido.id)
+                processedOrdersRef.current.set(pedidoKey, {
+                    status: pedido.estado,
+                    itemIds: new Set(pedido.items.map((item) => item.id)),
+                    pagado: currentPagado,
+                })
+                return
+            }
 
             // Archivado → registrar y nunca imprimir
             if (pedido.estado === 'archived') {
@@ -2163,6 +2209,10 @@ const Dashboard = () => {
         fetchPedidosMesaAbiertos()
     }
 
+    const reservarProductosNuevosMesaParaImpresionManual = (pedidoId: number) => {
+        mesaOrdersPendingManualPrintRef.current.add(pedidoId)
+    }
+
     const imprimirPedidoMesaCompleto = async (pedidoId: number, draft: PosDraft) => {
         const itemsToPrint = draft.items.map((item) => ({
             cantidad: item.cantidad,
@@ -2513,7 +2563,7 @@ const Dashboard = () => {
                             {activeOrdersListado.length}
                         </button>
                     )}
-                    <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={() => setShowCierreTurno(true)}>
+                    <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={async () => { await cargarTurnosCaja(); setShowCierreTurno(true) }}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
                     {cierreManualActivo && turnoActual && selectedTurnoId === turnoActual.id && (
@@ -2654,11 +2704,11 @@ const Dashboard = () => {
             {/* ── MAIN CONTENT ── */}
             <div className="relative flex-1 flex overflow-hidden lg:justify-center lg:gap-4 lg:p-4">
 
-                {dashboardMode === 'orders' && posActivo && (
+                {dashboardMode === 'orders' && posActivo && !showCierreTurno && !showCerrarTurno && (
                     <Button
                         type="button"
                         onClick={abrirNuevoPedido}
-                        className="absolute left-3 right-3 top-2 z-[60] h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00] lg:left-auto lg:right-auto lg:top-4 lg:w-[calc(100%-2rem)] lg:max-w-[1016px] xl:w-[1136px] xl:max-w-none 2xl:w-[1216px]"
+                        className="absolute left-3 right-3 top-2 z-10 h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00] lg:left-auto lg:right-auto lg:top-4 lg:w-[calc(100%-2rem)] lg:max-w-[1016px] xl:w-[1136px] xl:max-w-none 2xl:w-[1216px]"
                     >
                         + Nuevo pedido
                     </Button>
@@ -2951,6 +3001,7 @@ const Dashboard = () => {
                                     onClose={closePOS}
                                     onCreated={handlePedidoManualCreado}
                                     onUpdated={handlePedidoManualActualizado}
+                                    onExistingMesaProductsAdded={reservarProductosNuevosMesaParaImpresionManual}
                                     onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
                                     onDispatchMesa={() => setShowDespacharMesaDialog(true)}
                                     onPrintNewMesa={() => imprimirMesa(true)}
@@ -3438,6 +3489,7 @@ const Dashboard = () => {
                                         onClose={closePOS}
                                         onCreated={handlePedidoManualCreado}
                                         onUpdated={handlePedidoManualActualizado}
+                                        onExistingMesaProductsAdded={reservarProductosNuevosMesaParaImpresionManual}
                                         onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
                                         onDispatchMesa={() => setShowDespacharMesaDialog(true)}
                                         onPrintNewMesa={() => imprimirMesa(true)}

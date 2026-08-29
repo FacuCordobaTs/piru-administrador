@@ -1397,8 +1397,10 @@ export const pedidoUnificadoApi = {
   turnos: async (token: string) => fetchApi('/pedido-unificado/turnos', {
     method: 'GET', headers: { Authorization: `Bearer ${token}` },
   }),
-  cerrarTurno: async (token: string) => fetchApi('/pedido-unificado/turnos/cerrar', {
-    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  cerrarTurno: async (token: string, turnoId?: number) => fetchApi('/pedido-unificado/turnos/cerrar', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(turnoId == null ? {} : { turnoId }),
   }),
   getById: async (token: string, id: number) => {
     return fetchApi(`/pedido-unificado/${id}`, {
