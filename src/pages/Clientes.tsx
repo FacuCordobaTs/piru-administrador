@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, typ
 type AssetTab = 'campanas' | 'cupones'
 type SortKey = 'attention' | 'recent' | 'orders' | 'spend' | 'alphabetical'
 type SegmentFilter = ReturnType<typeof getSegmento> | 'todos'
+type MobileView = 'clientes' | 'detalle' | 'activos'
 
 const prioridad: Record<ReturnType<typeof getSegmento>, number> = { en_riesgo: 6, dormido: 5, perdido: 4, vip: 3, nuevo: 2, activo: 1 }
 const iniciales = (nombre: string) => nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
@@ -43,10 +44,12 @@ export default function Clientes() {
   const [to, setTo] = useState<string>()
   const [sort, setSort] = useState<SortKey>('attention')
   const [clienteSeleccionado, setClienteSeleccionado] = useState<number | null>(null)
+  const [mobileView, setMobileView] = useState<MobileView>('clientes')
   const [assetTab, setAssetTab] = useState<AssetTab>('campanas')
   const [campanaSeleccionada, setCampanaSeleccionada] = useState<FiltroCampana>(null)
   const [cuponSeleccionado, setCuponSeleccionado] = useState<number | null>(null)
   const [deepLinkOpen, setDeepLinkOpen] = useState(false)
+  const mainRef = useRef<HTMLElement>(null)
 
   // Los enlaces del admin anterior siguen abriendo la pantalla correcta, pero
   // se limpia su navegación de tabs porque ahora existe un único workspace.
@@ -126,6 +129,11 @@ export default function Clientes() {
 
   const seleccionarCampana = (id: FiltroCampana) => { setCampanaSeleccionada(id); if (id != null) setCuponSeleccionado(null) }
   const seleccionarCupon = (id: number | null) => { setCuponSeleccionado(id); if (id != null) setCampanaSeleccionada(null) }
+  const cambiarMobileView = (view: MobileView) => {
+    setMobileView(view)
+    requestAnimationFrame(() => mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
+  }
+  const seleccionarCliente = (id: number) => { setClienteSeleccionado(id); cambiarMobileView('detalle') }
   const cambiarAssetTab = (tab: AssetTab) => { setAssetTab(tab); if (tab === 'campanas') setCuponSeleccionado(null); else setCampanaSeleccionada(null) }
   const limpiarFiltros = () => { setSegmento('todos'); setSucursalId(undefined); setFrom(undefined); setTo(undefined); setCampanaSeleccionada(null); setCuponSeleccionado(null) }
 
@@ -148,26 +156,35 @@ export default function Clientes() {
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7"><FilterPill active={segmento === 'todos'} onClick={() => setSegmento('todos')} label="Todos" count={clientes.length} />{SEGMENTOS.map((item) => <FilterPill key={item.value} active={segmento === item.value} onClick={() => setSegmento(segmento === item.value ? 'todos' : item.value)} label={item.label} count={conteoSegmentos[item.value]} dot={item.dot} />)}</div>
         {sucursales.length > 1 && <div className="mt-2 flex flex-wrap gap-2"><FilterPill active={!sucursalId} onClick={() => setSucursalId(undefined)} label="Todas las sucursales" />{sucursales.map((sucursal) => <FilterPill key={sucursal.id} active={sucursalId === sucursal.id} onClick={() => setSucursalId(sucursalId === sucursal.id ? undefined : sucursal.id)} label={sucursal.nombre} icon={<Store className="h-3 w-3" />} />)}</div>}
         <div className="mt-3 flex flex-wrap items-end gap-2"><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Desde</label><Input type="date" value={from ?? ''} onChange={(event) => setFrom(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hasta</label><Input type="date" value={to ?? ''} onChange={(event) => setTo(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div>{filtroActivo && <Badge variant="outline" className="h-9 max-w-[280px] gap-1.5 rounded-lg bg-background px-3"><span className="truncate">Filtrando por {filtroActivo}</span><button onClick={() => { setCampanaSeleccionada(null); setCuponSeleccionado(null) }} aria-label="Quitar filtro"><X className="h-3.5 w-3.5" /></button></Badge>}{(segmento !== 'todos' || sucursalId || from || to || filtroActivo) && <Button variant="ghost" size="sm" onClick={limpiarFiltros}>Limpiar filtros</Button>}</div>
+        <nav className="mt-3 grid grid-cols-3 rounded-xl bg-muted/60 p-1 xl:hidden" aria-label="Secciones de crecimiento">
+          <MobileTab active={mobileView === 'clientes'} onClick={() => cambiarMobileView('clientes')}>Clientes</MobileTab>
+          <MobileTab active={mobileView === 'detalle'} onClick={() => cambiarMobileView('detalle')}>Detalle{cliente ? <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-[#FF7A00]" /> : null}</MobileTab>
+          <MobileTab active={mobileView === 'activos'} onClick={() => cambiarMobileView('activos')}>Campañas</MobileTab>
+        </nav>
       </div>
     </header>
 
-    <main className="min-h-0 flex-1 overflow-auto px-4 pb-4 sm:px-6 xl:overflow-hidden">
+    <main ref={mainRef} className="min-h-0 flex-1 overflow-auto px-4 pb-4 sm:px-6 xl:overflow-hidden">
       <div className="mx-auto grid min-h-full max-w-[1680px] gap-4 xl:h-full xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]">
-        <section className="flex min-h-[520px] flex-col overflow-hidden xl:min-h-0">
+        <section className={`${mobileView === 'clientes' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
           <div className="flex items-center justify-between gap-2 p-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p><p className="text-[11px] text-muted-foreground">{filtrados.length} resultados</p></div><Select value={sort} onValueChange={(value) => setSort(value as SortKey)}><SelectTrigger className="h-8 w-[165px] text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attention">Necesitan atención</SelectItem><SelectItem value="recent">Más recientes</SelectItem><SelectItem value="orders">Más pedidos</SelectItem><SelectItem value="spend">Mayor gasto</SelectItem><SelectItem value="alphabetical">A → Z</SelectItem></SelectContent></Select></div>
-          <ScrollArea className="min-h-0 flex-1">{loading ? <div className="space-y-2 p-3">{Array.from({ length: 7 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-xl" />)}</div> : filtrados.length === 0 ? <EmptyClients /> : <div className="space-y-1.5 p-2">{filtrados.map((item) => <ClientRow key={item.id} cliente={item} selected={item.id === clienteSeleccionado} onClick={() => setClienteSeleccionado(item.id)} />)}</div>}</ScrollArea>
+          <ScrollArea className="min-h-0 flex-1">{loading ? <div className="space-y-2 p-3">{Array.from({ length: 7 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-xl" />)}</div> : filtrados.length === 0 ? <EmptyClients /> : <div className="space-y-1.5 p-2">{filtrados.map((item) => <ClientRow key={item.id} cliente={item} selected={item.id === clienteSeleccionado} onClick={() => seleccionarCliente(item.id)} />)}</div>}</ScrollArea>
         </section>
 
-        <section className="flex min-h-[640px] flex-col overflow-hidden xl:min-h-0">
+        <section className={`${mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[640px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
           {cliente ? <ClienteDetalle cliente={cliente} sucursales={sucursales} onDeepLink={() => setDeepLinkOpen(true)} onDeleteClient={() => void eliminarCliente()} onDeleteOrder={(pedidoId) => void eliminarPedido(pedidoId)} /> : <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><User className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Seleccioná un cliente</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Vas a ver su ciclo de vida, pedidos, campañas, cupones y la receta recomendada.</p></div>}
         </section>
 
-        {token && <GrowthAssetsPanel token={token} username={username} tab={assetTab} onTabChange={cambiarAssetTab} campanas={campanas} cupones={cupones} productos={productos} query={query} filtros={{ from, to, sucursalId }} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} onSelectCampana={seleccionarCampana} onSelectCupon={seleccionarCupon} onSelectClient={setClienteSeleccionado} onReload={cargar} crecimientoActivo={crecimientoActivo} cuponesActivos={cuponesActivos} />}
+        {token && <div className={`${mobileView === 'activos' ? 'block' : 'hidden'} min-h-0 xl:block`}><GrowthAssetsPanel token={token} username={username} tab={assetTab} onTabChange={cambiarAssetTab} campanas={campanas} cupones={cupones} productos={productos} query={query} filtros={{ from, to, sucursalId }} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} onSelectCampana={seleccionarCampana} onSelectCupon={seleccionarCupon} onSelectClient={seleccionarCliente} onReload={cargar} crecimientoActivo={crecimientoActivo} cuponesActivos={cuponesActivos} /></div>}
       </div>
     </main>
 
     {token && <DeepLinkDialog open={deepLinkOpen} onOpenChange={setDeepLinkOpen} token={token} cliente={cliente} onPrepared={cargar} />}
   </div>
+}
+
+function MobileTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} className={`flex h-9 min-w-0 items-center justify-center rounded-lg px-2 text-xs font-semibold transition-colors ${active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{children}</button>
 }
 
 function FilterPill({ active, onClick, label, count, dot, icon }: { active: boolean; onClick: () => void; label: string; count?: number; dot?: string; icon?: React.ReactNode }) {

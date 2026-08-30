@@ -109,7 +109,7 @@ export const SEGMENTOS: Array<{ value: SegmentoCrecimiento; label: string; dot: 
   { value: 'dormido', label: 'Dormido', dot: 'bg-violet-500', description: 'Hace rato que no pide para su cadencia.' },
   { value: 'vip', label: 'VIP', dot: 'bg-amber-500', description: 'Cliente de alto valor para cuidar.' },
   { value: 'activo', label: 'Activo', dot: 'bg-sky-500', description: 'Pide dentro de su ritmo habitual.' },
-  { value: 'nuevo', label: 'Nuevo', dot: 'bg-emerald-500', description: 'Todavía está formando su hábito.' },
+  { value: 'nuevo', label: 'Primer pedido', dot: 'bg-emerald-500', description: 'Hizo una sola compra; el próximo paso es ayudarlo a repetir.' },
   { value: 'perdido', label: 'Perdido', dot: 'bg-rose-500', description: 'Muy pasado de su ritmo habitual.' },
 ]
 
@@ -137,4 +137,3 @@ export const recetaNombre = (codigo: string | null | undefined) => RECETAS.find(
 export const nuevaClave = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export const normalizarHasta = (fecha?: string) => fecha ? `${fecha}T23:59:59.999` : undefined
-
