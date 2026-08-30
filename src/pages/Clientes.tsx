@@ -49,7 +49,7 @@ export default function Clientes() {
   const [campanaSeleccionada, setCampanaSeleccionada] = useState<FiltroCampana>(null)
   const [cuponSeleccionado, setCuponSeleccionado] = useState<number | null>(null)
   const [deepLinkOpen, setDeepLinkOpen] = useState(false)
-  const mainRef = useRef<HTMLElement>(null)
+  const mainRef = useRef<HTMLDivElement>(null)
 
   // Los enlaces del admin anterior siguen abriendo la pantalla correcta, pero
   // se limpia su navegación de tabs porque ahora existe un único workspace.
@@ -148,7 +148,7 @@ export default function Clientes() {
     catch { toast.error('No se pudo eliminar el cliente.') }
   }
 
-  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
+  return <div ref={mainRef} className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#FFFBF0] dark:bg-background xl:overflow-hidden">
     <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
       <div className="mx-auto max-w-[1680px]">
         <div className="relative mb-4 text-center"><h1 className="text-2xl font-semibold tracking-tight">Crecimiento</h1><p className="mt-0.5 text-sm text-muted-foreground">Clientes, campañas y cupones en una sola vista.</p><p className="absolute bottom-0 right-0 hidden text-xs text-muted-foreground sm:block">{filtrados.length} de {clientes.length} clientes</p></div>
@@ -164,7 +164,7 @@ export default function Clientes() {
       </div>
     </header>
 
-    <main ref={mainRef} className="min-h-0 flex-1 overflow-auto px-4 pb-4 sm:px-6 xl:overflow-hidden">
+    <main className="flex-none overflow-visible px-4 pb-4 sm:px-6 xl:min-h-0 xl:flex-1 xl:overflow-hidden">
       <div className="mx-auto grid min-h-full max-w-[1680px] gap-4 xl:h-full xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]">
         <section className={`${mobileView === 'clientes' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
           <div className="flex items-center justify-between gap-2 p-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p><p className="text-[11px] text-muted-foreground">{filtrados.length} resultados</p></div><Select value={sort} onValueChange={(value) => setSort(value as SortKey)}><SelectTrigger className="h-8 w-[165px] text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attention">Necesitan atención</SelectItem><SelectItem value="recent">Más recientes</SelectItem><SelectItem value="orders">Más pedidos</SelectItem><SelectItem value="spend">Mayor gasto</SelectItem><SelectItem value="alphabetical">A → Z</SelectItem></SelectContent></Select></div>
