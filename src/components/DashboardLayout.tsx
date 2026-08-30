@@ -33,7 +33,7 @@ const DashboardLayout = () => {
   const location = useLocation()
   const restauranteStore = useRestauranteStore()
   const avisosAutomaticosActivos = useModuloActivo('avisos_automaticos_whatsapp')
-  const motorRecompraActivo = useModuloActivo('motor_recompra')
+  const crecimientoActivo = useModuloActivo('crecimiento')
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('piru-sidebar-collapsed') === '1')
 
@@ -87,9 +87,9 @@ const DashboardLayout = () => {
 
   const suscripcionActivaEnRuta = location.pathname.startsWith('/dashboard/suscripcion')
 
-  // Mensajes concentra los cupos de Avisos y Motor; sólo aparece si alguno está activo.
+  // Mensajes concentra los cupos de Avisos y Crecimiento; sólo aparece si alguno está activo.
   const navItems = NAV_ITEMS.filter(
-    (item) => item.path !== MENSAJES_PATH || avisosAutomaticosActivos || motorRecompraActivo,
+    (item) => item.path !== MENSAJES_PATH || avisosAutomaticosActivos || crecimientoActivo,
   )
 
   const renderPlanButton = (compact: boolean) => {

@@ -285,6 +285,122 @@ export const clientesApi = {
   },
 }
 
+// =============================================================================
+// Crecimiento — contrato aditivo del MVP. Las pantallas consumen estos tipos
+// en lugar de depender de detalles de tablas o de los aliases de recompra.
+// =============================================================================
+export type SegmentoCrecimiento = 'nuevo' | 'activo' | 'vip' | 'en_riesgo' | 'dormido' | 'perdido'
+export type RecetaCrecimiento = 'segunda_compra' | 'mantener_ritmo' | 'beneficio_vip' | 'volver_a_tiempo' | 'recuperar_habito' | 'ultimo_intento'
+export type DestinoCrecimiento =
+  | { tipo: 'tienda' }
+  | { tipo: 'producto'; productoId: number; nombreProducto?: string | null }
+  | { tipo: 'carrito'; carritoRep: string }
+
+export interface CampanaCrecimiento {
+  id: number
+  slug: string
+  nombre: string
+  tipo: 'adquisicion' | 'recompra'
+  recetaCodigo: RecetaCrecimiento | null
+  estado: 'borrador' | 'activa' | 'inactiva'
+  destinoTipo: DestinoCrecimiento['tipo']
+  productoId: number | null
+  carritoRep: string | null
+  codigoDescuentoId: number | null
+  utmSource: string | null
+  utmMedium: string | null
+  utmCampaign: string | null
+  utmTerm: string | null
+  utmContent: string | null
+  inversionManual: number | string
+  usaGrupoControl: boolean
+  activadaAt?: string | null
+  desactivadaAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface OportunidadCrecimiento {
+  cliente: { id: number; nombre: string }
+  diagnostico: {
+    segmento: SegmentoCrecimiento; esVip: boolean; cadenciaDias: number | null
+    diasDesdeUltimo: number | null; ticketPromedio: number; cantidadPedidos: number; totalGastado: number
+  }
+  receta: { codigo: RecetaCrecimiento; nombre: string; descripcion: string; metricaPrincipal: string }
+  destino: DestinoCrecimiento
+  incentivoSugerido: { descuentoPorcentaje: number; expiraHoras: number | null }
+  textoSugerido: string
+  prioridad: 'normal' | 'alta'
+  tituloOportunidad: string
+  elegibilidad: { elegible: boolean; bloqueos: Array<{ motivo: string; mensaje: string }> }
+  ultimoEnlacePreparado: EnlaceCrecimiento | null
+}
+
+export interface EnlaceCrecimiento {
+  id: number
+  clienteId: number | null
+  campanaId: number | null
+  recetaCodigo: RecetaCrecimiento | null
+  destinoTipo: DestinoCrecimiento['tipo']
+  productoId: number | null
+  carritoRep: string | null
+  codigoDescuentoId: number | null
+  activo: boolean
+  expiraAt: string | null
+  createdAt: string
+}
+
+export interface FiltrosCrecimiento { from?: string; to?: string; campaniaId?: number; sucursalId?: number }
+export interface ResumenCrecimiento {
+  filtros: { from: string | null; to: string | null; campaniaId: number | null; sucursalId: number | null }
+  metricas: Record<'ventas' | 'pedidos' | 'ticketPromedio' | 'clientesNuevos' | 'clientesRecurrentes' | 'sesiones' | 'conversion' | 'revenueAtribuido' | 'descuentos' | 'descuentosAtribuidos' | 'enlacesCreados' | 'contactos' | 'mensajesPagos' | 'costoMensajes' | 'inversionManual' | 'costoTotal' | 'retorno', number>
+  funnel: Record<'session_start' | 'product_view' | 'add_to_cart' | 'checkout_start' | 'purchase', number>
+  oportunidades: { porSegmento: Record<string, number>; porReceta: Record<string, number>; total: number }
+  recompra: { pedidosAtribuidos: number; revenueAtribuido: number }
+  incremental: { disponible: boolean; motivo?: string }
+  campanas: Array<Pick<CampanaCrecimiento, 'id' | 'nombre' | 'slug' | 'tipo'> & { metricas: ResumenCrecimiento['metricas']; incremental: ResumenCrecimiento['incremental'] }>
+}
+
+export interface PrepararEnlaceCrecimiento {
+  clienteId: number; campanaId?: number | null; recetaCodigo?: RecetaCrecimiento
+  codigoDescuentoId?: number | null
+  incentivo?: { descuentoPorcentaje: number; expiraHoras: number | null }
+  incentivoConfirmado?: boolean; expiraEnHoras?: number; idempotenciaClave: string
+}
+export interface ContactarEnlaceCrecimiento { token: string; idempotenciaClave: string }
+export interface CrearCampanaCrecimiento {
+  slug: string; nombre: string; tipo: 'adquisicion' | 'recompra'; recetaCodigo?: RecetaCrecimiento | null
+  estado?: CampanaCrecimiento['estado']; destinoTipo: DestinoCrecimiento['tipo']; productoId?: number | null
+  carritoRep?: string | null; codigoDescuentoId?: number | null; utmSource?: string | null; utmMedium?: string | null
+  utmCampaign?: string | null; utmTerm?: string | null; utmContent?: string | null; inversionManual?: number; usaGrupoControl?: boolean
+}
+type ActualizarCampanaCrecimiento = Partial<Omit<CrearCampanaCrecimiento, 'slug'>>
+
+const queryCrecimiento = (filtros?: object) => {
+  const params = new URLSearchParams()
+  for (const [clave, valor] of Object.entries(filtros ?? {})) if (valor != null) params.set(clave, String(valor))
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+const authCrecimiento = (token: string) => ({ Authorization: `Bearer ${token}` })
+
+export const crecimientoApi = {
+  resumen: (token: string, filtros?: FiltrosCrecimiento) => fetchApi<{ success: boolean; data: ResumenCrecimiento }>(`/marketing/resumen${queryCrecimiento(filtros)}`, { headers: authCrecimiento(token) }),
+  oportunidades: (token: string, filtros?: { segmento?: SegmentoCrecimiento; receta?: RecetaCrecimiento }) => fetchApi<{ success: boolean; data: { oportunidades: OportunidadCrecimiento[]; total: number } }>(`/marketing/oportunidades${queryCrecimiento(filtros)}`, { headers: authCrecimiento(token) }),
+  recomendacion: (token: string, clienteId: number) => fetchApi<{ success: boolean; data: OportunidadCrecimiento }>(`/marketing/clientes/${clienteId}/recomendacion`, { headers: authCrecimiento(token) }),
+  prepararEnlace: (token: string, data: PrepararEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { enlace: EnlaceCrecimiento; token?: string; idempotente: boolean; receta: OportunidadCrecimiento['receta']; destino: DestinoCrecimiento; textoSugerido: string } }>('/marketing/enlaces', { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
+  copiarEnlace: (token: string, enlaceId: number, data: ContactarEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { url: string; entregado: false; idempotente: boolean } }>(`/marketing/enlaces/${enlaceId}/copiar`, { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
+  abrirWaMe: (token: string, enlaceId: number, data: ContactarEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { url: string; waMeUrl: string; entregado: false; idempotente: boolean } }>(`/marketing/enlaces/${enlaceId}/wa-me`, { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
+  enviarConPiru: (token: string, enlaceId: number, data: ContactarEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { entregado: boolean; idempotente: boolean } }>(`/marketing/enlaces/${enlaceId}/enviar-whatsapp`, { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
+  listarCampanas: (token: string) => fetchApi<{ success: boolean; data: CampanaCrecimiento[] }>('/marketing/campanas', { headers: authCrecimiento(token) }),
+  obtenerCampana: (token: string, id: number) => fetchApi<{ success: boolean; data: CampanaCrecimiento }>(`/marketing/campanas/${id}`, { headers: authCrecimiento(token) }),
+  crearCampana: (token: string, data: CrearCampanaCrecimiento) => fetchApi<{ success: boolean; data: CampanaCrecimiento }>('/marketing/campanas', { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
+  actualizarCampana: (token: string, id: number, data: ActualizarCampanaCrecimiento) => fetchApi<{ success: boolean; data: CampanaCrecimiento }>(`/marketing/campanas/${id}`, { method: 'PUT', headers: authCrecimiento(token), body: JSON.stringify(data) }),
+  desactivarCampana: (token: string, id: number) => fetchApi<{ success: boolean; data: CampanaCrecimiento }>(`/marketing/campanas/${id}/desactivar`, { method: 'POST', headers: authCrecimiento(token) }),
+  eliminarCampana: (token: string, id: number) => fetchApi<{ success: boolean; eliminada?: boolean; desactivada?: boolean; data?: CampanaCrecimiento }>(`/marketing/campanas/${id}`, { method: 'DELETE', headers: authCrecimiento(token) }),
+  resultadosCampana: (token: string, id: number, filtros?: Omit<FiltrosCrecimiento, 'campaniaId'>) => fetchApi<{ success: boolean; data: ResumenCrecimiento }>(`/marketing/campanas/${id}/resultados${queryCrecimiento(filtros)}`, { headers: authCrecimiento(token) }),
+}
+
 // Restaurante API
 export const restauranteApi = {
   getProfile: async (token: string) => {
@@ -340,6 +456,8 @@ export const restauranteApi = {
       direccionLng?: number | null
       direccionSoloTexto?: boolean
       deliveryFee?: string
+      /** ID público del contenedor GTM; null o vacío lo desconfigura. */
+      gtmContainerId?: string | null
     }
   ) => {
     return fetchApi('/restaurante/update', {

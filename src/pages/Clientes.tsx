@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -21,7 +22,7 @@ import {
     Repeat, Timer, Utensils, Rocket, Gift, Loader2, Send, CheckCircle2, BellOff, Copy, Trash2
 } from 'lucide-react'
 import CodigosDescuento from './CodigosDescuento'
-import MotorRecompra from './MotorRecompra'
+import Crecimiento from './Crecimiento'
 
 // =============================================================================
 // ESCALERA DE RECUPERO (Motor de Recompra · 4.2) — espejo del backend (lib/recupero.ts)
@@ -244,13 +245,13 @@ const getInitials = (name: string) => {
 }
 
 // =============================================================================
-// MAIN COMPONENT (con tabs: Clientes / Motor de Recompra / Cupones)
+// MAIN COMPONENT (con tabs: Clientes / Crecimiento / Cupones)
 // El usuario primero elige la sección en una pantalla centrada; recién ahí
 // aparece el navegador de tabs para moverse entre las 3. Las 3 secciones se
 // ofrecen siempre: si el módulo de una está desactivado, su tarjeta aparece
 // como "Desactivado" y no se puede entrar hasta activar el módulo.
 // =============================================================================
-type SeccionClientes = 'clientes' | 'motor' | 'cupones'
+type SeccionClientes = 'clientes' | 'crecimiento' | 'cupones'
 
 interface SeccionMeta {
     key: SeccionClientes
@@ -269,11 +270,11 @@ const SECCIONES: SeccionMeta[] = [
         descripcion: 'Cada cliente clasificado por su propio ritmo de pedidos.',
     },
     {
-        key: 'motor',
-        label: 'Motor de Recompra',
+        key: 'crecimiento',
+        label: 'Crecimiento',
         icon: Rocket,
-        descripcion: 'Trae de vuelta, en automático, a los clientes que se enfrían.',
-        modulo: 'motor_recompra',
+        descripcion: 'Adquisición, recompra, Smart Links y resultados en un solo lugar.',
+        modulo: 'crecimiento',
     },
     {
         key: 'cupones',
@@ -285,15 +286,21 @@ const SECCIONES: SeccionMeta[] = [
 ]
 
 export default function Clientes() {
-    const motorRecompraActivo = useModuloActivo('motor_recompra')
+    const crecimientoActivo = useModuloActivo('crecimiento')
     const codigosActivos = useModuloActivo('codigos_descuento')
+    const [searchParams, setSearchParams] = useSearchParams()
     // null = todavía no eligió → pantalla de selección centrada
-    const [tab, setTab] = useState<SeccionClientes | null>(null)
+    const tabInicial = searchParams.get('tab')
+    const [tab, setTab] = useState<SeccionClientes | null>(
+        tabInicial === 'motor' || tabInicial === 'crecimiento' ? 'crecimiento'
+            : tabInicial === 'clientes' || tabInicial === 'cupones' ? tabInicial
+                : null,
+    )
 
     // Las 3 secciones se ofrecen siempre; una con módulo desactivado se muestra
     // como "Desactivado" y no es clickeable (tarjeta ni tab) hasta activarla.
     const activos: Record<string, boolean> = {
-        motor_recompra: motorRecompraActivo,
+        crecimiento: crecimientoActivo,
         codigos_descuento: codigosActivos,
     }
     const secciones = SECCIONES.map(seccion => ({
@@ -304,9 +311,31 @@ export default function Clientes() {
     // Si el módulo de la sección abierta se desactiva mientras esta vista está
     // abierta, volvemos a la base de clientes sin dejar acciones expuestas.
     useEffect(() => {
-        const desactivada = tab === 'motor' ? !motorRecompraActivo : tab === 'cupones' ? !codigosActivos : false
+        const desactivada = tab === 'crecimiento' ? !crecimientoActivo : tab === 'cupones' ? !codigosActivos : false
         if (desactivada) setTab('clientes')
-    }, [motorRecompraActivo, codigosActivos, tab])
+    }, [crecimientoActivo, codigosActivos, tab])
+
+    // `?tab=motor` fue el enlace compartido por el admin anterior. Lo
+    // normalizamos sin abrir una ruta paralela y dejamos `crecimiento` como
+    // valor canónico para futuros enlaces directos.
+    useEffect(() => {
+        const solicitado = searchParams.get('tab')
+        const resuelto: SeccionClientes | null = solicitado === 'motor' || solicitado === 'crecimiento' ? 'crecimiento'
+            : solicitado === 'clientes' || solicitado === 'cupones' ? solicitado : null
+        if (resuelto !== tab) setTab(resuelto)
+        if (solicitado === 'motor') {
+            const siguiente = new URLSearchParams(searchParams)
+            siguiente.set('tab', 'crecimiento')
+            setSearchParams(siguiente, { replace: true })
+        }
+    }, [searchParams, setSearchParams, tab])
+
+    const seleccionarTab = (siguiente: SeccionClientes) => {
+        setTab(siguiente)
+        const params = new URLSearchParams(searchParams)
+        params.set('tab', siguiente)
+        setSearchParams(params)
+    }
 
     // ---- Pantalla de selección (paso previo al navegador) ----
     if (tab === null) {
@@ -325,7 +354,7 @@ export default function Clientes() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
                         {secciones.map(seccion => (
-                            <SeccionCard key={seccion.key} seccion={seccion} onClick={() => setTab(seccion.key)} />
+                            <SeccionCard key={seccion.key} seccion={seccion} onClick={() => seleccionarTab(seccion.key)} />
                         ))}
                     </div>
                 </div>
@@ -343,7 +372,7 @@ export default function Clientes() {
                         <TabButton
                             key={seccion.key}
                             active={tab === seccion.key}
-                            onClick={() => setTab(seccion.key)}
+                            onClick={() => seleccionarTab(seccion.key)}
                             icon={seccion.icon}
                             desactivada={seccion.desactivada}
                         >
@@ -355,7 +384,7 @@ export default function Clientes() {
 
             {/* Panel activo */}
             <div className="flex-1 min-h-0 flex flex-col">
-                {tab === 'clientes' ? <ClientesPanel /> : tab === 'motor' ? <MotorRecompra /> : <CodigosDescuento />}
+                {tab === 'clientes' ? <ClientesPanel /> : tab === 'crecimiento' ? <Crecimiento /> : <CodigosDescuento />}
             </div>
         </div>
     )

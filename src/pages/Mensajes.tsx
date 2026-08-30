@@ -32,7 +32,7 @@ type Sub = NonNullable<ReturnType<typeof useSuscripcion>['data']>
 export default function MensajesPage() {
   const { data, loading, refetch } = useSuscripcion()
   const avisosActivos = useModuloActivo('avisos_automaticos_whatsapp')
-  const motorActivo = useModuloActivo('motor_recompra')
+  const crecimientoActivo = useModuloActivo('crecimiento')
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Volver de MercadoPago tras una recarga: el saldo se acredita por webhook (unos segundos).
@@ -62,10 +62,10 @@ export default function MensajesPage() {
       ) : (
         <section className="space-y-8">
           <SaldoBanner data={data} />
-          <EnviadosCard mostrarMarketing={mostrarMarketing(data, motorActivo)} />
+          <EnviadosCard mostrarMarketing={mostrarMarketing(data, crecimientoActivo)} />
           {!data.wallet?.ilimitado && data.wallet && <SaldoCard data={data} avisosActivos={avisosActivos} onDone={refetch} />}
           {data.wallet?.ilimitado && <SaldoIlimitadoCard />}
-          {data.wallet && mostrarMarketing(data, motorActivo) && <SaldoMarketingCard data={data} />}
+          {data.wallet && mostrarMarketing(data, crecimientoActivo) && <SaldoMarketingCard data={data} />}
           <Movimientos />
         </section>
       )}

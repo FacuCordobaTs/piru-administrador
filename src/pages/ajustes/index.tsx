@@ -6,6 +6,7 @@ import {
   Clock,
   Truck,
   Sparkles,
+  ChartNoAxesCombined,
   FileText,
   Printer,
   User,
@@ -105,6 +106,13 @@ const SECTIONS: SectionDef[] = [
     Icon: Sparkles,
     Component: lazy(() => import('./sections/AvisosAutomaticos')),
     visibleInNav: false,
+  },
+  {
+    id: 'crecimiento',
+    label: 'Crecimiento',
+    descripcion: 'Medición y contenedor de Google Tag Manager de tu tienda.',
+    Icon: ChartNoAxesCombined,
+    Component: lazy(() => import('./sections/Crecimiento')),
   },
   {
     id: 'cuenta',

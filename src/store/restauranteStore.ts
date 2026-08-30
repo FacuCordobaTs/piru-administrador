@@ -60,6 +60,8 @@ export interface RestauranteData {
   mercadoPagoPublicKey: string | null
   mercadoPagoPrivateKey: string | null
   username: string | null
+  /** ID público de Google Tag Manager; los admins viejos pueden ignorarlo. */
+  gtmContainerId?: string | null
   createdAt: string
   // Campos OAuth de MercadoPago
   mpConnected: boolean | null

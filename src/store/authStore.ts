@@ -5,6 +5,7 @@ interface Restaurante {
   id: number
   email: string
   nombre: string
+  username?: string | null
   direccion?: string | null
   telefono?: string | null
   imagenUrl?: string | null
