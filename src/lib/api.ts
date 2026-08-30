@@ -399,6 +399,7 @@ export const crecimientoApi = {
   desactivarCampana: (token: string, id: number) => fetchApi<{ success: boolean; data: CampanaCrecimiento }>(`/marketing/campanas/${id}/desactivar`, { method: 'POST', headers: authCrecimiento(token) }),
   eliminarCampana: (token: string, id: number) => fetchApi<{ success: boolean; eliminada?: boolean; desactivada?: boolean; data?: CampanaCrecimiento }>(`/marketing/campanas/${id}`, { method: 'DELETE', headers: authCrecimiento(token) }),
   resultadosCampana: (token: string, id: number, filtros?: Omit<FiltrosCrecimiento, 'campaniaId'>) => fetchApi<{ success: boolean; data: ResumenCrecimiento }>(`/marketing/campanas/${id}/resultados${queryCrecimiento(filtros)}`, { headers: authCrecimiento(token) }),
+  resultadosOrganico: (token: string, filtros?: Omit<FiltrosCrecimiento, 'campaniaId'>) => fetchApi<{ success: boolean; data: ResumenCrecimiento }>(`/marketing/organico/resultados${queryCrecimiento(filtros)}`, { headers: authCrecimiento(token) }),
 }
 
 // Restaurante API
@@ -1860,6 +1861,21 @@ export const codigosDescuentoApi = {
       },
     })
   },
+
+  resultados: (token: string, id: number, filtros?: { from?: string; to?: string; sucursalId?: number }) => fetchApi<{
+    success: boolean
+    data: {
+      codigo: {
+        id: number; restauranteId: number; codigo: string; tipo: 'porcentaje' | 'monto_fijo'; valor: string
+        limiteUsos: number | null; usosActuales: number; montoMinimo: string; fechaInicio: string | null
+        fechaFin: string | null; activo: boolean; createdAt: string
+      }
+      filtros: { from: string | null; to: string | null; sucursalId: number | null }
+      metricas: { usos: number; clientes: number; facturacionCobrada: number; ventasAntesDescuento: number; montoDescontado: number; ticketPromedio: number }
+      clientes: Array<{ id: number; nombre: string; telefono: string; usos: number; facturacion: number; montoDescontado: number; ultimoUsoAt: string }>
+      pedidos: Array<{ id: number; clienteId: number | null; sucursalId: number | null; total: number; montoDescuento: number; createdAt: string }>
+    }
+  }>(`/codigo-descuento/${id}/resultados${queryCrecimiento(filtros)}`, { headers: { Authorization: `Bearer ${token}` } }),
 }
 
 // Zonas de Delivery API

@@ -1,1435 +1,215 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
-import { clientesApi, ApiError } from '@/lib/api'
+import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
+import { ChevronRight, CircleDollarSign, Crown, DollarSign, Gift, Globe2, Package, Phone, ReceiptText, Search, ShoppingBag, Sparkles, Store, Tag, Timer, Trash2, TrendingUp, User, Users, WandSparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
-import {
-    Search, MapPin, Phone, CalendarDays,
-    ShoppingBag, DollarSign, ChevronRight,
-    User, TrendingUp, Users,
-    X,
-    Clock, Truck, Package, Star, Ticket,
-    Sparkles, Crown, AlertTriangle, Moon, UserX,
-    Repeat, Timer, Utensils, Rocket, Gift, Loader2, Send, CheckCircle2, BellOff, Copy, Trash2
-} from 'lucide-react'
-import CodigosDescuento from './CodigosDescuento'
-import Crecimiento from './Crecimiento'
+import DeepLinkDialog from './clientes/DeepLinkDialog'
+import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
+import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, type PedidoCliente, type ProductoGrowth, SEGMENTOS, type SucursalGrowth, formatCurrency, formatDate, getSegmento, recetaNombre } from './clientes/types'
 
-// =============================================================================
-// ESCALERA DE RECUPERO (Motor de Recompra · 4.2) — espejo del backend (lib/recupero.ts)
-// Sólo para describir en la UI qué se va a enviar. La verdad la calcula el backend.
-// =============================================================================
-interface EscalonMeta {
-    nivel: number
-    titulo: string
-    detalle: string
-    descuento: number
-}
-const ESCALERA_META: EscalonMeta[] = [
-    { nivel: 1, descuento: 0, titulo: 'Primer toque · sin descuento', detalle: 'Solo un antojo: la foto de lo que más pide + invitación a repetir su pedido. No se regala margen a quien vuelve gratis.' },
-    { nivel: 2, descuento: 10, titulo: 'Segundo toque · 10% de descuento', detalle: 'Si no volvió con el primer toque, un empujón chico: 10% con un código propio.' },
-    { nivel: 3, descuento: 20, titulo: 'Último toque · 20% OFF con vencimiento', detalle: 'Oferta fuerte y con urgencia: 20% que vence en 48 hs. Es el último intento.' },
-]
-// Segmentos donde tiene sentido ofrecer el recupero (el cliente se enfrió).
-const SEGMENTOS_RECUPERABLES: Segmento[] = ['en_riesgo', 'dormido', 'perdido']
+type AssetTab = 'campanas' | 'cupones'
+type SortKey = 'attention' | 'recent' | 'orders' | 'spend' | 'alphabetical'
+type SegmentFilter = ReturnType<typeof getSegmento> | 'todos'
 
-interface EstadoRecupero {
-    totalEnvios: number
-    ultimoEnvioAt: string | null
-    ultimoNivel: number | null
-    proximoNivel: number
-    puedeEnviar: boolean
-}
-
-// --- Types ---
-interface ItemPedido {
-    nombreProducto: string
-    cantidad: number
-    precioUnitario: string
-}
-
-interface PedidoHistorial {
-    id: number
-    total: string
-    createdAt: string
-    tipo: 'delivery' | 'takeaway' | 'mesa'
-    items: ItemPedido[]
-}
-
-interface ProductoTop {
-    nombre: string
-    cantidad: number
-}
-
-type Segmento = 'nuevo' | 'activo' | 'vip' | 'en_riesgo' | 'dormido' | 'perdido'
-
-interface Cliente {
-    id: number
-    nombre: string
-    telefono: string
-    direccion: string | null
-    createdAt: string
-    cantidadPedidos: number
-    totalGastado: number
-    ultimoPedidoAt: string | null
-    pedidos: PedidoHistorial[]
-    puntos?: number
-    // ── Motor de Recompra (backend 4.1) — opcionales por retrocompat
-    primerPedidoAt?: string | null
-    ticketPromedio?: number
-    cadenciaDias?: number | null
-    diasDesdeUltimo?: number | null
-    segmento?: Segmento
-    esVip?: boolean
-    resumenCadencia?: string | null
-    productosTop?: ProductoTop[]
-    // ── Estado de la escalera de recupero (Motor de Recompra · 4.2) — opcional por retrocompat
-    recupero?: EstadoRecupero
-    // ── Protección de la base (Motor de Recompra · 4.5): opt-out de marketing — opcional por retrocompat
-    marketingOptOut?: boolean
-}
-
-// --- Utility functions ---
-// El backend y la operación de los locales trabajan en hora Argentina. Fijarla
-// evita que el historial cambie de hora según la zona configurada en el equipo.
-const RESTAURANT_TIME_ZONE = 'America/Argentina/Buenos_Aires'
-// En este endpoint los DATETIME de MySQL llegan serializados como UTC aunque
-// representan hora local. El ajuste se limita deliberadamente a esta pantalla.
-const CLIENTES_DATE_OFFSET_MS = 3 * 60 * 60 * 1000
-
-const parseClientesDate = (dateString: string) =>
-    new Date(new Date(dateString).getTime() + CLIENTES_DATE_OFFSET_MS)
-
-const formatCurrency = (value: number | string) => {
-    const num = typeof value === 'string' ? parseFloat(value) : value
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(num)
-}
-
-const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Sin datos'
-    return parseClientesDate(dateString).toLocaleDateString('es-AR', {
-        day: 'numeric', month: 'short', year: 'numeric', timeZone: RESTAURANT_TIME_ZONE,
-    })
-}
-
-const formatDateLong = (dateString: string | null) => {
-    if (!dateString) return '—'
-    return parseClientesDate(dateString).toLocaleDateString('es-AR', {
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: RESTAURANT_TIME_ZONE,
-    })
-}
-
-const formatTime = (dateString: string | null) => {
-    if (!dateString) return ''
-    return parseClientesDate(dateString).toLocaleTimeString('es-AR', {
-        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: RESTAURANT_TIME_ZONE,
-    })
-}
-
-const getTimeSince = (dateString: string | null) => {
-    if (!dateString) return 'Nunca'
-    const diff = Date.now() - new Date(dateString).getTime()
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-    if (days === 0) return 'Hoy'
-    if (days === 1) return 'Ayer'
-    if (days < 7) return `Hace ${days} días`
-    if (days < 30) return `Hace ${Math.floor(days / 7)} sem`
-    if (days < 365) return `Hace ${Math.floor(days / 30)} meses`
-    return `Hace ${Math.floor(days / 365)} años`
-}
-
-// "hace X días" a partir del contador que ya calcula el backend (evita líos de timezone)
-const diasLabel = (dias: number | null | undefined): string => {
-    if (dias == null) return 'Sin pedidos'
-    if (dias === 0) return 'Hoy'
-    if (dias === 1) return 'Ayer'
-    if (dias < 30) return `Hace ${dias} días`
-    if (dias < 365) return `Hace ${Math.round(dias / 30)} meses`
-    return `Hace ${Math.round(dias / 365)} años`
-}
-
-// =============================================================================
-// SEGMENTOS RFM — el cerebro del Motor de Recompra, traducido a lenguaje gastro
-// =============================================================================
-interface SegMeta {
-    label: string
-    icon: typeof Star
-    text: string
-    bg: string
-    dot: string
-    ring: string
-    descripcion: string
-}
-
-const SEGMENTOS: Record<Segmento, SegMeta> = {
-    nuevo: {
-        label: 'Nuevo', icon: Sparkles,
-        text: 'text-emerald-700 dark:text-emerald-400',
-        bg: 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800',
-        dot: 'bg-emerald-500', ring: 'ring-emerald-500/30',
-        descripcion: 'Hizo su primer pedido hace poco. Todavía no es habitual.',
-    },
-    activo: {
-        label: 'Activo', icon: TrendingUp,
-        text: 'text-blue-700 dark:text-blue-400',
-        bg: 'bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800',
-        dot: 'bg-blue-500', ring: 'ring-blue-500/30',
-        descripcion: 'Pide dentro de su ritmo habitual. Todo en orden.',
-    },
-    vip: {
-        label: 'VIP', icon: Crown,
-        text: 'text-amber-700 dark:text-amber-400',
-        bg: 'bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800',
-        dot: 'bg-amber-500', ring: 'ring-amber-500/30',
-        descripcion: 'Concentra facturación o pide muy seguido. Cuidalo.',
-    },
-    en_riesgo: {
-        label: 'En riesgo', icon: AlertTriangle,
-        text: 'text-orange-700 dark:text-orange-400',
-        bg: 'bg-orange-50 dark:bg-orange-950/50 border-orange-200 dark:border-orange-800',
-        dot: 'bg-orange-500', ring: 'ring-orange-500/30',
-        descripcion: 'Se está pasando de su ritmo habitual. Momento de un empujón.',
-    },
-    dormido: {
-        label: 'Dormido', icon: Moon,
-        text: 'text-violet-700 dark:text-violet-400',
-        bg: 'bg-violet-50 dark:bg-violet-950/50 border-violet-200 dark:border-violet-800',
-        dot: 'bg-violet-500', ring: 'ring-violet-500/30',
-        descripcion: 'Hace rato que no pide para lo que suele. Candidato a recupero.',
-    },
-    perdido: {
-        label: 'Perdido', icon: UserX,
-        text: 'text-rose-700 dark:text-rose-400',
-        bg: 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800',
-        dot: 'bg-rose-500', ring: 'ring-rose-500/30',
-        descripcion: 'Muy pasado de su ritmo. Difícil, pero no imposible.',
-    },
-}
-
-// Orden en que se muestran los chips de segmento (los accionables primero).
-const SEGMENTO_ORDEN: Segmento[] = ['en_riesgo', 'dormido', 'vip', 'activo', 'nuevo', 'perdido']
-
-// Deriva el segmento aunque el backend sea viejo (fallback heurístico simple).
-const getSegmento = (c: Cliente): Segmento => {
-    if (c.segmento) return c.segmento
-    if (c.cantidadPedidos > 10 || c.totalGastado > 100000) return 'vip'
-    if (c.cantidadPedidos > 3) return 'activo'
-    return 'nuevo'
-}
-
-// Prioridad de atención para el sort "Necesitan atención": recupero primero, ponderado por valor.
-const PESO_SEGMENTO: Record<Segmento, number> = {
-    dormido: 4, en_riesgo: 3, perdido: 1, nuevo: 0.5, vip: 0.3, activo: 0.2,
-}
-const prioridadAtencion = (c: Cliente): number => {
-    const seg = getSegmento(c)
-    const base = PESO_SEGMENTO[seg]
-    const valor = 1 + c.totalGastado / 20000
-    const vipBonus = c.esVip ? 2 : 1
-    return base * valor * vipBonus
-}
-
-const getInitials = (name: string) => {
-    const parts = name.trim().split(/\s+/)
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
-    return name.slice(0, 2).toUpperCase()
-}
-
-// =============================================================================
-// MAIN COMPONENT (con tabs: Clientes / Crecimiento / Cupones)
-// El usuario primero elige la sección en una pantalla centrada; recién ahí
-// aparece el navegador de tabs para moverse entre las 3. Las 3 secciones se
-// ofrecen siempre: si el módulo de una está desactivado, su tarjeta aparece
-// como "Desactivado" y no se puede entrar hasta activar el módulo.
-// =============================================================================
-type SeccionClientes = 'clientes' | 'crecimiento' | 'cupones'
-
-interface SeccionMeta {
-    key: SeccionClientes
-    label: string
-    icon: typeof Users
-    descripcion: string
-    // Código del módulo que habilita la sección (undefined = siempre disponible).
-    modulo?: string
-}
-
-const SECCIONES: SeccionMeta[] = [
-    {
-        key: 'clientes',
-        label: 'Base de clientes',
-        icon: Users,
-        descripcion: 'Cada cliente clasificado por su propio ritmo de pedidos.',
-    },
-    {
-        key: 'crecimiento',
-        label: 'Crecimiento',
-        icon: Rocket,
-        descripcion: 'Adquisición, recompra, Smart Links y resultados en un solo lugar.',
-        modulo: 'crecimiento',
-    },
-    {
-        key: 'cupones',
-        label: 'Cupones',
-        icon: Ticket,
-        descripcion: 'Códigos de descuento y promociones para tu tienda.',
-        modulo: 'codigos_descuento',
-    },
-]
+const prioridad: Record<ReturnType<typeof getSegmento>, number> = { en_riesgo: 6, dormido: 5, perdido: 4, vip: 3, nuevo: 2, activo: 1 }
+const iniciales = (nombre: string) => nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
+const dateStart = (fecha?: string) => fecha ? new Date(`${fecha}T00:00:00`).getTime() : null
+const dateEnd = (fecha?: string) => fecha ? new Date(`${fecha}T23:59:59.999`).getTime() : null
 
 export default function Clientes() {
-    const crecimientoActivo = useModuloActivo('crecimiento')
-    const codigosActivos = useModuloActivo('codigos_descuento')
-    const [searchParams, setSearchParams] = useSearchParams()
-    // null = todavía no eligió → pantalla de selección centrada
-    const tabInicial = searchParams.get('tab')
-    const [tab, setTab] = useState<SeccionClientes | null>(
-        tabInicial === 'motor' || tabInicial === 'crecimiento' ? 'crecimiento'
-            : tabInicial === 'clientes' || tabInicial === 'cupones' ? tabInicial
-                : null,
-    )
+  const token = useAuthStore((state) => state.token)
+  const username = useAuthStore((state) => state.restaurante?.username)
+  const crecimientoActivo = useModuloActivo('crecimiento')
+  const cuponesActivos = useModuloActivo('codigos_descuento')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [clientes, setClientes] = useState<ClienteGrowth[]>([])
+  const [campanas, setCampanas] = useState<CampanaCrecimiento[]>([])
+  const [cupones, setCupones] = useState<CodigoDescuentoGrowth[]>([])
+  const [sucursales, setSucursales] = useState<SucursalGrowth[]>([])
+  const [productos, setProductos] = useState<ProductoGrowth[]>([])
+  const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [segmento, setSegmento] = useState<SegmentFilter>('todos')
+  const [sucursalId, setSucursalId] = useState<number | undefined>()
+  const [from, setFrom] = useState<string>()
+  const [to, setTo] = useState<string>()
+  const [sort, setSort] = useState<SortKey>('attention')
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<number | null>(null)
+  const [assetTab, setAssetTab] = useState<AssetTab>('campanas')
+  const [campanaSeleccionada, setCampanaSeleccionada] = useState<FiltroCampana>(null)
+  const [cuponSeleccionado, setCuponSeleccionado] = useState<number | null>(null)
+  const [deepLinkOpen, setDeepLinkOpen] = useState(false)
 
-    // Las 3 secciones se ofrecen siempre; una con módulo desactivado se muestra
-    // como "Desactivado" y no es clickeable (tarjeta ni tab) hasta activarla.
-    const activos: Record<string, boolean> = {
-        crecimiento: crecimientoActivo,
-        codigos_descuento: codigosActivos,
-    }
-    const secciones = SECCIONES.map(seccion => ({
-        ...seccion,
-        desactivada: !!seccion.modulo && !activos[seccion.modulo],
-    }))
+  // Los enlaces del admin anterior siguen abriendo la pantalla correcta, pero
+  // se limpia su navegación de tabs porque ahora existe un único workspace.
+  useEffect(() => {
+    if (!searchParams.has('tab') && !searchParams.has('vista') && !searchParams.has('seccion')) return
+    const siguiente = new URLSearchParams(searchParams)
+    siguiente.delete('tab'); siguiente.delete('vista'); siguiente.delete('seccion')
+    setSearchParams(siguiente, { replace: true })
+  }, [searchParams, setSearchParams])
 
-    // Si el módulo de la sección abierta se desactiva mientras esta vista está
-    // abierta, volvemos a la base de clientes sin dejar acciones expuestas.
-    useEffect(() => {
-        const desactivada = tab === 'crecimiento' ? !crecimientoActivo : tab === 'cupones' ? !codigosActivos : false
-        if (desactivada) setTab('clientes')
-    }, [crecimientoActivo, codigosActivos, tab])
+  const cargar = useCallback(async () => {
+    if (!token) return
+    setLoading(true)
+    try {
+      const [clientesRespuesta, campanasRespuesta, cuponesRespuesta, sucursalesRespuesta, productosRespuesta] = await Promise.all([
+        clientesApi.getAll(token, { soloDespachados: true }),
+        crecimientoActivo ? crecimientoApi.listarCampanas(token).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        cuponesActivos ? codigosDescuentoApi.getAll(token).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        sucursalesApi.list(token).catch(() => ({ data: [] })),
+        crecimientoActivo ? productosApi.getAll(token).catch(() => ({ productos: [] })) : Promise.resolve({ productos: [] }),
+      ])
+      setClientes(((clientesRespuesta as { data?: ClienteGrowth[] }).data ?? []))
+      setCampanas((campanasRespuesta as { data?: CampanaCrecimiento[] }).data ?? [])
+      setCupones((cuponesRespuesta as { data?: CodigoDescuentoGrowth[] }).data ?? [])
+      setSucursales(((sucursalesRespuesta as { data?: SucursalGrowth[] }).data ?? []).filter((item) => item.activo !== false))
+      setProductos(((productosRespuesta as { productos?: ProductoGrowth[] }).productos ?? []))
+    } catch (cause) {
+      console.error('Error cargando el workspace de clientes:', cause)
+      toast.error('No se pudo cargar la base de clientes.')
+    } finally { setLoading(false) }
+  }, [token, crecimientoActivo, cuponesActivos])
+  useEffect(() => { void cargar() }, [cargar])
 
-    // `?tab=motor` fue el enlace compartido por el admin anterior. Lo
-    // normalizamos sin abrir una ruta paralela y dejamos `crecimiento` como
-    // valor canónico para futuros enlaces directos.
-    useEffect(() => {
-        const solicitado = searchParams.get('tab')
-        const resuelto: SeccionClientes | null = solicitado === 'motor' || solicitado === 'crecimiento' ? 'crecimiento'
-            : solicitado === 'clientes' || solicitado === 'cupones' ? solicitado : null
-        if (resuelto !== tab) setTab(resuelto)
-        if (solicitado === 'motor') {
-            const siguiente = new URLSearchParams(searchParams)
-            siguiente.set('tab', 'crecimiento')
-            setSearchParams(siguiente, { replace: true })
-        }
-    }, [searchParams, setSearchParams, tab])
+  const conteoSegmentos = useMemo(() => Object.fromEntries(SEGMENTOS.map((item) => [item.value, clientes.filter((cliente) => getSegmento(cliente) === item.value).length])) as Record<ReturnType<typeof getSegmento>, number>, [clientes])
 
-    const seleccionarTab = (siguiente: SeccionClientes) => {
-        setTab(siguiente)
-        const params = new URLSearchParams(searchParams)
-        params.set('tab', siguiente)
-        setSearchParams(params)
-    }
+  const pedidosEnPeriodo = useCallback((cliente: ClienteGrowth) => {
+    const desde = dateStart(from); const hasta = dateEnd(to)
+    return cliente.pedidos.filter((pedido) => {
+      const fecha = new Date(pedido.createdAt).getTime()
+      return (!desde || fecha >= desde) && (!hasta || fecha <= hasta) && (!sucursalId || pedido.sucursalId === sucursalId)
+    })
+  }, [from, to, sucursalId])
 
-    // ---- Pantalla de selección (paso previo al navegador) ----
-    if (tab === null) {
-        return (
-            <div className="flex-1 flex flex-col items-center justify-center h-full overflow-auto bg-[#FFFBF0] dark:bg-background px-6 py-12">
-                <div className="w-full max-w-2xl text-center">
-                    <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground mb-10">
-                        Clientes
-                    </h1>
-                    <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                        ¿Qué querés gestionar?
-                    </h2>
-                    <p className="text-sm text-muted-foreground mt-1.5">
-                        Elegí una sección para empezar.
-                    </p>
+  const filtrados = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const hayFiltroPedido = Boolean(from || to || sucursalId || campanaSeleccionada != null || cuponSeleccionado != null)
+    const resultado = clientes.filter((cliente) => {
+      if (segmento !== 'todos' && getSegmento(cliente) !== segmento) return false
+      if (q && !`${cliente.nombre} ${cliente.telefono} ${cliente.direccion ?? ''} ${(cliente.campanasParticipadas ?? []).map((c) => c.nombre).join(' ')} ${(cliente.cuponesUsados ?? []).map((c) => c.codigo).join(' ')}`.toLowerCase().includes(q)) return false
+      const pedidos = pedidosEnPeriodo(cliente)
+      if (hayFiltroPedido && pedidos.length === 0) return false
+      if (campanaSeleccionada === 'organico' && !pedidos.some((pedido) => pedido.esOrganico)) return false
+      if (typeof campanaSeleccionada === 'number' && !pedidos.some((pedido) => pedido.campanaId === campanaSeleccionada)) return false
+      if (cuponSeleccionado != null && !pedidos.some((pedido) => pedido.codigoDescuentoId === cuponSeleccionado)) return false
+      return true
+    })
+    resultado.sort((a, b) => {
+      if (sort === 'attention') return (prioridad[getSegmento(b)] * (1 + b.totalGastado / 20000)) - (prioridad[getSegmento(a)] * (1 + a.totalGastado / 20000))
+      if (sort === 'recent') return new Date(b.ultimoPedidoAt ?? 0).getTime() - new Date(a.ultimoPedidoAt ?? 0).getTime()
+      if (sort === 'orders') return b.cantidadPedidos - a.cantidadPedidos
+      if (sort === 'spend') return b.totalGastado - a.totalGastado
+      return a.nombre.localeCompare(b.nombre)
+    })
+    return resultado
+  }, [clientes, query, segmento, pedidosEnPeriodo, from, to, sucursalId, campanaSeleccionada, cuponSeleccionado, sort])
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
-                        {secciones.map(seccion => (
-                            <SeccionCard key={seccion.key} seccion={seccion} onClick={() => seleccionarTab(seccion.key)} />
-                        ))}
-                    </div>
-                </div>
-            </div>
-        )
-    }
+  useEffect(() => {
+    if (clienteSeleccionado != null && !filtrados.some((cliente) => cliente.id === clienteSeleccionado)) setClienteSeleccionado(null)
+  }, [filtrados, clienteSeleccionado])
 
-    // ---- Navegador + panel activo (una vez elegida la sección) ----
-    return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
-            {/* Tab switcher — botones flotantes, centrados, sin línea separadora */}
-            <div className="bg-[#FFFBF0] dark:bg-background px-4 sm:px-6 pt-6 pb-2 shrink-0">
-                <div className="flex items-center justify-center gap-2">
-                    {secciones.map(seccion => (
-                        <TabButton
-                            key={seccion.key}
-                            active={tab === seccion.key}
-                            onClick={() => seleccionarTab(seccion.key)}
-                            icon={seccion.icon}
-                            desactivada={seccion.desactivada}
-                        >
-                            {seccion.label === 'Base de clientes' ? 'Clientes' : seccion.label}
-                        </TabButton>
-                    ))}
-                </div>
-            </div>
+  const cliente = clientes.find((item) => item.id === clienteSeleccionado) ?? null
+  const filtroActivo = campanaSeleccionada === 'organico'
+    ? 'Orgánico · sin campaña'
+    : typeof campanaSeleccionada === 'number'
+      ? campanas.find((item) => item.id === campanaSeleccionada)?.nombre
+      : cuponSeleccionado != null ? cupones.find((item) => item.id === cuponSeleccionado)?.codigo : null
 
-            {/* Panel activo */}
-            <div className="flex-1 min-h-0 flex flex-col">
-                {tab === 'clientes' ? <ClientesPanel /> : tab === 'crecimiento' ? <Crecimiento /> : <CodigosDescuento />}
-            </div>
-        </div>
-    )
+  const seleccionarCampana = (id: FiltroCampana) => { setCampanaSeleccionada(id); if (id != null) setCuponSeleccionado(null) }
+  const seleccionarCupon = (id: number | null) => { setCuponSeleccionado(id); if (id != null) setCampanaSeleccionada(null) }
+  const cambiarAssetTab = (tab: AssetTab) => { setAssetTab(tab); if (tab === 'campanas') setCuponSeleccionado(null); else setCampanaSeleccionada(null) }
+  const limpiarFiltros = () => { setSegmento('todos'); setSucursalId(undefined); setFrom(undefined); setTo(undefined); setCampanaSeleccionada(null); setCuponSeleccionado(null) }
+
+  const eliminarPedido = async (pedidoId: number) => {
+    if (!token || !cliente || !window.confirm(`¿Eliminar el pedido #${pedidoId} del historial de ${cliente.nombre}?`)) return
+    try { await clientesApi.eliminarPedido(token, cliente.id, pedidoId); await cargar(); toast.success('Pedido eliminado.') }
+    catch { toast.error('No se pudo eliminar el pedido.') }
+  }
+  const eliminarCliente = async () => {
+    if (!token || !cliente || !window.confirm(`¿Eliminar a ${cliente.nombre} y todo su historial? Esta acción no se puede deshacer.`)) return
+    try { await clientesApi.eliminar(token, cliente.id); setClienteSeleccionado(null); await cargar(); toast.success('Cliente eliminado.') }
+    catch { toast.error('No se pudo eliminar el cliente.') }
+  }
+
+  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
+    <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
+      <div className="mx-auto max-w-[1680px]">
+        <div className="relative mb-4 text-center"><h1 className="text-2xl font-semibold tracking-tight">Crecimiento</h1><p className="mt-0.5 text-sm text-muted-foreground">Clientes, campañas y cupones en una sola vista.</p><p className="absolute bottom-0 right-0 hidden text-xs text-muted-foreground sm:block">{filtrados.length} de {clientes.length} clientes</p></div>
+        <div className="relative"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 rounded-xl bg-background pl-11 text-sm shadow-sm" placeholder="Buscar clientes, teléfonos, campañas o cupones…" /></div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7"><FilterPill active={segmento === 'todos'} onClick={() => setSegmento('todos')} label="Todos" count={clientes.length} />{SEGMENTOS.map((item) => <FilterPill key={item.value} active={segmento === item.value} onClick={() => setSegmento(segmento === item.value ? 'todos' : item.value)} label={item.label} count={conteoSegmentos[item.value]} dot={item.dot} />)}</div>
+        {sucursales.length > 1 && <div className="mt-2 flex flex-wrap gap-2"><FilterPill active={!sucursalId} onClick={() => setSucursalId(undefined)} label="Todas las sucursales" />{sucursales.map((sucursal) => <FilterPill key={sucursal.id} active={sucursalId === sucursal.id} onClick={() => setSucursalId(sucursalId === sucursal.id ? undefined : sucursal.id)} label={sucursal.nombre} icon={<Store className="h-3 w-3" />} />)}</div>}
+        <div className="mt-3 flex flex-wrap items-end gap-2"><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Desde</label><Input type="date" value={from ?? ''} onChange={(event) => setFrom(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hasta</label><Input type="date" value={to ?? ''} onChange={(event) => setTo(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div>{filtroActivo && <Badge variant="outline" className="h-9 max-w-[280px] gap-1.5 rounded-lg bg-background px-3"><span className="truncate">Filtrando por {filtroActivo}</span><button onClick={() => { setCampanaSeleccionada(null); setCuponSeleccionado(null) }} aria-label="Quitar filtro"><X className="h-3.5 w-3.5" /></button></Badge>}{(segmento !== 'todos' || sucursalId || from || to || filtroActivo) && <Button variant="ghost" size="sm" onClick={limpiarFiltros}>Limpiar filtros</Button>}</div>
+      </div>
+    </header>
+
+    <main className="min-h-0 flex-1 overflow-auto px-4 pb-4 sm:px-6 xl:overflow-hidden">
+      <div className="mx-auto grid min-h-full max-w-[1680px] gap-4 xl:h-full xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]">
+        <section className="flex min-h-[520px] flex-col overflow-hidden xl:min-h-0">
+          <div className="flex items-center justify-between gap-2 p-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p><p className="text-[11px] text-muted-foreground">{filtrados.length} resultados</p></div><Select value={sort} onValueChange={(value) => setSort(value as SortKey)}><SelectTrigger className="h-8 w-[165px] text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attention">Necesitan atención</SelectItem><SelectItem value="recent">Más recientes</SelectItem><SelectItem value="orders">Más pedidos</SelectItem><SelectItem value="spend">Mayor gasto</SelectItem><SelectItem value="alphabetical">A → Z</SelectItem></SelectContent></Select></div>
+          <ScrollArea className="min-h-0 flex-1">{loading ? <div className="space-y-2 p-3">{Array.from({ length: 7 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-xl" />)}</div> : filtrados.length === 0 ? <EmptyClients /> : <div className="space-y-1.5 p-2">{filtrados.map((item) => <ClientRow key={item.id} cliente={item} selected={item.id === clienteSeleccionado} onClick={() => setClienteSeleccionado(item.id)} />)}</div>}</ScrollArea>
+        </section>
+
+        <section className="flex min-h-[640px] flex-col overflow-hidden xl:min-h-0">
+          {cliente ? <ClienteDetalle cliente={cliente} sucursales={sucursales} onDeepLink={() => setDeepLinkOpen(true)} onDeleteClient={() => void eliminarCliente()} onDeleteOrder={(pedidoId) => void eliminarPedido(pedidoId)} /> : <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><User className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Seleccioná un cliente</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Vas a ver su ciclo de vida, pedidos, campañas, cupones y la receta recomendada.</p></div>}
+        </section>
+
+        {token && <GrowthAssetsPanel token={token} username={username} tab={assetTab} onTabChange={cambiarAssetTab} campanas={campanas} cupones={cupones} productos={productos} query={query} filtros={{ from, to, sucursalId }} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} onSelectCampana={seleccionarCampana} onSelectCupon={seleccionarCupon} onSelectClient={setClienteSeleccionado} onReload={cargar} crecimientoActivo={crecimientoActivo} cuponesActivos={cuponesActivos} />}
+      </div>
+    </main>
+
+    {token && <DeepLinkDialog open={deepLinkOpen} onOpenChange={setDeepLinkOpen} token={token} cliente={cliente} onPrepared={cargar} />}
+  </div>
 }
 
-function SeccionCard({ seccion, onClick }: {
-    seccion: SeccionMeta & { desactivada?: boolean }
-    onClick: () => void
-}) {
-    const Icon = seccion.icon
-    const desactivada = !!seccion.desactivada
-    return (
-        <button
-            onClick={onClick}
-            disabled={desactivada}
-            className={`group flex flex-col items-center text-center gap-3 p-6 rounded-xl border transition-colors ${
-                desactivada
-                    ? 'border-dashed border-border/70 bg-muted/20 cursor-not-allowed'
-                    : 'border-border/60 bg-[#FFFBF0] dark:bg-background cursor-pointer hover:bg-muted/40 hover:border-border'
-            }`}
-        >
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-                desactivada ? 'bg-muted/40 text-muted-foreground/60' : 'bg-white dark:bg-muted text-foreground'
-            }`}>
-                <Icon className="w-5 h-5" />
-            </div>
-            <div>
-                <div className="flex items-center justify-center gap-2">
-                    <h2 className={`text-sm font-semibold ${desactivada ? 'text-muted-foreground' : 'text-foreground'}`}>
-                        {seccion.label}
-                    </h2>
-                    {desactivada && (
-                        <Badge variant="outline" className="text-[10px] h-5 px-2 font-semibold text-muted-foreground border-border/70 bg-muted/30">
-                            Desactivado
-                        </Badge>
-                    )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{seccion.descripcion}</p>
-            </div>
-        </button>
-    )
+function FilterPill({ active, onClick, label, count, dot, icon }: { active: boolean; onClick: () => void; label: string; count?: number; dot?: string; icon?: React.ReactNode }) {
+  return <button onClick={onClick} className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${active ? 'border-foreground bg-foreground text-background' : 'border-border bg-background text-muted-foreground hover:text-foreground'}`}>{dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}{icon}{label}{count != null && <span className={active ? 'text-background/65' : 'text-muted-foreground/70'}>{count}</span>}</button>
 }
 
-function TabButton({ active, onClick, icon: Icon, children, desactivada }: {
-    active: boolean
-    onClick: () => void
-    icon: typeof Users
-    children: React.ReactNode
-    desactivada?: boolean
-}) {
-    return (
-        <button
-            onClick={onClick}
-            disabled={desactivada}
-            className={`inline-flex items-center gap-2 px-3.5 h-9 rounded-full text-sm font-medium transition-colors ${
-                active
-                    ? 'bg-foreground text-background shadow-sm'
-                    : desactivada
-                        ? 'bg-white dark:bg-muted/60 text-muted-foreground/50 cursor-not-allowed'
-                        : "bg-white dark:bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
-        >
-            <Icon className="w-4 h-4" />
-            {children}
-        </button>
-    )
+function ClientRow({ cliente, selected, onClick }: { cliente: ClienteGrowth; selected: boolean; onClick: () => void }) {
+  const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
+  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{cliente.nombre}</p>{cliente.esVip && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} /><span>{segmento.label}</span><span>·</span><span>{cliente.cantidadPedidos} pedidos</span></div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
 }
 
-function ClientesPanel() {
-    const token = useAuthStore(state => state.token)
-    const [clientes, setClientes] = useState<Cliente[]>([])
-    const [loading, setLoading] = useState(true)
-    const [query, setQuery] = useState('')
-    const [sortBy, setSortBy] = useState('attention')
-    const [segmentoFiltro, setSegmentoFiltro] = useState<Segmento | 'todos'>('todos')
-    const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
+function EmptyClients() { return <div className="flex flex-col items-center justify-center px-6 py-20 text-center"><Users className="h-8 w-8 text-muted-foreground/30" /><p className="mt-3 text-sm font-medium">No hay clientes con estos filtros</p><p className="mt-1 text-xs text-muted-foreground">Probá ampliar las fechas o quitar una campaña o cupón.</p></div> }
 
-    // Fetch
-    const fetchClientes = useCallback(async () => {
-        if (!token) return
-        setLoading(true)
-        try {
-            const response = await clientesApi.getAll(token, { soloDespachados: true }) as { success: boolean, data: Cliente[] }
-            if (response.success && response.data) {
-                setClientes(response.data)
-            }
-        } catch (error) {
-            console.error('Error fetching clientes:', error)
-        } finally {
-            setLoading(false)
-        }
-    }, [token])
+function ClienteDetalle({ cliente, sucursales, onDeepLink, onDeleteClient, onDeleteOrder }: { cliente: ClienteGrowth; sucursales: SucursalGrowth[]; onDeepLink: () => void; onDeleteClient: () => void; onDeleteOrder: (pedidoId: number) => void }) {
+  const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
+  const sucursalPorId = new Map(sucursales.map((item) => [item.id, item.nombre]))
+  const fuente = cliente.fuenteAdquisicion === 'organico' ? 'Orgánico · sin campaña' : cliente.campanaAdquisicion?.nombre ?? (cliente.fuenteAdquisicion === 'receta' ? 'Receta personalizada' : 'Sin atribución disponible')
+  return <><div className="flex items-start justify-between gap-3 p-4"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-semibold">{cliente.nombre}</h2><Badge variant="outline" className="gap-1"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} />{segmento.label}</Badge>{cliente.esVip && <Badge className="bg-amber-500 text-white hover:bg-amber-500"><Crown className="mr-1 h-3 w-3" />VIP</Badge>}</div><p className="mt-0.5 text-xs text-muted-foreground">Cliente desde {formatDate(cliente.primerPedidoAt ?? cliente.createdAt)}</p></div></div><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDeleteClient} aria-label="Eliminar cliente"><Trash2 className="h-4 w-4" /></Button></div>
+    <ScrollArea className="min-h-0 flex-1"><div className="space-y-4 p-4">
+      <div className="rounded-xl bg-muted/45 p-4"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background"><TrendingUp className="h-4 w-4" /></div><div><div className="flex items-center gap-2"><p className="text-sm font-semibold">{segmento.label}</p>{cliente.esVip && getSegmento(cliente) !== 'vip' && <Badge variant="secondary">VIP {segmento.label.toLowerCase()}</Badge>}</div><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{segmento.description} {cliente.resumenCadencia ?? ''}</p></div></div></div>
 
-    useEffect(() => {
-        fetchClientes()
-    }, [fetchClientes])
+      <div className="rounded-xl bg-emerald-50/70 p-4 dark:bg-emerald-950/20"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"><WandSparkles className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">Deep link personalizado</p><Badge className="bg-emerald-600 hover:bg-emerald-600">{recetaNombre(cliente.recetaRecomendada?.codigo)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">Piru recomienda una receta según este segmento. Podés elegir esa o cualquiera de las otras cinco.</p><Button size="sm" className="mt-3" onClick={onDeepLink}><Sparkles className="mr-2 h-3.5 w-3.5" />Elegir receta y crear link</Button></div></div></div>
 
-    // Conteo por segmento (para los chips de arriba)
-    const conteoSegmentos = useMemo(() => {
-        const base: Record<Segmento, number> = { nuevo: 0, activo: 0, vip: 0, en_riesgo: 0, dormido: 0, perdido: 0 }
-        for (const c of clientes) base[getSegmento(c)]++
-        return base
-    }, [clientes])
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><MiniMetric icon={<ShoppingBag className="h-4 w-4" />} label="Pedidos" value={cliente.cantidadPedidos} /><MiniMetric icon={<DollarSign className="h-4 w-4" />} label="Total gastado" value={formatCurrency(cliente.totalGastado)} /><MiniMetric icon={<CircleDollarSign className="h-4 w-4" />} label="Ticket" value={formatCurrency(cliente.ticketPromedio ?? (cliente.cantidadPedidos ? cliente.totalGastado / cliente.cantidadPedidos : 0))} /><MiniMetric icon={<Timer className="h-4 w-4" />} label="Cadencia" value={cliente.cadenciaDias != null ? `~${cliente.cadenciaDias} días` : 'Sin ritmo'} /></div>
 
-    // Filter + Sort
-    const filteredAndSorted = useMemo(() => {
-        let result = [...clientes]
+      <Card title="Adquisición y actividad" icon={<Globe2 className="h-4 w-4" />}><InfoRow label="Primera fuente" value={fuente} /><InfoRow label="Primera compra" value={cliente.primeraCompra ? `${formatDate(cliente.primeraCompra.fecha)} · ${formatCurrency(cliente.primeraCompra.revenue)}` : 'Sin datos'} /><InfoRow label="Revenue de recetas" value={formatCurrency(cliente.revenueAcciones ?? 0)} /></Card>
 
-        if (segmentoFiltro !== 'todos') {
-            result = result.filter(c => getSegmento(c) === segmentoFiltro)
-        }
+      <div className="grid gap-3 sm:grid-cols-2"><Card title="Campañas" icon={<ReceiptText className="h-4 w-4" />}>{(cliente.campanasParticipadas ?? []).length ? <div className="space-y-2">{cliente.campanasParticipadas!.map((campana) => <div key={campana.id} className="rounded-lg bg-muted/50 p-2.5"><p className="text-xs font-medium">{campana.nombre}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{campana.pedidos} pedidos · {formatCurrency(campana.revenueAtribuido)}</p></div>)}</div> : <EmptyText>Sin campañas atribuidas.</EmptyText>}</Card><Card title="Cupones usados" icon={<Tag className="h-4 w-4" />}>{(cliente.cuponesUsados ?? []).length ? <div className="space-y-2">{cliente.cuponesUsados!.map((cupon) => <div key={cupon.id} className="rounded-lg bg-muted/50 p-2.5"><p className="text-xs font-medium">{cupon.codigo}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{cupon.usos} usos · {formatCurrency(cupon.montoDescontado)} descontados</p></div>)}</div> : <EmptyText>No usó cupones.</EmptyText>}</Card></div>
 
-        if (query) {
-            const q = query.toLowerCase()
-            result = result.filter(c =>
-                c.nombre.toLowerCase().includes(q) ||
-                c.telefono.includes(q) ||
-                (c.direccion && c.direccion.toLowerCase().includes(q))
-            )
-        }
+      {cliente.productosTop && cliente.productosTop.length > 0 && <Card title="Lo que más pide" icon={<Gift className="h-4 w-4" />}><div className="flex flex-wrap gap-2">{cliente.productosTop.map((producto) => <Badge key={producto.nombre} variant="secondary">{producto.cantidad}× {producto.nombre}</Badge>)}</div></Card>}
 
-        result.sort((a, b) => {
-            if (sortBy === 'attention') return prioridadAtencion(b) - prioridadAtencion(a)
-            if (sortBy === 'recent') {
-                const dateA = a.ultimoPedidoAt ? new Date(a.ultimoPedidoAt).getTime() : 0
-                const dateB = b.ultimoPedidoAt ? new Date(b.ultimoPedidoAt).getTime() : 0
-                return dateB - dateA
-            }
-            if (sortBy === 'most_orders') return b.cantidadPedidos - a.cantidadPedidos
-            if (sortBy === 'highest_spender') return b.totalGastado - a.totalGastado
-            if (sortBy === 'alphabetical') return a.nombre.localeCompare(b.nombre)
-            return 0
-        })
+      <Card title="Contacto" icon={<Phone className="h-4 w-4" />}><InfoRow label="Teléfono" value={cliente.telefono} /><InfoRow label="Dirección" value={cliente.direccion ?? 'Retira en local'} /><InfoRow label="Último pedido" value={formatDate(cliente.ultimoPedidoAt)} /></Card>
 
-        return result
-    }, [clientes, query, sortBy, segmentoFiltro])
-
-    // Stats
-    const stats = useMemo(() => {
-        const totalClients = clientes.length
-        const totalRevenue = clientes.reduce((acc, c) => acc + c.totalGastado, 0)
-        const totalOrders = clientes.reduce((acc, c) => acc + c.cantidadPedidos, 0)
-        const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0
-        // Foco del motor: clientes por recuperar (en riesgo + dormidos) y cuánta plata representan.
-        const porRecuperar = clientes.filter(c => {
-            const s = getSegmento(c)
-            return s === 'en_riesgo' || s === 'dormido'
-        })
-        const revenueEnJuego = porRecuperar.reduce((acc, c) => acc + c.totalGastado, 0)
-        return { totalClients, totalRevenue, avgTicket, totalOrders, porRecuperar: porRecuperar.length, revenueEnJuego }
-    }, [clientes])
-
-    // Selected Client
-    const selectedClient = useMemo(() => {
-        return clientes.find(c => c.id === selectedClientId) || null
-    }, [clientes, selectedClientId])
-
-    // Copia el número de WhatsApp al portapapeles (el local lo pega en su propia app).
-    const copiarWhatsApp = useCallback(async (phone: string) => {
-        try {
-            await navigator.clipboard.writeText(phone)
-            toast.success('Número copiado', {
-                description: `${phone} está en tu portapapeles para pegarlo en WhatsApp.`,
-            })
-        } catch {
-            toast.error('No se pudo copiar el número')
-        }
-    }, [])
-
-    // Actualiza en memoria el estado de recupero de un cliente tras enviarle un toque.
-    const actualizarRecupero = useCallback((clienteId: number, recupero: EstadoRecupero) => {
-        setClientes(prev => prev.map(c => c.id === clienteId ? { ...c, recupero } : c))
-    }, [])
-
-    const refrescarTrasBorrado = useCallback(async () => {
-        await fetchClientes()
-    }, [fetchClientes])
-
-    const refrescarTrasBorrarCliente = useCallback(async () => {
-        setSelectedClientId(null)
-        await fetchClientes()
-    }, [fetchClientes])
-
-    return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FFFBF0] dark:bg-background">
-            {/* ============================================================= */}
-            {/* TOP HEADER — KPIs del motor + segmentos (flotante, sin línea) */}
-            {/* ============================================================= */}
-            <div className="bg-[#FFFBF0] dark:bg-background sticky top-0 z-20">
-                <div className="px-6 py-5 max-w-6xl mx-auto w-full">
-                    {/* Title Row */}
-                    <div className="mb-4">
-                        <h1 className="text-xl font-semibold tracking-tight text-foreground">Base de clientes</h1>
-                        <p className="text-[13px] text-muted-foreground mt-0.5">
-                            {stats.totalClients} clientes con pedidos despachados · cada uno clasificado por su propio ritmo
-                        </p>
-                    </div>
-
-                    {/* KPIs — línea sobria, sin tarjetas de color */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3">
-                        <KPIStat label="Clientes" value={stats.totalClients.toString()} />
-                        <KPIStat label="Por recuperar" value={stats.porRecuperar.toString()} hint="en riesgo + dormidos" />
-                        <KPIStat label="Facturación en juego" value={formatCurrency(stats.revenueEnJuego)} hint="lo que gastan los que se enfrían" />
-                        <KPIStat label="Ticket promedio" value={formatCurrency(stats.avgTicket || 0)} />
-                    </div>
-
-                    {/* Segment filter chips */}
-                    <div className="flex flex-wrap items-center gap-2 mt-4">
-                        <SegmentoChip
-                            label="Todos"
-                            count={stats.totalClients}
-                            active={segmentoFiltro === 'todos'}
-                            onClick={() => setSegmentoFiltro('todos')}
-                        />
-                        {SEGMENTO_ORDEN.map(seg => (
-                            <SegmentoChip
-                                key={seg}
-                                label={SEGMENTOS[seg].label}
-                                count={conteoSegmentos[seg]}
-                                dot={SEGMENTOS[seg].dot}
-                                active={segmentoFiltro === seg}
-                                onClick={() => setSegmentoFiltro(segmentoFiltro === seg ? 'todos' : seg)}
-                            />
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            {/* ============================================================= */}
-            {/* MAIN CONTENT — Master / Detail split (paneles flotantes) */}
-            {/* ============================================================= */}
-            <div className="flex-1 flex min-h-0 overflow-hidden max-w-6xl mx-auto w-full lg:gap-4 lg:p-4 lg:pt-2">
-                {/* ===== LEFT PANEL — Client List (tarjeta flotante) ===== */}
-                <div className={`
-                    flex flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:bg-white lg:dark:bg-muted/20
-                    ${selectedClient ? 'hidden lg:flex' : 'flex'}
-                    w-full lg:w-[420px] xl:w-[480px] lg:shrink-0
-                    transition-all duration-200
-                `}>
-                    {/* Search + Filter — centrado horizontalmente */}
-                    <div className="px-4 py-3">
-                        <div className="flex gap-2 max-w-md mx-auto w-full">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                                <input
-                                    value={query}
-                                    onChange={e => setQuery(e.target.value)}
-                                    placeholder="Buscar cliente..."
-                                    className="w-full h-9 pl-9 pr-4 rounded-lg border border-input bg-background text-sm placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-all"
-                                />
-                            </div>
-                            <Select value={sortBy} onValueChange={setSortBy}>
-                                <SelectTrigger className="w-[170px] h-9 text-xs">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="attention">Necesitan atención</SelectItem>
-                                    <SelectItem value="recent">Más recientes</SelectItem>
-                                    <SelectItem value="most_orders">Más pedidos</SelectItem>
-                                    <SelectItem value="highest_spender">Mayor gasto</SelectItem>
-                                    <SelectItem value="alphabetical">A → Z</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-
-                    {/* Client Rows */}
-                    <ScrollArea className="flex-1">
-                        {loading ? (
-                            <div className="p-4 space-y-2">
-                                {Array.from({ length: 8 }).map((_, i) => (
-                                    <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
-                                ))}
-                            </div>
-                        ) : filteredAndSorted.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                                <div className="w-12 h-12 rounded-full bg-white dark:bg-muted flex items-center justify-center mb-3">
-                                    <User className="w-5 h-5 text-muted-foreground" />
-                                </div>
-                                <h3 className="text-sm font-medium text-foreground">Sin resultados</h3>
-                                <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
-                                    {segmentoFiltro !== 'todos'
-                                        ? 'No hay clientes en este segmento.'
-                                        : query
-                                            ? 'No se encontraron clientes. Probá ajustando tu búsqueda.'
-                                            : 'Todavía no hay clientes con pedidos despachados.'}
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="p-3 space-y-2">
-                                {filteredAndSorted.map(cliente => (
-                                    <ClienteRow
-                                        key={cliente.id}
-                                        cliente={cliente}
-                                        selected={selectedClientId === cliente.id}
-                                        onSelect={() => setSelectedClientId(cliente.id)}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </ScrollArea>
-                </div>
-
-                {/* ===== RIGHT PANEL — Client Detail ===== */}
-                {selectedClient ? (
-                    <ClienteDetalle
-                        cliente={selectedClient}
-                        onClose={() => setSelectedClientId(null)}
-                        copiarWhatsApp={copiarWhatsApp}
-                        onRecuperoSent={actualizarRecupero}
-                        onPedidoEliminado={refrescarTrasBorrado}
-                        onClienteEliminado={refrescarTrasBorrarCliente}
-                    />
-                ) : (
-                    /* ===== EMPTY STATE — No client selected (desktop) ===== */
-                    <div className="hidden lg:flex flex-1 items-center justify-center bg-white dark:bg-muted/20 rounded-2xl shadow-sm">
-                        <div className="text-center max-w-xs">
-                            <div className="w-16 h-16 rounded-2xl bg-[#FFFBF0] dark:bg-muted/80 flex items-center justify-center mx-auto mb-4">
-                                <Users className="w-7 h-7 text-muted-foreground/40" />
-                            </div>
-                            <h3 className="text-sm font-medium text-foreground mb-1">
-                                Seleccioná un cliente
-                            </h3>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                                Elegí un cliente para ver su ritmo de pedidos, en qué momento de su ciclo está y qué le conviene enviarle.
-                            </p>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    )
+      <Card title="Historial de pedidos" icon={<Package className="h-4 w-4" />}><div className="space-y-2">{cliente.pedidos.map((pedido) => <PedidoRow key={pedido.id} pedido={pedido} sucursal={pedido.sucursalId ? sucursalPorId.get(pedido.sucursalId) : undefined} onDelete={() => onDeleteOrder(pedido.id)} />)}</div></Card>
+    </div></ScrollArea></>
 }
 
-// =============================================================================
-// CLIENT ROW (lista)
-// =============================================================================
-function ClienteRow({ cliente, selected, onSelect }: {
-    cliente: Cliente
-    selected: boolean
-    onSelect: () => void
-}) {
-    const seg = getSegmento(cliente)
-    const meta = SEGMENTOS[seg]
+function MiniMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) { return <div className="rounded-xl bg-muted/45 p-3"><div className="text-muted-foreground">{icon}</div><p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-0.5 text-sm font-semibold">{value}</p></div> }
+function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) { return <section className="p-1"><div className="mb-3 flex items-center gap-2 text-muted-foreground">{icon}<h3 className="text-xs font-semibold uppercase tracking-wide">{title}</h3></div>{children}</section> }
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) { return <div className="flex items-start justify-between gap-4 py-2 text-xs"><span className="text-muted-foreground">{label}</span><span className="text-right font-medium">{value}</span></div> }
+function EmptyText({ children }: { children: React.ReactNode }) { return <p className="py-2 text-xs text-muted-foreground">{children}</p> }
 
-    return (
-        <button
-            onClick={onSelect}
-            className={`
-                w-full text-left px-4 py-3 flex items-center gap-3
-                rounded-xl transition-all duration-150 cursor-pointer border-0
-                ${selected
-                    ? 'bg-white dark:bg-muted/40 border-l-[3px] border-l-[#FF7A00] shadow-sm'
-                    : 'bg-white dark:bg-muted/20 hover:bg-muted/40 hover:shadow-sm'
-                }
-            `}
-        >
-            {/* Avatar con punto de segmento */}
-            <div className="relative shrink-0">
-                <div className="w-10 h-10 rounded-full bg-[#FFFBF0] dark:bg-muted flex items-center justify-center text-foreground text-sm font-semibold">
-                    {getInitials(cliente.nombre)}
-                </div>
-                <span
-                    className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${meta.dot} ring-2 ring-white dark:ring-background`}
-                    title={meta.label}
-                />
-            </div>
-
-            {/* Info */}
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                    <span className={`text-sm font-medium truncate ${selected ? 'text-foreground' : 'text-foreground/90'}`}>
-                        {cliente.nombre}
-                    </span>
-                    {cliente.esVip && seg !== 'vip' && (
-                        <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    )}
-                </div>
-                <div className="flex items-center gap-1.5 mt-1">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${meta.bg} ${meta.text}`}>
-                        {meta.label}
-                    </span>
-                    <span className="text-xs text-muted-foreground truncate">
-                        {cliente.cantidadPedidos} ped · {formatCurrency(cliente.totalGastado)}
-                    </span>
-                </div>
-            </div>
-
-            {/* Right side */}
-            <div className="flex flex-col items-end gap-1 shrink-0">
-                <span className="text-[11px] text-muted-foreground">
-                    {cliente.diasDesdeUltimo != null ? diasLabel(cliente.diasDesdeUltimo) : getTimeSince(cliente.ultimoPedidoAt)}
-                </span>
-                {cliente.cadenciaDias != null && (
-                    <span className="text-[10px] text-muted-foreground/70 flex items-center gap-0.5">
-                        <Repeat className="w-2.5 h-2.5" />~{cliente.cadenciaDias}d
-                    </span>
-                )}
-            </div>
-        </button>
-    )
-}
-
-// =============================================================================
-// CLIENT DETAIL (panel derecho)
-// =============================================================================
-function ClienteDetalle({ cliente, onClose, copiarWhatsApp, onRecuperoSent, onPedidoEliminado, onClienteEliminado }: {
-    cliente: Cliente
-    onClose: () => void
-    copiarWhatsApp: (phone: string) => Promise<void>
-    onRecuperoSent: (clienteId: number, recupero: EstadoRecupero) => void
-    onPedidoEliminado: () => Promise<void>
-    onClienteEliminado: () => Promise<void>
-}) {
-    const seg = getSegmento(cliente)
-    const meta = SEGMENTOS[seg]
-    const SegIcon = meta.icon
-    const ticket = cliente.ticketPromedio ?? (cliente.cantidadPedidos > 0 ? Math.round(cliente.totalGastado / cliente.cantidadPedidos) : 0)
-
-    const token = useAuthStore(state => state.token)
-    const [confirmOpen, setConfirmOpen] = useState(false)
-    const [enviando, setEnviando] = useState(false)
-    const [copiado, setCopiado] = useState(false)
-    const [pedidoAEliminar, setPedidoAEliminar] = useState<PedidoHistorial | null>(null)
-    const [eliminarClienteOpen, setEliminarClienteOpen] = useState(false)
-    const [eliminando, setEliminando] = useState(false)
-
-    const recupero = cliente.recupero
-    const proximoNivel = recupero?.proximoNivel ?? 1
-    const escalon = ESCALERA_META[Math.min(proximoNivel, ESCALERA_META.length) - 1]
-    const mostrarRecupero = SEGMENTOS_RECUPERABLES.includes(seg)
-    const optOut = !!cliente.marketingOptOut // protección de la base (4.5): pidió no recibir marketing
-    const productoAntojo = cliente.productosTop?.[0]?.nombre ?? 'su pedido de siempre'
-
-    const handleCopiarWhatsApp = async () => {
-        await copiarWhatsApp(cliente.telefono)
-        setCopiado(true)
-        setTimeout(() => setCopiado(false), 2000)
-    }
-
-    const handleEnviarRecupero = async () => {
-        if (!token) return
-        setEnviando(true)
-        try {
-            const res = await clientesApi.enviarRecupero(token, cliente.id) as {
-                success: boolean; data?: { nivel: number; recupero: EstadoRecupero }
-            }
-            if (res.success && res.data) {
-                onRecuperoSent(cliente.id, res.data.recupero)
-                toast.success(`Mensaje de recupero enviado (nivel ${res.data.nivel})`, {
-                    description: 'Se envió con la marca de tu local por WhatsApp.',
-                })
-                setConfirmOpen(false)
-            }
-        } catch (err) {
-            if (err instanceof ApiError) {
-                if (err.status === 403 && err.response?.upgradeRequired) {
-                    toast.error('El Motor de Recompra está disponible en el plan Avanzado')
-                } else {
-                    toast.error(err.message || 'No se pudo enviar el mensaje')
-                }
-            } else {
-                toast.error('No se pudo enviar el mensaje')
-            }
-            setConfirmOpen(false)
-        } finally {
-            setEnviando(false)
-        }
-    }
-
-    const handleEliminarPedido = async () => {
-        if (!token || !pedidoAEliminar) return
-        setEliminando(true)
-        try {
-            await clientesApi.eliminarPedido(token, cliente.id, pedidoAEliminar.id)
-            toast.success(`Pedido #${pedidoAEliminar.id} eliminado`)
-            setPedidoAEliminar(null)
-            await onPedidoEliminado()
-        } catch (err) {
-            toast.error(err instanceof ApiError ? err.message : 'No se pudo eliminar el pedido')
-        } finally {
-            setEliminando(false)
-        }
-    }
-
-    const handleEliminarCliente = async () => {
-        if (!token) return
-        setEliminando(true)
-        try {
-            await clientesApi.eliminar(token, cliente.id)
-            toast.success('Cliente eliminado', {
-                description: `También se eliminaron sus ${cliente.pedidos.length} pedidos.`,
-            })
-            setEliminarClienteOpen(false)
-            await onClienteEliminado()
-        } catch (err) {
-            toast.error(err instanceof ApiError ? err.message : 'No se pudo eliminar el cliente')
-        } finally {
-            setEliminando(false)
-        }
-    }
-
-    return (
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:bg-white lg:dark:bg-muted/20 lg:shadow-sm">
-            {/* Detail Header — flotante, sin línea */}
-            <div className="px-6 py-5">
-                <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-4">
-                        {/* Mobile back button */}
-                        <button
-                            onClick={onClose}
-                            className="lg:hidden p-1.5 -ml-1 rounded-lg hover:bg-muted transition-colors"
-                        >
-                            <ChevronRight className="w-4 h-4 rotate-180" />
-                        </button>
-
-                        {/* Large avatar */}
-                        <div className="relative shrink-0">
-                            <div className="w-14 h-14 rounded-2xl bg-white dark:bg-muted flex items-center justify-center text-foreground text-lg font-bold">
-                                {getInitials(cliente.nombre)}
-                            </div>
-                            <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${meta.dot} ring-2 ring-[#FFFBF0] dark:ring-background`} />
-                        </div>
-
-                        <div>
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                                <h2 className="text-lg font-semibold text-foreground">
-                                    {cliente.nombre}
-                                </h2>
-                                <Badge
-                                    variant="outline"
-                                    className={`text-[10px] h-5 px-2 font-semibold ${meta.bg} ${meta.text} border gap-1`}
-                                >
-                                    <SegIcon className="w-3 h-3" />
-                                    {meta.label}
-                                </Badge>
-                                {cliente.esVip && seg !== 'vip' && (
-                                    <Badge variant="outline" className="text-[10px] h-5 px-2 font-semibold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 gap-1">
-                                        <Crown className="w-3 h-3" /> VIP
-                                    </Badge>
-                                )}
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                                Cliente desde {formatDate(cliente.primerPedidoAt || cliente.createdAt)}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                        <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setEliminarClienteOpen(true)}
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            title="Eliminar cliente"
-                            aria-label={`Eliminar a ${cliente.nombre}`}
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={handleCopiarWhatsApp}
-                            className="h-8 px-3 gap-1.5 text-xs font-medium text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-950/30"
-                        >
-                            {copiado ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                            {copiado ? 'Copiado' : 'Copiar número'}
-                        </Button>
-                        <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={onClose}
-                            className="h-8 w-8 hidden lg:flex"
-                        >
-                            <X className="w-4 h-4" />
-                        </Button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Detail scrollable body */}
-            <ScrollArea className="flex-1">
-                <div className="p-6 space-y-6 max-w-3xl">
-
-                    {/* ---- Diagnóstico del ciclo de vida ---- */}
-                    <div className={`rounded-xl border p-4 ${meta.bg}`}>
-                        <div className="flex items-start gap-3">
-                            <div className={`w-9 h-9 rounded-lg bg-[#FFFBF0]/60 dark:bg-background/60 flex items-center justify-center ${meta.text} shrink-0`}>
-                                <SegIcon className="w-5 h-5" />
-                            </div>
-                            <div className="min-w-0">
-                                <p className={`text-sm font-semibold ${meta.text}`}>{meta.label}</p>
-                                <p className="text-xs text-foreground/70 mt-0.5">{meta.descripcion}</p>
-                                <p className="text-xs text-foreground/80 mt-2 font-medium">
-                                    {cliente.resumenCadencia
-                                        ? `${cliente.resumenCadencia} · ${diasLabel(cliente.diasDesdeUltimo).toLowerCase()} pidió`
-                                        : cliente.diasDesdeUltimo != null
-                                            ? `${diasLabel(cliente.diasDesdeUltimo)} · todavía sin un ritmo definido`
-                                            : 'Sin pedidos registrados'}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ---- Motor de Recompra · playbook de recupero (4.2) ---- */}
-                    {mostrarRecupero && (
-                        <div className="rounded-2xl bg-white dark:bg-muted/20 overflow-hidden shadow-sm">
-                            <div className="px-4 py-3 flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-[#FFFBF0] dark:bg-muted flex items-center justify-center text-muted-foreground">
-                                    <Rocket className="w-4 h-4" />
-                                </div>
-                                <div className="min-w-0">
-                                    <h3 className="text-sm font-semibold text-foreground">Recuperar a este cliente</h3>
-                                    <p className="text-[11px] text-muted-foreground -mt-0.5">Motor de Recompra · escalera de incentivos</p>
-                                </div>
-                            </div>
-                            <div className="p-4 space-y-3">
-                                {/* Próximo escalón */}
-                                <div className="flex items-start gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-white dark:bg-muted border border-border/60 flex items-center justify-center shrink-0 text-foreground text-xs font-bold tabular-nums">
-                                        {escalon.nivel}
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                                            {escalon.descuento > 0 && <Gift className="w-3.5 h-3.5 text-muted-foreground" />}
-                                            {escalon.titulo}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground mt-0.5">{escalon.detalle}</p>
-                                        <p className="text-[11px] text-muted-foreground/80 mt-1.5">
-                                            Se le mostrará <span className="font-medium text-foreground/80">{productoAntojo}</span> y un botón para volver a pedir en tu tienda.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Historial de toques */}
-                                {recupero && recupero.totalEnvios > 0 && (
-                                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-white dark:bg-muted/50 rounded-lg px-2.5 py-1.5">
-                                        <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                                        Le enviaste {recupero.totalEnvios} {recupero.totalEnvios === 1 ? 'recordatorio' : 'recordatorios'}
-                                        {recupero.ultimoEnvioAt && ` · último ${getTimeSince(recupero.ultimoEnvioAt).toLowerCase()}`}
-                                    </div>
-                                )}
-
-                                {/* Acción */}
-                                {optOut ? (
-                                    <div className="flex items-start gap-2 text-[11px] text-muted-foreground bg-white dark:bg-muted/50 rounded-lg px-2.5 py-2">
-                                        <BellOff className="w-3.5 h-3.5 text-orange-500 shrink-0 mt-0.5" />
-                                        <span>
-                                            Este cliente pidió no recibir mensajes promocionales (respondió “BAJA”).
-                                            No se lo puede contactar por el motor hasta que se reactive.
-                                        </span>
-                                    </div>
-                                ) : recupero && !recupero.puedeEnviar ? (
-                                    <p className="text-[11px] text-muted-foreground italic">
-                                        Ya le escribiste hace poco. Esperá antes de insistir para no saturarlo.
-                                    </p>
-                                ) : (
-                                    <Button
-                                        size="sm"
-                                        onClick={() => setConfirmOpen(true)}
-                                        className="w-full h-9 gap-2"
-                                    >
-                                        <Send className="w-3.5 h-3.5" />
-                                        {recupero && recupero.totalEnvios > 0 ? 'Enviar el siguiente toque' : 'Enviar mensaje de recupero'}
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ---- Metrics Row (RFM) ---- */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <MetricCard
-                            label="Pedidos"
-                            value={cliente.cantidadPedidos.toString()}
-                            icon={<ShoppingBag className="w-4 h-4" />}
-                        />
-                        <MetricCard
-                            label="Total gastado"
-                            value={formatCurrency(cliente.totalGastado)}
-                            icon={<DollarSign className="w-4 h-4" />}
-                        />
-                        <MetricCard
-                            label="Ticket prom."
-                            value={ticket > 0 ? formatCurrency(ticket) : '$0'}
-                            icon={<TrendingUp className="w-4 h-4" />}
-                        />
-                        <MetricCard
-                            label="Cadencia"
-                            value={cliente.cadenciaDias != null ? `~${cliente.cadenciaDias} días` : '—'}
-                            icon={<Timer className="w-4 h-4" />}
-                        />
-                    </div>
-
-                    {/* ---- Productos que más pide (base del "repetí tu pedido") ---- */}
-                    {cliente.productosTop && cliente.productosTop.length > 0 && (
-                        <div className="bg-white dark:bg-muted/20 rounded-2xl overflow-hidden shadow-sm">
-                            <div className="px-4 py-3 flex items-center gap-2">
-                                <Utensils className="w-3.5 h-3.5 text-muted-foreground" />
-                                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Lo que más pide
-                                </h3>
-                            </div>
-                            <div className="p-3 flex flex-wrap gap-2">
-                                {cliente.productosTop.map((p, i) => (
-                                    <span
-                                        key={i}
-                                        className="inline-flex items-center gap-1.5 text-xs font-medium bg-white dark:bg-muted/60 text-foreground px-2.5 py-1.5 rounded-lg border border-border/40"
-                                    >
-                                        <span className="text-[10px] font-bold text-muted-foreground bg-[#FFFBF0] dark:bg-background w-4 h-4 rounded flex items-center justify-center tabular-nums">
-                                            {p.cantidad}
-                                        </span>
-                                        {p.nombre}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ---- Contact Info Card ---- */}
-                    <div className="bg-white dark:bg-muted/20 rounded-2xl overflow-hidden shadow-sm">
-                        <div className="px-4 py-3">
-                            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                Información de contacto
-                            </h3>
-                        </div>
-                        <div className="p-3 space-y-2">
-                            <ContactRow
-                                icon={<Phone className="w-4 h-4" />}
-                                label="Teléfono"
-                                value={cliente.telefono}
-                                action={
-                                    <button
-                                        onClick={handleCopiarWhatsApp}
-                                        className="text-xs text-green-600 dark:text-green-400 hover:underline flex items-center gap-1 font-medium"
-                                    >
-                                        <Copy className="w-3 h-3" />
-                                        Copiar número
-                                    </button>
-                                }
-                            />
-                            <ContactRow
-                                icon={<MapPin className="w-4 h-4" />}
-                                label="Dirección"
-                                value={cliente.direccion || 'Retira en local'}
-                            />
-                            <ContactRow
-                                icon={<CalendarDays className="w-4 h-4" />}
-                                label="Primer pedido"
-                                value={formatDateLong(cliente.primerPedidoAt || cliente.createdAt)}
-                            />
-                            <ContactRow
-                                icon={<Clock className="w-4 h-4" />}
-                                label="Último pedido"
-                                value={cliente.ultimoPedidoAt
-                                    ? `${formatDateLong(cliente.ultimoPedidoAt)} — ${diasLabel(cliente.diasDesdeUltimo)}`
-                                    : 'Sin pedidos'
-                                }
-                            />
-                        </div>
-                    </div>
-
-                    {/* ---- Order History ---- */}
-                    <div className="bg-white dark:bg-muted/20 rounded-2xl overflow-hidden shadow-sm">
-                        <div className="px-4 py-3 flex items-center justify-between">
-                            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                Historial de pedidos
-                            </h3>
-                            <span className="text-xs text-muted-foreground tabular-nums">
-                                {cliente.pedidos.length} pedidos
-                            </span>
-                        </div>
-
-                        {cliente.pedidos.length === 0 ? (
-                            <div className="px-4 py-10 text-center">
-                                <Package className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                                <p className="text-sm text-muted-foreground">Sin pedidos registrados</p>
-                            </div>
-                        ) : (
-                            <div className="p-3 space-y-2">
-                                {cliente.pedidos.map((pedido) => (
-                                    <OrderRow
-                                        key={pedido.id}
-                                        pedido={pedido}
-                                        onDelete={() => setPedidoAEliminar(pedido)}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </ScrollArea>
-
-            {/* ---- Confirmación del envío de recupero ---- */}
-            <Dialog open={confirmOpen} onOpenChange={(o) => !enviando && setConfirmOpen(o)}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Rocket className="w-4 h-4 text-muted-foreground" />
-                            Enviar recupero a {cliente.nombre}
-                        </DialogTitle>
-                        <DialogDescription>
-                            Se enviará un WhatsApp con la marca de tu local. {escalon.descuento > 0
-                                ? `Incluye un cupón de ${escalon.descuento}% de descuento${escalon.nivel === 3 ? ' con vencimiento en 48 hs' : ''}.`
-                                : 'Sin descuento: solo el antojo para que vuelva a pedir.'}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="rounded-lg border bg-white dark:bg-muted/40 p-3 space-y-1.5">
-                        <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                            <span className="w-5 h-5 rounded bg-white dark:bg-muted text-foreground flex items-center justify-center text-[10px] font-bold">{escalon.nivel}</span>
-                            {escalon.titulo}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">{escalon.detalle}</p>
-                        <p className="text-[11px] text-muted-foreground/80">
-                            Este mensaje consume 1 crédito del saldo <span className="font-medium">marketing</span>. Nunca se corta por saldo: si no te quedan, sale igual y queda a descontar de la próxima recarga.
-                        </p>
-                    </div>
-
-                    <DialogFooter className="gap-2 sm:gap-2">
-                        <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={enviando}>
-                            Cancelar
-                        </Button>
-                        <Button onClick={handleEnviarRecupero} disabled={enviando} className="gap-2">
-                            {enviando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            {enviando ? 'Enviando…' : 'Enviar ahora'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={!!pedidoAEliminar} onOpenChange={(open) => !open && !eliminando && setPedidoAEliminar(null)}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Eliminar pedido #{pedidoAEliminar?.id}</DialogTitle>
-                        <DialogDescription>
-                            Se eliminará definitivamente este pedido y sus productos del historial de {cliente.nombre}. Esta acción no se puede deshacer.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="gap-2 sm:gap-2">
-                        <Button variant="outline" onClick={() => setPedidoAEliminar(null)} disabled={eliminando}>Cancelar</Button>
-                        <Button variant="destructive" onClick={handleEliminarPedido} disabled={eliminando} className="gap-2">
-                            {eliminando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                            {eliminando ? 'Eliminando…' : 'Eliminar pedido'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={eliminarClienteOpen} onOpenChange={(open) => !eliminando && setEliminarClienteOpen(open)}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Eliminar a {cliente.nombre}</DialogTitle>
-                        <DialogDescription>
-                            Se eliminarán definitivamente el cliente y sus {cliente.pedidos.length} pedidos, incluyendo productos, pagos asociados y su historial del Motor de Recompra. Esta acción no se puede deshacer.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="gap-2 sm:gap-2">
-                        <Button variant="outline" onClick={() => setEliminarClienteOpen(false)} disabled={eliminando}>Cancelar</Button>
-                        <Button variant="destructive" onClick={handleEliminarCliente} disabled={eliminando} className="gap-2">
-                            {eliminando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                            {eliminando ? 'Eliminando…' : 'Eliminar cliente y pedidos'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </div>
-    )
-}
-
-// =============================================================================
-// SUB-COMPONENTS
-// =============================================================================
-
-function SegmentoChip({ label, count, dot, active, onClick }: {
-    label: string
-    count: number
-    dot?: string
-    active: boolean
-    onClick: () => void
-}) {
-    return (
-        <button
-            onClick={onClick}
-            className={`
-                inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium border transition-all
-                ${active
-                    ? 'bg-foreground text-background border-foreground'
-                    : 'bg-[#FFFBF0] dark:bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground'
-                }
-            `}
-        >
-            {dot && <span className={`w-2 h-2 rounded-full ${active ? 'bg-background' : dot}`} />}
-            {label}
-            <span className={`tabular-nums font-semibold ${active ? 'opacity-80' : 'text-foreground/70'}`}>{count}</span>
-        </button>
-    )
-}
-
-function KPIStat({ label, value, hint }: {
-    label: string
-    value: string
-    hint?: string
-}) {
-    return (
-        <div className="min-w-0">
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">{label}</p>
-            <p className="text-xl font-semibold text-foreground tabular-nums truncate mt-0.5">{value}</p>
-            {hint && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{hint}</p>}
-        </div>
-    )
-}
-
-function MetricCard({ label, value, icon }: {
-    label: string
-    value: string
-    icon: React.ReactNode
-}) {
-    return (
-        <div className="bg-[#FFFBF0] dark:bg-background border border-border/50 rounded-xl p-4 text-center">
-            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white dark:bg-muted text-muted-foreground mb-2">
-                {icon}
-            </div>
-            <p className="text-base font-bold text-foreground tabular-nums">{value}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{label}</p>
-        </div>
-    )
-}
-
-function ContactRow({ icon, label, value, action }: {
-    icon: React.ReactNode
-    label: string
-    value: string
-    action?: React.ReactNode
-}) {
-    return (
-        <div className="px-3 py-2.5 flex items-start gap-3 rounded-xl bg-[#FFFBF0] dark:bg-muted/40">
-            <div className="w-8 h-8 rounded-lg bg-white dark:bg-muted flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
-                {icon}
-            </div>
-            <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-                <p className="text-sm text-foreground mt-0.5 wrap-break-word">{value}</p>
-                {action && <div className="mt-1">{action}</div>}
-            </div>
-        </div>
-    )
-}
-
-function OrderRow({ pedido, onDelete }: { pedido: PedidoHistorial; onDelete: () => void }) {
-    const [expanded, setExpanded] = useState(false)
-    const isDelivery = pedido.tipo === 'delivery'
-    const hasItems = pedido.items && pedido.items.length > 0
-
-    return (
-        <div>
-            <div className="flex items-center gap-1">
-            <button
-                onClick={() => hasItems && setExpanded(!expanded)}
-                className={`
-                    flex-1 min-w-0 text-left px-4 py-3.5 flex items-center gap-3 rounded-xl
-                    transition-colors duration-100
-                    ${hasItems ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'}
-                    ${expanded ? "bg-white dark:bg-muted/20 shadow-sm" : ''}
-                `}
-            >
-                {/* Order Type Icon */}
-                <div className={`
-                    w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm
-                    ${isDelivery
-                        ? 'bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400'
-                        : 'bg-sky-50 dark:bg-sky-950/30 text-sky-600 dark:text-sky-400'
-                    }
-                `}>
-                    {isDelivery ? <Truck className="w-4 h-4" /> : <ShoppingBag className="w-4 h-4" />}
-                </div>
-
-                {/* Order Info */}
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">
-                            {isDelivery ? 'Delivery' : 'Take Away'}
-                        </span>
-                        <span className="text-[10px] font-mono text-muted-foreground bg-white dark:bg-muted/60 px-1.5 py-0.5 rounded">
-                            #{pedido.id}
-                        </span>
-                        {hasItems && (
-                            <span className="text-[10px] text-muted-foreground">
-                                · {pedido.items.reduce((acc, i) => acc + i.cantidad, 0)} items
-                            </span>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
-                        <CalendarDays className="w-3 h-3" />
-                        <span>{formatDate(pedido.createdAt)}</span>
-                        <span className="text-border">·</span>
-                        <span>{formatTime(pedido.createdAt)}</span>
-                    </div>
-                </div>
-
-                {/* Total + chevron */}
-                <div className="flex items-center gap-2 shrink-0">
-                    <p className="text-sm font-semibold text-foreground tabular-nums">
-                        {formatCurrency(pedido.total)}
-                    </p>
-                    {hasItems && (
-                        <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground/40 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
-                    )}
-                </div>
-            </button>
-            <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={onDelete}
-                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                title={`Eliminar pedido #${pedido.id}`}
-                aria-label={`Eliminar pedido #${pedido.id}`}
-            >
-                <Trash2 className="w-3.5 h-3.5" />
-            </Button>
-            </div>
-
-            {/* Expanded Items */}
-            {expanded && hasItems && (
-                <div className="px-4 pb-3 pt-0 ml-[52px]">
-                    <div className="bg-[#FFFBF0] dark:bg-muted/40 rounded-lg overflow-hidden">
-                        {pedido.items.map((item, idx) => (
-                            <div key={idx} className="px-3 py-2 flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-xs font-medium text-muted-foreground bg-white dark:bg-muted/80 w-5 h-5 rounded flex items-center justify-center shrink-0 tabular-nums">
-                                        {item.cantidad}
-                                    </span>
-                                    <span className="text-sm text-foreground truncate">
-                                        {item.nombreProducto}
-                                    </span>
-                                </div>
-                                <span className="text-xs font-medium text-muted-foreground tabular-nums shrink-0">
-                                    {formatCurrency(parseFloat(item.precioUnitario) * item.cantidad)}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
-    )
+function PedidoRow({ pedido, sucursal, onDelete }: { pedido: PedidoCliente; sucursal?: string; onDelete: () => void }) {
+  return <div className="rounded-xl bg-white p-3 transition-colors hover:bg-muted/40 dark:bg-muted/20"><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-1.5"><p className="text-xs font-semibold">Pedido #{pedido.id}</p>{pedido.esOrganico && <Badge variant="outline" className="h-5 text-[9px]">Orgánico</Badge>}{pedido.campanaId && <Badge variant="outline" className="h-5 text-[9px]">Campaña</Badge>}{pedido.codigoDescuentoId && <Badge variant="outline" className="h-5 text-[9px]">Cupón</Badge>}</div><p className="mt-1 text-[11px] text-muted-foreground">{formatDate(pedido.createdAt)} · {pedido.tipo}{sucursal ? ` · ${sucursal}` : ''}</p></div><div className="flex items-center gap-2"><span className="text-xs font-semibold">{formatCurrency(pedido.total)}</span><Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></Button></div></div>{pedido.items.length > 0 && <p className="mt-2 text-[11px] text-muted-foreground">{pedido.items.map((item) => `${item.cantidad}× ${item.nombreProducto}`).join(' · ')}</p>}{Number(pedido.montoDescuento ?? 0) > 0 && <p className="mt-1 text-[11px] text-emerald-700">Descuento aplicado: {formatCurrency(pedido.montoDescuento)}</p>}</div>
 }
