@@ -1,28 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, codigosDescuentoApi, crecimientoApi, type CampanaCrecimiento, type CrearCampanaCrecimiento, type RecetaCrecimiento } from '@/lib/api'
-import { Copy, Globe2, Loader2, Megaphone, Pencil, Plus, Power, PowerOff, Tag, Trash2, Users } from 'lucide-react'
+import { ChevronRight, Copy, Globe2, Loader2, Megaphone, Pencil, Plus, Power, PowerOff, Tag, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import { type CodigoDescuentoGrowth, type FiltroCampana, type ProductoGrowth, RECETAS, type ResultadoCampana, type ResultadoCupon, formatCurrency, normalizarHasta } from './types'
+import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, type ProductoGrowth, RECETAS, type ResultadoCampana, type ResultadoCupon, type SucursalGrowth, formatCurrency, formatDate, normalizarHasta } from './types'
 
 type AssetTab = 'campanas' | 'cupones'
 type Filtros = { from?: string; to?: string; sucursalId?: number }
+type MobileView = 'lista' | 'detalle' | 'clientes'
 
 interface Props {
   token: string
   username?: string | null
   tab: AssetTab
-  onTabChange: (tab: AssetTab) => void
   campanas: CampanaCrecimiento[]
   cupones: CodigoDescuentoGrowth[]
+  clientes: ClienteGrowth[]
+  sucursales: SucursalGrowth[]
   productos: ProductoGrowth[]
   query: string
   filtros: Filtros
@@ -34,6 +34,7 @@ interface Props {
   onReload: () => Promise<void>
   crecimientoActivo: boolean
   cuponesActivos: boolean
+  mobileView: MobileView
 }
 
 const slug = (valor: string) => valor.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 191)
@@ -44,7 +45,7 @@ type FormCampana = {
   carritoRep: string; codigoDescuentoId: string; inversionManual: string; utmSource: string
   utmMedium: string; utmCampaign: string; utmTerm: string; utmContent: string; usaGrupoControl: boolean
 }
-const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', tipo: 'adquisicion', recetaCodigo: '', estado: 'borrador', destinoTipo: 'tienda', productoId: '', carritoRep: '', codigoDescuentoId: '', inversionManual: '0', utmSource: '', utmMedium: '', utmCampaign: '', utmTerm: '', utmContent: '', usaGrupoControl: false })
+const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', tipo: 'adquisicion', recetaCodigo: '', estado: 'activa', destinoTipo: 'tienda', productoId: '', carritoRep: '', codigoDescuentoId: '', inversionManual: '0', utmSource: '', utmMedium: '', utmCampaign: '', utmTerm: '', utmContent: '', usaGrupoControl: false })
 const campanaAForm = (campana: CampanaCrecimiento): FormCampana => ({ nombre: campana.nombre, slug: campana.slug, tipo: campana.tipo, recetaCodigo: campana.recetaCodigo ?? '', estado: campana.estado, destinoTipo: campana.destinoTipo, productoId: campana.productoId?.toString() ?? '', carritoRep: campana.carritoRep ?? '', codigoDescuentoId: campana.codigoDescuentoId?.toString() ?? '', inversionManual: String(campana.inversionManual ?? 0), utmSource: campana.utmSource ?? '', utmMedium: campana.utmMedium ?? '', utmCampaign: campana.utmCampaign ?? '', utmTerm: campana.utmTerm ?? '', utmContent: campana.utmContent ?? '', usaGrupoControl: campana.usaGrupoControl })
 
 type FormCupon = { codigo: string; tipo: 'porcentaje' | 'monto_fijo'; valor: string; limiteUsos: string; montoMinimo: string; fechaInicio: string; fechaFin: string }
@@ -56,7 +57,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 }
 
 export default function GrowthAssetsPanel(props: Props) {
-  const { token, tab, onTabChange, campanas, cupones, query, filtros, campanaSeleccionada, cuponSeleccionado } = props
+  const { token, tab, campanas, cupones, query, filtros, campanaSeleccionada, cuponSeleccionado } = props
   const [resultadoCampana, setResultadoCampana] = useState<ResultadoCampana | null>(null)
   const [resultadoCupon, setResultadoCupon] = useState<ResultadoCupon | null>(null)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
@@ -109,7 +110,7 @@ export default function GrowthAssetsPanel(props: Props) {
     const inversion = Number(formCampana.inversionManual || 0)
     if (!formCampana.nombre.trim() || !formCampana.slug.trim()) { setError('Completá el nombre y el slug.'); return null }
     if (formCampana.destinoTipo === 'producto' && !formCampana.productoId) { setError('Elegí un producto de destino.'); return null }
-    if (formCampana.destinoTipo === 'carrito' && !/^\d+x\d+(?:-\d+x\d+)*$/.test(formCampana.carritoRep)) { setError('El carrito debe usar el formato 12x2-15x1.'); return null }
+    if (formCampana.destinoTipo === 'carrito' && !/^\d+x\d+(?:-\d+x\d+)*$/.test(formCampana.carritoRep)) { setError('Agregá al menos un producto al carrito de la campaña.'); return null }
     if (!Number.isFinite(inversion) || inversion < 0) { setError('La inversión debe ser un monto válido.'); return null }
     return {
       nombre: formCampana.nombre.trim(), slug: formCampana.slug, tipo: formCampana.tipo,
@@ -119,7 +120,7 @@ export default function GrowthAssetsPanel(props: Props) {
       codigoDescuentoId: formCampana.codigoDescuentoId ? Number(formCampana.codigoDescuentoId) : null,
       inversionManual: inversion, utmSource: formCampana.utmSource || null, utmMedium: formCampana.utmMedium || null,
       utmCampaign: formCampana.utmCampaign || null, utmTerm: formCampana.utmTerm || null, utmContent: formCampana.utmContent || null,
-      usaGrupoControl: formCampana.usaGrupoControl,
+      usaGrupoControl: false,
     }
   }
 
@@ -127,6 +128,20 @@ export default function GrowthAssetsPanel(props: Props) {
     const payload = payloadCampana(); if (!payload) return
     setSaving(true); setError('')
     try {
+      const receta = RECETAS.find((item) => item.codigo === payload.recetaCodigo)
+      if (receta?.descuentoPorcentaje && !payload.codigoDescuentoId) {
+        const codigo = `CAMP-${formCampana.slug}-${receta.descuentoPorcentaje}`.toUpperCase().slice(0, 50)
+        const existente = cupones.find((item) => item.codigo === codigo && item.activo)
+        if (existente) payload.codigoDescuentoId = existente.id
+        else {
+          const creado = await codigosDescuentoApi.create(token, {
+            codigo, tipo: 'porcentaje', valor: String(receta.descuentoPorcentaje), limiteUsos: null,
+            montoMinimo: '0', fechaInicio: new Date().toISOString(), fechaFin: null,
+          }) as { data?: CodigoDescuentoGrowth }
+          if (!creado.data) throw new Error('No se pudo crear el beneficio de la receta.')
+          payload.codigoDescuentoId = creado.data.id
+        }
+      }
       const respuesta = campanaEditando
         ? await crecimientoApi.actualizarCampana(token, campanaEditando.id, ((entrada) => {
           const edicion = { ...entrada }
@@ -154,6 +169,7 @@ export default function GrowthAssetsPanel(props: Props) {
 
   const copiarCampana = async (campana: CampanaCrecimiento) => {
     if (!props.username) return toast.error('El local todavía no tiene un username público disponible.')
+    if (campana.estado !== 'activa') return toast.error('Activá la campaña antes de compartir el link.')
     await navigator.clipboard.writeText(`https://my.piru.app/${props.username}/c/${campana.slug}`)
     toast.success('Smart Link copiado.')
   }
@@ -180,16 +196,13 @@ export default function GrowthAssetsPanel(props: Props) {
     catch { toast.error('No se pudo eliminar el cupón. Puede estar asociado a pedidos o campañas.') }
   }
 
-  return <aside className="flex min-h-[520px] flex-col overflow-hidden xl:min-h-0">
-    <div className="p-3">
-      <Tabs value={tab} onValueChange={(value) => onTabChange(value as AssetTab)}>
-        <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="campanas">Campañas</TabsTrigger><TabsTrigger value="cupones">Cupones</TabsTrigger></TabsList>
-      </Tabs>
-      <Button className="mt-3 w-full" size="sm" disabled={tab === 'campanas' ? !props.crecimientoActivo : !props.cuponesActivos} onClick={() => tab === 'campanas' ? abrirCampana() : abrirCupon()}><Plus className="mr-2 h-4 w-4" />{tab === 'campanas' ? 'Nueva campaña' : 'Nuevo cupón'}</Button>
-    </div>
-
-    <ScrollArea className="min-h-0 flex-1">
-      <div className="space-y-2 p-3">
+  return <div className="grid min-h-[680px] gap-4 xl:h-full xl:min-h-0 xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]">
+    <section className={`${props.mobileView === 'lista' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
+      <div className="flex items-center justify-between gap-3 p-3">
+        <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tab === 'campanas' ? 'Campañas' : 'Cupones'}</p><p className="text-[11px] text-muted-foreground">{tab === 'campanas' ? campanasFiltradas.length + 1 : cuponesFiltrados.length} resultados</p></div>
+        <Button size="sm" disabled={tab === 'campanas' ? !props.crecimientoActivo : !props.cuponesActivos} onClick={() => tab === 'campanas' ? abrirCampana() : abrirCupon()}><Plus className="mr-2 h-4 w-4" />Nuevo</Button>
+      </div>
+      <ScrollArea className="min-h-0 flex-1"><div className="space-y-2 p-2">
         {tab === 'campanas' ? <>
           {!props.crecimientoActivo && <Disabled label="Crecimiento está desactivado" />}
           {props.crecimientoActivo && (!query.trim() || 'orgánico sin campaña directo'.includes(query.trim().toLowerCase())) && <AssetButton active={campanaSeleccionada === 'organico'} onClick={() => props.onSelectCampana(campanaSeleccionada === 'organico' ? null : 'organico')} icon={<Globe2 className="h-4 w-4" />} title="Orgánico · sin campaña" subtitle="Visitas directas y compras sin touch de campaña" badge="Siempre disponible" />}
@@ -197,30 +210,99 @@ export default function GrowthAssetsPanel(props: Props) {
           {props.crecimientoActivo && campanasFiltradas.length === 0 && query.trim() && <Empty label="No hay campañas que coincidan." />}
         </> : <>
           {!props.cuponesActivos && <Disabled label="Códigos de descuento está desactivado" />}
-          {props.cuponesActivos && cuponesFiltrados.map((cupon) => <AssetButton key={cupon.id} active={cuponSeleccionado === cupon.id} onClick={() => props.onSelectCupon(cuponSeleccionado === cupon.id ? null : cupon.id)} icon={<Tag className="h-4 w-4" />} title={cupon.codigo} subtitle={cupon.tipo === 'porcentaje' ? `${Number(cupon.valor)}% OFF` : `${formatCurrency(cupon.valor)} OFF`} badge={cupon.activo ? 'activo' : 'inactivo'} />)}
+          {props.cuponesActivos && cuponesFiltrados.map((cupon) => <CouponAssetButton key={cupon.id} cupon={cupon} active={cuponSeleccionado === cupon.id} onClick={() => props.onSelectCupon(cuponSeleccionado === cupon.id ? null : cupon.id)} />)}
           {props.cuponesActivos && cuponesFiltrados.length === 0 && <Empty label="Todavía no hay cupones." />}
         </>}
+      </div></ScrollArea>
+    </section>
 
-        {loadingDetalle && <div className="flex items-center justify-center py-10 text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Calculando resultados…</div>}
-        {!loadingDetalle && tab === 'campanas' && campanaSeleccionada != null && resultadoCampana && <CampaignDetail organic={campanaSeleccionada === 'organico'} campana={campanaActual} resultado={resultadoCampana} onCopy={() => campanaActual && void copiarCampana(campanaActual)} onEdit={() => campanaActual && abrirCampana(campanaActual)} onToggle={() => campanaActual && void toggleCampana(campanaActual)} onDelete={() => campanaActual && void borrarCampana(campanaActual)} />}
-        {!loadingDetalle && tab === 'cupones' && cuponActual && resultadoCupon && <CouponDetail cupon={cuponActual} resultado={resultadoCupon} onClient={props.onSelectClient} onEdit={() => abrirCupon(cuponActual)} onToggle={() => void toggleCupon(cuponActual)} onDelete={() => void borrarCupon(cuponActual)} />}
-      </div>
-    </ScrollArea>
+    <section className={`${props.mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[620px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
+      {loadingDetalle ? <LoadingDetail /> : tab === 'campanas' && campanaSeleccionada != null && resultadoCampana
+        ? <ScrollArea className="min-h-0 flex-1"><div className="p-4"><CampaignDetail organic={campanaSeleccionada === 'organico'} campana={campanaActual} resultado={resultadoCampana} onCopy={() => campanaActual && void copiarCampana(campanaActual)} onEdit={() => campanaActual && abrirCampana(campanaActual)} onToggle={() => campanaActual && void toggleCampana(campanaActual)} onDelete={() => campanaActual && void borrarCampana(campanaActual)} /></div></ScrollArea>
+        : tab === 'cupones' && cuponActual && resultadoCupon
+          ? <ScrollArea className="min-h-0 flex-1"><div className="p-4"><CouponDetail cupon={cuponActual} resultado={resultadoCupon} onEdit={() => abrirCupon(cuponActual)} onToggle={() => void toggleCupon(cuponActual)} onDelete={() => void borrarCupon(cuponActual)} /></div></ScrollArea>
+          : <EmptySelection tab={tab} />}
+    </section>
+
+    <section className={`${props.mobileView === 'clientes' ? 'flex' : 'hidden'} min-h-[620px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
+      <AssociationsPanel tab={tab} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} clientes={props.clientes} sucursales={props.sucursales} filtros={filtros} resultadoCupon={resultadoCupon} loading={loadingDetalle} onSelectClient={props.onSelectClient} />
+    </section>
 
     <CampanaDialog open={campanaDialog} onOpenChange={setCampanaDialog} editando={campanaEditando} form={formCampana} setForm={setFormCampana} productos={props.productos} cupones={cupones} error={error} saving={saving} onSave={() => void guardarCampana()} username={props.username} />
     <CuponDialog open={cuponDialog} onOpenChange={setCuponDialog} editando={cuponEditando} form={formCupon} setForm={setFormCupon} error={error} saving={saving} onSave={() => void guardarCupon()} />
-  </aside>
+  </div>
 }
+
+function LoadingDetail() { return <div className="flex flex-1 items-center justify-center py-16 text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Calculando resultados…</div> }
+function EmptySelection({ tab }: { tab: AssetTab }) { return <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">{tab === 'campanas' ? <Megaphone className="h-6 w-6 text-muted-foreground" /> : <Tag className="h-6 w-6 text-muted-foreground" />}</div><h2 className="mt-4 font-semibold">Seleccioná {tab === 'campanas' ? 'una campaña' : 'un cupón'}</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Vas a ver su configuración y sus resultados en esta columna.</p></div> }
 
 function AssetButton({ active, onClick, icon, title, subtitle, badge }: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string; subtitle: string; badge: string }) {
   return <button type="button" onClick={onClick} className={`w-full rounded-xl border-0 p-3 text-left transition-colors ${active ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex items-start gap-2.5"><span className={`mt-0.5 ${active ? 'text-[#FF7A00]' : 'text-muted-foreground'}`}>{icon}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{title}</span><span className="block truncate text-[11px] text-muted-foreground">{subtitle}</span></span><Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[9px] capitalize">{badge}</Badge></div></button>
 }
+
+function CouponAssetButton({ cupon, active, onClick }: { cupon: CodigoDescuentoGrowth; active: boolean; onClick: () => void }) {
+  const ahora = Date.now()
+  const empiezaEn = cupon.fechaInicio ? new Date(cupon.fechaInicio).getTime() > ahora : false
+  const vencio = cupon.fechaFin ? new Date(cupon.fechaFin).getTime() < ahora : false
+  const agotado = cupon.limiteUsos != null && cupon.usosActuales >= cupon.limiteUsos
+  const vigente = cupon.activo && !empiezaEn && !vencio && !agotado
+  const estado = vigente ? 'Vigente' : !cupon.activo ? 'Inactivo' : empiezaEn ? 'Próximamente' : vencio ? 'Vencido' : 'Agotado'
+  const usos = cupon.limiteUsos == null ? `${cupon.usosActuales} usos · sin límite` : `${cupon.usosActuales}/${cupon.limiteUsos} usos`
+  const progreso = cupon.limiteUsos == null ? 0 : Math.min(100, (cupon.usosActuales / cupon.limiteUsos) * 100)
+  const beneficio = cupon.tipo === 'porcentaje' ? `${Number(cupon.valor)}% OFF` : `${formatCurrency(cupon.valor)} OFF`
+
+  return <button type="button" onClick={onClick} className={`w-full rounded-xl p-3 text-left transition-colors ${active ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}>
+    <div className="flex items-start gap-2.5"><Tag className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-[#FF7A00]' : 'text-muted-foreground'}`} /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-semibold">{cupon.codigo}</p><Badge variant="outline" className={`h-5 shrink-0 px-1.5 text-[9px] ${vigente ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300' : ''}`}>{estado}</Badge></div><p className="mt-0.5 text-[11px] text-muted-foreground">{beneficio}{Number(cupon.montoMinimo) > 0 ? ` · mínimo ${formatCurrency(cupon.montoMinimo)}` : ''}</p><div className="mt-2 flex items-center justify-between gap-2 text-[11px]"><span className="font-medium text-foreground">{usos}</span><span className="truncate text-muted-foreground">{cupon.fechaFin ? `Hasta ${formatDate(cupon.fechaFin)}` : 'Sin vencimiento'}</span></div>{cupon.limiteUsos != null && <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${vigente ? 'bg-[#FF7A00]' : 'bg-muted-foreground/40'}`} style={{ width: `${progreso}%` }} /></div>}</div></div>
+  </button>
+}
 function Empty({ label }: { label: string }) { return <p className="rounded-xl bg-muted/30 p-6 text-center text-xs text-muted-foreground">{label}</p> }
 function Disabled({ label }: { label: string }) { return <div className="rounded-xl bg-muted/30 p-4 text-center"><p className="text-xs font-medium">{label}</p><p className="mt-1 text-[11px] text-muted-foreground">Podés activarlo desde Módulos.</p></div> }
 
+function AssociationsPanel({ tab, campanaSeleccionada, cuponSeleccionado, clientes, sucursales, filtros, resultadoCupon, loading, onSelectClient }: {
+  tab: AssetTab; campanaSeleccionada: FiltroCampana; cuponSeleccionado: number | null; clientes: ClienteGrowth[]; sucursales: SucursalGrowth[]
+  filtros: Filtros; resultadoCupon: ResultadoCupon | null; loading: boolean; onSelectClient: (id: number) => void
+}) {
+  const sucursalPorId = new Map(sucursales.map((item) => [item.id, item.nombre]))
+  const asociacionesCampana = useMemo(() => {
+    if (tab !== 'campanas' || campanaSeleccionada == null) return []
+    const desde = filtros.from ? new Date(`${filtros.from}T00:00:00`).getTime() : null
+    const hasta = filtros.to ? new Date(`${filtros.to}T23:59:59.999`).getTime() : null
+    return clientes.flatMap((cliente) => cliente.pedidos
+      .filter((pedido) => {
+        const fecha = new Date(pedido.createdAt).getTime()
+        const pertenece = campanaSeleccionada === 'organico' ? pedido.esOrganico : pedido.campanaId === campanaSeleccionada
+        return pertenece && (!desde || fecha >= desde) && (!hasta || fecha <= hasta) && (!filtros.sucursalId || pedido.sucursalId === filtros.sucursalId)
+      })
+      .map((pedido) => ({ cliente, pedido })))
+      .sort((a, b) => new Date(b.pedido.createdAt).getTime() - new Date(a.pedido.createdAt).getTime())
+  }, [tab, campanaSeleccionada, clientes, filtros])
+  const clientesCampana = useMemo(() => [...new Map(asociacionesCampana.map(({ cliente }) => [cliente.id, cliente])).values()], [asociacionesCampana])
+  const clientePorId = useMemo(() => new Map(clientes.map((cliente) => [cliente.id, cliente])), [clientes])
+
+  if ((tab === 'campanas' && campanaSeleccionada == null) || (tab === 'cupones' && cuponSeleccionado == null)) return <EmptyAssociations />
+  if (loading) return <LoadingDetail />
+
+  const clientesAsociados = tab === 'campanas' ? clientesCampana : (resultadoCupon?.clientes ?? [])
+  const pedidosAsociados = tab === 'campanas' ? asociacionesCampana.map(({ cliente, pedido }) => ({ cliente, pedido })) : (resultadoCupon?.pedidos ?? []).map((pedido) => ({ cliente: pedido.clienteId ? clientePorId.get(pedido.clienteId) : undefined, pedido }))
+  return <>
+    <div className="p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actividad asociada</p><p className="text-[11px] text-muted-foreground">{clientesAsociados.length} clientes · {pedidosAsociados.length} pedidos</p></div>
+    <ScrollArea className="min-h-0 flex-1"><div className="space-y-5 p-2">
+      <div><p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p><div className="space-y-1.5">{clientesAsociados.length ? clientesAsociados.map((item) => {
+        const cliente = 'telefono' in item && 'cantidadPedidos' in item ? item : clientePorId.get(item.id)
+        return <button key={item.id} type="button" onClick={() => onSelectClient(item.id)} className="flex w-full items-center gap-3 rounded-xl bg-white p-3 text-left transition-colors hover:bg-muted/40 dark:bg-muted/20"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{inicialesAsociacion(item.nombre)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.nombre}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{tab === 'cupones' && 'usos' in item ? `${item.usos} usos · ${formatCurrency(item.facturacion)}` : cliente ? `${cliente.cantidadPedidos} pedidos · ${formatCurrency(cliente.totalGastado)}` : item.telefono}</p></div><ChevronRight className="h-4 w-4 text-muted-foreground/40" /></button>
+      }) : <Empty label="Todavía no hay clientes asociados." />}</div></div>
+      <div><p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Pedidos</p><div className="space-y-1.5">{pedidosAsociados.length ? pedidosAsociados.map(({ cliente, pedido }) => <AssociatedOrder key={pedido.id} pedido={pedido} cliente={cliente?.nombre} sucursal={pedido.sucursalId ? sucursalPorId.get(pedido.sucursalId) : undefined} />) : <Empty label="Todavía no hay pedidos asociados." />}</div></div>
+    </div></ScrollArea>
+  </>
+}
+
+const inicialesAsociacion = (nombre: string) => nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
+function EmptyAssociations() { return <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><Users className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Actividad asociada</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Al seleccionar un elemento vas a ver acá sus clientes y pedidos.</p></div> }
+function AssociatedOrder({ pedido, cliente, sucursal }: { pedido: { id: number; createdAt: string; total: number | string; sucursalId?: number | null }; cliente?: string; sucursal?: string }) { return <div className="rounded-xl bg-white p-3 dark:bg-muted/20"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold">Pedido #{pedido.id}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente ?? 'Cliente sin identificar'}{sucursal ? ` · ${sucursal}` : ''}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{formatDate(pedido.createdAt)}</p></div><span className="shrink-0 text-xs font-semibold">{formatCurrency(pedido.total)}</span></div></div> }
+
 function CampaignDetail({ organic, campana, resultado, onCopy, onEdit, onToggle, onDelete }: { organic: boolean; campana: CampanaCrecimiento | null; resultado: ResultadoCampana; onCopy: () => void; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
   const m = resultado.metricas
-  return <div className="mt-4 space-y-3 pt-4">
+  return <div className="space-y-4">
     <div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold">{organic ? 'Orgánico · sin campaña' : campana?.nombre}</h3>{organic && <Badge className="bg-sky-600 hover:bg-sky-600">Vista automática</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{organic ? 'Personas que llegaron directamente a la tienda, sin Smart Link ni receta atribuible.' : `${campana?.tipo === 'adquisicion' ? 'Adquisición' : 'Recompra'} · ${campana?.estado}`}</p></div>
     <div className="grid grid-cols-2 gap-2"><Metric label="Ventas cobradas" value={formatCurrency(m.ventas)} /><Metric label="Pedidos" value={m.pedidos} /><Metric label="Clientes nuevos" value={m.clientesNuevos} /><Metric label="Conversión" value={`${m.conversion}%`} /><Metric label="Sesiones" value={m.sesiones} /><Metric label="Ticket" value={formatCurrency(m.ticketPromedio)} /></div>
     <div className="rounded-lg bg-muted/40 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Embudo</p><div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs"><span>Vistas de producto</span><strong className="text-right">{resultado.funnel.product_view}</strong><span>Agregaron al carrito</span><strong className="text-right">{resultado.funnel.add_to_cart}</strong><span>Iniciaron checkout</span><strong className="text-right">{resultado.funnel.checkout_start}</strong><span>Compraron</span><strong className="text-right">{resultado.funnel.purchase}</strong></div></div>
@@ -228,14 +310,28 @@ function CampaignDetail({ organic, campana, resultado, onCopy, onEdit, onToggle,
   </div>
 }
 
-function CouponDetail({ cupon, resultado, onClient, onEdit, onToggle, onDelete }: { cupon: CodigoDescuentoGrowth; resultado: ResultadoCupon; onClient: (id: number) => void; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
+function CouponDetail({ cupon, resultado, onEdit, onToggle, onDelete }: { cupon: CodigoDescuentoGrowth; resultado: ResultadoCupon; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
   const m = resultado.metricas
-  return <div className="mt-4 space-y-3 pt-4"><div className="flex items-start justify-between gap-2"><div><h3 className="text-sm font-semibold">{cupon.codigo}</h3><p className="text-xs text-muted-foreground">{cupon.tipo === 'porcentaje' ? `${Number(cupon.valor)}% OFF` : `${formatCurrency(cupon.valor)} OFF`} · {cupon.activo ? 'Activo' : 'Inactivo'}</p></div><Badge variant="outline">{cupon.limiteUsos == null ? 'Sin límite' : `${cupon.usosActuales}/${cupon.limiteUsos}`}</Badge></div><div className="grid grid-cols-2 gap-2"><Metric label="Facturación cobrada" value={formatCurrency(m.facturacionCobrada)} /><Metric label="Pesos descontados" value={formatCurrency(m.montoDescontado)} /><Metric label="Usos cobrados" value={m.usos} /><Metric label="Clientes" value={m.clientes} /><Metric label="Venta antes del descuento" value={formatCurrency(m.ventasAntesDescuento)} /><Metric label="Ticket" value={formatCurrency(m.ticketPromedio)} /></div><div className="rounded-lg bg-muted/40 p-3"><p className="flex items-center gap-1.5 text-xs font-semibold"><Users className="h-3.5 w-3.5" />Clientes que lo usaron</p>{resultado.clientes.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">Todavía no tiene usos cobrados en este período.</p> : <div className="mt-2 space-y-1">{resultado.clientes.slice(0, 8).map((cliente) => <button key={cliente.id} onClick={() => onClient(cliente.id)} className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-background/70"><span className="truncate">{cliente.nombre}</span><span className="shrink-0 text-muted-foreground">{cliente.usos} usos · {formatCurrency(cliente.facturacion)}</span></button>)}</div>}</div><div className="grid grid-cols-3 gap-2"><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1 h-3.5 w-3.5" />Editar</Button><Button size="sm" variant="outline" onClick={onToggle}>{cupon.activo ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="mr-1 h-3.5 w-3.5" />Eliminar</Button></div></div>
+  return <div className="space-y-4"><div className="flex items-start justify-between gap-2"><div><h3 className="text-lg font-semibold">{cupon.codigo}</h3><p className="mt-1 text-xs text-muted-foreground">{cupon.tipo === 'porcentaje' ? `${Number(cupon.valor)}% OFF` : `${formatCurrency(cupon.valor)} OFF`} · {cupon.activo ? 'Activo' : 'Inactivo'}</p></div><Badge variant="outline">{cupon.limiteUsos == null ? 'Sin límite' : `${cupon.usosActuales}/${cupon.limiteUsos}`}</Badge></div><div className="grid grid-cols-2 gap-2"><Metric label="Facturación cobrada" value={formatCurrency(m.facturacionCobrada)} /><Metric label="Pesos descontados" value={formatCurrency(m.montoDescontado)} /><Metric label="Usos cobrados" value={m.usos} /><Metric label="Clientes" value={m.clientes} /><Metric label="Venta antes del descuento" value={formatCurrency(m.ventasAntesDescuento)} /><Metric label="Ticket" value={formatCurrency(m.ticketPromedio)} /></div><div className="rounded-xl bg-muted/40 p-4 text-xs"><p><strong>Monto mínimo:</strong> {formatCurrency(cupon.montoMinimo)}</p><p className="mt-2"><strong>Vigencia:</strong> {cupon.fechaInicio ? formatDate(cupon.fechaInicio) : 'Sin inicio'} — {cupon.fechaFin ? formatDate(cupon.fechaFin) : 'Sin vencimiento'}</p><p className="mt-2"><strong>Creado:</strong> {formatDate(cupon.createdAt)}</p></div><div className="grid grid-cols-3 gap-2"><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1 h-3.5 w-3.5" />Editar</Button><Button size="sm" variant="outline" onClick={onToggle}>{cupon.activo ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="mr-1 h-3.5 w-3.5" />Eliminar</Button></div></div>
 }
 
 function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos, cupones, error, saving, onSave, username }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CampanaCrecimiento | null; form: FormCampana; setForm: React.Dispatch<React.SetStateAction<FormCampana>>; productos: ProductoGrowth[]; cupones: CodigoDescuentoGrowth[]; error: string; saving: boolean; onSave: () => void; username?: string | null }) {
   const set = <K extends keyof FormCampana>(key: K, value: FormCampana[K]) => setForm((actual) => ({ ...actual, [key]: value }))
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>El Smart Link queda medible desde la primera visita. El slug no cambia al editar el nombre.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><div className="space-y-1.5"><Label>Slug estable</Label><Input disabled={Boolean(editando)} value={form.slug} onChange={(e) => set('slug', slug(e.target.value))} /><p className="text-[11px] text-muted-foreground">my.piru.app/{username ?? 'tu-local'}/c/{form.slug || 'campana'}</p></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[['borrador', 'Borrador'], ['activa', 'Activa'], ['inactiva', 'Inactiva']]} /><FieldSelect label="Tipo" value={form.tipo} onValueChange={(v) => set('tipo', v as FormCampana['tipo'])} options={[['adquisicion', 'Adquisición'], ['recompra', 'Recompra']]} /><FieldSelect label="Receta / audiencia" value={form.recetaCodigo || 'ninguna'} onValueChange={(v) => set('recetaCodigo', v === 'ninguna' ? '' : v)} options={[['ninguna', 'Audiencia abierta'], ...RECETAS.map((r) => [r.codigo, r.nombre] as [string, string])]} /><FieldSelect label="Destino" value={form.destinoTipo} onValueChange={(v) => set('destinoTipo', v as FormCampana['destinoTipo'])} options={[['tienda', 'Tienda'], ['producto', 'Producto'], ['carrito', 'Carrito']]} />{form.destinoTipo === 'producto' && <FieldSelect label="Producto" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[['ninguno', 'Elegí un producto'], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} />}{form.destinoTipo === 'carrito' && <div className="space-y-1.5 sm:col-span-2"><Label>Carrito</Label><Input placeholder="12x2-15x1" value={form.carritoRep} onChange={(e) => set('carritoRep', e.target.value)} /></div>}<FieldSelect label="Cupón opcional" value={form.codigoDescuentoId || 'ninguno'} onValueChange={(v) => set('codigoDescuentoId', v === 'ninguno' ? '' : v)} options={[['ninguno', 'Sin cupón'], ...cupones.filter((c) => c.activo).map((c) => [String(c.id), c.codigo] as [string, string])]} /><div className="space-y-1.5"><Label>Inversión manual</Label><Input type="number" min="0" value={form.inversionManual} onChange={(e) => set('inversionManual', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>UTM avanzadas</Label><div className="grid gap-2 sm:grid-cols-2"><Input placeholder="utm_source" value={form.utmSource} onChange={(e) => set('utmSource', e.target.value)} /><Input placeholder="utm_medium" value={form.utmMedium} onChange={(e) => set('utmMedium', e.target.value)} /><Input placeholder="utm_campaign" value={form.utmCampaign} onChange={(e) => set('utmCampaign', e.target.value)} /><Input placeholder="utm_content" value={form.utmContent} onChange={(e) => set('utmContent', e.target.value)} /></div><Input className="mt-2" placeholder="utm_term" value={form.utmTerm} onChange={(e) => set('utmTerm', e.target.value)} /></div><label className="flex gap-3 rounded-lg border p-3 text-sm sm:col-span-2"><Checkbox checked={form.usaGrupoControl} onChange={(e) => set('usaGrupoControl', e.target.checked)} /><span>Preservar grupo de control cuando exista una cohorte comparable.</span></label>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
+  const recetaElegida = RECETAS.find((item) => item.codigo === form.recetaCodigo)
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>El Smart Link abre el destino elegido, conserva la atribución y aplica el beneficio en el checkout.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><div className="space-y-1.5"><Label>Dirección del link</Label><Input disabled={Boolean(editando)} value={form.slug} onChange={(e) => set('slug', slug(e.target.value))} /><p className="text-[11px] text-muted-foreground">my.piru.app/{username ?? 'tu-local'}/c/{form.slug || 'campana'}</p></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[['borrador', 'Borrador'], ['activa', 'Activa'], ['inactiva', 'Inactiva']]} /><FieldSelect label="Tipo" value={form.tipo} onValueChange={(v) => set('tipo', v as FormCampana['tipo'])} options={[['adquisicion', 'Adquisición'], ['recompra', 'Recompra']]} /><FieldSelect label="Receta" value={form.recetaCodigo || 'ninguna'} onValueChange={(v) => set('recetaCodigo', v === 'ninguna' ? '' : v)} options={[['ninguna', 'Sin receta'], ...RECETAS.map((r) => [r.codigo, `${r.nombre}${r.descuentoPorcentaje ? ` · ${r.descuentoPorcentaje}% OFF` : ''}`] as [string, string])]} /><FieldSelect label="Al abrir el link" value={form.destinoTipo} onValueChange={(v) => set('destinoTipo', v as FormCampana['destinoTipo'])} options={[['tienda', 'Mostrar la tienda'], ['producto', 'Abrir un producto'], ['carrito', 'Dejar un carrito listo']]} />{form.destinoTipo === 'producto' && <FieldSelect label="Producto" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[['ninguno', 'Elegí un producto'], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} />}{form.destinoTipo === 'carrito' && <CarritoBuilder productos={productos} value={form.carritoRep} onChange={(value) => set('carritoRep', value)} />}<FieldSelect label="Cupón" value={form.codigoDescuentoId || 'ninguno'} onValueChange={(v) => set('codigoDescuentoId', v === 'ninguno' ? '' : v)} options={[['ninguno', recetaElegida?.descuentoPorcentaje ? `Crear automáticamente ${recetaElegida.descuentoPorcentaje}% OFF` : 'Sin cupón'], ...cupones.filter((c) => c.activo).map((c) => [String(c.id), `${c.codigo} · ${c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : formatCurrency(c.valor)}`] as [string, string])]} /><div className="space-y-1.5"><Label>Inversión manual</Label><Input type="number" min="0" value={form.inversionManual} onChange={(e) => set('inversionManual', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>UTM avanzadas</Label><div className="grid gap-2 sm:grid-cols-2"><Input placeholder="utm_source" value={form.utmSource} onChange={(e) => set('utmSource', e.target.value)} /><Input placeholder="utm_medium" value={form.utmMedium} onChange={(e) => set('utmMedium', e.target.value)} /><Input placeholder="utm_campaign" value={form.utmCampaign} onChange={(e) => set('utmCampaign', e.target.value)} /><Input placeholder="utm_content" value={form.utmContent} onChange={(e) => set('utmContent', e.target.value)} /></div><Input className="mt-2" placeholder="utm_term" value={form.utmTerm} onChange={(e) => set('utmTerm', e.target.value)} /></div><p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground sm:col-span-2">Las campañas por link miden atribución real. El grupo de control no se ofrece acá porque una audiencia pública no es una cohorte cerrada comparable.</p>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
+}
+
+function CarritoBuilder({ productos, value, onChange }: { productos: ProductoGrowth[]; value: string; onChange: (value: string) => void }) {
+  const cantidades = new Map(value.split('-').flatMap((parte) => {
+    const match = /^(\d+)x(\d+)$/.exec(parte)
+    return match ? [[Number(match[1]), Number(match[2])] as const] : []
+  }))
+  const actualizar = (productoId: number, cantidad: number) => {
+    if (cantidad <= 0) cantidades.delete(productoId)
+    else cantidades.set(productoId, Math.min(99, Math.max(1, cantidad)))
+    onChange([...cantidades.entries()].map(([id, qty]) => `${id}x${qty}`).join('-'))
+  }
+  return <div className="space-y-2 sm:col-span-2"><Label>Productos que encontrará en el carrito</Label><div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border bg-background p-2">{productos.map((producto) => { const cantidad = cantidades.get(producto.id) ?? 0; return <div key={producto.id} className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/50"><button type="button" className={`h-5 w-5 rounded border text-xs ${cantidad ? 'border-primary bg-primary text-primary-foreground' : 'border-input'}`} onClick={() => actualizar(producto.id, cantidad ? 0 : 1)}>{cantidad ? '✓' : ''}</button><span className="min-w-0 flex-1 truncate text-sm">{producto.nombre}</span>{cantidad > 0 && <Input aria-label={`Cantidad de ${producto.nombre}`} type="number" min="1" max="99" value={cantidad} onChange={(event) => actualizar(producto.id, Number(event.target.value))} className="h-8 w-20" />}</div>})}</div><p className="text-[11px] text-muted-foreground">El cliente verá estos productos con sus nombres y cantidades; Piru arma internamente el link.</p></div>
 }
 
 function CuponDialog({ open, onOpenChange, editando, form, setForm, error, saving, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CodigoDescuentoGrowth | null; form: FormCupon; setForm: React.Dispatch<React.SetStateAction<FormCupon>>; error: string; saving: boolean; onSave: () => void }) {

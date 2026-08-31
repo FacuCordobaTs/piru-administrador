@@ -9,16 +9,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
-import { ChevronRight, CircleDollarSign, Crown, DollarSign, Gift, Globe2, Package, Phone, ReceiptText, Search, ShoppingBag, Sparkles, Store, Tag, Timer, Trash2, TrendingUp, User, Users, WandSparkles, X } from 'lucide-react'
+import { ChevronRight, CircleDollarSign, Crown, DollarSign, Gift, Globe2, Megaphone, Package, Phone, ReceiptText, Search, ShoppingBag, Sparkles, Store, Tag, Ticket, Timer, Trash2, TrendingUp, User, Users, WandSparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import DeepLinkDialog from './clientes/DeepLinkDialog'
 import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
 import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, type PedidoCliente, type ProductoGrowth, SEGMENTOS, type SucursalGrowth, formatCurrency, formatDate, getSegmento, recetaNombre } from './clientes/types'
 
 type AssetTab = 'campanas' | 'cupones'
+type WorkspaceTab = 'clientes' | AssetTab
 type SortKey = 'attention' | 'recent' | 'orders' | 'spend' | 'alphabetical'
 type SegmentFilter = ReturnType<typeof getSegmento> | 'todos'
-type MobileView = 'clientes' | 'detalle' | 'activos'
+type MobileView = 'clientes' | 'detalle' | 'pedidos'
+type AssetMobileView = 'lista' | 'detalle' | 'clientes'
 
 const prioridad: Record<ReturnType<typeof getSegmento>, number> = { en_riesgo: 6, dormido: 5, perdido: 4, vip: 3, nuevo: 2, activo: 1 }
 const iniciales = (nombre: string) => nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
@@ -43,22 +45,27 @@ export default function Clientes() {
   const [from, setFrom] = useState<string>()
   const [to, setTo] = useState<string>()
   const [sort, setSort] = useState<SortKey>('attention')
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'campanas' || tab === 'crecimiento') return 'campanas'
+    if (tab === 'cupones') return 'cupones'
+    return 'clientes'
+  })
   const [clienteSeleccionado, setClienteSeleccionado] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<MobileView>('clientes')
-  const [assetTab, setAssetTab] = useState<AssetTab>('campanas')
+  const [assetMobileView, setAssetMobileView] = useState<AssetMobileView>('lista')
   const [campanaSeleccionada, setCampanaSeleccionada] = useState<FiltroCampana>(null)
   const [cuponSeleccionado, setCuponSeleccionado] = useState<number | null>(null)
   const [deepLinkOpen, setDeepLinkOpen] = useState(false)
-  const mainRef = useRef<HTMLDivElement>(null)
+  const mobileNavRef = useRef<HTMLElement>(null)
 
-  // Los enlaces del admin anterior siguen abriendo la pantalla correcta, pero
-  // se limpia su navegación de tabs porque ahora existe un único workspace.
   useEffect(() => {
-    if (!searchParams.has('tab') && !searchParams.has('vista') && !searchParams.has('seccion')) return
     const siguiente = new URLSearchParams(searchParams)
-    siguiente.delete('tab'); siguiente.delete('vista'); siguiente.delete('seccion')
+    siguiente.set('tab', workspaceTab)
+    siguiente.delete('vista'); siguiente.delete('seccion')
+    if (siguiente.toString() === searchParams.toString()) return
     setSearchParams(siguiente, { replace: true })
-  }, [searchParams, setSearchParams])
+  }, [workspaceTab, searchParams, setSearchParams])
 
   const cargar = useCallback(async () => {
     if (!token) return
@@ -131,10 +138,13 @@ export default function Clientes() {
   const seleccionarCupon = (id: number | null) => { setCuponSeleccionado(id); if (id != null) setCampanaSeleccionada(null) }
   const cambiarMobileView = (view: MobileView) => {
     setMobileView(view)
-    requestAnimationFrame(() => mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
+    requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
   }
   const seleccionarCliente = (id: number) => { setClienteSeleccionado(id); cambiarMobileView('detalle') }
-  const cambiarAssetTab = (tab: AssetTab) => { setAssetTab(tab); if (tab === 'campanas') setCuponSeleccionado(null); else setCampanaSeleccionada(null) }
+  const cambiarWorkspaceTab = (tab: WorkspaceTab) => { setWorkspaceTab(tab); setMobileView('clientes'); setAssetMobileView('lista'); if (tab === 'campanas') setCuponSeleccionado(null); if (tab === 'cupones') setCampanaSeleccionada(null) }
+  const abrirClienteAsociado = (id: number) => { setWorkspaceTab('clientes'); seleccionarCliente(id) }
+  const seleccionarCampanaMobile = (id: FiltroCampana) => { seleccionarCampana(id); if (id != null) { setAssetMobileView('detalle'); requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })) } }
+  const seleccionarCuponMobile = (id: number | null) => { seleccionarCupon(id); if (id != null) { setAssetMobileView('detalle'); requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })) } }
   const limpiarFiltros = () => { setSegmento('todos'); setSucursalId(undefined); setFrom(undefined); setTo(undefined); setCampanaSeleccionada(null); setCuponSeleccionado(null) }
 
   const eliminarPedido = async (pedidoId: number) => {
@@ -148,35 +158,44 @@ export default function Clientes() {
     catch { toast.error('No se pudo eliminar el cliente.') }
   }
 
-  return <div ref={mainRef} className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#FFFBF0] dark:bg-background xl:overflow-hidden">
+  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#FFFBF0] dark:bg-background xl:overflow-hidden">
     <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
       <div className="mx-auto max-w-[1680px]">
-        <div className="relative mb-4 text-center"><h1 className="text-2xl font-semibold tracking-tight">Crecimiento</h1><p className="mt-0.5 text-sm text-muted-foreground">Clientes, campañas y cupones en una sola vista.</p><p className="absolute bottom-0 right-0 hidden text-xs text-muted-foreground sm:block">{filtrados.length} de {clientes.length} clientes</p></div>
-        <div className="relative"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 rounded-xl bg-background pl-11 text-sm shadow-sm" placeholder="Buscar clientes, teléfonos, campañas o cupones…" /></div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7"><FilterPill active={segmento === 'todos'} onClick={() => setSegmento('todos')} label="Todos" count={clientes.length} />{SEGMENTOS.map((item) => <FilterPill key={item.value} active={segmento === item.value} onClick={() => setSegmento(segmento === item.value ? 'todos' : item.value)} label={item.label} count={conteoSegmentos[item.value]} dot={item.dot} />)}</div>
+        <div className="mb-4 flex flex-col items-center gap-3"><div className="text-center"><h1 className="text-2xl font-semibold tracking-tight">Clientes</h1><p className="mt-0.5 text-sm text-muted-foreground">Conocé tu base, medí campañas y seguí tus cupones.</p></div><WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} /></div>
+        <div className="relative"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 rounded-xl bg-background pl-11 text-sm shadow-sm" placeholder={workspaceTab === 'clientes' ? 'Buscar clientes, teléfonos, campañas o cupones…' : workspaceTab === 'campanas' ? 'Buscar campañas…' : 'Buscar cupones…'} /></div>
+        {workspaceTab === 'clientes' && <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7"><FilterPill active={segmento === 'todos'} onClick={() => setSegmento('todos')} label="Todos" count={clientes.length} />{SEGMENTOS.map((item) => <FilterPill key={item.value} active={segmento === item.value} onClick={() => setSegmento(segmento === item.value ? 'todos' : item.value)} label={item.label} count={conteoSegmentos[item.value]} dot={item.dot} />)}</div>}
         {sucursales.length > 1 && <div className="mt-2 flex flex-wrap gap-2"><FilterPill active={!sucursalId} onClick={() => setSucursalId(undefined)} label="Todas las sucursales" />{sucursales.map((sucursal) => <FilterPill key={sucursal.id} active={sucursalId === sucursal.id} onClick={() => setSucursalId(sucursalId === sucursal.id ? undefined : sucursal.id)} label={sucursal.nombre} icon={<Store className="h-3 w-3" />} />)}</div>}
-        <div className="mt-3 flex flex-wrap items-end gap-2"><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Desde</label><Input type="date" value={from ?? ''} onChange={(event) => setFrom(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hasta</label><Input type="date" value={to ?? ''} onChange={(event) => setTo(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div>{filtroActivo && <Badge variant="outline" className="h-9 max-w-[280px] gap-1.5 rounded-lg bg-background px-3"><span className="truncate">Filtrando por {filtroActivo}</span><button onClick={() => { setCampanaSeleccionada(null); setCuponSeleccionado(null) }} aria-label="Quitar filtro"><X className="h-3.5 w-3.5" /></button></Badge>}{(segmento !== 'todos' || sucursalId || from || to || filtroActivo) && <Button variant="ghost" size="sm" onClick={limpiarFiltros}>Limpiar filtros</Button>}</div>
-        <nav className="mt-3 grid grid-cols-3 rounded-xl bg-muted/60 p-1 xl:hidden" aria-label="Secciones de crecimiento">
-          <MobileTab active={mobileView === 'clientes'} onClick={() => cambiarMobileView('clientes')}>Clientes</MobileTab>
-          <MobileTab active={mobileView === 'detalle'} onClick={() => cambiarMobileView('detalle')}>Detalle{cliente ? <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-[#FF7A00]" /> : null}</MobileTab>
-          <MobileTab active={mobileView === 'activos'} onClick={() => cambiarMobileView('activos')}>Campañas</MobileTab>
-        </nav>
+        <div className="mt-3 flex flex-wrap items-end gap-2"><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Desde</label><Input type="date" value={from ?? ''} onChange={(event) => setFrom(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hasta</label><Input type="date" value={to ?? ''} onChange={(event) => setTo(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div>{workspaceTab === 'clientes' && filtroActivo && <Badge variant="outline" className="h-9 max-w-[280px] gap-1.5 rounded-lg bg-background px-3"><span className="truncate">Filtrando por {filtroActivo}</span><button onClick={() => { setCampanaSeleccionada(null); setCuponSeleccionado(null) }} aria-label="Quitar filtro"><X className="h-3.5 w-3.5" /></button></Badge>}{((workspaceTab === 'clientes' && segmento !== 'todos') || sucursalId || from || to || (workspaceTab === 'clientes' && filtroActivo)) && <Button variant="ghost" size="sm" onClick={limpiarFiltros}>Limpiar filtros</Button>}</div>
       </div>
     </header>
 
+    <nav ref={mobileNavRef} className="sticky top-0 z-20 shrink-0 border-y bg-[#FFFBF0]/95 px-4 py-2 backdrop-blur dark:bg-background/95 sm:px-6 xl:hidden" aria-label={workspaceTab === 'clientes' ? 'Columnas de clientes' : `Columnas de ${workspaceTab}`}>
+      <div className="mx-auto grid max-w-[1680px] grid-cols-3 rounded-xl bg-muted/60 p-1">
+        {workspaceTab === 'clientes' ? <>
+          <MobileTab active={mobileView === 'clientes'} onClick={() => cambiarMobileView('clientes')}>Clientes</MobileTab>
+          <MobileTab active={mobileView === 'detalle'} onClick={() => cambiarMobileView('detalle')}>Detalle{cliente ? <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-[#FF7A00]" /> : null}</MobileTab>
+          <MobileTab active={mobileView === 'pedidos'} onClick={() => cambiarMobileView('pedidos')}>Pedidos</MobileTab>
+        </> : <>
+          <MobileTab active={assetMobileView === 'lista'} onClick={() => setAssetMobileView('lista')}>{workspaceTab === 'campanas' ? 'Campañas' : 'Cupones'}</MobileTab>
+          <MobileTab active={assetMobileView === 'detalle'} onClick={() => setAssetMobileView('detalle')}>Resultados</MobileTab>
+          <MobileTab active={assetMobileView === 'clientes'} onClick={() => setAssetMobileView('clientes')}>Clientes</MobileTab>
+        </>}
+      </div>
+    </nav>
+
     <main className="flex-none overflow-visible px-4 pb-4 sm:px-6 xl:min-h-0 xl:flex-1 xl:overflow-hidden">
-      <div className="mx-auto grid min-h-full max-w-[1680px] gap-4 xl:h-full xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]">
+      {workspaceTab === 'clientes' ? <div className="mx-auto grid min-h-full max-w-[1680px] gap-4 xl:h-full xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]">
         <section className={`${mobileView === 'clientes' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
           <div className="flex items-center justify-between gap-2 p-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p><p className="text-[11px] text-muted-foreground">{filtrados.length} resultados</p></div><Select value={sort} onValueChange={(value) => setSort(value as SortKey)}><SelectTrigger className="h-8 w-[165px] text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attention">Necesitan atención</SelectItem><SelectItem value="recent">Más recientes</SelectItem><SelectItem value="orders">Más pedidos</SelectItem><SelectItem value="spend">Mayor gasto</SelectItem><SelectItem value="alphabetical">A → Z</SelectItem></SelectContent></Select></div>
           <ScrollArea className="min-h-0 flex-1">{loading ? <div className="space-y-2 p-3">{Array.from({ length: 7 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-xl" />)}</div> : filtrados.length === 0 ? <EmptyClients /> : <div className="space-y-1.5 p-2">{filtrados.map((item) => <ClientRow key={item.id} cliente={item} selected={item.id === clienteSeleccionado} onClick={() => seleccionarCliente(item.id)} />)}</div>}</ScrollArea>
         </section>
 
         <section className={`${mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[640px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
-          {cliente ? <ClienteDetalle cliente={cliente} sucursales={sucursales} onDeepLink={() => setDeepLinkOpen(true)} onDeleteClient={() => void eliminarCliente()} onDeleteOrder={(pedidoId) => void eliminarPedido(pedidoId)} /> : <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><User className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Seleccioná un cliente</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Vas a ver su ciclo de vida, pedidos, campañas, cupones y la receta recomendada.</p></div>}
+          {cliente ? <ClienteDetalle cliente={cliente} onDeepLink={() => setDeepLinkOpen(true)} onDeleteClient={() => void eliminarCliente()} /> : <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><User className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Seleccioná un cliente</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Vas a ver su ciclo de vida, campañas, cupones y la receta recomendada.</p></div>}
         </section>
 
-        {token && <div className={`${mobileView === 'activos' ? 'block' : 'hidden'} min-h-0 xl:block`}><GrowthAssetsPanel token={token} username={username} tab={assetTab} onTabChange={cambiarAssetTab} campanas={campanas} cupones={cupones} productos={productos} query={query} filtros={{ from, to, sucursalId }} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} onSelectCampana={seleccionarCampana} onSelectCupon={seleccionarCupon} onSelectClient={seleccionarCliente} onReload={cargar} crecimientoActivo={crecimientoActivo} cuponesActivos={cuponesActivos} /></div>}
-      </div>
+        <section className={`${mobileView === 'pedidos' ? 'flex' : 'hidden'} min-h-[620px] flex-col overflow-hidden xl:flex xl:min-h-0`}><PedidosClientePanel cliente={cliente} sucursales={sucursales} onDeleteOrder={(pedidoId) => void eliminarPedido(pedidoId)} /></section>
+      </div> : token ? <div className="mx-auto min-h-full max-w-[1680px] xl:h-full"><GrowthAssetsPanel token={token} username={username} tab={workspaceTab} campanas={campanas} cupones={cupones} clientes={clientes} sucursales={sucursales} productos={productos} query={query} filtros={{ from, to, sucursalId }} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} onSelectCampana={seleccionarCampanaMobile} onSelectCupon={seleccionarCuponMobile} onSelectClient={abrirClienteAsociado} onReload={cargar} crecimientoActivo={crecimientoActivo} cuponesActivos={cuponesActivos} mobileView={assetMobileView} /></div> : null}
     </main>
 
     {token && <DeepLinkDialog open={deepLinkOpen} onOpenChange={setDeepLinkOpen} token={token} cliente={cliente} onPrepared={cargar} />}
@@ -185,6 +204,15 @@ export default function Clientes() {
 
 function MobileTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return <button type="button" onClick={onClick} className={`flex h-9 min-w-0 items-center justify-center rounded-lg px-2 text-xs font-semibold transition-colors ${active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{children}</button>
+}
+
+function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (value: WorkspaceTab) => void }) {
+  const tabs: Array<{ value: WorkspaceTab; label: string; icon: React.ReactNode }> = [
+    { value: 'clientes', label: 'Clientes', icon: <Users className="h-4 w-4" /> },
+    { value: 'campanas', label: 'Campañas', icon: <Megaphone className="h-4 w-4" /> },
+    { value: 'cupones', label: 'Cupones', icon: <Ticket className="h-4 w-4" /> },
+  ]
+  return <nav className="flex items-center gap-2" aria-label="Secciones de clientes">{tabs.map((tab) => <button key={tab.value} type="button" onClick={() => onChange(tab.value)} className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${value === tab.value ? 'bg-foreground text-background shadow-sm' : 'bg-muted/70 text-muted-foreground hover:text-foreground'}`}>{tab.icon}{tab.label}</button>)}</nav>
 }
 
 function FilterPill({ active, onClick, label, count, dot, icon }: { active: boolean; onClick: () => void; label: string; count?: number; dot?: string; icon?: React.ReactNode }) {
@@ -198,9 +226,8 @@ function ClientRow({ cliente, selected, onClick }: { cliente: ClienteGrowth; sel
 
 function EmptyClients() { return <div className="flex flex-col items-center justify-center px-6 py-20 text-center"><Users className="h-8 w-8 text-muted-foreground/30" /><p className="mt-3 text-sm font-medium">No hay clientes con estos filtros</p><p className="mt-1 text-xs text-muted-foreground">Probá ampliar las fechas o quitar una campaña o cupón.</p></div> }
 
-function ClienteDetalle({ cliente, sucursales, onDeepLink, onDeleteClient, onDeleteOrder }: { cliente: ClienteGrowth; sucursales: SucursalGrowth[]; onDeepLink: () => void; onDeleteClient: () => void; onDeleteOrder: (pedidoId: number) => void }) {
+function ClienteDetalle({ cliente, onDeepLink, onDeleteClient }: { cliente: ClienteGrowth; onDeepLink: () => void; onDeleteClient: () => void }) {
   const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
-  const sucursalPorId = new Map(sucursales.map((item) => [item.id, item.nombre]))
   const fuente = cliente.fuenteAdquisicion === 'organico' ? 'Orgánico · sin campaña' : cliente.campanaAdquisicion?.nombre ?? (cliente.fuenteAdquisicion === 'receta' ? 'Receta personalizada' : 'Sin atribución disponible')
   return <><div className="flex items-start justify-between gap-3 p-4"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-semibold">{cliente.nombre}</h2><Badge variant="outline" className="gap-1"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} />{segmento.label}</Badge>{cliente.esVip && <Badge className="bg-amber-500 text-white hover:bg-amber-500"><Crown className="mr-1 h-3 w-3" />VIP</Badge>}</div><p className="mt-0.5 text-xs text-muted-foreground">Cliente desde {formatDate(cliente.primerPedidoAt ?? cliente.createdAt)}</p></div></div><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDeleteClient} aria-label="Eliminar cliente"><Trash2 className="h-4 w-4" /></Button></div>
     <ScrollArea className="min-h-0 flex-1"><div className="space-y-4 p-4">
@@ -218,8 +245,13 @@ function ClienteDetalle({ cliente, sucursales, onDeepLink, onDeleteClient, onDel
 
       <Card title="Contacto" icon={<Phone className="h-4 w-4" />}><InfoRow label="Teléfono" value={cliente.telefono} /><InfoRow label="Dirección" value={cliente.direccion ?? 'Retira en local'} /><InfoRow label="Último pedido" value={formatDate(cliente.ultimoPedidoAt)} /></Card>
 
-      <Card title="Historial de pedidos" icon={<Package className="h-4 w-4" />}><div className="space-y-2">{cliente.pedidos.map((pedido) => <PedidoRow key={pedido.id} pedido={pedido} sucursal={pedido.sucursalId ? sucursalPorId.get(pedido.sucursalId) : undefined} onDelete={() => onDeleteOrder(pedido.id)} />)}</div></Card>
     </div></ScrollArea></>
+}
+
+function PedidosClientePanel({ cliente, sucursales, onDeleteOrder }: { cliente: ClienteGrowth | null; sucursales: SucursalGrowth[]; onDeleteOrder: (pedidoId: number) => void }) {
+  const sucursalPorId = new Map(sucursales.map((item) => [item.id, item.nombre]))
+  if (!cliente) return <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><Package className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Pedidos del cliente</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Seleccioná un cliente para recorrer todo su historial.</p></div>
+  return <><div className="p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Historial de pedidos</p><p className="text-[11px] text-muted-foreground">{cliente.nombre} · {cliente.pedidos.length} pedidos</p></div><ScrollArea className="min-h-0 flex-1"><div className="space-y-2 p-2">{cliente.pedidos.length ? cliente.pedidos.map((pedido) => <PedidoRow key={pedido.id} pedido={pedido} sucursal={pedido.sucursalId ? sucursalPorId.get(pedido.sucursalId) : undefined} onDelete={() => onDeleteOrder(pedido.id)} />) : <EmptyText>Todavía no tiene pedidos.</EmptyText>}</div></ScrollArea></>
 }
 
 function MiniMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) { return <div className="rounded-xl bg-muted/45 p-3"><div className="text-muted-foreground">{icon}</div><p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-0.5 text-sm font-semibold">{value}</p></div> }
