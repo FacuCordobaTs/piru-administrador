@@ -21,7 +21,7 @@ import {
     Phone, ShoppingBag, CalendarDays, Tag, Settings,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
-    Copy, ExternalLink, MoreVertical, Armchair,
+    Copy, ExternalLink, MoreVertical, Armchair, Megaphone,
 } from 'lucide-react'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -83,6 +83,7 @@ interface UnifiedPedido {
     deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null;
     grupal?: boolean | null; creadoPorIa?: boolean | null; anotadoManualmente?: boolean | null;
     mesaLocalId?: number | null; mesaNombre?: string | null; consumoEnLocal?: boolean | null;
+    campanaId?: number | null; campanaNombre?: string | null; campanaSlug?: string | null;
     version?: number; editable?: boolean; motivosNoEditable?: string[];
 }
 interface TurnoCajaDashboard { id: number; aperturaAt: string; cierreAt: string | null; abierto: boolean }
@@ -3121,6 +3122,12 @@ const Dashboard = () => {
                                                             </p>
                                                         )
                                                     })()}
+                                                    {selectedUnifiedPedido.campanaNombre && (
+                                                        <p className="flex items-center justify-start gap-2 text-sm font-semibold text-[#FF7A00]">
+                                                            <Megaphone className="h-3.5 w-3.5 shrink-0" />
+                                                            <span>Campaña: {selectedUnifiedPedido.campanaNombre}</span>
+                                                        </p>
+                                                    )}
                                                 </div>
 
                                                 {selectedUnifiedPedido.horarioProgramado && (
