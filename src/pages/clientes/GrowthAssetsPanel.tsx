@@ -6,10 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ApiError, codigosDescuentoApi, crecimientoApi, type CampanaCrecimiento, type CrearCampanaCrecimiento, type RecetaCrecimiento } from '@/lib/api'
+import { ApiError, codigosDescuentoApi, crecimientoApi, type CampanaCrecimiento, type CrearCampanaCrecimiento } from '@/lib/api'
 import { ChevronRight, Copy, Globe2, Loader2, Megaphone, Pencil, Plus, Power, PowerOff, Tag, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, type ProductoGrowth, RECETAS, type ResultadoCampana, type ResultadoCupon, type SucursalGrowth, formatCurrency, formatDate, normalizarHasta } from './types'
+import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, type ProductoGrowth, type ResultadoCampana, type ResultadoCupon, type SucursalGrowth, formatCurrency, formatDate, normalizarHasta } from './types'
 
 type AssetTab = 'campanas' | 'cupones'
 type Filtros = { from?: string; to?: string; sucursalId?: number }
@@ -40,13 +40,11 @@ interface Props {
 const slug = (valor: string) => valor.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 191)
 
 type FormCampana = {
-  nombre: string; slug: string; tipo: 'adquisicion' | 'recompra'; recetaCodigo: string
-  estado: CampanaCrecimiento['estado']; destinoTipo: CampanaCrecimiento['destinoTipo']; productoId: string
-  carritoRep: string; codigoDescuentoId: string; inversionManual: string; utmSource: string
-  utmMedium: string; utmCampaign: string; utmTerm: string; utmContent: string; usaGrupoControl: boolean
+  nombre: string; slug: string; estado: CampanaCrecimiento['estado']; productoId: string
+  descuentoProductoPorcentaje: string; limiteUsos: string; fechaInicio: string; fechaFin: string
 }
-const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', tipo: 'adquisicion', recetaCodigo: '', estado: 'activa', destinoTipo: 'tienda', productoId: '', carritoRep: '', codigoDescuentoId: '', inversionManual: '0', utmSource: '', utmMedium: '', utmCampaign: '', utmTerm: '', utmContent: '', usaGrupoControl: false })
-const campanaAForm = (campana: CampanaCrecimiento): FormCampana => ({ nombre: campana.nombre, slug: campana.slug, tipo: campana.tipo, recetaCodigo: campana.recetaCodigo ?? '', estado: campana.estado, destinoTipo: campana.destinoTipo, productoId: campana.productoId?.toString() ?? '', carritoRep: campana.carritoRep ?? '', codigoDescuentoId: campana.codigoDescuentoId?.toString() ?? '', inversionManual: String(campana.inversionManual ?? 0), utmSource: campana.utmSource ?? '', utmMedium: campana.utmMedium ?? '', utmCampaign: campana.utmCampaign ?? '', utmTerm: campana.utmTerm ?? '', utmContent: campana.utmContent ?? '', usaGrupoControl: campana.usaGrupoControl })
+const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', estado: 'activa', productoId: '', descuentoProductoPorcentaje: '', limiteUsos: '', fechaInicio: '', fechaFin: '' })
+const campanaAForm = (campana: CampanaCrecimiento): FormCampana => ({ nombre: campana.nombre, slug: campana.slug, estado: campana.estado, productoId: campana.productoId?.toString() ?? '', descuentoProductoPorcentaje: campana.descuentoProductoPorcentaje ? String(campana.descuentoProductoPorcentaje) : '', limiteUsos: campana.limiteUsos?.toString() ?? '', fechaInicio: campana.fechaInicio?.slice(0, 16) ?? '', fechaFin: campana.fechaFin?.slice(0, 16) ?? '' })
 
 type FormCupon = { codigo: string; tipo: 'porcentaje' | 'monto_fijo'; valor: string; limiteUsos: string; montoMinimo: string; fechaInicio: string; fechaFin: string }
 const cuponVacio = (): FormCupon => ({ codigo: '', tipo: 'porcentaje', valor: '', limiteUsos: '', montoMinimo: '0', fechaInicio: '', fechaFin: '' })
@@ -92,34 +90,39 @@ export default function GrowthAssetsPanel(props: Props) {
     }).finally(() => setLoadingDetalle(false))
   }, [tab, cuponSeleccionado, token, filtrosApi, props.cuponesActivos])
 
+  const campanasProducto = useMemo(
+    () => campanas.filter((item) => item.destinoTipo === 'producto' && item.productoId != null),
+    [campanas],
+  )
   const campanasFiltradas = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return q ? campanas.filter((item) => `${item.nombre} ${item.slug} ${item.utmSource ?? ''}`.toLowerCase().includes(q)) : campanas
-  }, [campanas, query])
+    return q ? campanasProducto.filter((item) => `${item.nombre} ${item.slug}`.toLowerCase().includes(q)) : campanasProducto
+  }, [campanasProducto, query])
   const cuponesFiltrados = useMemo(() => {
     const q = query.trim().toLowerCase()
     return q ? cupones.filter((item) => item.codigo.toLowerCase().includes(q)) : cupones
   }, [cupones, query])
-  const campanaActual = typeof campanaSeleccionada === 'number' ? campanas.find((item) => item.id === campanaSeleccionada) ?? null : null
+  const campanaActual = typeof campanaSeleccionada === 'number' ? campanasProducto.find((item) => item.id === campanaSeleccionada) ?? null : null
   const cuponActual = cuponSeleccionado != null ? cupones.find((item) => item.id === cuponSeleccionado) ?? null : null
 
   const abrirCampana = (campana?: CampanaCrecimiento) => { setCampanaEditando(campana ?? null); setFormCampana(campana ? campanaAForm(campana) : campanaVacia()); setError(''); setCampanaDialog(true) }
   const abrirCupon = (cupon?: CodigoDescuentoGrowth) => { setCuponEditando(cupon ?? null); setFormCupon(cupon ? cuponAForm(cupon) : cuponVacio()); setError(''); setCuponDialog(true) }
 
   const payloadCampana = (): CrearCampanaCrecimiento | null => {
-    const inversion = Number(formCampana.inversionManual || 0)
     if (!formCampana.nombre.trim() || !formCampana.slug.trim()) { setError('Completá el nombre y el slug.'); return null }
-    if (formCampana.destinoTipo === 'producto' && !formCampana.productoId) { setError('Elegí un producto de destino.'); return null }
-    if (formCampana.destinoTipo === 'carrito' && !/^\d+x\d+(?:-\d+x\d+)*$/.test(formCampana.carritoRep)) { setError('Agregá al menos un producto al carrito de la campaña.'); return null }
-    if (!Number.isFinite(inversion) || inversion < 0) { setError('La inversión debe ser un monto válido.'); return null }
+    if (!formCampana.productoId) { setError('Elegí el producto de la promoción.'); return null }
+    const descuento = Number(formCampana.descuentoProductoPorcentaje || 0)
+    if (!Number.isInteger(descuento) || descuento < 0 || descuento > 100) { setError('El descuento debe ser un porcentaje entre 0 y 100.'); return null }
+    const limite = formCampana.limiteUsos ? Number(formCampana.limiteUsos) : null
+    if (limite != null && (!Number.isInteger(limite) || limite <= 0)) { setError('El cupo debe ser un número mayor a cero.'); return null }
+    if (formCampana.fechaInicio && formCampana.fechaFin && new Date(formCampana.fechaFin) <= new Date(formCampana.fechaInicio)) { setError('La fecha de fin debe ser posterior al inicio.'); return null }
     return {
-      nombre: formCampana.nombre.trim(), slug: formCampana.slug, tipo: formCampana.tipo,
-      recetaCodigo: (formCampana.recetaCodigo || null) as RecetaCrecimiento | null, estado: formCampana.estado,
-      destinoTipo: formCampana.destinoTipo, productoId: formCampana.destinoTipo === 'producto' ? Number(formCampana.productoId) : null,
-      carritoRep: formCampana.destinoTipo === 'carrito' ? formCampana.carritoRep : null,
-      codigoDescuentoId: formCampana.codigoDescuentoId ? Number(formCampana.codigoDescuentoId) : null,
-      inversionManual: inversion, utmSource: formCampana.utmSource || null, utmMedium: formCampana.utmMedium || null,
-      utmCampaign: formCampana.utmCampaign || null, utmTerm: formCampana.utmTerm || null, utmContent: formCampana.utmContent || null,
+      nombre: formCampana.nombre.trim(), slug: formCampana.slug, tipo: 'adquisicion', recetaCodigo: null,
+      estado: formCampana.estado, destinoTipo: 'producto', productoId: Number(formCampana.productoId),
+      carritoRep: null, codigoDescuentoId: null, descuentoProductoPorcentaje: descuento,
+      limiteUsos: limite, fechaInicio: formCampana.fechaInicio ? new Date(formCampana.fechaInicio).toISOString() : null,
+      fechaFin: formCampana.fechaFin ? new Date(formCampana.fechaFin).toISOString() : null,
+      inversionManual: 0, utmSource: null, utmMedium: null, utmCampaign: null, utmTerm: null, utmContent: null,
       usaGrupoControl: false,
     }
   }
@@ -128,20 +131,6 @@ export default function GrowthAssetsPanel(props: Props) {
     const payload = payloadCampana(); if (!payload) return
     setSaving(true); setError('')
     try {
-      const receta = RECETAS.find((item) => item.codigo === payload.recetaCodigo)
-      if (receta?.descuentoPorcentaje && !payload.codigoDescuentoId) {
-        const codigo = `CAMP-${formCampana.slug}-${receta.descuentoPorcentaje}`.toUpperCase().slice(0, 50)
-        const existente = cupones.find((item) => item.codigo === codigo && item.activo)
-        if (existente) payload.codigoDescuentoId = existente.id
-        else {
-          const creado = await codigosDescuentoApi.create(token, {
-            codigo, tipo: 'porcentaje', valor: String(receta.descuentoPorcentaje), limiteUsos: null,
-            montoMinimo: '0', fechaInicio: new Date().toISOString(), fechaFin: null,
-          }) as { data?: CodigoDescuentoGrowth }
-          if (!creado.data) throw new Error('No se pudo crear el beneficio de la receta.')
-          payload.codigoDescuentoId = creado.data.id
-        }
-      }
       const respuesta = campanaEditando
         ? await crecimientoApi.actualizarCampana(token, campanaEditando.id, ((entrada) => {
           const edicion = { ...entrada }
@@ -218,7 +207,7 @@ export default function GrowthAssetsPanel(props: Props) {
 
     <section className={`${props.mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[620px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
       {loadingDetalle ? <LoadingDetail /> : tab === 'campanas' && campanaSeleccionada != null && resultadoCampana
-        ? <ScrollArea className="min-h-0 flex-1"><div className="p-4"><CampaignDetail organic={campanaSeleccionada === 'organico'} campana={campanaActual} resultado={resultadoCampana} onCopy={() => campanaActual && void copiarCampana(campanaActual)} onEdit={() => campanaActual && abrirCampana(campanaActual)} onToggle={() => campanaActual && void toggleCampana(campanaActual)} onDelete={() => campanaActual && void borrarCampana(campanaActual)} /></div></ScrollArea>
+        ? <ScrollArea className="min-h-0 flex-1"><div className="p-4"><CampaignDetail organic={campanaSeleccionada === 'organico'} campana={campanaActual} producto={props.productos.find((item) => item.id === campanaActual?.productoId) ?? null} resultado={resultadoCampana} onCopy={() => campanaActual && void copiarCampana(campanaActual)} onEdit={() => campanaActual && abrirCampana(campanaActual)} onToggle={() => campanaActual && void toggleCampana(campanaActual)} onDelete={() => campanaActual && void borrarCampana(campanaActual)} /></div></ScrollArea>
         : tab === 'cupones' && cuponActual && resultadoCupon
           ? <ScrollArea className="min-h-0 flex-1"><div className="p-4"><CouponDetail cupon={cuponActual} resultado={resultadoCupon} onEdit={() => abrirCupon(cuponActual)} onToggle={() => void toggleCupon(cuponActual)} onDelete={() => void borrarCupon(cuponActual)} /></div></ScrollArea>
           : <EmptySelection tab={tab} />}
@@ -228,7 +217,7 @@ export default function GrowthAssetsPanel(props: Props) {
       <AssociationsPanel tab={tab} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} clientes={props.clientes} sucursales={props.sucursales} filtros={filtros} resultadoCupon={resultadoCupon} loading={loadingDetalle} onSelectClient={props.onSelectClient} />
     </section>
 
-    <CampanaDialog open={campanaDialog} onOpenChange={setCampanaDialog} editando={campanaEditando} form={formCampana} setForm={setFormCampana} productos={props.productos} cupones={cupones} error={error} saving={saving} onSave={() => void guardarCampana()} username={props.username} />
+    <CampanaDialog open={campanaDialog} onOpenChange={setCampanaDialog} editando={campanaEditando} form={formCampana} setForm={setFormCampana} productos={props.productos} error={error} saving={saving} onSave={() => void guardarCampana()} username={props.username} />
     <CuponDialog open={cuponDialog} onOpenChange={setCuponDialog} editando={cuponEditando} form={formCupon} setForm={setFormCupon} error={error} saving={saving} onSave={() => void guardarCupon()} />
   </div>
 }
@@ -300,13 +289,13 @@ const inicialesAsociacion = (nombre: string) => nombre.trim().split(/\s+/).slice
 function EmptyAssociations() { return <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><Users className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Actividad asociada</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Al seleccionar un elemento vas a ver acá sus clientes y pedidos.</p></div> }
 function AssociatedOrder({ pedido, cliente, sucursal }: { pedido: { id: number; createdAt: string; total: number | string; sucursalId?: number | null }; cliente?: string; sucursal?: string }) { return <div className="rounded-xl bg-white p-3 dark:bg-muted/20"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold">Pedido #{pedido.id}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente ?? 'Cliente sin identificar'}{sucursal ? ` · ${sucursal}` : ''}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{formatDate(pedido.createdAt)}</p></div><span className="shrink-0 text-xs font-semibold">{formatCurrency(pedido.total)}</span></div></div> }
 
-function CampaignDetail({ organic, campana, resultado, onCopy, onEdit, onToggle, onDelete }: { organic: boolean; campana: CampanaCrecimiento | null; resultado: ResultadoCampana; onCopy: () => void; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
+function CampaignDetail({ organic, campana, producto, resultado, onCopy, onEdit, onToggle, onDelete }: { organic: boolean; campana: CampanaCrecimiento | null; producto: ProductoGrowth | null; resultado: ResultadoCampana; onCopy: () => void; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
   const m = resultado.metricas
   return <div className="space-y-4">
     <div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold">{organic ? 'Orgánico · sin campaña' : campana?.nombre}</h3>{organic && <Badge className="bg-sky-600 hover:bg-sky-600">Vista automática</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{organic ? 'Personas que llegaron directamente a la tienda, sin Smart Link ni receta atribuible.' : `${campana?.tipo === 'adquisicion' ? 'Adquisición' : 'Recompra'} · ${campana?.estado}`}</p></div>
     <div className="grid grid-cols-2 gap-2"><Metric label="Ventas cobradas" value={formatCurrency(m.ventas)} /><Metric label="Pedidos" value={m.pedidos} /><Metric label="Clientes nuevos" value={m.clientesNuevos} /><Metric label="Conversión" value={`${m.conversion}%`} /><Metric label="Sesiones" value={m.sesiones} /><Metric label="Ticket" value={formatCurrency(m.ticketPromedio)} /></div>
-    <div className="rounded-lg bg-muted/40 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Embudo</p><div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs"><span>Vistas de producto</span><strong className="text-right">{resultado.funnel.product_view}</strong><span>Agregaron al carrito</span><strong className="text-right">{resultado.funnel.add_to_cart}</strong><span>Iniciaron checkout</span><strong className="text-right">{resultado.funnel.checkout_start}</strong><span>Compraron</span><strong className="text-right">{resultado.funnel.purchase}</strong></div></div>
-    {!organic && campana && <><div className="rounded-lg bg-muted/50 p-3 text-xs"><p><strong>Destino:</strong> {campana.destinoTipo}</p><p className="mt-1"><strong>Receta:</strong> {campana.recetaCodigo ? RECETAS.find((r) => r.codigo === campana.recetaCodigo)?.nombre : 'Audiencia abierta'}</p><p className="mt-1"><strong>Inversión:</strong> {formatCurrency(campana.inversionManual)}</p><p className="mt-1 break-all"><strong>UTM:</strong> {[campana.utmSource, campana.utmMedium, campana.utmCampaign].filter(Boolean).join(' · ') || 'Sin parámetros'}</p></div><div className="grid grid-cols-2 gap-2"><Button size="sm" variant="outline" onClick={onCopy}><Copy className="mr-1.5 h-3.5 w-3.5" />Copiar link</Button><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1.5 h-3.5 w-3.5" />Editar</Button><Button size="sm" variant="outline" onClick={onToggle}>{campana.estado === 'activa' ? <PowerOff className="mr-1.5 h-3.5 w-3.5" /> : <Power className="mr-1.5 h-3.5 w-3.5" />}{campana.estado === 'activa' ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Eliminar</Button></div></>}
+    <div className="rounded-lg bg-muted/40 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Embudo real</p><div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs"><span>{organic ? 'Sesiones directas' : 'Visitas totales al link'}</span><strong className="text-right">{organic ? resultado.funnel.session_start : (campana?.visitas ?? resultado.funnel.session_start)}</strong><span>Agregaron al carrito</span><strong className="text-right">{resultado.funnel.add_to_cart}</strong><span>Iniciaron checkout</span><strong className="text-right">{resultado.funnel.checkout_start}</strong><span>Compraron</span><strong className="text-right">{resultado.funnel.purchase}</strong><span>Sumaron otros productos</span><strong className="text-right">{resultado.funnel.add_other_product ?? 0}</strong></div></div>
+    {!organic && campana && <><div className="rounded-lg bg-muted/50 p-3 text-xs"><p><strong>Producto:</strong> {producto?.nombre ?? `#${campana.productoId}`}</p><p className="mt-1"><strong>Oferta:</strong> {campana.descuentoProductoPorcentaje > 0 ? `${campana.descuentoProductoPorcentaje}% OFF sólo en este producto` : 'Producto destacado sin descuento'}</p><p className="mt-1"><strong>Cupo:</strong> {campana.limiteUsos == null ? 'Sin límite' : `${campana.usosActuales}/${campana.limiteUsos} compras`}</p><p className="mt-1"><strong>Vigencia:</strong> {campana.fechaInicio ? formatDate(campana.fechaInicio) : 'Desde ahora'} — {campana.fechaFin ? formatDate(campana.fechaFin) : 'Sin vencimiento'}</p></div><div className="grid grid-cols-2 gap-2"><Button size="sm" variant="outline" onClick={onCopy}><Copy className="mr-1.5 h-3.5 w-3.5" />Copiar link</Button><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1.5 h-3.5 w-3.5" />Editar</Button><Button size="sm" variant="outline" onClick={onToggle}>{campana.estado === 'activa' ? <PowerOff className="mr-1.5 h-3.5 w-3.5" /> : <Power className="mr-1.5 h-3.5 w-3.5" />}{campana.estado === 'activa' ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Eliminar</Button></div></>}
   </div>
 }
 
@@ -315,12 +304,21 @@ function CouponDetail({ cupon, resultado, onEdit, onToggle, onDelete }: { cupon:
   return <div className="space-y-4"><div className="flex items-start justify-between gap-2"><div><h3 className="text-lg font-semibold">{cupon.codigo}</h3><p className="mt-1 text-xs text-muted-foreground">{cupon.tipo === 'porcentaje' ? `${Number(cupon.valor)}% OFF` : `${formatCurrency(cupon.valor)} OFF`} · {cupon.activo ? 'Activo' : 'Inactivo'}</p></div><Badge variant="outline">{cupon.limiteUsos == null ? 'Sin límite' : `${cupon.usosActuales}/${cupon.limiteUsos}`}</Badge></div><div className="grid grid-cols-2 gap-2"><Metric label="Facturación cobrada" value={formatCurrency(m.facturacionCobrada)} /><Metric label="Pesos descontados" value={formatCurrency(m.montoDescontado)} /><Metric label="Usos cobrados" value={m.usos} /><Metric label="Clientes" value={m.clientes} /><Metric label="Venta antes del descuento" value={formatCurrency(m.ventasAntesDescuento)} /><Metric label="Ticket" value={formatCurrency(m.ticketPromedio)} /></div><div className="rounded-xl bg-muted/40 p-4 text-xs"><p><strong>Monto mínimo:</strong> {formatCurrency(cupon.montoMinimo)}</p><p className="mt-2"><strong>Vigencia:</strong> {cupon.fechaInicio ? formatDate(cupon.fechaInicio) : 'Sin inicio'} — {cupon.fechaFin ? formatDate(cupon.fechaFin) : 'Sin vencimiento'}</p><p className="mt-2"><strong>Creado:</strong> {formatDate(cupon.createdAt)}</p></div><div className="grid grid-cols-3 gap-2"><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1 h-3.5 w-3.5" />Editar</Button><Button size="sm" variant="outline" onClick={onToggle}>{cupon.activo ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="mr-1 h-3.5 w-3.5" />Eliminar</Button></div></div>
 }
 
-function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos, cupones, error, saving, onSave, username }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CampanaCrecimiento | null; form: FormCampana; setForm: React.Dispatch<React.SetStateAction<FormCampana>>; productos: ProductoGrowth[]; cupones: CodigoDescuentoGrowth[]; error: string; saving: boolean; onSave: () => void; username?: string | null }) {
+function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos, error, saving, onSave, username }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CampanaCrecimiento | null; form: FormCampana; setForm: React.Dispatch<React.SetStateAction<FormCampana>>; productos: ProductoGrowth[]; error: string; saving: boolean; onSave: () => void; username?: string | null }) {
   const set = <K extends keyof FormCampana>(key: K, value: FormCampana[K]) => setForm((actual) => ({ ...actual, [key]: value }))
+  // Recetas, audiencias, carrito precargado, cupones, inversión, UTMs y grupo
+  // de control quedan fuera de la UI hasta que cada flujo se reincorpore con
+  // pruebas. El backend conserva esos campos por retrocompatibilidad.
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña de producto' : 'Nueva campaña de producto'}</DialogTitle><DialogDescription>Elegí un producto y Piru crea un link propio. Quien entre verá esa oferta destacada dentro del menú, podrá sumar otros productos y el pedido quedará asociado a esta campaña.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre de la campaña</Label><Input placeholder="Promo Smash" value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><FieldSelect label="Producto en oferta" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[["ninguno", "Elegí un producto"], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} /><div className="space-y-1.5"><Label>Descuento en ese producto</Label><div className="relative"><Input type="number" min="0" max="100" placeholder="0" value={form.descuentoProductoPorcentaje} onChange={(e) => set('descuentoProductoPorcentaje', e.target.value)} /><span className="pointer-events-none absolute right-3 top-2.5 text-sm text-muted-foreground">%</span></div><p className="text-[11px] text-muted-foreground">Opcional. No descuenta los demás productos.</p></div><div className="space-y-1.5"><Label>Cupo de compras</Label><Input type="number" min="1" placeholder="Sin límite" value={form.limiteUsos} onChange={(e) => set('limiteUsos', e.target.value)} /></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[["activa", "Activa"], ["borrador", "Borrador"], ["inactiva", "Inactiva"]]} /><div className="space-y-1.5"><Label>Disponible desde</Label><Input type="datetime-local" value={form.fechaInicio} onChange={(e) => set('fechaInicio', e.target.value)} /></div><div className="space-y-1.5"><Label>Disponible hasta</Label><Input type="datetime-local" value={form.fechaFin} onChange={(e) => set('fechaFin', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Link de campaña</Label><Input disabled value={`my.piru.app/${username ?? 'tu-local'}/c/${form.slug || 'promo'}`} /><p className="text-[11px] text-muted-foreground">La dirección queda fija después de crearla para no perder la medición.</p></div>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
+
+  /* Implementación anterior pausada: se conserva en el archivo para reactivar
+     capacidades de a una, sin volver a inventar su composición visual.
   const recetaElegida = RECETAS.find((item) => item.codigo === form.recetaCodigo)
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>El Smart Link abre el destino elegido, conserva la atribución y aplica el beneficio en el checkout.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><div className="space-y-1.5"><Label>Dirección del link</Label><Input disabled={Boolean(editando)} value={form.slug} onChange={(e) => set('slug', slug(e.target.value))} /><p className="text-[11px] text-muted-foreground">my.piru.app/{username ?? 'tu-local'}/c/{form.slug || 'campana'}</p></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[['borrador', 'Borrador'], ['activa', 'Activa'], ['inactiva', 'Inactiva']]} /><FieldSelect label="Tipo" value={form.tipo} onValueChange={(v) => set('tipo', v as FormCampana['tipo'])} options={[['adquisicion', 'Adquisición'], ['recompra', 'Recompra']]} /><FieldSelect label="Receta" value={form.recetaCodigo || 'ninguna'} onValueChange={(v) => set('recetaCodigo', v === 'ninguna' ? '' : v)} options={[['ninguna', 'Sin receta'], ...RECETAS.map((r) => [r.codigo, `${r.nombre}${r.descuentoPorcentaje ? ` · ${r.descuentoPorcentaje}% OFF` : ''}`] as [string, string])]} /><FieldSelect label="Al abrir el link" value={form.destinoTipo} onValueChange={(v) => set('destinoTipo', v as FormCampana['destinoTipo'])} options={[['tienda', 'Mostrar la tienda'], ['producto', 'Abrir un producto'], ['carrito', 'Dejar un carrito listo']]} />{form.destinoTipo === 'producto' && <FieldSelect label="Producto" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[['ninguno', 'Elegí un producto'], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} />}{form.destinoTipo === 'carrito' && <CarritoBuilder productos={productos} value={form.carritoRep} onChange={(value) => set('carritoRep', value)} />}<FieldSelect label="Cupón" value={form.codigoDescuentoId || 'ninguno'} onValueChange={(v) => set('codigoDescuentoId', v === 'ninguno' ? '' : v)} options={[['ninguno', recetaElegida?.descuentoPorcentaje ? `Crear automáticamente ${recetaElegida.descuentoPorcentaje}% OFF` : 'Sin cupón'], ...cupones.filter((c) => c.activo).map((c) => [String(c.id), `${c.codigo} · ${c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : formatCurrency(c.valor)}`] as [string, string])]} /><div className="space-y-1.5"><Label>Inversión manual</Label><Input type="number" min="0" value={form.inversionManual} onChange={(e) => set('inversionManual', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>UTM avanzadas</Label><div className="grid gap-2 sm:grid-cols-2"><Input placeholder="utm_source" value={form.utmSource} onChange={(e) => set('utmSource', e.target.value)} /><Input placeholder="utm_medium" value={form.utmMedium} onChange={(e) => set('utmMedium', e.target.value)} /><Input placeholder="utm_campaign" value={form.utmCampaign} onChange={(e) => set('utmCampaign', e.target.value)} /><Input placeholder="utm_content" value={form.utmContent} onChange={(e) => set('utmContent', e.target.value)} /></div><Input className="mt-2" placeholder="utm_term" value={form.utmTerm} onChange={(e) => set('utmTerm', e.target.value)} /></div><p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground sm:col-span-2">Las campañas por link miden atribución real. El grupo de control no se ofrece acá porque una audiencia pública no es una cohorte cerrada comparable.</p>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
+  */
 }
 
+/* Builder anterior del destino carrito, pausado junto con recetas y audiencias.
 function CarritoBuilder({ productos, value, onChange }: { productos: ProductoGrowth[]; value: string; onChange: (value: string) => void }) {
   const cantidades = new Map(value.split('-').flatMap((parte) => {
     const match = /^(\d+)x(\d+)$/.exec(parte)
@@ -333,6 +331,7 @@ function CarritoBuilder({ productos, value, onChange }: { productos: ProductoGro
   }
   return <div className="space-y-2 sm:col-span-2"><Label>Productos que encontrará en el carrito</Label><div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border bg-background p-2">{productos.map((producto) => { const cantidad = cantidades.get(producto.id) ?? 0; return <div key={producto.id} className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/50"><button type="button" className={`h-5 w-5 rounded border text-xs ${cantidad ? 'border-primary bg-primary text-primary-foreground' : 'border-input'}`} onClick={() => actualizar(producto.id, cantidad ? 0 : 1)}>{cantidad ? '✓' : ''}</button><span className="min-w-0 flex-1 truncate text-sm">{producto.nombre}</span>{cantidad > 0 && <Input aria-label={`Cantidad de ${producto.nombre}`} type="number" min="1" max="99" value={cantidad} onChange={(event) => actualizar(producto.id, Number(event.target.value))} className="h-8 w-20" />}</div>})}</div><p className="text-[11px] text-muted-foreground">El cliente verá estos productos con sus nombres y cantidades; Piru arma internamente el link.</p></div>
 }
+*/
 
 function CuponDialog({ open, onOpenChange, editando, form, setForm, error, saving, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CodigoDescuentoGrowth | null; form: FormCupon; setForm: React.Dispatch<React.SetStateAction<FormCupon>>; error: string; saving: boolean; onSave: () => void }) {
   const set = <K extends keyof FormCupon>(key: K, value: FormCupon[K]) => setForm((actual) => ({ ...actual, [key]: value }))

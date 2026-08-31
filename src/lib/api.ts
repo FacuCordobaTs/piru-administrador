@@ -307,6 +307,12 @@ export interface CampanaCrecimiento {
   productoId: number | null
   carritoRep: string | null
   codigoDescuentoId: number | null
+  descuentoProductoPorcentaje: number
+  limiteUsos: number | null
+  usosActuales: number
+  fechaInicio: string | null
+  fechaFin: string | null
+  visitas: number
   utmSource: string | null
   utmMedium: string | null
   utmCampaign: string | null
@@ -354,7 +360,7 @@ export interface FiltrosCrecimiento { from?: string; to?: string; campaniaId?: n
 export interface ResumenCrecimiento {
   filtros: { from: string | null; to: string | null; campaniaId: number | null; sucursalId: number | null }
   metricas: Record<'ventas' | 'pedidos' | 'ticketPromedio' | 'clientesNuevos' | 'clientesRecurrentes' | 'sesiones' | 'conversion' | 'revenueAtribuido' | 'descuentos' | 'descuentosAtribuidos' | 'enlacesCreados' | 'contactos' | 'mensajesPagos' | 'costoMensajes' | 'inversionManual' | 'costoTotal' | 'retorno', number>
-  funnel: Record<'session_start' | 'product_view' | 'add_to_cart' | 'checkout_start' | 'purchase', number>
+  funnel: Record<'session_start' | 'product_view' | 'add_to_cart' | 'checkout_start' | 'purchase' | 'add_other_product', number>
   oportunidades: { porSegmento: Record<string, number>; porReceta: Record<string, number>; total: number }
   recompra: { pedidosAtribuidos: number; revenueAtribuido: number }
   incremental: { disponible: boolean; motivo?: string }
@@ -373,6 +379,7 @@ export interface CrearCampanaCrecimiento {
   estado?: CampanaCrecimiento['estado']; destinoTipo: DestinoCrecimiento['tipo']; productoId?: number | null
   carritoRep?: string | null; codigoDescuentoId?: number | null; utmSource?: string | null; utmMedium?: string | null
   utmCampaign?: string | null; utmTerm?: string | null; utmContent?: string | null; inversionManual?: number; usaGrupoControl?: boolean
+  descuentoProductoPorcentaje?: number; limiteUsos?: number | null; fechaInicio?: string | null; fechaFin?: string | null
 }
 type ActualizarCampanaCrecimiento = Partial<Omit<CrearCampanaCrecimiento, 'slug'>>
 
