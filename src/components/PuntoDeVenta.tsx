@@ -261,7 +261,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 ) {
     const token = useAuthStore((s) => s.token)
     // La impresión de comandas es local (Tauri invoke): funciona sin conexión.
-    const { printRaw } = usePrinter()
+    const { printRaw, transferenciaAlias } = usePrinter()
     const restauranteNombre = useAuthStore((s) => s.restaurante?.nombre) || 'Restaurante'
     const { productos } = useRestauranteStore()
     const cucuruConfigurado = useRestauranteStore((s) => s.restaurante?.cucuruConfigurado) ?? false
@@ -886,6 +886,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             deliveryFee: draft.deliveryFee,
             notas: draft.notas ? `SIN CONEXIÓN - ${draft.notas}` : 'SIN CONEXIÓN',
             metodoPago: draft.metodoPago,
+            transferenciaAlias,
             sucursalNombre: sucursalNombre || undefined,
             mesaNombre: draft.mesaNombre,
         }, itemsToPrint, restauranteNombre)

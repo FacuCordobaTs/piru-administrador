@@ -33,6 +33,8 @@ interface PedidoLike {
     deliveryFee?: number
     notas?: string | null
     metodoPago?: string | null
+    /** Alias de destino de la transferencia manual, resuelto para la sucursal del pedido. */
+    transferenciaAlias?: string | null
     /** Monto descontado por cupón (ya reflejado en total del pedido) */
     montoDescuento?: string | number | null
     /** Texto del cupón aplicado (ej. ALFAJOR10) */
@@ -94,6 +96,16 @@ const getItemPrice = (item: ItemPedidoLike): number => {
             : item.precioUnitario;
     }
     return 0;
+}
+
+/**
+ * Los pedidos anteriores a la normalización conservan `transferencia` como
+ * valor legacy. Se considera transferencia manual, pero nunca se confunde con
+ * las variantes automáticas de Cucuru o Talo.
+ */
+export const esTransferenciaManual = (metodoPago: string | null | undefined): boolean => {
+    const metodo = String(metodoPago || '').trim().toLowerCase()
+    return metodo.includes('manual_transfer') || metodo === 'transferencia'
 }
 
 export const parseAgregadosPedido = (raw: ItemPedidoLike['agregados']): Array<{ nombre: string; precio?: string | number }> => {
@@ -246,6 +258,15 @@ export const formatComanda = (
         commands.push(ESC + '!' + '\x08');
         commands.push(`PAGO: ${metodoFormateado}\n`);
         commands.push(ESC + '!' + '\x00');
+        // El alias sólo sirve para verificar una transferencia manual. No se
+        // imprime para Mercado Pago ni transferencias automáticas, cuyos datos
+        // de cobro pertenecen a la operación dinámica del proveedor.
+        const alias = pedido.transferenciaAlias?.trim()
+        if (esTransferenciaManual(pedido.metodoPago) && alias) {
+            commands.push(ESC + '!' + '\x08');
+            commands.push(`ALIAS: ${alias}\n`);
+            commands.push(ESC + '!' + '\x00');
+        }
         commands.push('--------------------------------\n');
     }
 

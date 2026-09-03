@@ -78,6 +78,7 @@ interface UnifiedPedido {
     items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
     sucursalId?: number | null; sucursalNombre?: string | null;
+    transferenciaAliasDestino?: string | null;
     demoraMinutos?: number | null; notificarWhatsapp?: boolean | null;
     horarioProgramado?: string | null; latitud?: string | null; longitud?: string | null;
     deliveryFee?: string | null; repartidorId?: number | null; repartidorNombre?: string | null;
@@ -1276,7 +1277,7 @@ const Dashboard = () => {
     // exclusivamente con su módulo y no depende de este alias legacy.
     const esPlanBasico = suscripcion?.planCodigo === 'basico'
 
-    const { printRaw, selectedPrinter, comandaGrandeMayusculas } = usePrinter()
+    const { printRaw, selectedPrinter, comandaGrandeMayusculas, transferenciaAlias } = usePrinter()
     const isDesktopViewport = useDesktopViewport()
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
     const initialLoadDoneRef = useRef(false)
@@ -1284,6 +1285,11 @@ const Dashboard = () => {
     // el refetch lleguen en un orden particular. El id queda pendiente hasta
     // que el auto-printer lo reclama (o detecta que lo reclamó otro equipo).
     const posOrdersPendingPrintRef = useRef<Set<number>>(new Set())
+    // El WS granular viene con la decisión autoritativa del backend. Es
+    // indispensable durante la carga inicial: sin esta marca, un pedido de
+    // efectivo/POS que llegue entre el primer fetch y el render se confunde
+    // con backlog y queda sin imprimir.
+    const realtimeOrdersPendingPrintRef = useRef<Set<number>>(new Set())
     // Los deltas agregados desde el POS a una mesa que ya tenía productos se
     // reservan para el botón "Imprimir nuevos productos". La marca se crea
     // antes del autosave para ganarle a una eventual actualización por WS.
@@ -1633,6 +1639,9 @@ const Dashboard = () => {
         ) {
             return
         }
+        if (lastUpdate.shouldPrint && lastUpdate.pedidoId) {
+            realtimeOrdersPendingPrintRef.current.add(lastUpdate.pedidoId)
+        }
         fetchPedidos(1, false)
         fetchPedidosMesaAbiertos()
     }, [lastUpdate, fetchPedidos, fetchPedidosMesaAbiertos, sucursalActivaId, prefsReady])
@@ -1685,6 +1694,7 @@ const Dashboard = () => {
             const prevData = processedOrdersRef.current.get(pedidoKey)
             const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
             const pendingFromPos = posOrdersPendingPrintRef.current.has(pedido.id)
+            const pendingFromRealtime = realtimeOrdersPendingPrintRef.current.has(pedido.id)
             const pendingManualMesaPrint = pedido.tipo === 'mesa' && mesaOrdersPendingManualPrintRef.current.has(pedido.id)
 
             // Una mesa ya abierta no debe sacar una comanda automática por cada
@@ -1697,6 +1707,7 @@ const Dashboard = () => {
                 // autoimpresión, el nuevo delta pasa a gobernar: todo queda
                 // acumulado para una única impresión manual.
                 posOrdersPendingPrintRef.current.delete(pedido.id)
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 processedOrdersRef.current.set(pedidoKey, {
                     status: pedido.estado,
                     itemIds: new Set(pedido.items.map((item) => item.id)),
@@ -1708,6 +1719,7 @@ const Dashboard = () => {
             // Archivado → registrar y nunca imprimir
             if (pedido.estado === 'archived') {
                 posOrdersPendingPrintRef.current.delete(pedido.id)
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
@@ -1715,6 +1727,7 @@ const Dashboard = () => {
             // Ya impreso en la DB → registrar y saltar
             if (pedido.impreso) {
                 posOrdersPendingPrintRef.current.delete(pedido.id)
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
@@ -1722,7 +1735,7 @@ const Dashboard = () => {
             // Un alta confirmada por el POS es evidencia explícita de que el
             // pedido es nuevo, incluso si un refetch del WebSocket lo alcanzó
             // antes y ya lo registró en processedOrdersRef.
-            let shouldPrint = pendingFromPos && (!deferUntilPaid || !!currentPagado)
+            let shouldPrint = (pendingFromPos || pendingFromRealtime) && (!deferUntilPaid || !!currentPagado)
 
             if (!shouldPrint && !prevData) {
                 // Primera vez que vemos este pedido
@@ -1759,6 +1772,7 @@ const Dashboard = () => {
                     .then((res: any) => {
                         if (!res?.claimed) {
                             posOrdersPendingPrintRef.current.delete(pedido.id)
+                            realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                             return
                         }
 
@@ -1780,6 +1794,7 @@ const Dashboard = () => {
                                 direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
                                 tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                                 metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
+                                transferenciaAlias: pedido.transferenciaAliasDestino ?? transferenciaAlias,
                                 horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
                                 montoDescuento: pedido.montoDescuento,
                                 codigoDescuentoCodigo: pedido.codigoDescuentoCodigo,
@@ -1796,6 +1811,7 @@ const Dashboard = () => {
                         }
 
                         posOrdersPendingPrintRef.current.delete(pedido.id)
+                        realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                         setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
                     })
                     .catch(console.error)
@@ -1807,7 +1823,7 @@ const Dashboard = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas])
+    }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas, transferenciaAlias])
 
     // ─────────────────────────────────────────────
     // ACCIONES DE PEDIDO
@@ -3413,6 +3429,7 @@ const Dashboard = () => {
                                                             deliveryFee,
                                                             notas: selectedUnifiedPedido.notas,
                                                             metodoPago: selectedUnifiedPedido.metodoPago,
+                                                            transferenciaAlias: selectedUnifiedPedido.transferenciaAliasDestino ?? transferenciaAlias,
                                                             montoDescuento: selectedUnifiedPedido.montoDescuento,
                                                             codigoDescuentoCodigo: selectedUnifiedPedido.codigoDescuentoCodigo,
                                                             sucursalNombre: selectedUnifiedPedido.sucursalNombre,

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useModuloActivo } from '@/store/modulosStore';
+import { useRestauranteStore } from '@/store/restauranteStore';
 import { COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY, readComandaGrandeMayusculas } from '@/utils/printerUtils';
 
 const STORAGE_KEY = 'tauri_printer_name';
@@ -13,12 +14,15 @@ interface PrinterContextType {
     setSelectedPrinter: (name: string) => void;
     comandaGrandeMayusculas: boolean;
     setComandaGrandeMayusculas: (enabled: boolean) => void;
+    /** Alias general del local, usado cuando el pedido no tiene uno propio de sucursal. */
+    transferenciaAlias: string | null;
 }
 
 const PrinterContext = createContext<PrinterContextType | undefined>(undefined);
 
 export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const impresionComandasActiva = useModuloActivo('impresion_comandas');
+    const transferenciaAlias = useRestauranteStore((state) => state.restaurante?.transferenciaAlias ?? null);
     const [printers, setPrinters] = useState<string[]>([]);
     const [comandaGrandeMayusculas, setComandaGrandeMayusculasState] = useState(readComandaGrandeMayusculas);
 
@@ -85,6 +89,7 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setSelectedPrinter,
             comandaGrandeMayusculas,
             setComandaGrandeMayusculas,
+            transferenciaAlias,
         }}>
             {children}
         </PrinterContext.Provider>

@@ -24,6 +24,7 @@ interface UnifiedPedido {
     items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
     sucursalId?: number | null; sucursalNombre?: string | null;
+    transferenciaAliasDestino?: string | null;
     horarioProgramado?: string | null; deliveryFee?: string | null; grupal?: boolean | null;
     mesaNombre?: string | null;
 }
@@ -87,7 +88,7 @@ const GlobalAutoPrinter = () => {
     const restaurante = useAuthStore((state) => state.restaurante)
     const { restaurante: restauranteStore, productos: allProductos } = useRestauranteStore()
 
-    const { printRaw, selectedPrinter, comandaGrandeMayusculas } = usePrinter()
+    const { printRaw, selectedPrinter, comandaGrandeMayusculas, transferenciaAlias } = usePrinter()
     const { lastUpdate } = useAdminContext()
 
     const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
@@ -219,6 +220,7 @@ const GlobalAutoPrinter = () => {
                                 direccion: pedido.tipo === 'delivery' ? (pedido as any).direccion : undefined,
                                 tipo: pedido.tipo, total: pedido.total, deliveryFee, notas: pedido.notas,
                                 metodoPago: pedido.metodoPago, sucursalNombre: pedido.sucursalNombre,
+                                transferenciaAlias: pedido.transferenciaAliasDestino ?? transferenciaAlias,
                                 horarioProgramado: pedido.horarioProgramado, grupal: pedido.grupal, mesaNombre: pedido.mesaNombre,
                                 montoDescuento: pedido.montoDescuento,
                                 codigoDescuentoCodigo: pedido.codigoDescuentoCodigo,
@@ -243,7 +245,7 @@ const GlobalAutoPrinter = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, isDashboardRoute, comandaGrandeMayusculas])
+    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, isDashboardRoute, comandaGrandeMayusculas, transferenciaAlias])
 
     return null
 }

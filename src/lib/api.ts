@@ -359,7 +359,7 @@ export interface EnlaceCrecimiento {
 export interface FiltrosCrecimiento { from?: string; to?: string; campaniaId?: number; sucursalId?: number }
 export interface ResumenCrecimiento {
   filtros: { from: string | null; to: string | null; campaniaId: number | null; sucursalId: number | null }
-  metricas: Record<'ventas' | 'pedidos' | 'ticketPromedio' | 'clientesNuevos' | 'clientesRecurrentes' | 'sesiones' | 'conversion' | 'revenueAtribuido' | 'descuentos' | 'descuentosAtribuidos' | 'enlacesCreados' | 'contactos' | 'mensajesPagos' | 'costoMensajes' | 'inversionManual' | 'costoTotal' | 'retorno', number>
+  metricas: Record<'ventas' | 'pedidos' | 'ticketPromedio' | 'clientesNuevos' | 'clientesRecurrentes' | 'sesiones' | 'conversion' | 'revenueAtribuido' | 'descuentos' | 'descuentosAtribuidos' | 'enlacesCreados' | 'contactos' | 'mensajesPagos' | 'costoMensajes' | 'inversionManual' | 'costoTotal' | 'retorno', number> & { visitas?: number }
   funnel: Record<'session_start' | 'product_view' | 'add_to_cart' | 'checkout_start' | 'purchase' | 'add_other_product', number>
   oportunidades: { porSegmento: Record<string, number>; porReceta: Record<string, number>; total: number }
   recompra: { pedidosAtribuidos: number; revenueAtribuido: number }

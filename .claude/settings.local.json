@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun add *)",
+      "Bash(bun run *)",
+      "Bash(curl -d \"Tarea Terminada\" ntfy.sh/piru_claude_alerts)",
+      "Bash(notify-send \"Claude Code\" \"Tarea Terminada\")"
+    ]
+  }
+}

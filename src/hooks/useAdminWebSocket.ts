@@ -84,6 +84,11 @@ export interface AdminUpdateEvent {
   timestamp: number
   /** Present when server knows which sucursal the event belongs to (omit = refetch siempre) */
   sucursalId?: number | null
+  /** Datos granulares del pedido; los admins anteriores sólo reciben ADMIN_UPDATE. */
+  pedidoId?: number
+  reason?: string
+  /** El backend ya resolvió que este evento debe llegar a cocina. */
+  shouldPrint?: boolean
 }
 
 export interface UseAdminWebSocketReturn {
@@ -323,6 +328,28 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
                     data.payload && 'sucursalId' in data.payload
                       ? data.payload.sucursalId
                       : undefined,
+                })
+                break
+
+              // El evento granular conserva la decisión autoritativa del
+              // backend. ADMIN_UPDATE se mantiene arriba por compatibilidad,
+              // pero no alcanza para distinguir un refresh de un pedido que
+              // acaba de entrar y debe imprimirse incluso durante el arranque.
+              case 'ADMIN_ORDER_EVENT':
+                setLastUpdate({
+                  type: data.payload.tipo,
+                  timestamp: Date.now(),
+                  sucursalId:
+                    data.payload && 'sucursalId' in data.payload
+                      ? data.payload.sucursalId
+                      : undefined,
+                  pedidoId: Number.isInteger(data.payload?.pedidoId)
+                    ? data.payload.pedidoId
+                    : undefined,
+                  reason: typeof data.payload?.reason === 'string'
+                    ? data.payload.reason
+                    : undefined,
+                  shouldPrint: data.payload?.shouldPrint === true,
                 })
                 break
 

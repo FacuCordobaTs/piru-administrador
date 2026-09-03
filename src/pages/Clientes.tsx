@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
-import { ChevronRight, CircleDollarSign, Crown, DollarSign, Gift, Globe2, Megaphone, Package, Phone, ReceiptText, Search, ShoppingBag, Sparkles, Store, Tag, Ticket, Timer, Trash2, TrendingUp, User, Users, WandSparkles, X } from 'lucide-react'
+import { ChevronRight, CircleDollarSign, Crown, DollarSign, Gift, Globe2, Package, Phone, ReceiptText, Search, ShoppingBag, Sparkles, Store, Tag, Ticket, Timer, Trash2, TrendingUp, User, Users, WandSparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import DeepLinkDialog from './clientes/DeepLinkDialog'
 import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
@@ -161,7 +161,7 @@ export default function Clientes() {
   return <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#FFFBF0] dark:bg-background xl:overflow-hidden">
     <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
       <div className="mx-auto max-w-[1680px]">
-        <div className="mb-4 flex flex-col items-center gap-3"><div className="text-center"><h1 className="text-2xl font-semibold tracking-tight">Clientes</h1><p className="mt-0.5 text-sm text-muted-foreground">Conocé tu base, medí campañas y seguí tus cupones.</p></div><WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} /></div>
+        <div className="mb-4 flex flex-col items-center gap-3"><div className="text-center"><h1 className="text-2xl font-semibold tracking-tight">Clientes</h1><p className="mt-0.5 text-sm text-muted-foreground">Conocé tu base, medí el recorrido de cada promoción y seguí tus cupones.</p></div><WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} /></div>
         <div className="relative"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 rounded-xl bg-background pl-11 text-sm shadow-sm" placeholder={workspaceTab === 'clientes' ? 'Buscar clientes, teléfonos, campañas o cupones…' : workspaceTab === 'campanas' ? 'Buscar campañas…' : 'Buscar cupones…'} /></div>
         {workspaceTab === 'clientes' && <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7"><FilterPill active={segmento === 'todos'} onClick={() => setSegmento('todos')} label="Todos" count={clientes.length} />{SEGMENTOS.map((item) => <FilterPill key={item.value} active={segmento === item.value} onClick={() => setSegmento(segmento === item.value ? 'todos' : item.value)} label={item.label} count={conteoSegmentos[item.value]} dot={item.dot} />)}</div>}
         {sucursales.length > 1 && <div className="mt-2 flex flex-wrap gap-2"><FilterPill active={!sucursalId} onClick={() => setSucursalId(undefined)} label="Todas las sucursales" />{sucursales.map((sucursal) => <FilterPill key={sucursal.id} active={sucursalId === sucursal.id} onClick={() => setSucursalId(sucursalId === sucursal.id ? undefined : sucursal.id)} label={sucursal.nombre} icon={<Store className="h-3 w-3" />} />)}</div>}
@@ -209,7 +209,7 @@ function MobileTab({ active, onClick, children }: { active: boolean; onClick: ()
 function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (value: WorkspaceTab) => void }) {
   const tabs: Array<{ value: WorkspaceTab; label: string; icon: React.ReactNode }> = [
     { value: 'clientes', label: 'Clientes', icon: <Users className="h-4 w-4" /> },
-    { value: 'campanas', label: 'Campañas', icon: <Megaphone className="h-4 w-4" /> },
+    { value: 'campanas', label: 'Crecimiento', icon: <TrendingUp className="h-4 w-4" /> },
     { value: 'cupones', label: 'Cupones', icon: <Ticket className="h-4 w-4" /> },
   ]
   return <nav className="flex items-center gap-2" aria-label="Secciones de clientes">{tabs.map((tab) => <button key={tab.value} type="button" onClick={() => onChange(tab.value)} className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${value === tab.value ? 'bg-foreground text-background shadow-sm' : 'bg-muted/70 text-muted-foreground hover:text-foreground'}`}>{tab.icon}{tab.label}</button>)}</nav>
