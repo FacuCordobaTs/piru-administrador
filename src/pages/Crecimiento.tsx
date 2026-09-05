@@ -287,7 +287,7 @@ function FiltrosResultados({ token, filtros, onChange }: { token: string; filtro
 }
 
 function Funnel({ funnel }: { funnel: ResumenCrecimiento['funnel'] }) {
-  const pasos: Array<[keyof ResumenCrecimiento['funnel'], string]> = [['session_start', 'Sesiones'], ['product_view', 'Productos vistos'], ['add_to_cart', 'Agregaron al carrito'], ['checkout_start', 'Iniciaron checkout'], ['purchase', 'Compras con sesión']]
+  const pasos: Array<[keyof ResumenCrecimiento['funnel'], string]> = [['session_start', 'Sesiones'], ['product_view', 'Productos vistos'], ['purchase', 'Compras con sesión']]
   const maximo = Math.max(1, ...pasos.map(([clave]) => funnel[clave]))
   return <section className="rounded-xl border bg-white p-5 dark:bg-muted/20"><h3 className="font-semibold">Embudo medible</h3><p className="mt-1 text-sm text-muted-foreground">Las ventas de POS cuentan en ventas, pero no inventan pasos del embudo.</p><div className="mt-5 space-y-3">{pasos.map(([clave, etiqueta]) => <div key={clave}><div className="mb-1 flex justify-between text-sm"><span>{etiqueta}</span><span className="font-medium tabular-nums">{funnel[clave]}</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-brand" style={{ width: `${(funnel[clave] / maximo) * 100}%` }} /></div></div>)}</div></section>
 }
