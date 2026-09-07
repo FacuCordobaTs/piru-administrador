@@ -63,6 +63,13 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (!selectedPrinter) {
             throw new Error('No hay impresora seleccionada');
         }
+        if (data.length === 0) {
+            throw new Error('La comanda está vacía');
+        }
+        const invalidByteIndex = data.findIndex((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255);
+        if (invalidByteIndex !== -1) {
+            throw new Error(`La comanda contiene un byte inválido en la posición ${invalidByteIndex}`);
+        }
 
         try {
             await invoke('send_print_job', {
@@ -71,7 +78,8 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
             });
         } catch (error) {
             console.error('Error al imprimir:', error);
-            throw error;
+            const detail = error instanceof Error ? error.message : String(error);
+            throw new Error(`La impresora "${selectedPrinter}" rechazó el trabajo: ${detail}`);
         }
     }, [impresionComandasActiva, selectedPrinter]);
 

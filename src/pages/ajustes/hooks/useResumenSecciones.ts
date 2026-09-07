@@ -21,7 +21,7 @@ export interface ResumenSeccion {
   faltan: string[]
 }
 
-export function useResumenSecciones(): {
+export function useResumenSecciones(refreshKey?: string): {
   data: Record<string, ResumenSeccion>
   loading: boolean
 } {
@@ -71,13 +71,13 @@ export function useResumenSecciones(): {
         }
         setHorarios(agrupado)
       } else {
-        setHorarios({})
+        setHorarios(null)
       }
 
       setZonasCount(
         zRes.status === 'fulfilled' && (zRes.value as { success?: boolean; data?: unknown[] })?.success
           ? ((zRes.value as { data?: unknown[] }).data?.length ?? 0)
-          : 0
+          : null
       )
 
       if (wRes.status === 'fulfilled') {
@@ -97,7 +97,7 @@ export function useResumenSecciones(): {
       setStaffCount(
         staffRes.status === 'fulfilled'
           ? ((staffRes.value as { success?: boolean; data?: unknown[] })?.data?.length ?? 0)
-          : 0
+          : null
       )
 
       setLoading(false)
@@ -105,7 +105,7 @@ export function useResumenSecciones(): {
     return () => {
       cancel = true
     }
-  }, [])
+  }, [refreshKey])
 
   const data = useMemo<Record<string, ResumenSeccion>>(() => {
     const nombre = restaurante?.nombre?.trim()
@@ -136,15 +136,15 @@ export function useResumenSecciones(): {
     if (cucuruOk) pagosOnline.push('Cucuru')
     if (taloOk) pagosOnline.push('Talo')
     const pagosResumen = pagosOnline.length
-      ? `${pagosOnline.join(', ')} y efectivo`
-      : 'Solo cobrás en efectivo'
+      ? `${pagosOnline.join(', ')} conectado`
+      : 'Revisá tus medios de cobro'
     const pagosFaltan: string[] = []
     if (!cobroOnline) pagosFaltan.push('Sumá pagos online')
     if (waVencido) pagosFaltan.push('Reconectá tu WhatsApp')
     else if (!waConectado) pagosFaltan.push('Conectá tu WhatsApp')
 
     // ── Horarios ──
-    const horariosResumen = horarios ? resumirHorarios(horarios) : 'Cargando…'
+    const horariosResumen = horarios ? resumirHorarios(horarios) : loading ? 'Consultando horarios…' : 'No pudimos consultar los horarios'
     const horariosVacios = horarios != null && Object.keys(horarios).length === 0
     const horariosFaltan = horariosVacios ? ['Definí tus horarios de atención'] : []
 
@@ -160,7 +160,7 @@ export function useResumenSecciones(): {
       deliveryOn && zonasCount != null && zonasCount > 0
         ? `${tipos} · ${zonasCount} ${zonasCount === 1 ? 'zona' : 'zonas'}`
         : tipos
-    const entregasFaltan = deliveryOn && zonasCount === 0 ? ['Dibujá tus zonas de delivery'] : []
+    const entregasFaltan = deliveryOn && !restaurante?.direccionSoloTexto && zonasCount === 0 ? ['Dibujá tus zonas de delivery'] : []
 
     // ── Experiencia ──
     const expParts: string[] = []
@@ -215,6 +215,7 @@ export function useResumenSecciones(): {
     facturacionOk,
     staffCount,
     selectedPrinter,
+    loading,
   ])
 
   return { data, loading }

@@ -89,7 +89,20 @@ export interface CodigoDescuentoGrowth {
 }
 
 export interface SucursalGrowth { id: number; nombre: string; activo?: boolean }
-export interface ProductoGrowth { id: number; nombre: string }
+export interface ProductoGrowth {
+  id: number
+  nombre: string
+  activo?: boolean
+  variantes?: Array<{ id: number; nombre: string; precio: string }>
+  variantesSecundarias?: Array<{ id: number; nombre: string; precio: string }>
+  agregados?: Array<{ id: number; nombre: string; precio: string; grupo?: number }>
+  agregadosPrimarios?: Array<{ id: number; nombre: string; precio: string; grupo?: number }>
+  agregadosSecundarios?: Array<{ id: number; nombre: string; precio: string; grupo?: number }>
+  tituloVariantesPrimarias?: string | null
+  tituloVariantesSecundarias?: string | null
+  tituloExtrasPrimarios?: string | null
+  tituloExtrasSecundarios?: string | null
+}
 
 export type FiltroCampana = number | 'organico' | null
 

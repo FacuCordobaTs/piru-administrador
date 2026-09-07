@@ -80,7 +80,7 @@ async function fetchApi<T>(
 
     if (!response.ok) {
       // Si es un error 401 (Unauthorized), hacer logout automático
-      if (response.status === 401) {
+      if (response.status === 401 && new Headers(options.headers).get('Authorization') === `Bearer ${useAuthStore.getState().token}`) {
         handleUnauthorized()
       }
 
@@ -219,6 +219,9 @@ export const cartaIaApi = {
 }
 
 export const clientesApi = {
+  indicePos: (token: string) => fetchApi<{ success: boolean; data: unknown }>('/clientes/indice-pos', {
+    headers: { Authorization: `Bearer ${token}` },
+  }),
   getAll: async (token: string, options?: { soloDespachados?: boolean }) => {
     const query = options?.soloDespachados ? '?soloDespachados=true' : ''
     return fetchApi(`/clientes/list${query}`, {
@@ -1544,6 +1547,8 @@ export const pedidoUnificadoApi = {
     token: string,
     data:
       | {
+          clientRequestId?: string
+          impresoOffline?: boolean
           tipo: 'delivery'
           direccion: string
           nombreCliente?: string
@@ -1562,6 +1567,8 @@ export const pedidoUnificadoApi = {
           items: Array<PedidoUnificadoItemInput>
         }
       | {
+          clientRequestId?: string
+          impresoOffline?: boolean
           tipo: 'takeaway'
           nombreCliente?: string
           telefono?: string
@@ -1576,6 +1583,8 @@ export const pedidoUnificadoApi = {
           items: Array<PedidoUnificadoItemInput>
         }
       | {
+          clientRequestId?: string
+          impresoOffline?: boolean
           tipo: 'mesa'
           mesaLocalId: number
           consumoEnLocal?: true
@@ -1592,6 +1601,7 @@ export const pedidoUnificadoApi = {
   ) => {
     return fetchApi('/pedido-unificado/create', {
       method: 'POST',
+      signal: AbortSignal.timeout(25_000),
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify(data),
     })
@@ -1682,6 +1692,18 @@ export const pedidoUnificadoApi = {
     return fetchApi(`/pedido-unificado/${pedidoId}/impreso`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  /** Devuelve el claim si el spooler rechazó el trabajo para permitir un reintento real. */
+  liberarImpreso: async (
+    token: string,
+    pedidoId: number,
+    claimedItems: Array<{ id: number; cantidad: number }>,
+  ) => {
+    return fetchApi(`/pedido-unificado/${pedidoId}/impreso/liberar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ claimedItems }),
     })
   },
 }

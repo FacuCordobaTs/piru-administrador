@@ -1,3 +1,4 @@
+import { ClienteAutocomplete } from '@/components/ClienteAutocomplete'
 import { useState, useEffect, useCallback, useRef, Fragment, useMemo, type KeyboardEvent, type MouseEvent } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,7 +17,7 @@ import CierreTurno from '@/components/CierreTurno'
 import PuntoDeVenta, { type PosDraft, type PosDraftUpdate, type PosEditablePedido, type PuntoDeVentaHandle } from '@/components/PuntoDeVenta'
 import { MesasOperativas } from '@/components/MesasOperativas'
 import {
-    Loader2, Plus, Clock, Trash2,
+    Loader2, Plus, Clock, Trash2, Pencil,
     User, ArrowLeft, Printer, Truck, MapPin,
     Phone, ShoppingBag, CalendarDays, Tag, Settings,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, CheckCircle,
@@ -41,6 +42,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig } from '@/lib/posConfig'
+import { PosConfigDialog } from '@/components/PosConfigDialog'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
 
@@ -106,9 +108,13 @@ const ESTADO_PEDIDO_LABEL: Record<string, string> = {
     dispatched: 'Despachado', delivered: 'Entregado', cancelled: 'Cancelado', archived: 'Cerrado',
 }
 
-// Debe coincidir con POS_ESTADOS_EDITABLES del backend. Fuera de estos estados
-// el pedido se abre como detalle de solo lectura, donde sigue siendo eliminable.
+// Debe coincidir con POS_ESTADOS_EDITABLES del backend. Esta misma regla decide
+// si el detalle muestra el botón para abrir el editor del POS.
 const POS_ESTADOS_EDITABLES = new Set(['pending', 'received', 'preparing'])
+
+const pedidoPuedeEditarEnPos = (pedido: Pick<UnifiedPedido, 'editable' | 'estado'>) =>
+    pedido.editable !== false
+    && POS_ESTADOS_EDITABLES.has(pedido.estado)
 
 const pedidoTitulo = (pedido: Pick<UnifiedPedido, 'id' | 'tipo' | 'mesaLocalId' | 'mesaNombre'>) =>
     pedido.tipo === 'mesa'
@@ -1020,6 +1026,7 @@ const PosComandaPreview = ({
     onPrintNewMesa,
     onPrintAllMesa,
     onClear,
+    onCancelEdit,
     onClearMesa,
     editingPedidoId,
     mesaAsignada,
@@ -1034,6 +1041,7 @@ const PosComandaPreview = ({
     onPrintNewMesa?: () => void | Promise<void>
     onPrintAllMesa?: () => void | Promise<void>
     onClear?: () => void
+    onCancelEdit?: () => void
     onClearMesa?: () => void
     editingPedidoId?: number
     /** La mesa se actualiza antes que el snapshot del POS; evita un título transitorio. */
@@ -1041,6 +1049,7 @@ const PosComandaPreview = ({
 }) => {
     // Qué datos/opciones muestra la comanda según la configuración del POS.
     const config = usePosConfig()
+    const [configurandoPos, setConfigurandoPos] = useState(false)
     const tiposHabilitados = POS_TIPOS_ORDER.filter((tipo) => tipo !== 'mesa' && config.tipos[tipo])
     const metodosPagoHabilitados = POS_METODOS_ORDER.filter((id) => config.metodosPago[id])
     const nombreEditable = config.camposCliente.nombre
@@ -1059,7 +1068,6 @@ const PosComandaPreview = ({
                         <ShoppingCart className="h-7 w-7 text-muted-foreground/60" />
                     </div>
                     <p className="text-base font-bold text-foreground">Comanda en blanco</p>
-                    <div id="pos-catalogo-compacto" className="mt-2 w-full max-w-[520px] text-left" />
                 </div>
             </div>
         )
@@ -1073,13 +1081,38 @@ const PosComandaPreview = ({
                     <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-6 pb-[26rem]">
 
                         <div className="relative mb-6 text-left">
-                            <h2 className="text-4xl font-black text-foreground tracking-tight leading-none">
+                            <h2 className="pr-32 text-4xl font-black text-foreground tracking-tight leading-none">
                                 {mesaTitulo || (editingPedidoId
                                     ? (draft.tipo === 'mesa' ? (draft.mesaNombre || (draft.mesaLocalId ? `Mesa ${draft.mesaLocalId}` : 'Mesa')) : `Pedido #${editingPedidoId}`)
                                     : draft.tipo === 'mesa'
                                         ? (draft.mesaNombre || (draft.mesaLocalId ? `Mesa ${draft.mesaLocalId}` : 'Mesa'))
                                         : 'Nuevo pedido')}
                             </h2>
+                            <div className="absolute right-0 top-0 flex items-center gap-0.5">
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                                    onClick={editingPedidoId ? onCancelEdit : onClear}
+                                    tabIndex={-1}
+                                >
+                                    {editingPedidoId ? 'Cancelar edición' : 'Limpiar'}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                    onClick={() => setConfigurandoPos(true)}
+                                    aria-label="Configurar punto de venta"
+                                    tabIndex={-1}
+                                    title="Configurar punto de venta"
+                                >
+                                    <MoreVertical className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <PosConfigDialog open={configurandoPos} onOpenChange={setConfigurandoPos} />
                         </div>
 
                         <Separator className="bg-border/60 mb-6" />
@@ -1087,12 +1120,12 @@ const PosComandaPreview = ({
                         {/* Comanda */}
                         <div className="mb-6">
                             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Comanda · {totalItems} ítems</h3>
-                            <div id="pos-catalogo-compacto" className="mb-2" />
-                            {draft.items.length === 0 ? (
+                            {!config.catalogoEnColumna && <div id="pos-catalogo-compacto" className="mb-2" />}
+                            {draft.items.length === 0 ? (config.catalogoEnColumna ? (
                                 <p className="text-sm text-muted-foreground/60 py-8 text-center border border-dashed border-border rounded-xl">
                                     Todavía no hay productos
                                 </p>
-                            ) : (
+                            ) : null) : (
                                 <div className="space-y-0">
                                     {draft.items.map((it, idx) => (
                                         <div
@@ -1153,13 +1186,13 @@ const PosComandaPreview = ({
                     <div className="w-full max-w-[600px] mx-auto px-5 lg:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] flex flex-col gap-3">
                         {draft.tipo !== 'mesa' && tiposHabilitados.length > 0 && <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
                             {tiposHabilitados.includes('delivery') && (
-                                <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'delivery' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'delivery' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
-                                    <Truck className="h-4 w-4" />Delivery
+                                <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'delivery' }) }} className={cn('h-9 w-full rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5', draft.tipo === 'delivery' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                    <Truck className="h-3.5 w-3.5" />Delivery
                                 </button>
                             )}
                             {tiposHabilitados.includes('takeaway') && (
-                                <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'takeaway' }) }} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2', draft.tipo === 'takeaway' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
-                                    <ShoppingBag className="h-4 w-4" />Takeaway
+                                <button onClick={() => { onClearMesa?.(); onUpdate?.({ tipo: 'takeaway' }) }} className={cn('h-9 w-full rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5', draft.tipo === 'takeaway' ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                    <ShoppingBag className="h-3.5 w-3.5" />Takeaway
                                 </button>
                             )}
                         </div>}
@@ -1168,16 +1201,15 @@ const PosComandaPreview = ({
                         {metodosPagoHabilitados.length > 1 && (
                             <div className="grid gap-1 rounded-2xl bg-muted/60 p-1" style={{ gridTemplateColumns: `repeat(${metodosPagoHabilitados.length}, minmax(0, 1fr))` }}>
                                 {metodosPagoHabilitados.map((id) => (
-                                    <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-12 w-full rounded-xl text-sm font-bold transition-colors flex items-center justify-center', draft.metodoPago === id ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
+                                    <button key={id} onClick={() => onUpdate?.({ metodoPago: id })} className={cn('h-9 w-full rounded-lg text-xs font-bold transition-colors flex items-center justify-center', draft.metodoPago === id ? 'bg-background text-black shadow-sm dark:text-white' : 'text-muted-foreground hover:text-foreground')}>
                                         {POS_METODO_LABEL[id]}
                                     </button>
                                 ))}
                             </div>
                         )}
                         <div className="relative text-left">
-                            {nombreEditable && <div className="flex h-11 items-center gap-2 border-b border-border focus-within:border-[#FF7A00]">
-                                <Input value={draft.nombreCliente} onChange={(event) => onUpdate?.({ nombreCliente: event.target.value })} placeholder="Nombre del cliente" className="h-11 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent text-2xl font-black tracking-tight focus-visible:ring-0" />
-                            </div>}
+                            <ClienteAutocomplete nombre={draft.nombreCliente} telefono={draft.telefono} mostrarNombre={nombreEditable} mostrarTelefono={telefonoEditable}
+                                compacto onChange={datos => onUpdate?.(datos)} />
                             {draft.tipo !== 'mesa' && config.camposCliente.direccion && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', (nombreEditable || telefonoEditable) && 'mt-3')}>
                                 <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                 <Input
@@ -1188,10 +1220,7 @@ const PosComandaPreview = ({
                                     className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-45"
                                 />
                             </div>}
-                            {telefonoEditable && <div className={cn('flex h-9 items-center gap-2 border-b border-border/60 focus-within:border-[#FF7A00]', nombreEditable && 'mt-3')}>
-                                <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                <Input value={draft.telefono} onChange={(event) => onUpdate?.({ telefono: event.target.value })} placeholder="Celular" inputMode="tel" className="h-9 min-w-0 flex-1 px-0 border-0 rounded-none bg-transparent dark:bg-transparent focus-visible:ring-0" />
-                            </div>}
+
                         </div>
                         {config.notas && (
                             <div>
@@ -1205,18 +1234,23 @@ const PosComandaPreview = ({
                                 ${draft.total.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                             </span>
                         </div>
+                        {editingPedidoId && (
+                            <div className="flex items-center justify-end gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                {draft.submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                                <span>{draft.submitting ? 'Guardando…' : draft.hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}</span>
+                            </div>
+                        )}
                         <div className="flex items-center gap-2">
-                            <button
-                                tabIndex={-1}
-                                onClick={onClear}
-                                disabled={draft.submitting}
-                                aria-label={editingPedidoId ? `Eliminar pedido #${editingPedidoId}` : 'Limpiar borrador'}
-                                title={editingPedidoId ? 'Eliminar pedido' : 'Limpiar borrador'}
-                                className="h-14 w-14 rounded-2xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
-                            >
-                                <Trash2 className="h-5 w-5" />
-                            </button>
-                            {draft.tipo === 'mesa' ? (
+                            {editingPedidoId ? (
+                                <div className="grid flex-1 grid-cols-2 gap-2">
+                                    <Button type="button" variant="outline" className="h-14 rounded-2xl px-2 text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintNewMesa?.()}>
+                                        <Printer className="mr-1.5 h-4 w-4" /> Imprimir productos nuevos
+                                    </Button>
+                                    <Button type="button" variant="outline" className="h-14 rounded-2xl px-2 text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintAllMesa?.()}>
+                                        <Printer className="mr-1.5 h-4 w-4" /> Reimprimir comanda entera
+                                    </Button>
+                                </div>
+                            ) : draft.tipo === 'mesa' ? (
                                 <div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
                                     {draft.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                                     {draft.submitting ? 'Guardando…' : draft.items.length === 0 ? 'Agregá un producto para abrir la mesa' : draft.hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
@@ -1224,10 +1258,10 @@ const PosComandaPreview = ({
                             ) : (
                                 <Button
                                     onClick={onSubmit}
-                                    disabled={draft.items.length === 0 || draft.submitting || (!!editingPedidoId && !draft.hasChanges)}
+                                    disabled={draft.items.length === 0 || draft.submitting}
                                     className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
                                 >
-                                    {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : editingPedidoId ? 'Guardar cambios' : 'Anotar pedido'}
+                                    {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
                                 </Button>
                             )}
                             {editingPedidoId && draft.tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
@@ -1243,16 +1277,6 @@ const PosComandaPreview = ({
                                 </button>
                             )}
                         </div>
-                        {editingPedidoId && draft.tipo === 'mesa' && (onPrintNewMesa || onPrintAllMesa) && (
-                            <div className="grid grid-cols-2 gap-2">
-                                <Button type="button" variant="outline" className="h-11 rounded-xl text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintNewMesa?.()}>
-                                    <Printer className="mr-2 h-4 w-4" /> Imprimir nuevos productos
-                                </Button>
-                                <Button type="button" variant="outline" className="h-11 rounded-xl text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintAllMesa?.()}>
-                                    <Printer className="mr-2 h-4 w-4" /> Reimprimir toda la comanda
-                                </Button>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
@@ -1268,6 +1292,7 @@ const Dashboard = () => {
     const restaurante = useAuthStore((state) => state.restaurante)
     const { restaurante: restauranteStore, productos: allProductos, suscripcion } = useRestauranteStore()
     const posActivo = useModuloActivo('pos')
+    const { catalogoEnColumna } = usePosConfig()
     const mesasActivo = useModuloActivo('mesas')
     const cierreManualActivo = useModuloActivo('cierre_turno_manual')
     const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
@@ -1294,6 +1319,9 @@ const Dashboard = () => {
     // reservan para el botón "Imprimir nuevos productos". La marca se crea
     // antes del autosave para ganarle a una eventual actualización por WS.
     const mesaOrdersPendingManualPrintRef = useRef<Set<number>>(new Set())
+    // Un pedido ya existente puede autoguardarse mientras se edita, pero nunca
+    // debe entrar al auto-printer. Sólo sus botones manuales pueden imprimirlo.
+    const pedidosEditadosSinAutoImpresionRef = useRef<Set<number>>(new Set())
     const { lastUpdate } = useAdminContext()
 
     // Estados Principales
@@ -1355,6 +1383,7 @@ const Dashboard = () => {
     const [sendingNotification, setSendingNotification] = useState<string | null>(null)
     const [demoraInputs, setDemoraInputs] = useState<Record<string, string>>({})
     const [confirmandoDemora, setConfirmandoDemora] = useState<string | null>(null)
+    const [printingManualOrderId, setPrintingManualOrderId] = useState<number | null>(null)
     // Los avisos superiores son informativos: el local siempre puede quitarlos
     // durante esta visita, incluso cuando el estado de suscripción/saldo sigue vigente.
     const [showTrialBanner, setShowTrialBanner] = useState(true)
@@ -1696,6 +1725,18 @@ const Dashboard = () => {
             const pendingFromPos = posOrdersPendingPrintRef.current.has(pedido.id)
             const pendingFromRealtime = realtimeOrdersPendingPrintRef.current.has(pedido.id)
             const pendingManualMesaPrint = pedido.tipo === 'mesa' && mesaOrdersPendingManualPrintRef.current.has(pedido.id)
+            const pedidoEditadoSinAutoImpresion = pedidosEditadosSinAutoImpresionRef.current.has(pedido.id)
+
+            if (pedidoEditadoSinAutoImpresion) {
+                posOrdersPendingPrintRef.current.delete(pedido.id)
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                processedOrdersRef.current.set(pedidoKey, {
+                    status: pedido.estado,
+                    itemIds: new Set(pedido.items.map((item) => item.id)),
+                    pagado: currentPagado,
+                })
+                return
+            }
 
             // Una mesa ya abierta no debe sacar una comanda automática por cada
             // producto que agrega el mozo. Sólo registramos la versión nueva;
@@ -1769,25 +1810,33 @@ const Dashboard = () => {
                 // Claim atómico contra el backend: si hay otro dispositivo/pestaña del mismo
                 // restaurante conectado, solo uno de los dos debe ganar la carrera e imprimir.
                 pedidoUnificadoApi.claimImpreso(token, pedido.id)
-                    .then((res: any) => {
+                    .then(async (res: any) => {
                         if (!res?.claimed) {
                             posOrdersPendingPrintRef.current.delete(pedido.id)
                             realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                             return
                         }
 
+                        const claimedItems: Array<{ id: number; cantidad: number }> = Array.isArray(res?.pendingItems)
+                            ? res.pendingItems.filter((item: unknown): item is { id: number; cantidad: number } => {
+                                if (typeof item !== 'object' || item === null) return false
+                                const candidate = item as { id?: unknown; cantidad?: unknown }
+                                return Number.isInteger(candidate.id) && Number(candidate.cantidad) > 0
+                            })
+                            : []
                         const pendientes = Array.isArray(res?.pendingItems)
-                            ? new Map<number, number>(res.pendingItems.map((item: { id: number; cantidad: number }) => [item.id, item.cantidad]))
+                            ? new Map<number, number>(claimedItems.map((item) => [item.id, item.cantidad]))
                             : null
-                        const baseItems = pendientes && !res?.printFull
-                            ? pedido.items.filter((item) => pendientes.has(item.id)).map((item) => ({ ...item, cantidad: pendientes.get(item.id)! }))
-                            : pedido.items
-                        const itemsToPrint = baseItems.map(item => {
-                            const producto = allProductos.find(p => p.id === item.productoId)
-                            return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
-                        })
+                        try {
+                            const baseItems = pendientes && !res?.printFull
+                                ? pedido.items.filter((item) => pendientes.has(item.id)).map((item) => ({ ...item, cantidad: pendientes.get(item.id)! }))
+                                : pedido.items
+                            const itemsToPrint = baseItems.map(item => {
+                                const producto = allProductos.find(p => p.id === item.productoId)
+                                return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
+                            })
+                            if (itemsToPrint.length === 0) throw new Error('El pedido no tiene productos imprimibles')
 
-                        if (itemsToPrint.length > 0) {
                             const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
                             const comandaData = formatComanda({
                                 id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
@@ -1802,19 +1851,30 @@ const Dashboard = () => {
                                 grandeMayusculas: comandaGrandeMayusculas,
                             })
 
-                            printRaw(commandsToBytes(comandaData)).catch((err) => {
-                                // El claim ya quedó en true en el backend (no se reintentará solo),
-                                // así que avisamos al local para que reimprima a mano desde el pedido.
-                                console.error('Error imprimiendo comanda automática:', err)
-                                toast.error(`No se pudo imprimir el pedido #${pedido.id}. Reimprimilo manualmente.`)
+                            await printRaw(commandsToBytes(comandaData))
+                        } catch (err) {
+                            // Si Tauri/Windows rechaza el trabajo, compensar el claim para
+                            // que el pedido siga pendiente y pueda reintentarse de verdad.
+                            try {
+                                await pedidoUnificadoApi.liberarImpreso(token, pedido.id, claimedItems)
+                            } catch (releaseError) {
+                                console.error('Error liberando claim de impresión:', releaseError)
+                            }
+                            console.error('Error imprimiendo comanda automática:', err)
+                            toast.error(`No se pudo imprimir el pedido #${pedido.id}. Podés reintentarlo manualmente.`, {
+                                description: err instanceof Error ? err.message : String(err),
                             })
+                            return
                         }
 
                         posOrdersPendingPrintRef.current.delete(pedido.id)
                         realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                         setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
                     })
-                    .catch(console.error)
+                    .catch((err) => {
+                        console.error('Error reclamando impresión automática:', err)
+                        toast.error(`No se pudo preparar la impresión del pedido #${pedido.id}`)
+                    })
             }
             processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
         })
@@ -1824,6 +1884,66 @@ const Dashboard = () => {
             initialLoadDoneRef.current = true
         }
     }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas, transferenciaAlias])
+
+    const reimprimirComanda = async (pedido: UnifiedPedido) => {
+        if (printingManualOrderId !== null) return
+        setPrintingManualOrderId(pedido.id)
+        try {
+            const itemsToPrint = pedido.items.map((item) => {
+                const producto = allProductos.find((candidate) => candidate.id === item.productoId)
+                return {
+                    ...item,
+                    precioUnitario: item.precioUnitario || '0',
+                    producto,
+                    categoriaEsBebida: producto?.categoriaEsBebida ?? false,
+                }
+            })
+            if (itemsToPrint.length === 0) throw new Error('El pedido no tiene productos imprimibles')
+
+            const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0
+            const data = formatComanda({
+                id: pedido.id,
+                nombrePedido: pedido.nombreCliente || '',
+                telefono: pedido.telefono,
+                direccion: pedido.tipo === 'delivery' ? pedido.direccion : undefined,
+                tipo: pedido.tipo,
+                mesaNombre: pedido.mesaNombre,
+                total: pedido.total,
+                deliveryFee,
+                notas: pedido.notas,
+                metodoPago: pedido.metodoPago,
+                transferenciaAlias: pedido.transferenciaAliasDestino ?? transferenciaAlias,
+                montoDescuento: pedido.montoDescuento,
+                codigoDescuentoCodigo: pedido.codigoDescuentoCodigo,
+                sucursalNombre: pedido.sucursalNombre,
+                horarioProgramado: pedido.horarioProgramado,
+                grupal: pedido.grupal,
+            }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
+                grandeMayusculas: comandaGrandeMayusculas,
+            })
+            await printRaw(commandsToBytes(data))
+            // Si venía pendiente por un intento automático fallido, esta
+            // impresión manual exitosa debe cerrar también el estado en DB.
+            if (token && pedido.impreso === false) {
+                try {
+                    const claim: any = await pedidoUnificadoApi.claimImpreso(token, pedido.id)
+                    if (claim?.claimed) {
+                        setUnifiedPedidos((prev) => prev.map((item) => item.id === pedido.id ? { ...item, impreso: true } : item))
+                    }
+                } catch (claimError) {
+                    console.error('La comanda se imprimió, pero no se pudo confirmar el estado:', claimError)
+                }
+            }
+            toast.success(`Pedido #${pedido.id} enviado a imprimir`)
+        } catch (error) {
+            console.error('Error reimprimiendo comanda:', error)
+            toast.error(`No se pudo imprimir el pedido #${pedido.id}`, {
+                description: error instanceof Error ? error.message : String(error),
+            })
+        } finally {
+            setPrintingManualOrderId(null)
+        }
+    }
 
     // ─────────────────────────────────────────────
     // ACCIONES DE PEDIDO
@@ -2080,16 +2200,8 @@ const Dashboard = () => {
     }
 
     const openPedidoInPOS = (pedido: UnifiedPedido) => {
-        // Sólo los pedidos anotados manualmente se editan desde el POS. Los de
-        // la web y los manuales que ya cerraron su etapa editable se abren en
-        // el detalle de solo lectura, donde también pueden eliminarse.
-        const puedeEditarEnPos = pedido.anotadoManualmente
-            && pedido.editable !== false
-            && POS_ESTADOS_EDITABLES.has(pedido.estado)
-        if (showPOS && puedeEditarEnPos) {
-            void editarPedidoEnPos(pedido)
-            return
-        }
+        // Abrir un pedido nunca modifica nada: todos empiezan en su detalle de
+        // solo lectura. La edición se inicia exclusivamente con su botón.
         mesaMergeRef.current = false
         setShowOrderMap(false)
         setPedidoPosEditando(null)
@@ -2106,6 +2218,10 @@ const Dashboard = () => {
         setMobileView('detail')
     }
 
+    // Mientras se consulta un pedido, el catálogo no debe agregar productos a
+    // esa vista. Un clic sobre su columna vuelve de forma explícita al borrador.
+    const catalogoPosMuteado = showPOS && posContext === 'pedidoExistente' && selectedUnifiedPedido != null
+
     // El configurador del ítem se abre sobre la comanda para ajustar variantes,
     // ingredientes y extras sin perder el buscador permanente.
     const editarItemComanda = useCallback((key: string) => {
@@ -2116,7 +2232,7 @@ const Dashboard = () => {
         if (!posActivo) return
         // El alta parte siempre de una comanda vacía, incluso si había un
         // borrador persistido o se estaba editando otro pedido.
-        try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId)) } catch { /* noop */ }
+        try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId, useAuthStore.getState().restaurante?.id)) } catch { /* noop */ }
         posRef.current?.clearDraft()
         setDraftPos(null)
         setListadoActivo('pedidos')
@@ -2205,12 +2321,29 @@ const Dashboard = () => {
         }
     }
 
+    const volverAVistaPedido = () => {
+        if (!pedidoPosEditando) return
+        const pedido = unifiedPedidos.find((item) => item.id === pedidoPosEditando.id && item.tipo === pedidoPosEditando.tipo)
+        if (!pedido) {
+            toast.error('No se pudo volver al detalle del pedido')
+            return
+        }
+        mesaMergeRef.current = false
+        setShowOrderMap(false)
+        setPedidoPosEditando(null)
+        setMesaPosAsignada(null)
+        setSelectedUnifiedPedido(pedido)
+        setPosContext('pedidoExistente')
+        setShowPosMovil(false)
+        setMobileView('detail')
+    }
+
     const handlePedidoManualActualizado = (pedido: PosEditablePedido) => {
         // Si la edición fusionó el borrador con el pedido de una mesa, ese
         // borrador ya quedó consumido: se limpia para que no resurja en el alta siguiente.
         if (mesaMergeRef.current) {
             mesaMergeRef.current = false
-            try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId)) } catch { /* noop */ }
+            try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId, useAuthStore.getState().restaurante?.id)) } catch { /* noop */ }
         }
         const actualizado = pedido as UnifiedPedido
         setUnifiedPedidos((prev) => prev.map((item) => item.id === actualizado.id ? { ...item, ...actualizado } : item))
@@ -2228,6 +2361,10 @@ const Dashboard = () => {
 
     const reservarProductosNuevosMesaParaImpresionManual = (pedidoId: number) => {
         mesaOrdersPendingManualPrintRef.current.add(pedidoId)
+    }
+
+    const reservarPedidoEditadoSinAutoImpresion = (pedidoId: number) => {
+        pedidosEditadosSinAutoImpresionRef.current.add(pedidoId)
     }
 
     const imprimirPedidoMesaCompleto = async (pedidoId: number, draft: PosDraft) => {
@@ -2258,7 +2395,7 @@ const Dashboard = () => {
         await printRaw(commandsToBytes(comandaData))
     }
 
-    const imprimirPedidoMesaDesdeServidor = async (
+    const imprimirPedidoEditadoDesdeServidor = async (
         pedido: PosEditablePedido & { total?: string | number; sucursalNombre?: string | null },
         cantidades?: Map<number, number>,
     ) => {
@@ -2284,8 +2421,10 @@ const Dashboard = () => {
             id: pedido.id,
             nombrePedido: pedido.nombreCliente || '',
             telefono: pedido.telefono,
-            tipo: 'mesa',
+            tipo: pedido.tipo,
             mesaNombre: pedido.mesaNombre || mesaPosAsignada?.nombre,
+            direccion: pedido.tipo === 'delivery' ? pedido.direccion : undefined,
+            deliveryFee: pedido.tipo === 'delivery' ? Number(pedido.deliveryFee ?? 0) : undefined,
             total: String(pedido.total ?? draftPos?.total ?? 0),
             notas: pedido.notas,
             metodoPago: pedido.metodoPago,
@@ -2297,9 +2436,10 @@ const Dashboard = () => {
         return true
     }
 
-    const imprimirMesa = async (soloNuevos: boolean): Promise<void> => {
+    const imprimirPedidoEditado = async (soloNuevos: boolean): Promise<void> => {
         if (!token || !pedidoPosEditando) return
         if (!selectedPrinter) { toast.error('Configurá una impresora antes de imprimir'); return }
+        let claimedItems: Array<{ id: number; cantidad: number }> = []
         try {
             const pedidoId = await posRef.current?.submitDraft()
             if (!pedidoId) return
@@ -2310,14 +2450,31 @@ const Dashboard = () => {
                 if (!claim?.claimed || pendientes.length === 0) {
                     toast.info('No hay productos nuevos pendientes de impresión'); return
                 }
-                cantidades = new Map(pendientes.map((item: { id: number; cantidad: number }) => [item.id, item.cantidad]))
+                claimedItems = pendientes
+                cantidades = new Map(claimedItems.map((item) => [item.id, item.cantidad]))
             }
             const response = await pedidoUnificadoApi.getById(token, pedidoId) as { success?: boolean; data?: PosEditablePedido & { total?: string; sucursalNombre?: string | null } }
             if (!response.success || !response.data) throw new Error('No se pudo cargar la comanda guardada')
-            const impresa = await imprimirPedidoMesaDesdeServidor(response.data, cantidades)
+            const impresa = await imprimirPedidoEditadoDesdeServidor(response.data, cantidades)
             if (!impresa) { toast.info('No hay productos nuevos pendientes de impresión'); return }
+            if (!soloNuevos) {
+                // Reimprimir todo también confirma cualquier delta pendiente
+                // que el autosave hubiera dejado para cocina.
+                try {
+                    await pedidoUnificadoApi.claimImpreso(token, pedidoId)
+                } catch (claimError) {
+                    console.error('La comanda completa se imprimió, pero no se pudo confirmar el estado:', claimError)
+                }
+            }
             toast.success(soloNuevos ? 'Productos nuevos enviados a cocina' : 'Comanda completa enviada a imprimir')
         } catch (error) {
+            if (claimedItems.length > 0) {
+                try {
+                    await pedidoUnificadoApi.liberarImpreso(token, pedidoPosEditando.id, claimedItems)
+                } catch (releaseError) {
+                    console.error('Error liberando claim de impresión manual:', releaseError)
+                }
+            }
             toast.error('No se pudo imprimir la comanda', { description: error instanceof Error ? error.message : undefined })
         }
     }
@@ -2393,7 +2550,7 @@ const Dashboard = () => {
         if (!posActivo) return
         // Una mesa libre siempre empieza una comanda nueva. No se arrastran los
         // productos ni los datos del borrador general o de otra mesa.
-        try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId)) } catch { /* noop */ }
+        try { sessionStorage.removeItem(posDraftStorageKey(sucursalActivaId, useAuthStore.getState().restaurante?.id)) } catch { /* noop */ }
         posRef.current?.clearDraft()
         // El POS emite el snapshot vacío en el siguiente efecto. Lo anticipamos
         // para no mostrar el estado transitorio "Comanda en blanco".
@@ -2725,7 +2882,7 @@ const Dashboard = () => {
                     <Button
                         type="button"
                         onClick={abrirNuevoPedido}
-                        className="absolute left-3 right-3 top-2 z-10 h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00] lg:left-auto lg:right-auto lg:top-4 lg:w-[calc(100%-2rem)] lg:max-w-[1016px] xl:w-[1136px] xl:max-w-none 2xl:w-[1216px]"
+                        className={cn("absolute left-3 right-3 top-2 z-10 h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00]", catalogoEnColumna ? 'lg:hidden' : 'lg:left-auto lg:right-auto lg:top-4 lg:w-[calc(100%-2rem)] lg:max-w-[1016px] xl:w-[1136px] xl:max-w-none 2xl:w-[1216px]')}
                     >
                         + Nuevo pedido
                     </Button>
@@ -2737,6 +2894,7 @@ const Dashboard = () => {
                         <div className={cn(
                             "mt-14 min-h-0 w-full flex-col shrink-0 bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:overflow-hidden",
                             "lg:w-[400px] xl:w-[520px] 2xl:w-[600px]",
+                            showPOS && isDesktopViewport && catalogoEnColumna && "lg:flex-1 lg:w-auto xl:w-auto 2xl:w-auto min-w-0",
                             mobileView === 'orders' ? 'flex' : 'hidden lg:flex'
                         )}>
                             <div className="p-3 flex items-center justify-between bg-[#FFFBF0]/95 dark:bg-background/95 backdrop-blur">
@@ -3000,15 +3158,47 @@ const Dashboard = () => {
                             </div>
                         </div>
 
+                        {/* ── COLUMNA CENTRAL: CATÁLOGO DEL POS ── */}
+                        {showPOS && isDesktopViewport && catalogoEnColumna && (
+                            <div className="relative mt-14 hidden min-h-0 min-w-0 flex-1 lg:flex">
+                                <Button
+                                    type="button"
+                                    onClick={abrirNuevoPedido}
+                                    className="absolute -top-12 left-0 right-0 z-10 h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00]"
+                                >
+                                    + Nuevo pedido
+                                </Button>
+                                <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl bg-[#FFFBF0] dark:bg-background lg:flex lg:flex-col">
+                                    <div
+                                        id="pos-catalogo-compacto"
+                                        className={cn('h-full min-h-0 transition-all', catalogoPosMuteado && 'pointer-events-none opacity-35 grayscale')}
+                                    />
+                                    {catalogoPosMuteado && (
+                                        <button
+                                            type="button"
+                                            onClick={volverAlBorrador}
+                                            className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-background/20 p-6 text-center"
+                                            aria-label="Volver al borrador de pedido"
+                                        >
+                                            <span className="rounded-xl border border-border bg-background/95 px-4 py-3 text-sm font-bold text-foreground shadow-sm">
+                                                Hacé clic para volver al borrador
+                                            </span>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {/* ── PANEL DERECHO: DETALLE OPERATIVO ──
                             Ancho fijo al del ticket (≈600px) para que el panel no sea más grande
                             que su contenido. El margen derecho en xl/2xl compensa el ensanche de la
                             lista: mantiene el centro del detalle en el mismo punto para que NO se
-                            mueva a la derecha cuando la lista crece. El POS activo reutiliza este
-                            mismo layout de dos columnas y despliega el catálogo dentro del borrador. */}
+                            mueva a la derecha cuando la lista crece. El catálogo ocupa una columna
+                            central sólo cuando se activa esa opción en la configuración del POS. */}
                         <div className={cn(
                             "mt-14 min-h-0 w-full bg-[#FFFBF0] dark:bg-background relative overflow-hidden lg:rounded-2xl",
                             "lg:flex-1 lg:max-w-[600px] xl:flex-none xl:w-[600px]",
+                            showPOS && isDesktopViewport && catalogoEnColumna && "lg:w-[min(600px,50vw)] lg:flex-none xl:w-[600px] min-w-0",
                             mobileView === 'detail' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
                         )}>
                             {showPOS && isDesktopViewport && (
@@ -3019,10 +3209,10 @@ const Dashboard = () => {
                                     onCreated={handlePedidoManualCreado}
                                     onUpdated={handlePedidoManualActualizado}
                                     onExistingMesaProductsAdded={reservarProductosNuevosMesaParaImpresionManual}
-                                    onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
+                                    onExistingPedidoUpdated={reservarPedidoEditadoSinAutoImpresion}
                                     onDispatchMesa={() => setShowDespacharMesaDialog(true)}
-                                    onPrintNewMesa={() => imprimirMesa(true)}
-                                    onPrintAllMesa={() => imprimirMesa(false)}
+                                    onPrintNewMesa={() => imprimirPedidoEditado(true)}
+                                    onPrintAllMesa={() => imprimirPedidoEditado(false)}
                                     sucursalActivaId={sucursalActivaId}
                                     sucursalNombre={sucursalNombre}
                                     onDraftChange={setDraftPos}
@@ -3031,7 +3221,9 @@ const Dashboard = () => {
                                     onClearMesa={() => setMesaPosAsignada(null)}
                                     onMesaOcupadaDetectada={fetchPedidosMesaAbiertos}
                                     autoFocusSearch={posContext === 'borrador'}
+                                    onProductSearchIntent={catalogoPosMuteado ? volverAlBorrador : undefined}
                                     initialPedido={pedidoPosEditando}
+                                    onViewPedido={volverAVistaPedido}
                                     mostrarBotonCerrar={false}
                                     catalogoCompacto
                                 />
@@ -3050,11 +3242,10 @@ const Dashboard = () => {
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
                                         onDispatchMesa={() => setShowDespacharMesaDialog(true)}
-                                        onPrintNewMesa={() => imprimirMesa(true)}
-                                        onPrintAllMesa={() => imprimirMesa(false)}
-                                        onClear={() => pedidoPosEditando
-                                            ? abrirDialogoEliminarPedido(pedidoPosEditando)
-                                            : posRef.current?.clearDraft()}
+                                        onPrintNewMesa={() => imprimirPedidoEditado(true)}
+                                        onPrintAllMesa={() => imprimirPedidoEditado(false)}
+                                        onClear={() => posRef.current?.clearDraft()}
+                                        onCancelEdit={volverAVistaPedido}
                                         onClearMesa={() => setMesaPosAsignada(null)}
                                         editingPedidoId={pedidoPosEditando?.id}
                                         mesaAsignada={mesaPosAsignada}
@@ -3407,40 +3598,16 @@ const Dashboard = () => {
                                             {/* Reimprimir comprobante */}
                                             {selectedPrinter && (
                                                 <div className="flex justify-center">
-                                                    <Button variant="ghost" className="text-muted-foreground border border-border bg-[#FFFBF0] dark:bg-background" onClick={() => {
-                                                        const itemsToPrint = selectedUnifiedPedido.items.map((item: any) => {
-                                                            const producto = allProductos.find((candidate) => candidate.id === item.productoId)
-                                                            return {
-                                                                ...item,
-                                                                precioUnitario: item.precioUnitario || '0',
-                                                                producto,
-                                                                categoriaEsBebida: producto?.categoriaEsBebida ?? false,
-                                                            }
-                                                        })
-                                                        const deliveryFee = selectedUnifiedPedido.tipo === 'delivery' ? getOrderDeliveryFee(selectedUnifiedPedido) : 0
-                                                        const data = formatComanda({
-                                                            id: selectedUnifiedPedido.id,
-                                                            nombrePedido: selectedUnifiedPedido.nombreCliente || '',
-                                                            telefono: selectedUnifiedPedido.telefono,
-                                                            direccion: selectedUnifiedPedido.tipo === 'delivery' ? selectedUnifiedPedido.direccion : undefined,
-                                                            tipo: selectedUnifiedPedido.tipo,
-                                                            mesaNombre: selectedUnifiedPedido.mesaNombre,
-                                                            total: selectedUnifiedPedido.total,
-                                                            deliveryFee,
-                                                            notas: selectedUnifiedPedido.notas,
-                                                            metodoPago: selectedUnifiedPedido.metodoPago,
-                                                            transferenciaAlias: selectedUnifiedPedido.transferenciaAliasDestino ?? transferenciaAlias,
-                                                            montoDescuento: selectedUnifiedPedido.montoDescuento,
-                                                            codigoDescuentoCodigo: selectedUnifiedPedido.codigoDescuentoCodigo,
-                                                            sucursalNombre: selectedUnifiedPedido.sucursalNombre,
-                                                            horarioProgramado: selectedUnifiedPedido.horarioProgramado,
-                                                            grupal: selectedUnifiedPedido.grupal,
-                                                        }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
-                                                            grandeMayusculas: comandaGrandeMayusculas,
-                                                        })
-                                                        printRaw(commandsToBytes(data))
-                                                    }}>
-                                                        <Printer className="mr-2 h-4 w-4" /> Reimprimir Comprobante
+                                                    <Button
+                                                        variant="ghost"
+                                                        className="text-muted-foreground border border-border bg-[#FFFBF0] dark:bg-background"
+                                                        disabled={printingManualOrderId !== null}
+                                                        onClick={() => void reimprimirComanda(selectedUnifiedPedido)}
+                                                    >
+                                                        {printingManualOrderId === selectedUnifiedPedido.id
+                                                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            : <Printer className="mr-2 h-4 w-4" />}
+                                                        Reimprimir Comprobante
                                                     </Button>
                                                 </div>
                                             )}
@@ -3458,6 +3625,16 @@ const Dashboard = () => {
                                                     ${computeOrderTotal(selectedUnifiedPedido).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                                                 </span>
                                             </div>
+                                            {posActivo && pedidoPuedeEditarEnPos(selectedUnifiedPedido) && (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    className="h-12 w-full rounded-xl border-[#FF7A00]/40 font-bold text-foreground hover:bg-[#FF7A00]/10 hover:text-foreground"
+                                                    onClick={() => void editarPedidoEnPos(selectedUnifiedPedido)}
+                                                >
+                                                    <Pencil className="mr-2 h-4 w-4" /> Editar pedido
+                                                </Button>
+                                            )}
                                                 {/* Eliminar siempre disponible — también en el historial (archived/despachado) */}
                                                 <div className="flex items-center gap-2">
                                                     <button
@@ -3514,10 +3691,10 @@ const Dashboard = () => {
                                         onCreated={handlePedidoManualCreado}
                                         onUpdated={handlePedidoManualActualizado}
                                         onExistingMesaProductsAdded={reservarProductosNuevosMesaParaImpresionManual}
-                                        onDeletePedido={() => pedidoPosEditando && abrirDialogoEliminarPedido(pedidoPosEditando)}
+                                        onExistingPedidoUpdated={reservarPedidoEditadoSinAutoImpresion}
                                         onDispatchMesa={() => setShowDespacharMesaDialog(true)}
-                                        onPrintNewMesa={() => imprimirMesa(true)}
-                                        onPrintAllMesa={() => imprimirMesa(false)}
+                                        onPrintNewMesa={() => imprimirPedidoEditado(true)}
+                                        onPrintAllMesa={() => imprimirPedidoEditado(false)}
                                         sucursalActivaId={sucursalActivaId}
                                         sucursalNombre={sucursalNombre}
                                         onDraftChange={setDraftPos}
@@ -3527,6 +3704,7 @@ const Dashboard = () => {
                                         onMesaOcupadaDetectada={fetchPedidosMesaAbiertos}
                                         autoFocusSearch={posContext === 'borrador'}
                                         initialPedido={pedidoPosEditando}
+                                        onViewPedido={volverAVistaPedido}
                                     />
                                 </div>
                             </div>
@@ -3666,15 +3844,7 @@ const Dashboard = () => {
                                         type="button"
                                         onClick={() => {
                                             setMesaHistorial(null)
-                                            if (pedido.estado === 'archived' || pedido.estado === 'cancelled' || pedido.estado === 'delivered') {
-                                                setPedidoPosEditando(null)
-                                                setMesaPosAsignada(null)
-                                                setSelectedUnifiedPedido(pedido)
-                                                setPosContext('pedidoExistente')
-                                                setMobileView('detail')
-                                            } else {
-                                                void editarPedidoEnPos(pedido)
-                                            }
+                                            openPedidoInPOS(pedido)
                                         }}
                                         className="flex w-full items-center justify-between gap-3 rounded-xl border bg-card p-3 text-left transition hover:bg-muted/50"
                                     >

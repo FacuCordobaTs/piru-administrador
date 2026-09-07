@@ -1,4 +1,8 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { ClienteAutocomplete } from '@/components/ClienteAutocomplete'
+import { aplicarClienteRespuesta } from '@/lib/directorioClientesPos'
+import { nuevoRequestId, reclamarPendiente } from '@/lib/posOffline'
+import { leerMeta, guardarRegistro, borrarRegistro } from '@/lib/posLocalDb'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,10 +22,11 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
+import { PosConfigDialog } from '@/components/PosConfigDialog'
 import {
     X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2,
-    Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, User, Phone, MapPin, ChevronRight,
-    WifiOff, Printer, CheckCircle,
+    Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, MapPin, ChevronRight,
+    WifiOff, Printer, CheckCircle, MoreHorizontal,
 } from 'lucide-react'
 
 type Producto = ReturnType<typeof useRestauranteStore.getState>['productos'][number]
@@ -100,6 +105,7 @@ export interface PosEditablePedido {
     metodoPago?: string | null
     pagado?: boolean
     deliveryFee?: string | number | null
+    montoDescuento?: string | number | null
     mesaLocalId?: number | null
     mesaNombre?: string | null
     items: Array<{
@@ -156,8 +162,8 @@ interface PuntoDeVentaProps {
      *  Dashboard usa esta señal para reservar ese delta para la impresión
      *  manual de "Imprimir nuevos", sin afectar el claim de esos ítems. */
     onExistingMesaProductsAdded?: (pedidoId: number) => void
-    /** Solicita eliminar el pedido persistido que se está editando. */
-    onDeletePedido?: (pedidoId: number) => void
+    /** Una edición nunca debe disparar la autoimpresión del Dashboard. */
+    onExistingPedidoUpdated?: (pedidoId: number) => void
     /** Abre la confirmación para despachar el pedido de una mesa. */
     onDispatchMesa?: () => void | Promise<void>
     /** Guarda el borrador y manda en una sola comanda el delta aún no impreso. */
@@ -168,13 +174,17 @@ interface PuntoDeVentaProps {
     onDraftChange?: (draft: PosDraft | null) => void
     /** Volver al grid desde un pedido existente conserva el borrador. */
     onStartDraft?: () => void
+    /** Sale del editor y vuelve al detalle de solo lectura del pedido. */
+    onViewPedido?: () => void
     mesaAsignada?: { id: number; nombre: string } | null
     /** Desasigna la mesa al cambiar el borrador a delivery o takeaway. */
     onClearMesa?: () => void
     /** Resincroniza el mapa si el backend detecta una ocupación concurrente. */
     onMesaOcupadaDetectada?: () => void
-    /** Sólo el borrador activo captura la escritura rápida para buscar productos. */
+    /** Sólo el borrador activo toma foco automático en el buscador. */
     autoFocusSearch?: boolean
+    /** Antes de capturar una escritura rápida, permite al padre volver al borrador. */
+    onProductSearchIntent?: () => void
     /** Pedido POS que se carga como borrador editable. */
     initialPedido?: PosEditablePedido | null
     /** Oculta la "x" de cierre: el POS queda siempre abierto (módulo activo en desktop). */
@@ -256,7 +266,7 @@ const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
 })
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, onExistingMesaProductsAdded, onDeletePedido, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
+    { onClose, onCreated, onUpdated, onExistingMesaProductsAdded, onExistingPedidoUpdated, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, onViewPedido, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, onProductSearchIntent, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -278,10 +288,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     )
 
     const [query, setQuery] = useState('')
+    const [configurandoPos, setConfigurandoPos] = useState(false)
     const searchInputRef = useRef<HTMLInputElement>(null)
-    // El destino del portal vive en la comanda hermana y aparece recién después
-    // del primer commit. Este estado fuerza el render que monta el buscador ahí.
-    const [catalogoPortalReady, setCatalogoPortalReady] = useState(false)
+    // El destino cambia entre la comanda y la tercera columna sin perder el borrador.
+    const [catalogoTarget, setCatalogoTarget] = useState<HTMLElement | null>(null)
     // Contenedor scrolleable del listado: mantiene el producto destacado a la vista.
     const scrollRef = useRef<HTMLDivElement>(null)
     const [cart, setCart] = useState<CartItem[]>([])
@@ -298,7 +308,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const navegacionTecladoRef = useRef(false)
 
     // Datos del cliente
-    const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('delivery')
+    const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('takeaway')
     const [nombre, setNombre] = useState('')
     const [telefono, setTelefono] = useState('')
     const [direccion, setDireccion] = useState('')
@@ -317,6 +327,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // costo a propósito (envío gratis puntual), no se vuelve a reponer.
     const prefillEnvioRef = useRef(false)
     const [submitting, setSubmitting] = useState(false)
+    const enviandoRef = useRef(false)
     const autoSaveRef = useRef<(automatico?: boolean) => Promise<number | null>>(async () => null)
     const lastAutoSaveAttemptRef = useRef<string | null>(null)
     const [hydratedPedidoId, setHydratedPedidoId] = useState<number | null>(null)
@@ -326,7 +337,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // productos ya cargados, y volver a delivery muestra el mismo borrador.
     const storageKey = modoEdicion
         ? `piru:pos-edit:${initialPedido.id}`
-        : posDraftStorageKey(sucursalActivaId)
+        : posDraftStorageKey(sucursalActivaId, useAuthStore.getState().restaurante?.id)
     const [hydratedStorageKey, setHydratedStorageKey] = useState<string | null>(null)
 
     // ── Modo offline (sólo del POS) ──
@@ -355,13 +366,14 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const intentarSincronizar = useCallback(() => {
         void sincronizarPendientes().then((sincronizo) => {
             if (sincronizo) setOnline(true)
-        })
+        }).catch(() => toast.error('No se pudo acceder a los pedidos guardados en este dispositivo'))
     }, [])
 
-    // La cola de pendientes vive por restaurante en localStorage.
+    // La cola se hidrata desde IndexedDB y luego se sincroniza.
     useEffect(() => {
         if (restauranteId == null) return
-        usePosOfflineStore.getState().initPendientes(restauranteId)
+        void usePosOfflineStore.getState().initPendientes(restauranteId).then(intentarSincronizar)
+            .catch(() => toast.error('No se pudo abrir la cola POS; los datos anteriores se conservaron'))
     }, [restauranteId])
 
     // Cuando vuelve la conexión, sincronizar todo lo guardado.
@@ -391,9 +403,9 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const focusProductSearch = () => searchInputRef.current?.focus()
 
-    useEffect(() => {
-        setCatalogoPortalReady(catalogoCompacto)
-    }, [catalogoCompacto])
+    useLayoutEffect(() => {
+        setCatalogoTarget(catalogoCompacto ? document.getElementById('pos-catalogo-compacto') : null)
+    })
 
     // En el borrador, el lector/teclado debe poder empezar a buscar sin un click
     // previo. No se roba el foco de campos que el usuario haya elegido de forma
@@ -402,27 +414,31 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         if (!autoFocusSearch || configProducto) return
         const frame = window.requestAnimationFrame(focusProductSearch)
         return () => window.cancelAnimationFrame(frame)
-    }, [autoFocusSearch, configProducto, catalogoPortalReady])
+    }, [autoFocusSearch, configProducto, catalogoTarget])
 
     useEffect(() => {
-        if (!autoFocusSearch || configProducto) return
+        if (configProducto) return
 
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return
 
             const target = event.target as HTMLElement | null
             // Un campo elegido por el usuario conserva siempre la escritura.
-            if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-            if (document.activeElement === searchInputRef.current) return
+            // La excepción es el propio buscador si el catálogo está muteado:
+            // puede conservar el foco de antes y la primera tecla debe reactivarlo.
+            const escribeEnBuscador = target === searchInputRef.current
+            if (target?.closest('input, textarea, select, [contenteditable="true"]') && (!escribeEnBuscador || !onProductSearchIntent)) return
+            if (document.activeElement === searchInputRef.current && !onProductSearchIntent) return
 
             event.preventDefault()
+            onProductSearchIntent?.()
             focusProductSearch()
             setQuery((current) => current + event.key)
         }
 
         window.addEventListener('keydown', handleKeyDown, true)
         return () => window.removeEventListener('keydown', handleKeyDown, true)
-    }, [autoFocusSearch, configProducto])
+    }, [configProducto, onProductSearchIntent])
 
     // El borrador sobrevive una recarga accidental dentro de la misma pestaña. Se
     // separa por sucursal para no cruzar comandas entre locales del mismo negocio.
@@ -474,13 +490,23 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             return
         }
         setHydratedPedidoId(null)
+        setHydratedStorageKey(null)
+        let cancelado = false
+        let hidratado = false
+        void (async () => {
         try {
             const saved = sessionStorage.getItem(storageKey)
             if (saved) {
                 prefillEnvioRef.current = false
-                const parsed = JSON.parse(saved) as Partial<PersistedPosDraft>
+                const parsed = JSON.parse(saved) as Partial<PersistedPosDraft> & { encolado?: string }
+                if (parsed.encolado && restauranteId != null) {
+                    const marca = await leerMeta(restauranteId, `borradorEncolado:${parsed.encolado}`)
+                    if (cancelado) return
+                    if (marca?.valor) { resetForm(); hidratado = true; return }
+                }
+                if (cancelado) return
                 setCart(Array.isArray(parsed.cart) ? parsed.cart : [])
-                setTipo(mesaAsignada ? 'mesa' : parsed.tipo === 'takeaway' ? 'takeaway' : 'delivery')
+                setTipo(mesaAsignada ? 'mesa' : parsed.tipo === 'delivery' ? 'delivery' : 'takeaway')
                 setNombre(typeof parsed.nombre === 'string' ? parsed.nombre : '')
                 setTelefono(typeof parsed.telefono === 'string' ? parsed.telefono : '')
                 setDireccion(typeof parsed.direccion === 'string' ? parsed.direccion : '')
@@ -490,17 +516,20 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             } else {
                 prefillEnvioRef.current = false
                 setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
-                setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'delivery')
+                setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
             }
+            hidratado = true
         } catch {
-            sessionStorage.removeItem(storageKey)
+            toast.error('No se pudo recuperar el borrador; se conservó para reintentar')
         } finally {
-            setHydratedStorageKey(storageKey)
+            if (!cancelado && hidratado) setHydratedStorageKey(storageKey)
         }
+        })()
+        return () => { cancelado = true }
     }, [storageKey, initialPedido])
 
     useEffect(() => {
-        setTipo((current) => mesaAsignada ? 'mesa' : current === 'mesa' ? 'delivery' : current)
+        setTipo((current) => mesaAsignada ? 'mesa' : current === 'mesa' ? 'takeaway' : current)
     }, [mesaAsignada])
 
     useEffect(() => {
@@ -520,7 +549,9 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // borrador, se pasa al primero habilitado. Al editar se respeta el pedido.
     useEffect(() => {
         if (modoEdicion || mesaAsignada) return
-        setTipo((current) => config.tipos[current] ? current : (tiposHabilitados[0] ?? 'delivery'))
+        setTipo((current) => config.tipos[current]
+            ? current
+            : (config.tipos.takeaway ? 'takeaway' : (tiposHabilitados[0] ?? 'takeaway')))
     }, [modoEdicion, mesaAsignada, config, tiposHabilitados])
 
     useEffect(() => {
@@ -564,8 +595,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         })
     }, [productos, query])
 
-    // El catálogo aparece solamente cuando hay una búsqueda en curso.
-    const mostrarListado = query.trim() !== ''
+    const catalogoEnColumna = catalogoCompacto && config.catalogoEnColumna
+    const mostrarListado = catalogoEnColumna || query.trim() !== ''
 
     const porCategoria = useMemo(() => {
         const map: Record<string, Producto[]> = {}
@@ -599,35 +630,20 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }, [productosOrdenados])
 
     // El producto destacado se mantiene a la vista aunque el listado haya hecho scroll.
-    // No usamos scrollIntoView: en el catálogo compacto (renderizado por portal)
-    // también puede mover el panel/página. Ajustamos únicamente el scroll del listado.
+    // No usamos scrollIntoView: el catálogo puede estar renderizado por portal
+    // y también mover el panel/página. Ajustamos únicamente su propio scroll.
     useEffect(() => {
         if (!mostrarListado) return
         const listado = scrollRef.current
         const card = listado?.querySelector<HTMLElement>(`[data-flat-index="${indiceSeleccionado}"]`)
         if (!listado || !card) return
 
-        let listadoRect = listado.getBoundingClientRect()
-        if (catalogoCompacto) {
-            const footer = document.querySelector<HTMLElement>('[data-pos-comanda-footer]')
-            if (footer) {
-                // En Dashboard el footer de cobro es absoluto: no reduce la altura
-                // del portal y puede tapar resultados que el listado cree visibles.
-                // Convertimos el espacio realmente libre en su altura máxima para
-                // que exista overflow y las flechas puedan desplazar los productos.
-                const alturaVisible = Math.floor(footer.getBoundingClientRect().top - listadoRect.top - 8)
-                if (alturaVisible > 80) {
-                    listado.style.maxHeight = `${alturaVisible}px`
-                    listadoRect = listado.getBoundingClientRect()
-                }
-            }
-        }
+        const listadoRect = listado.getBoundingClientRect()
         const cardRect = card.getBoundingClientRect()
         if (navegacionTecladoRef.current) {
             navegacionTecladoRef.current = false
-            // El footer del POS se superpone visualmente al catálogo compacto.
             // Al navegar con flechas, subimos el resultado activo hasta el borde
-            // superior para que nunca quede escondido detrás de esos controles.
+            // superior para mantenerlo claramente visible.
             listado.scrollTop += cardRect.top - listadoRect.top - 8
             return
         }
@@ -636,7 +652,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         } else if (cardRect.bottom > listadoRect.bottom) {
             listado.scrollTop += cardRect.bottom - listadoRect.bottom
         }
-    }, [catalogoCompacto, indiceSeleccionado, mostrarListado])
+    }, [indiceSeleccionado, mostrarListado])
 
     // Columnas reales del grid de resultados: las flechitas verticales saltan
     // de fila en fila y las horizontales de producto en producto.
@@ -654,11 +670,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     )
     const totalItems = useMemo(() => cart.reduce((s, it) => s + it.cantidad, 0), [cart])
     const deliveryFeeNum = tipo === 'delivery' ? parseFloat(deliveryFee) || 0 : 0
-    const totalFinal = cartTotal + deliveryFeeNum
+    const totalFinal = cartTotal + deliveryFeeNum - (Number(initialPedido?.montoDescuento) || 0)
 
     // La comparación usa únicamente los datos que efectivamente se envían al
     // backend. Así, claves locales del carrito o cambios de formato no habilitan
-    // "Guardar cambios" si la comanda sigue siendo idéntica.
+    // guardado si la comanda sigue siendo idéntica.
     const currentSignature = useMemo(() => pedidoSignature({
             tipo,
             mesaLocalId: mesaAsignada?.id,
@@ -827,7 +843,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const resetForm = () => {
         prefillEnvioRef.current = false
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
-        setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'delivery')
+        setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
         setQuery(''); setMobileStep('productos')
         if (!modoEdicion) {
             try { sessionStorage.removeItem(storageKey) } catch { /* noop */ }
@@ -858,6 +874,17 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         if (hasContent && !window.confirm(modoEdicion ? '¿Salir sin guardar los cambios del pedido?' : '¿Descartar este borrador? Los productos y datos cargados se perderán.')) return
         resetForm()
         onClose()
+    }
+
+    const requestViewPedido = () => {
+        if (hasChanges && !window.confirm('¿Volver a la vista del pedido sin guardar los cambios?')) return
+        onViewPedido?.()
+    }
+
+    const requestClearDraft = () => {
+        const hasContent = cart.length > 0 || [nombre, telefono, direccion, notas, deliveryFee].some((value) => value.trim() !== '')
+        if (hasContent && !window.confirm('¿Limpiar el borrador actual?')) return
+        resetForm()
     }
 
     // ── Modo offline: comanda local y cola de pendientes ──
@@ -893,49 +920,43 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         await printRaw(commandsToBytes(comandaData))
     }
 
-    const guardarPedidoOffline = async (data: Parameters<typeof pedidoUnificadoApi.create>[1]) => {
-        if (restauranteId == null) {
-            toast.error('No se pudo guardar el pedido sin conexión')
-            return
-        }
-        const pendiente: PedidoPosPendiente = {
-            localId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-            localNumero: nextLocalNumero(restauranteId),
-            creadoEn: new Date().toISOString(),
-            tipo: data.tipo,
-            estado: 'pendiente',
-            draft: buildDraftSnapshot(false),
-            payload: data,
-        }
-        usePosOfflineStore.getState().guardarPendiente(pendiente)
-        // Si navigator.onLine sigue en true pero el servidor está caído, la UI
-        // debe igual mostrar el estado sin conexión.
+    // Se recibe la misma fila durable creada ANTES del primer POST.
+    const guardarPedidoOffline = async (pendiente: PedidoPosPendiente, imprimir: boolean) => {
         setOnline(false)
-
-        // La comanda se imprime en el acto, como el auto-print online. Si la
-        // impresión falla el pedido queda igual guardado y se reimprime desde
-        // el panel de pendientes.
-        if (!deferComandaHastaPagado(pendiente.draft.metodoPago, cucuruConfigurado) || pendiente.draft.pagado) {
+        if (imprimir && (!deferComandaHastaPagado(pendiente.draft.metodoPago, cucuruConfigurado) || pendiente.draft.pagado)) {
+            // Persistir el claim antes del efecto físico. Tras un crash, revisión manual.
+            pendiente = { ...pendiente, impresion: 'iniciada', payload: { ...pendiente.payload, impresoOffline: true } }
+            await usePosOfflineStore.getState().guardarPendiente(pendiente)
             try {
                 await imprimirComandaPendiente(pendiente)
+                pendiente.impresion = 'impresa'
             } catch {
-                toast.warning('Pedido guardado, pero la comanda no se pudo imprimir', {
-                    description: `Reimprimila desde el panel de pedidos sin conexión (#LOCAL-${pendiente.localNumero}).`,
-                })
+                pendiente.impresion = 'revisar'
+                toast.warning('Pedido guardado; revisá la impresión desde pedidos pendientes')
             }
         }
-
-        toast.success('Pedido guardado sin conexión', {
-            description: `Se sincronizará automáticamente cuando vuelva el internet (#LOCAL-${pendiente.localNumero}).`,
+        await usePosOfflineStore.getState().guardarPendiente({ ...pendiente, estado: 'pendiente', leaseHasta: 0 })
+        toast.success('Pedido guardado en este dispositivo', {
+            description: imprimir ? 'Se sincronizará al volver la conexión.' : 'La confirmación está pendiente. Se reintentará sin duplicar la venta.',
         })
         resetForm()
-        // Recién guardado puede haber vuelto la conexión: intentar ya.
         intentarSincronizar()
     }
 
     const reimprimirPendiente = async (pendiente: PedidoPosPendiente) => {
         try {
-            await imprimirComandaPendiente(pendiente)
+            if (restauranteId == null) return
+            const reservado = await reclamarPendiente(restauranteId, pendiente.localId, true)
+            if (!reservado) return
+            const claimed: PedidoPosPendiente = { ...reservado, impresion: 'iniciada', payload: { ...reservado.payload, impresoOffline: true } }
+            await usePosOfflineStore.getState().guardarPendiente(claimed)
+            try {
+                await imprimirComandaPendiente(claimed)
+                claimed.impresion = 'impresa'
+            } finally {
+                await guardarRegistro('pedidosPendientes', { ...claimed, restauranteId, estado: pendiente.estado === 'error_bloqueante' ? 'error_bloqueante' : 'pendiente', impresion: claimed.impresion === 'iniciada' ? 'revisar' : 'impresa', leaseHasta: 0 })
+                await usePosOfflineStore.getState().initPendientes(restauranteId)
+            }
             toast.success(`Comanda #LOCAL-${pendiente.localNumero} enviada a imprimir`)
         } catch (error) {
             toast.error(`No se pudo imprimir #LOCAL-${pendiente.localNumero}`, {
@@ -944,16 +965,17 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         }
     }
 
-    const eliminarPendiente = (pendiente: PedidoPosPendiente) => {
-        if (!window.confirm(`¿Eliminar el pedido #LOCAL-${pendiente.localNumero}? Todavía no se sincronizó: si lo eliminás se pierde.`)) return
-        usePosOfflineStore.getState().eliminarPendiente(pendiente.localId)
+    const eliminarPendiente = async (pendiente: PedidoPosPendiente) => {
+        if ((pendiente.leaseHasta ?? 0) > Date.now()) return
+        if (!window.confirm(`¿Eliminar el pendiente #LOCAL-${pendiente.localNumero}? Si estaba esperando confirmación, revisá también los pedidos del local antes de volver a cargarlo.`)) return
+        await usePosOfflineStore.getState().eliminarPendiente(pendiente.localId)
     }
 
     // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
     useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: resetForm, focusProductSearch, getCartItems }))
 
     const handleSubmit = async (automatico = false): Promise<number | null> => {
-        if (!token) return null
+        if (!token || enviandoRef.current) return null
         // Despachar una mesa ya guardada no exige introducir un cambio artificial.
         if (modoEdicion && !hasChanges) return initialPedido.id
         if (cart.length === 0) {
@@ -1000,11 +1022,15 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                   ? { tipo: 'mesa' as const, mesaLocalId: mesaAsignada.id, consumoEnLocal: true as const, ...common }
                   : { tipo: 'takeaway' as const, ...common }
 
+        enviandoRef.current = true
         setSubmitting(true)
         try {
             // Editar un pedido existente requiere el servidor: la cola offline
             // es sólo para altas nuevas del POS.
             if (modoEdicion) {
+                // El guardado del editor es silencioso, pero nunca puede
+                // convertirse en una impresión automática.
+                onExistingPedidoUpdated?.(initialPedido.id)
                 const agregoProductosAMesaExistente =
                     initialPedido.tipo === 'mesa' &&
                     initialPedido.items.length > 0 &&
@@ -1036,6 +1062,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     items,
                 }) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
                 if (res.success) {
+                    if (restauranteId != null) await aplicarClienteRespuesta(restauranteId, res)
                     if (!automatico) toast.success('Pedido actualizado correctamente')
                     if (res.data) onUpdated?.(res.data)
                     return res.data?.id ?? initialPedido.id
@@ -1045,43 +1072,62 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 }
             }
 
-            // Sin conexión el pedido va directo a la cola local y la comanda se
-            // imprime en el acto: el local nunca deja de anotar.
-            if (!online) {
-                await guardarPedidoOffline(data)
+            if (restauranteId == null) throw new Error('Sesión POS no disponible')
+            await usePosOfflineStore.getState().initPendientes(restauranteId)
+            const clientRequestId = nuevoRequestId()
+            const pendiente: PedidoPosPendiente = {
+                restauranteId,
+                localId: clientRequestId, localNumero: await nextLocalNumero(restauranteId),
+                draftKey: storageKey,
+                creadoEn: new Date().toISOString(), tipo: data.tipo, estado: 'sincronizando',
+                leaseHasta: Date.now() + 120_000, impresion: 'sin_imprimir',
+                draft: buildDraftSnapshot(false), payload: { ...data, clientRequestId },
+            }
+            // Marcador enlazado al commit IDB: al reiniciar no restaurar como
+            // borrador nuevo una venta que ya está en la cola (o fue confirmada).
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(storageKey) || '{}')
+                sessionStorage.setItem(storageKey, JSON.stringify({ ...saved, encolado: clientRequestId }))
+            } catch { /* El pedido se conserva igualmente en la cola durable. */ }
+            // Si falla IndexedDB, el carrito permanece y no se envía ni imprime.
+            await usePosOfflineStore.getState().guardarPendiente(pendiente)
+            if (useAuthStore.getState().restaurante?.id !== restauranteId) return null
+            resetForm()
+            if (!online || navegadorOffline()) {
+                await guardarPedidoOffline(pendiente, true)
                 return null
             }
-
+            let res: { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
             try {
-                const res = await pedidoUnificadoApi.create(token, data) as { success?: boolean; data?: PosEditablePedido & { id?: number }; message?: string }
-                if (res.success) {
-                    if (!automatico) toast.success('Pedido anotado correctamente')
-                    const esMesa = data.tipo === 'mesa'
-                    if (!esMesa) resetForm()
-                    // El POS queda listo para anotar el siguiente pedido. El Dashboard
-                    // sólo sincroniza el listado; cerrar el POS acá interrumpía ese flujo.
-                    if (res.data?.id) await onCreated(res.data.id, res.data)
-                    return res.data?.id ?? null
-                } else {
-                    toast.error(res.message || 'No se pudo crear el pedido')
-                    return null
-                }
-            } catch (error: unknown) {
-                if ((error as { response?: { code?: string } })?.response?.code === 'MESA_OCUPADA') {
-                    onMesaOcupadaDetectada?.()
-                }
+                res = await pedidoUnificadoApi.create(token, pendiente.payload) as typeof res
+                if (!res?.success || !res.data?.id) throw new ApiError('Confirmación incompleta', 0)
+            } catch (error) {
+                if ((error as { response?: { code?: string } })?.response?.code === 'MESA_OCUPADA') onMesaOcupadaDetectada?.()
                 if (esErrorDeConexion(error)) {
-                    // El servidor está caído aunque navigator.onLine siga en true:
-                    // mismo camino que sin conexión (cola local + comanda).
-                    await guardarPedidoOffline(data)
-                    return null
+                    // Ya pudo imprimirse desde el evento del servidor. No imprimir
+                    // automáticamente otra copia ante una respuesta ambigua.
+                    await guardarPedidoOffline(pendiente, false)
                 } else {
-                    toast.error('Error al crear el pedido', { description: error instanceof Error ? error.message : undefined })
-                    return null
+                    await guardarRegistro('pedidosPendientes', {
+                        ...pendiente, restauranteId, leaseHasta: 0,
+                        estado: error instanceof ApiError && error.status === 401 ? 'pendiente' : 'error_bloqueante',
+                        errorMessage: error instanceof Error ? error.message : 'No se pudo crear el pedido',
+                    })
+                    await usePosOfflineStore.getState().initPendientes(restauranteId)
+                    resetForm()
+                    toast.error('Pedido pendiente de resolución', { description: 'Revisalo en el panel de pedidos guardados.' })
                 }
+                return null
             }
+            await borrarRegistro('pedidosPendientes', restauranteId, pendiente.localId)
+            await usePosOfflineStore.getState().initPendientes(restauranteId)
+            if (useAuthStore.getState().restaurante?.id !== restauranteId) return null
+            await aplicarClienteRespuesta(restauranteId, res)
+            if (!automatico) toast.success('Pedido anotado correctamente')
+            if (res.data?.id) await onCreated(res.data.id, res.data)
+            return res.data?.id ?? null
         } catch (error: unknown) {
-            // Sólo llega acá el path de edición: el de alta ya manejó sus errores.
+            // Incluye fallos del almacenamiento: no afirmar que se guardó.
             if (modoEdicion && error instanceof ApiError && error.response?.code === 'VERSION_CONFLICT') {
                 const latest = error.response?.data?.pedido as PosEditablePedido | undefined
                 if (latest) {
@@ -1097,27 +1143,30 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             // Un fallo transitorio no bloquea para siempre esta misma firma:
             // al salir de `submitting`, el autosave vuelve a intentarla.
             lastAutoSaveAttemptRef.current = null
-            toast.error('Error al actualizar el pedido', { description: error instanceof Error ? error.message : undefined })
+            toast.error(modoEdicion ? 'Error al actualizar el pedido' : 'No se pudo completar el guardado; revisá los pendientes antes de repetirlo', { description: error instanceof Error ? error.message : undefined })
             return null
         } finally {
+            enviandoRef.current = false
             setSubmitting(false)
         }
     }
 
-    // Las comandas de mesa son persistentes: una mesa libre se crea al agregar
-    // el primer producto y las mesas ocupadas actualizan su pedido después de
-    // cada cambio. El pequeño debounce agrupa ediciones rápidas de una misma
-    // fila y evita una petición por cada pulsación en campos de texto.
+    // Las mesas nuevas y cualquier pedido abierto en el editor se guardan
+    // automáticamente. En edición esperamos 8 s sin cambios para que
+    // "Cancelar edición" pueda realmente descartar una corrección reciente.
+    // Este guardado nunca imprime: la impresión siempre es manual.
     autoSaveRef.current = handleSubmit
     useEffect(() => {
-        if (!online || tipo !== 'mesa' || !mesaAsignada || cart.length === 0 || !hasChanges || submitting) return
+        const debeAutoguardar = modoEdicion || (tipo === 'mesa' && !!mesaAsignada)
+        if (!online || !debeAutoguardar || cart.length === 0 || !hasChanges || submitting) return
         if (lastAutoSaveAttemptRef.current === currentSignature) return
+        const demoraAutoguardado = modoEdicion ? 8_000 : 450
         const timeout = window.setTimeout(() => {
             lastAutoSaveAttemptRef.current = currentSignature
             void autoSaveRef.current(true)
-        }, 450)
+        }, demoraAutoguardado)
         return () => window.clearTimeout(timeout)
-    }, [online, tipo, mesaAsignada?.id, cart.length, hasChanges, submitting, currentSignature])
+    }, [online, modoEdicion, tipo, mesaAsignada?.id, cart.length, hasChanges, submitting, currentSignature])
 
     // Con la configuración del POS, un campo desactivado se oculta por completo
     // y no participa de los datos del borrador.
@@ -1188,31 +1237,27 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                         {tiposHabilitados.includes('delivery') && (
                             <button
                                 onClick={() => { onClearMesa?.(); setTipo('delivery') }}
-                                className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
+                                className={cn('flex items-center justify-center gap-1 h-9 rounded-lg border text-xs font-semibold transition-colors',
                                     tipo === 'delivery' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
                             >
-                                <Truck className="h-4 w-4" /> Delivery
+                                <Truck className="h-3.5 w-3.5" /> Delivery
                             </button>
                         )}
                         {tiposHabilitados.includes('takeaway') && (
                             <button
                                 onClick={() => { onClearMesa?.(); setTipo('takeaway') }}
-                                className={cn('flex items-center justify-center gap-1.5 h-10 rounded-xl border text-sm font-semibold transition-colors',
+                                className={cn('flex items-center justify-center gap-1 h-9 rounded-lg border text-xs font-semibold transition-colors',
                                     tipo === 'takeaway' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
                             >
-                                <ShoppingBag className="h-4 w-4" /> Takeaway
+                                <ShoppingBag className="h-3.5 w-3.5" /> Takeaway
                             </button>
                         )}
                     </div>
                 </div>}
                 {/* Datos del cliente */}
                 <div className="relative space-y-3 lg:hidden">
-                    {nombreEditable && <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><User className="h-3.5 w-3.5" />Nombre</Label>
-                        </div>
-                        <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
-                    </div>}
+                    <ClienteAutocomplete nombre={nombre} telefono={telefono} mostrarNombre={nombreEditable} mostrarTelefono={telefonoEditable}
+                        onChange={updateDraft} />
                     {tipo !== 'mesa' && config.camposCliente.direccion && <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Dirección</Label>
                         {direccionSoloTexto ? (
@@ -1242,12 +1287,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                             </div>
                         </div>
                     )}
-                    {telefonoEditable && <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                            <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />Celular</Label>
-                        </div>
-                        <Input value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))} placeholder="Ej: 3415123456" inputMode="tel" className="h-11 rounded-xl bg-transparent dark:bg-transparent" />
-                    </div>}
                     {config.notas && <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-muted-foreground">Notas</Label>
                         <Textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Aclaraciones..." className="rounded-xl resize-none min-h-[60px]" />
@@ -1267,10 +1306,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     <button
                                         key={m.id}
                                         onClick={() => setMetodoPago(m.id)}
-                                        className={cn('flex items-center gap-2 h-10 px-3 rounded-xl border text-sm font-semibold transition-colors',
+                                        className={cn('flex items-center gap-1.5 h-9 px-2 rounded-lg border text-xs font-semibold transition-colors',
                                             selected ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
                                     >
-                                        <Icon className="h-4 w-4 shrink-0" /> {m.label}
+                                        <Icon className="h-3.5 w-3.5 shrink-0" /> {m.label}
                                     </button>
                                 )
                             })}
@@ -1295,30 +1334,23 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     <span className="text-sm font-bold text-foreground">Total</span>
                     <span className="text-2xl font-black text-[#FF7A00]">${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                 </div>
-                {modoEdicion && tipo === 'mesa' && (onPrintNewMesa || onPrintAllMesa) && (
-                    <div className="mb-2 grid grid-cols-2 gap-2">
-                        <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintNewMesa?.()}>
-                            <Printer className="mr-1.5 h-4 w-4" /> Imprimir nuevos
-                        </Button>
-                        <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintAllMesa?.()}>
-                            <Printer className="mr-1.5 h-4 w-4" /> Toda la comanda
-                        </Button>
+                {modoEdicion && (
+                    <div className="mb-2 flex items-center justify-end gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                        {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                        <span>{submitting ? 'Guardando…' : hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-2">
-                    {modoEdicion && onDeletePedido && (
-                        <button
-                            type="button"
-                            onClick={() => onDeletePedido(initialPedido.id)}
-                            disabled={submitting}
-                            aria-label={`Eliminar pedido #${initialPedido.id}`}
-                            title="Eliminar pedido"
-                            className="h-12 w-12 rounded-xl bg-secondary/30 border border-border/50 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 disabled:opacity-50"
-                        >
-                            <Trash2 className="h-5 w-5" />
-                        </button>
-                    )}
-                    {tipo === 'mesa' ? (
+                    {modoEdicion ? (
+                        <div className="grid flex-1 grid-cols-2 gap-2">
+                            <Button type="button" variant="outline" className="h-12 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintNewMesa?.()}>
+                                <Printer className="mr-1.5 h-4 w-4" /> Imprimir productos nuevos
+                            </Button>
+                            <Button type="button" variant="outline" className="h-12 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintAllMesa?.()}>
+                                <Printer className="mr-1.5 h-4 w-4" /> Reimprimir comanda entera
+                            </Button>
+                        </div>
+                    ) : tipo === 'mesa' ? (
                         <div className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
                             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                             {submitting ? 'Guardando…' : cart.length === 0 ? 'Agregá un producto para abrir la mesa' : hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
@@ -1326,10 +1358,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     ) : (
                         <Button
                             onClick={() => void handleSubmit()}
-                            disabled={submitting || cart.length === 0 || (modoEdicion && !hasChanges)}
+                            disabled={submitting || cart.length === 0}
                             className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
                         >
-                            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : modoEdicion ? 'Guardar cambios' : 'Anotar pedido'}
+                            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
                         </Button>
                     )}
                     {modoEdicion && tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
@@ -1350,14 +1382,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     )
 
     if (catalogoCompacto) {
-        const catalogoTarget = catalogoPortalReady && typeof document !== 'undefined'
-            ? document.getElementById('pos-catalogo-compacto')
-            : null
         return (
             <>
                 {catalogoTarget && createPortal(
-                    <div className="flex flex-col overflow-hidden">
-                        <div className={cn('shrink-0', mostrarListado && 'border-b border-border/70 pb-2.5')}>
+                    <div className={cn('flex flex-col overflow-hidden', catalogoEnColumna && 'h-full min-h-0')}>
+                        <div className={cn('shrink-0', catalogoEnColumna ? 'border-b border-border/70 p-3' : mostrarListado && 'border-b border-border/70 pb-2.5')}>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                                 <Input
@@ -1365,11 +1394,15 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     value={query}
                                     onChange={(event) => setQuery(event.target.value)}
                                     onKeyDown={(event) => {
-                                        if (mostrarListado && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && productosOrdenados.length > 0) {
+                                        if (mostrarListado && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || (catalogoEnColumna && (event.key === 'ArrowLeft' || event.key === 'ArrowRight'))) && productosOrdenados.length > 0) {
                                             event.preventDefault()
                                             navegacionTecladoRef.current = true
-                                            const delta = event.key === 'ArrowDown' ? 1 : -1
-                                            setIndiceSeleccionado((current) => (current + delta + productosOrdenados.length) % productosOrdenados.length)
+                                            setIndiceSeleccionado((current) => {
+                                                const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
+                                                const columnas = horizontal ? 1 : calcularColumnas()
+                                                const direccion = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1
+                                                return (current + direccion * columnas + productosOrdenados.length) % productosOrdenados.length
+                                            })
                                             return
                                         }
                                         if (event.key === 'Enter' && mostrarListado && productosOrdenados.length > 0) {
@@ -1378,45 +1411,67 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                             handleProductClick(producto, event.currentTarget.getBoundingClientRect())
                                         }
                                     }}
-                                    placeholder="Buscar productos..."
+                                    placeholder="Buscar producto o tag..."
                                     className="h-10 rounded-full border-border bg-muted/40 pl-10 shadow-none focus-visible:ring-[#FF7A00]"
                                 />
                             </div>
                         </div>
-                        {mostrarListado && <div ref={scrollRef} className="mt-2 max-h-[min(70vh,640px)] overflow-y-auto rounded-xl border border-border bg-background p-2 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {mostrarListado && <div ref={scrollRef} className={cn('overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', catalogoEnColumna ? 'min-h-0 flex-1 p-3' : 'mt-2 max-h-[min(45vh,400px)] rounded-xl border border-border bg-background p-2 shadow-sm')}>
                             {productosFiltrados.length === 0 ? (
                                 <p className="py-10 text-center text-sm text-muted-foreground">No se encontraron productos.</p>
                             ) : (
-                                <div className="space-y-0.5">
+                                <div className={catalogoEnColumna ? 'space-y-5' : 'space-y-0.5'}>
                                     {porCategoria.map(([categoria, items]) => (
-                                        <div key={categoria}>
-                                            <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{categoria}</p>
-                                            {items.map((producto) => {
-                                                const flatIndex = indicePorId.get(producto.id)
-                                                const seleccionado = flatIndex === indiceSeleccionado
-                                                return (
-                                                    <button
-                                                        key={producto.id}
-                                                        type="button"
-                                                        tabIndex={-1}
-                                                        data-flat-index={flatIndex}
-                                                        onMouseEnter={() => flatIndex != null && setIndiceSeleccionado(flatIndex)}
-                                                        onClick={(event) => handleProductClick(producto, event.currentTarget.getBoundingClientRect())}
-                                                        className={cn(
-                                                            'flex h-10 w-full items-center justify-between gap-3 rounded-lg border px-3 text-left transition-colors',
-                                                            seleccionado
-                                                                ? 'border-[#FF7A00] bg-[#FF7A00]/5'
-                                                                : 'border-transparent hover:bg-muted/60'
-                                                        )}
-                                                    >
-                                                        <span className="min-w-0 truncate text-sm font-semibold text-foreground">{producto.nombre}</span>
-                                                        <span className="shrink-0 text-sm font-bold tabular-nums text-[#FF7A00]">
-                                                            ${parseFloat(producto.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                                                        </span>
-                                                    </button>
-                                                )
-                                            })}
-                                        </div>
+                                        <section key={categoria}>
+                                            <h3 className={cn('text-[10px] font-bold uppercase tracking-widest text-muted-foreground', catalogoEnColumna ? 'mb-2' : 'px-3 pb-1 pt-2')}>{categoria}</h3>
+                                            <div className={catalogoEnColumna ? 'grid grid-cols-4 gap-2' : 'flex flex-col'}>
+                                                {items.map((producto) => {
+                                                    const flatIndex = indicePorId.get(producto.id)
+                                                    const seleccionado = flatIndex === indiceSeleccionado
+                                                    return (
+                                                        <button
+                                                            key={producto.id}
+                                                            type="button"
+                                                            tabIndex={-1}
+                                                            data-flat-index={flatIndex}
+                                                            onMouseEnter={() => flatIndex != null && setIndiceSeleccionado(flatIndex)}
+                                                            onClick={(event) => handleProductClick(producto, event.currentTarget.getBoundingClientRect())}
+                                                            className={cn(
+                                                                catalogoEnColumna
+                                                                    ? 'group flex flex-col overflow-hidden rounded-xl border text-left transition-all hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 active:scale-[0.98]'
+                                                                    : 'flex h-10 w-full items-center justify-between gap-3 rounded-lg border px-3 text-left transition-colors',
+                                                                catalogoEnColumna && (producto.imagenUrl ? 'min-h-32' : 'min-h-24'),
+                                                                seleccionado
+                                                                    ? 'border-[#FF7A00] bg-[#FF7A00]/5 ring-1 ring-[#FF7A00]'
+                                                                    : catalogoEnColumna ? 'border-border bg-card hover:bg-muted/60' : 'border-transparent hover:bg-muted/60'
+                                                            )}
+                                                        >
+                                                            {catalogoEnColumna && producto.imagenUrl && (
+                                                                <div className="aspect-[4/3] w-full shrink-0 overflow-hidden bg-muted">
+                                                                    <img
+                                                                        src={producto.imagenUrl}
+                                                                        alt={producto.nombre}
+                                                                        loading="lazy"
+                                                                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                            {catalogoEnColumna ? <div className="flex flex-1 flex-col justify-between gap-1.5 p-2">
+                                                                <span className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">{producto.nombre}</span>
+                                                                <span className="text-xs font-bold tabular-nums text-[#FF7A00]">
+                                                                    ${parseFloat(producto.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                                </span>
+                                                            </div> : <>
+                                                                <span className="min-w-0 truncate text-sm font-semibold text-foreground">{producto.nombre}</span>
+                                                                <span className="shrink-0 text-sm font-bold tabular-nums text-[#FF7A00]">
+                                                                    ${parseFloat(producto.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
+                                                                </span>
+                                                            </>}
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </section>
                                     ))}
                                 </div>
                             )}
@@ -1452,6 +1507,27 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             <div className="relative shrink-0 flex items-center justify-between gap-2 px-4 pt-2 bg-background">
                 <span className="min-w-0 truncate text-xs font-bold text-muted-foreground">{modoEdicion ? `Editando pedido #${initialPedido.id}` : 'Nuevo pedido'}</span>
                 <div className="flex items-center gap-2 shrink-0">
+                    {modoEdicion && onViewPedido && (
+                        <Button tabIndex={-1} variant="ghost" size="sm" className="h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground" onClick={requestViewPedido}>
+                            Cancelar edición
+                        </Button>
+                    )}
+                    {!modoEdicion && (
+                        <Button tabIndex={-1} variant="ghost" size="sm" className="h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground" onClick={requestClearDraft}>
+                            Limpiar
+                        </Button>
+                    )}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => setConfigurandoPos(true)}
+                        aria-label="Configurar punto de venta"
+                        tabIndex={-1}
+                        title="Configurar punto de venta"
+                    >
+                        <MoreHorizontal className="h-4 w-4" />
+                    </Button>
                     {/* Sin conexión: el POS sigue anotando pedidos en la cola local. */}
                     {!online && (
                         <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded-full px-2.5 py-1">
@@ -1486,6 +1562,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 </div>
 
                 {/* ── Panel de pedidos sin conexión ── */}
+                <PosConfigDialog open={configurandoPos} onOpenChange={setConfigurandoPos} />
+
                 {showPendientes && (
                     <div className="absolute right-0 top-full mt-1 w-[340px] max-h-[65vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl z-[1001] p-2 space-y-1.5">
                         <div className="flex items-center justify-between px-2 pt-1.5 pb-1">
@@ -1505,7 +1583,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-sm font-bold">#LOCAL-{p.localNumero}</span>
                                             <span className={cn('text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5', p.estado === 'pendiente' ? 'bg-amber-500/10 text-amber-600' : 'bg-red-500/10 text-red-600')}>
-                                                {p.estado === 'pendiente' ? 'Pendiente' : 'Error'}
+                                                {p.estado === 'pendiente' ? 'Pendiente' : p.estado === 'sincronizando' ? 'Confirmando' : 'Revisar'}
                                             </span>
                                         </div>
                                         <p className="text-xs text-muted-foreground mt-0.5">
@@ -1514,10 +1592,17 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                         <p className="text-xs text-muted-foreground truncate mt-0.5">
                                             {p.draft.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(', ')}
                                         </p>
-                                        {p.estado === 'error' && p.errorMessage && (
+                                        {(p.impresion === 'revisar' || p.impresion === 'iniciada') && <p className="text-xs text-amber-600 mt-1">Verificá si la comanda salió antes de reimprimir.</p>}
+                                        {Date.now() - Date.parse(p.creadoEn) > 3_600_000 && <p className="text-xs text-amber-600 mt-1">Este pedido lleva más de una hora sin confirmar.</p>}
+                                        {p.estado === 'error_bloqueante' && p.errorMessage && (
                                             <p className="text-[11px] text-red-600 mt-1">{p.errorMessage}</p>
                                         )}
                                         <div className="flex items-center gap-1.5 mt-2">
+                                            {p.estado === 'error_bloqueante' && <button className="h-8 px-2 rounded-lg bg-muted text-xs font-semibold"
+                                                onClick={() => void usePosOfflineStore.getState().guardarPendiente({ ...p, estado: 'pendiente', leaseHasta: 0, errorMessage: undefined })
+                                                    .then(intentarSincronizar).catch(() => toast.error('No se pudo preparar el reintento'))}>
+                                                Reintentar
+                                            </button>}
                                             <button
                                                 onClick={() => void reimprimirPendiente(p)}
                                                 className="flex-1 h-8 rounded-lg bg-muted hover:bg-accent text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
@@ -1525,7 +1610,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                                 <Printer className="h-3.5 w-3.5" /> Imprimir
                                             </button>
                                             <button
-                                                onClick={() => eliminarPendiente(p)}
+                                                onClick={() => void eliminarPendiente(p).catch(() => toast.error('No se pudo eliminar el pendiente'))}
                                                 title="Eliminar pedido sin conexión"
                                                 className="h-8 px-2.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 text-xs font-semibold flex items-center justify-center transition-colors"
                                             >

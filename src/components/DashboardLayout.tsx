@@ -13,9 +13,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  Sparkles,
   X,
-  Blocks,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -85,47 +83,11 @@ const DashboardLayout = () => {
     setMenuOpen(false)
   }
 
-  const suscripcionActivaEnRuta = location.pathname.startsWith('/dashboard/suscripcion')
 
   // Mensajes concentra los cupos de Avisos y Crecimiento; sólo aparece si alguno está activo.
   const navItems = NAV_ITEMS.filter(
     (item) => item.path !== MENSAJES_PATH || avisosAutomaticosActivos || crecimientoActivo,
   )
-
-  const renderPlanButton = (compact: boolean) => {
-    return (
-      <div className="px-3 pt-2 space-y-1">
-        <button
-          onClick={() => handleNavigation('/dashboard/suscripcion')}
-          title={compact ? 'Mi suscripción' : undefined}
-          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
-            compact ? 'justify-center px-0' : 'px-3'
-          } ${
-            suscripcionActivaEnRuta
-              ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-          }`}
-        >
-          <Sparkles className={`h-[18px] w-[18px] shrink-0 ${suscripcionActivaEnRuta ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
-          {!compact && <span className="flex-1 text-left">Mi suscripción</span>}
-        </button>
-        <button
-          onClick={() => handleNavigation('/dashboard/modulos')}
-          title={compact ? 'Módulos' : undefined}
-          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
-            compact ? 'justify-center px-0' : 'px-3'
-          } ${
-            isActive('/dashboard/modulos')
-              ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-          }`}
-        >
-          <Blocks className={`h-[18px] w-[18px] shrink-0 ${isActive('/dashboard/modulos') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
-          {!compact && <span className="flex-1 text-left">Módulos</span>}
-        </button>
-      </div>
-    )
-  }
 
   // `compact` = rail de solo iconos (aplica en el sidebar de escritorio).
   // `drawer` = versión móvil (push): el botón de cabecera cierra el drawer.
@@ -174,13 +136,13 @@ const DashboardLayout = () => {
       </nav>
 
       {/* Botón de plan: muestra el plan actual y lleva a "Tu plan" (ver / mejorar) */}
-      {renderPlanButton(compact)}
+
 
       {/* Footer: ajustes */}
       <div className="p-3 space-y-1 shrink-0">
         <button
           onClick={() => handleNavigation('/dashboard/ajustes')}
-          title={compact ? 'Ajustes' : undefined}
+          title={compact ? 'Configuración' : undefined}
           className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
             compact ? 'justify-center px-0' : 'px-3'
           } ${
@@ -190,7 +152,7 @@ const DashboardLayout = () => {
           }`}
         >
           <Settings className={`h-[18px] w-[18px] ${isActive('/dashboard/ajustes') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
-          {!compact && 'Ajustes'}
+          {!compact && 'Configuración'}
         </button>
       </div>
     </div>

@@ -25,7 +25,7 @@ export default function AvisosAutomaticos() {
           oracion="Activá el módulo desde Módulos para configurar tus avisos"
           estado="sin-configurar"
           accionLabel="Ver módulos"
-          onAccion={() => navigate('/dashboard/modulos')}
+          onAccion={() => navigate('/dashboard/ajustes/experiencia#modulos-seccion')}
         />
       </section>
     )

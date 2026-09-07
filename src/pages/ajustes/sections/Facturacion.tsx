@@ -49,7 +49,7 @@ export default function Facturacion() {
             oracion="Activala desde Módulos para configurar ARCA"
             estado="sin-configurar"
             accionLabel="Ver módulos"
-            onAccion={() => navigate('/dashboard/modulos')}
+            onAccion={() => navigate('/dashboard/ajustes/facturacion#modulos-seccion')}
           />
         </div>
       ) : <div>

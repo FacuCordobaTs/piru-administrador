@@ -94,6 +94,10 @@ const GlobalAutoPrinter = () => {
     const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
     const initialLoadDoneRef = useRef(false)
+    // El evento del backend distingue un alta nueva de una carga inicial. Sin
+    // esta marca, un refetch que gana la carrera al primer fetch puede registrar
+    // el pedido como backlog y omitir su impresión.
+    const realtimeOrdersPendingPrintRef = useRef<Set<number>>(new Set())
 
     // ─────────────────────────────────────────────
     // FETCH (espejo del fetch inicial del Dashboard, sin paginación ni selección)
@@ -142,8 +146,11 @@ const GlobalAutoPrinter = () => {
         ) {
             return
         }
+        if (!isDashboardRoute && lastUpdate.shouldPrint && lastUpdate.pedidoId) {
+            realtimeOrdersPendingPrintRef.current.add(lastUpdate.pedidoId)
+        }
         fetchPedidos()
-    }, [lastUpdate, fetchPedidos])
+    }, [lastUpdate, fetchPedidos, isDashboardRoute])
 
     // ─────────────────────────────────────────────
     // AUTO-IMPRESIÓN (espejo exacto del Dashboard)
@@ -155,6 +162,7 @@ const GlobalAutoPrinter = () => {
             const pedidoKey = `${pedido.tipo}-${pedido.id}`
             const currentPagado = pedido.pagado
             const prevData = processedOrdersRef.current.get(pedidoKey)
+            const pendingFromRealtime = realtimeOrdersPendingPrintRef.current.has(pedido.id)
 
             // Mientras estamos en el Dashboard, el Dashboard imprime. Acá solo registramos
             // para no reimprimir el backlog cuando el usuario cambie de pantalla.
@@ -173,13 +181,14 @@ const GlobalAutoPrinter = () => {
 
             // Ya impreso en la DB → registrar y saltar
             if (pedido.impreso) {
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
 
-            let shouldPrint = false
+            let shouldPrint = pendingFromRealtime && (!deferUntilPaid || !!currentPagado)
 
-            if (!prevData) {
+            if (!shouldPrint && !prevData) {
                 // Primera vez que vemos este pedido
                 if (!initialLoadDoneRef.current) {
                     // Carga inicial (F5, apertura): solo registrar, NO imprimir
@@ -194,9 +203,9 @@ const GlobalAutoPrinter = () => {
                     // Método no-deferred (efectivo, transf manual): imprimir inmediatamente
                     shouldPrint = true
                 }
-            } else {
+            } else if (!shouldPrint) {
                 // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
-                if (deferUntilPaid && currentPagado && !prevData.pagado) {
+                if (deferUntilPaid && currentPagado && !prevData?.pagado) {
                     shouldPrint = true
                 }
             }
@@ -205,15 +214,32 @@ const GlobalAutoPrinter = () => {
                 // Claim atómico contra el backend: si hay otro dispositivo/pestaña del mismo
                 // restaurante conectado, solo uno de los dos debe ganar la carrera e imprimir.
                 pedidoUnificadoApi.claimImpreso(token, pedido.id)
-                    .then((res: any) => {
-                        if (!res?.claimed) return
+                    .then(async (res: any) => {
+                        if (!res?.claimed) {
+                            realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                            return
+                        }
 
-                        const itemsToPrint = pedido.items.map(item => {
-                            const producto = allProductos.find(p => p.id === item.productoId)
-                            return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
-                        })
+                        const claimedItems: Array<{ id: number; cantidad: number }> = Array.isArray(res?.pendingItems)
+                            ? res.pendingItems.filter((item: unknown): item is { id: number; cantidad: number } => {
+                                if (typeof item !== 'object' || item === null) return false
+                                const candidate = item as { id?: unknown; cantidad?: unknown }
+                                return Number.isInteger(candidate.id) && Number(candidate.cantidad) > 0
+                            })
+                            : []
+                        const pendientes = Array.isArray(res?.pendingItems)
+                            ? new Map<number, number>(claimedItems.map((item) => [item.id, item.cantidad]))
+                            : null
+                        try {
+                            const baseItems = pendientes && !res?.printFull
+                                ? pedido.items.filter((item) => pendientes.has(item.id)).map((item) => ({ ...item, cantidad: pendientes.get(item.id)! }))
+                                : pedido.items
+                            const itemsToPrint = baseItems.map(item => {
+                                const producto = allProductos.find(p => p.id === item.productoId)
+                                return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
+                            })
+                            if (itemsToPrint.length === 0) throw new Error('El pedido no tiene productos imprimibles')
 
-                        if (itemsToPrint.length > 0) {
                             const deliveryFee = pedido.tipo === 'delivery' ? getOrderDeliveryFee(pedido) : 0;
                             const comandaData = formatComanda({
                                 id: pedido.id, nombrePedido: pedido.nombreCliente, telefono: pedido.telefono,
@@ -228,15 +254,27 @@ const GlobalAutoPrinter = () => {
                                 grandeMayusculas: comandaGrandeMayusculas,
                             })
 
-                            printRaw(commandsToBytes(comandaData)).catch((err) => {
-                                console.error('Error imprimiendo comanda automática:', err)
-                                toast.error(`No se pudo imprimir el pedido #${pedido.id}. Reimprimilo manualmente.`)
+                            await printRaw(commandsToBytes(comandaData))
+                        } catch (err) {
+                            try {
+                                await pedidoUnificadoApi.liberarImpreso(token, pedido.id, claimedItems)
+                            } catch (releaseError) {
+                                console.error('Error liberando claim de impresión:', releaseError)
+                            }
+                            console.error('Error imprimiendo comanda automática global:', err)
+                            toast.error(`No se pudo imprimir el pedido #${pedido.id}. Podés reintentarlo manualmente.`, {
+                                description: err instanceof Error ? err.message : String(err),
                             })
+                            return
                         }
 
+                        realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                         setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
                     })
-                    .catch(console.error)
+                    .catch((err) => {
+                        console.error('Error reclamando impresión automática global:', err)
+                        toast.error(`No se pudo preparar la impresión del pedido #${pedido.id}`)
+                    })
             }
             processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
         })

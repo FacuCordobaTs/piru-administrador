@@ -590,20 +590,65 @@ export const formatFactura = (
     return commands;
 };
 
+/** Caracteres no ASCII soportados por la tabla PC437 seleccionada en la comanda. */
+const CP437_BYTES: Readonly<Record<string, number>> = {
+    'ç': 0x80, 'ü': 0x81, 'é': 0x82, 'â': 0x83, 'ä': 0x84, 'à': 0x85, 'å': 0x86,
+    'Ç': 0x87, 'ê': 0x88, 'ë': 0x89, 'è': 0x8a, 'ï': 0x8b, 'î': 0x8c, 'ì': 0x8d,
+    'Ä': 0x8e, 'Å': 0x8f, 'É': 0x90, 'æ': 0x91, 'Æ': 0x92, 'ô': 0x93, 'ö': 0x94,
+    'ò': 0x95, 'û': 0x96, 'ù': 0x97, 'ÿ': 0x98, 'Ö': 0x99, 'Ü': 0x9a, '¢': 0x9b,
+    '£': 0x9c, '¥': 0x9d, 'ƒ': 0x9f, 'á': 0xa0, 'í': 0xa1, 'ó': 0xa2, 'ú': 0xa3,
+    'ñ': 0xa4, 'Ñ': 0xa5, 'ª': 0xa6, 'º': 0xa7, '¿': 0xa8, '¬': 0xaa, '½': 0xab,
+    '¼': 0xac, '¡': 0xad, '«': 0xae, '»': 0xaf,
+}
+
 /**
- * Convierte un array de comandos ESC/POS (strings) a un array de bytes (números).
- * Preserva los caracteres de control como \x1B, \x1D, etc.
- * @param commands Array de strings con comandos ESC/POS
- * @returns Array de números representando los bytes raw
+ * Algunas letras españolas no existen en PC437. Las aproximamos de forma
+ * legible, igual que la puntuación tipográfica que suelen pegar los clientes.
+ * Cualquier otro Unicode (por ejemplo emojis) se reemplaza por un solo `?`.
+ *
+ * Esto es también una restricción de transporte: Tauri recibe `Vec<u8>`. El
+ * `charCodeAt` anterior enviaba valores mayores a 255 y rechazaba el trabajo
+ * completo cuando una nota, dirección o producto contenía uno de esos signos.
+ */
+const CP437_FALLBACKS: Readonly<Record<string, string>> = {
+    'Á': 'A', 'Í': 'I', 'Ó': 'O', 'Ú': 'U',
+    '‘': "'", '’': "'", '‚': ',', '‛': "'",
+    '“': '"', '”': '"', '„': '"', '‟': '"',
+    '‐': '-', '‑': '-', '‒': '-', '–': '-', '—': '-', '−': '-',
+    '…': '...', '·': '-', ' ': ' ', ' ': ' ',
+}
+
+/**
+ * Convierte comandos ESC/POS a bytes reales de PC437 y preserva los controles
+ * (`ESC`, `GS`, saltos de línea, etc.). Nunca devuelve enteros fuera de u8.
  */
 export const commandsToBytes = (commands: string[]): number[] => {
-    const bytes: number[] = [];
+    const bytes: number[] = []
 
-    for (const command of commands) {
-        for (let i = 0; i < command.length; i++) {
-            bytes.push(command.charCodeAt(i));
+    const append = (character: string) => {
+        const codePoint = character.codePointAt(0)
+        if (codePoint !== undefined && codePoint <= 0x7f) {
+            bytes.push(codePoint)
+            return
         }
+        const cp437 = CP437_BYTES[character]
+        if (cp437 !== undefined) {
+            bytes.push(cp437)
+            return
+        }
+        const fallback = CP437_FALLBACKS[character]
+        if (fallback !== undefined) {
+            for (const replacement of fallback) append(replacement)
+            return
+        }
+        bytes.push(0x3f)
     }
 
-    return bytes;
-};
+    for (const command of commands) {
+        // `for...of` recorre puntos de código: un emoji (par sustituto UTF-16)
+        // produce un solo reemplazo y, sobre todo, nunca dos enteros > 255.
+        for (const character of command) append(character)
+    }
+
+    return bytes
+}

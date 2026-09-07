@@ -43,7 +43,7 @@ export default function Impresion() {
           oracion="Activala desde Módulos para elegir una impresora"
           estado="sin-configurar"
           accionLabel="Ver módulos"
-          onAccion={() => navigate('/dashboard/modulos')}
+          onAccion={() => navigate('/dashboard/ajustes/impresion#modulos-seccion')}
         />
       </section>
     )

@@ -140,7 +140,7 @@ export default function Pagos() {
           mercadoPagoActivo={mercadoPagoActivo}
           taloActivo={taloActivo}
           irA={setEditor}
-          irAModulo={() => navigate('/dashboard/modulos')}
+          irAModulo={() => navigate('/dashboard/ajustes/pagos#modulos-seccion')}
         />
       </AjusteEditor>
 

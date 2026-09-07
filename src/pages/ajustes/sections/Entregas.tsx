@@ -1,3 +1,4 @@
+import { DeliveryAddressSettings } from '../components/DeliveryAddressSettings'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { Plus, Loader2, Edit, Store, ArrowLeft, Truck, Package } from 'lucide-react'
@@ -39,8 +40,8 @@ export default function Entregas() {
 
   useEffect(() => {
     const config = searchParams.get('config')
-    if ((config === 'sucursales' || config === 'rapiboy') && multisucursalActiva) setEditor('sucursales')
-  }, [multisucursalActiva, searchParams])
+    if ((config === 'sucursales' && multisucursalActiva) || (config === 'rapiboy' && rapiboyActivo)) setEditor('sucursales')
+  }, [multisucursalActiva, rapiboyActivo, searchParams])
 
   return (
     <section className="space-y-6">
@@ -78,10 +79,12 @@ export default function Entregas() {
             oracion="Activá el módulo para administrar más de un local"
             estado="sin-configurar"
             accionLabel="Ver módulos"
-            onAccion={() => navigate('/dashboard/modulos')}
+            onAccion={() => navigate('/dashboard/ajustes/entregas#modulos-seccion')}
           />
         )}
       </div>
+
+      {deliveryOn && <DeliveryAddressSettings />}
 
       {/* Tipos de pedido */}
       <AjusteEditor

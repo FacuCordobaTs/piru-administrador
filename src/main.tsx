@@ -25,11 +25,11 @@ import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
 import Suscribir from './pages/Suscribir';
 import Metricas from './pages/Metricas';
-import MiSuscripcion from './pages/MiSuscripcion';
+
 import UpdaterPrompt from './components/UpdaterPrompt';
 import PagoLink from './pages/PagoLink';
 import ClaimTienda from './pages/ClaimTienda';
-import Modulos from './pages/Modulos';
+
 import Mesas from './pages/Mesas';
 import AccesoInterno from './pages/AccesoInterno';
 import { initializeDesktopZoom } from './utils/desktopZoom';
@@ -166,7 +166,7 @@ const router = createBrowserRouter([
           },
           {
             path: "modulos",
-            element: <Modulos />,
+            element: <ConfiguracionRedirect seccion="modulos" />,
           },
           {
             path: "mesas",
@@ -174,7 +174,7 @@ const router = createBrowserRouter([
           },
           {
             path: "suscripcion",
-            element: <MiSuscripcion />,
+            element: <ConfiguracionRedirect seccion="suscripcion" />,
           },
           {
             // Ruta temporal para admins instalados y enlaces previos.
@@ -248,3 +248,8 @@ createRoot(document.getElementById('root')!).render(
     </PrinterProvider>
   </StrictMode>,
 )
+
+function ConfiguracionRedirect({ seccion }: { seccion: string }) {
+  const { search } = useLocation()
+  return <Navigate to={`/dashboard/ajustes/${seccion}${search}`} replace />
+}

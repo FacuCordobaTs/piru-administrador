@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { purgarDirectorioPos } from '@/lib/posLocalDb'
 
 interface Restaurante {
   id: number
@@ -51,4 +52,18 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 )
+
+useAuthStore.subscribe((state, anterior) => {
+  const idAnterior = anterior.restaurante?.id
+  if (idAnterior != null && (state.restaurante?.id !== idAnterior || !state.token)) {
+    void purgarDirectorioPos(idAnterior).catch(() => { /* La partición queda inaccesible sin su sesión. */ })
+    // Borradores legacy de la misma pestaña tampoco deben cruzar cuentas.
+    try {
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const key = sessionStorage.key(i)
+        if (key?.startsWith('piru:pos-draft:')) sessionStorage.removeItem(key)
+      }
+    } catch { /* El fallo de storage no debe impedir invalidar los stores de sesión. */ }
+  }
+})
 

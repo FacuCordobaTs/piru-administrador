@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import {
   BellRing,
@@ -28,7 +28,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -36,9 +35,6 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { getPosConfig, POS_METODOS_ORDER, POS_TIPOS_ORDER, setPosConfig, type PosConfig, type PosMetodoPago, type PosTipo } from '@/lib/posConfig'
 import { useModulosStore } from '@/store/modulosStore'
-import { useAuthStore } from '@/store/authStore'
-import { useRestauranteStore } from '@/store/restauranteStore'
-import { restauranteApi } from '@/lib/api'
 import type { Modulo } from '@/lib/api'
 
 const fmtARS = (monto: string | number) =>
@@ -79,6 +75,8 @@ function requisitoConfiguracion(modulo: Modulo) {
 
 const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mesas: '/dashboard/mesas',
+  motor_recompra: '/dashboard/ajustes/recompra',
+  puntos_clientes: '/dashboard/ajustes/experiencia',
   codigos_descuento: '/dashboard/codigos-descuento',
   mercadopago: '/dashboard/ajustes/pagos?config=mercadopago',
   talo: '/dashboard/ajustes/pagos?config=talo',
@@ -117,9 +115,10 @@ function AccionModulo({
   if (modulo.estadoProducto === 'proximamente' || !modulo.activable) {
     return <Button className="w-full" variant="secondary" disabled>Próximamente</Button>
   }
+  if ((modulo.estado === 'activo' || modulo.estado === 'cancelacion_programada') && !modulo.activoAhora) return <Button onClick={() => window.location.assign('/dashboard/ajustes/suscripcion')}>Revisar suscripción</Button>
   if (modulo.estado === 'activo') {
     if (modulo.tipo === 'pago') {
-      return <Button className="w-full" variant="ghost" disabled={procesando} onClick={onDesactivar}>{procesando ? 'Guardando…' : 'Desactivar al finalizar el período'}</Button>
+      return <div className="grid gap-2">{RUTAS_CONFIGURACION[modulo.codigo] && <Button onClick={onConfigurar}>Configurar módulo</Button>}<Button className="w-full" variant="ghost" disabled={procesando} onClick={onDesactivar}>{procesando ? 'Guardando…' : 'Desactivar al finalizar el período'}</Button></div>
     }
     // El POS no navega a una pantalla: abre su propia configuración en esta página.
     const conConfiguracion = RUTAS_CONFIGURACION[modulo.codigo] || modulo.codigo === 'pos'
@@ -138,10 +137,10 @@ function AccionModulo({
     return <Button className="w-full" variant="outline" disabled={procesando} onClick={onReactivarPago}>{procesando ? 'Guardando…' : 'Reactivar módulo'}</Button>
   }
   if (modulo.estado === 'pendiente_pago') {
-    return <Button className="w-full" variant="outline" disabled={procesando} onClick={onActualizarPago}>{procesando ? 'Actualizando…' : 'Ya pagué, actualizar'}</Button>
+    return <div className="grid gap-2"><Button variant="outline" disabled={procesando} onClick={onActualizarPago}>Ya pagué, verificar</Button><Button variant="ghost" disabled={procesando} onClick={onActivarPago}>Volver al pago</Button></div>
   }
   if (modulo.estado === 'suspendido') {
-    return <Button className="w-full" variant="outline" disabled>Revisar suscripción</Button>
+    return <Button className="w-full" variant="outline" onClick={() => window.location.assign('/dashboard/ajustes/suscripcion')}>Revisar suscripción</Button>
   }
   return modulo.tipo === 'pago'
     ? <Button className="w-full" disabled={procesando} onClick={onActivarPago}>Activar por {fmtARS(modulo.precioMensual)}/mes</Button>
@@ -155,70 +154,13 @@ function CardModulo({
   modulo: Modulo
   onSeleccionar: () => void
 }) {
-  const requisito = requisitoConfiguracion(modulo)
   const proximamente = modulo.estadoProducto === 'proximamente' || !modulo.activable
-  const activo = modulo.estado === 'activo'
-  const pagoDisponible = modulo.tipo === 'pago' && !activo && !proximamente
-
-  return (
-    <button
-      type="button"
-      onClick={onSeleccionar}
-      className={cn(
-        'group flex min-h-[238px] w-full flex-col rounded-3xl p-5 text-left transition-[transform,background-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-2 hover:-translate-y-0.5',
-        proximamente
-          ? 'bg-muted/55 text-muted-foreground hover:bg-muted/75'
-          : activo
-            ? 'bg-emerald-50/80 dark:bg-emerald-950/30 hover:bg-emerald-100/80 dark:hover:bg-emerald-950/45'
-            : pagoDisponible
-              ? 'bg-zinc-950 text-white shadow-sm hover:bg-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'
-              : 'bg-white dark:bg-muted/40 hover:bg-muted/60',
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <span className={cn(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl',
-          proximamente
-            ? 'bg-muted-foreground/10 text-muted-foreground'
-            : activo
-              ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
-              : pagoDisponible
-                ? 'bg-white/12 text-white'
-                : 'bg-brand/10 text-brand',
-        )}>
-          {(() => {
-            const Icon = ICONOS[modulo.codigo] ?? Blocks
-            return <Icon className="h-5 w-5" />
-          })()}
-        </span>
-        <ChevronRight className={cn(
-          'mt-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5',
-          pagoDisponible ? 'text-white/55' : 'text-muted-foreground/55',
-        )} />
-      </div>
-      <div className="mt-4">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h2 className={cn('text-base font-semibold tracking-tight', pagoDisponible ? 'text-white' : 'text-foreground')}>{modulo.nombre}</h2>
-          {modulo.tipo === 'pago' && <span className={cn('text-xs font-medium', pagoDisponible ? 'text-white/70' : 'text-brand')}>+{fmtARS(modulo.precioMensual)}/mes</span>}
-        </div>
-        <p className={cn('mt-1.5 min-h-10 text-sm leading-relaxed', pagoDisponible ? 'text-white/65' : 'text-muted-foreground')}>
-          {modulo.descripcion || 'Sumá esta capacidad a la operación de tu local.'}
-        </p>
-      </div>
-      <div className="mt-auto pt-5">
-        {activo ? (
-          <div className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-            <CircleCheck className="h-4 w-4" />
-            <span>{requisito ? 'Activo · falta configurar' : 'Listo para usar'}</span>
-          </div>
-        ) : proximamente ? (
-          <p className="text-sm font-medium text-muted-foreground">En preparación</p>
-        ) : (
-          <p className={cn('text-sm font-medium', pagoDisponible ? 'text-white/85' : 'text-muted-foreground')}>Ver detalles</p>
-        )}
-      </div>
-    </button>
-  )
+  const Icon = ICONOS[modulo.codigo] ?? Blocks
+  const estado = proximamente ? 'En preparación' : modulo.estado === 'cancelacion_programada' ? 'Baja programada' : modulo.estado === 'pendiente_pago' ? 'Pago pendiente' : modulo.activoAhora ? 'Activo' : modulo.estado === 'activo' || modulo.estado === 'suspendido' ? 'Revisar suscripción' : 'Sin activar'
+  return <button type="button" onClick={onSeleccionar} className="group flex h-full w-full items-start gap-3 rounded-2xl border bg-background p-5 text-left transition-colors hover:border-brand/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+    <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', modulo.activoAhora ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}><Icon className="size-5" /></span>
+    <span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{modulo.nombre}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></span><span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{modulo.descripcion || 'Sumá esta herramienta a tu negocio.'}</span><span className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs"><span className={modulo.activoAhora ? 'font-medium text-emerald-600' : 'text-muted-foreground'}>{estado}</span><span className="font-medium">{modulo.tipo === 'pago' ? `+${fmtARS(modulo.precioMensualCongelado ?? modulo.precioMensual)}/mes` : 'Incluido · sin costo extra'}</span></span></span>
+  </button>
 }
 
 const TIPOS_POS: Array<{ id: PosTipo; label: string; icon: typeof Truck }> = [
@@ -363,7 +305,7 @@ function CatalogoSkeleton() {
         <section key={grupo}>
           <Skeleton className="h-6 w-44" />
           <Skeleton className="mt-2 h-4 w-72" />
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
             {[0, 1, 2].map((card) => <Skeleton key={card} className="h-64 rounded-2xl" />)}
           </div>
         </section>
@@ -372,7 +314,8 @@ function CatalogoSkeleton() {
   )
 }
 
-export default function Modulos() {
+export default function Modulos({ embedded = false, query = '', codigos, soloActivos = false }: { embedded?: boolean; query?: string; codigos?: string[]; soloActivos?: boolean }) {
+  const [filtro, setFiltro] = useState<'todos' | 'activos' | 'incluidos' | 'pagos'>('todos')
   const navigate = useNavigate()
   const location = useLocation()
   const categorias = useModulosStore((state) => state.categorias)
@@ -384,28 +327,17 @@ export default function Modulos() {
   const checkoutModulo = useModulosStore((state) => state.checkoutModulo)
   const enviarPagoLinkModulo = useModulosStore((state) => state.enviarPagoLinkModulo)
   const reactivar = useModulosStore((state) => state.reactivar)
-  const token = useAuthStore((state) => state.token)
-  const direccionSoloTexto = useRestauranteStore((state) => state.restaurante?.direccionSoloTexto === true)
-  const deliveryFeeActual = useRestauranteStore((state) => state.restaurante?.deliveryFee)
-  const setRestauranteLocal = useRestauranteStore((state) => state.setLocal)
   const [procesandoCodigo, setProcesandoCodigo] = useState<string | null>(null)
-  const [moduloSeleccionado, setModuloSeleccionado] = useState<Modulo | null>(null)
+  const [seleccion, setModuloSeleccionado] = useState<Modulo | null>(null)
+  const moduloSeleccionado = categorias.flatMap(c => c.modulos).find(m => m.codigo === seleccion?.codigo) ?? seleccion
   const [moduloPagoSeleccionado, setModuloPagoSeleccionado] = useState<Modulo | null>(null)
   const [confirmandoBaja, setConfirmandoBaja] = useState<Modulo | null>(null)
   const [configurandoPos, setConfigurandoPos] = useState(false)
-  const [guardandoDireccion, setGuardandoDireccion] = useState(false)
-  const [costoEnvioFijo, setCostoEnvioFijo] = useState(String(deliveryFeeActual ?? '0'))
-  const [guardandoCostoEnvio, setGuardandoCostoEnvio] = useState(false)
-  const costoEnvioRef = useRef<HTMLInputElement>(null)
   const vieneDeActivarSuscripcion = new URLSearchParams(location.search).get('origen') === 'suscripcion'
 
   useEffect(() => {
     void cargar().catch(() => undefined)
   }, [cargar])
-
-  useEffect(() => {
-    setCostoEnvioFijo(String(deliveryFeeActual ?? '0'))
-  }, [deliveryFeeActual])
 
   useEffect(() => {
     if (new URLSearchParams(location.search).get('checkout') !== 'success') return
@@ -417,14 +349,21 @@ export default function Modulos() {
         if (!cancelado && intento === 0) toast.info('Estamos verificando la acreditación de tu pago…')
       } catch { /* el próximo intento vuelve a consultar */ }
       if (!cancelado && intento + 1 < demoras.length) window.setTimeout(() => void verificar(intento + 1), demoras[intento + 1])
-      if (!cancelado && intento + 1 === demoras.length) window.history.replaceState({}, '', '/dashboard/modulos')
+      if (!cancelado && intento + 1 === demoras.length) window.history.replaceState({}, '', '/dashboard/ajustes/modulos')
     }
     void verificar(0)
     return () => { cancelado = true }
   }, [cargar, location.search])
 
-  const categoriasNormales = categorias.filter((categoria) => categoria.modulos.some((modulo) => modulo.tipo === 'incluido'))
-  const pagos = categorias.flatMap((categoria) => categoria.modulos).filter((modulo) => modulo.tipo === 'pago')
+  const coincide = (m: Modulo) => `${m.nombre} ${m.descripcion ?? ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(query.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase())
+  const categoriasFiltradas = categorias.map(c => ({ ...c, modulos: c.modulos.filter(m =>
+    coincide(m) && (!codigos || codigos.includes(m.codigo)) && (!soloActivos || m.activoAhora)
+    && (!embedded || soloActivos || m.activable || m.activoAhora)
+    && (filtro === 'todos' || filtro === 'activos' && m.activoAhora || filtro === 'incluidos' && m.tipo === 'incluido' || filtro === 'pagos' && m.tipo === 'pago')
+  ) }))
+  const categoriasNormales = categoriasFiltradas.filter(c => c.modulos.some(m => m.tipo === 'incluido'))
+  const pagos = categoriasFiltradas.flatMap(c => c.modulos).filter(m => m.tipo === 'pago')
+  const visibles = categoriasFiltradas.flatMap(c => c.modulos)
 
   const activarIncluido = async (modulo: Modulo) => {
     setProcesandoCodigo(modulo.codigo)
@@ -432,7 +371,7 @@ export default function Modulos() {
       await activar(modulo.codigo)
       const ruta = RUTAS_CONFIGURACION[modulo.codigo]
       toast.success(`${modulo.nombre} está activo`, ruta ? {
-        description: 'Podés configurarlo ahora o volver más tarde desde Módulos.',
+        description: 'El siguiente paso es revisar su configuración.',
         action: { label: 'Configurar', onClick: () => navigate(ruta) },
       } : undefined)
     } catch (error) {
@@ -460,11 +399,12 @@ export default function Modulos() {
 
   const configurarModulo = (modulo: Modulo) => {
     if (modulo.codigo === 'pos') {
+      setModuloSeleccionado(null)
       setConfigurandoPos(true)
       return
     }
     const ruta = RUTAS_CONFIGURACION[modulo.codigo]
-    if (ruta) navigate(ruta)
+    if (ruta) { setModuloSeleccionado(null); navigate(ruta) }
   }
 
   const totalMensualCon = (modulo: Modulo) => {
@@ -535,56 +475,18 @@ export default function Modulos() {
     }
   }
 
-  const cambiarDireccionSoloTexto = async (activo: boolean) => {
-    if (!token || guardandoDireccion) return
-    const anterior = direccionSoloTexto
-    setGuardandoDireccion(true)
-    setRestauranteLocal({ direccionSoloTexto: activo })
-    try {
-      await restauranteApi.update(token, { direccionSoloTexto: activo })
-      toast.success(activo ? 'El checkout ahora pedirá la dirección escrita' : 'El checkout ahora usará Google Maps')
-      if (activo) window.setTimeout(() => costoEnvioRef.current?.focus(), 0)
-    } catch (error) {
-      setRestauranteLocal({ direccionSoloTexto: anterior })
-      toast.error('No pudimos guardar la configuración', { description: error instanceof Error ? error.message : undefined })
-    } finally {
-      setGuardandoDireccion(false)
-    }
-  }
-
-  const guardarCostoEnvioFijo = async () => {
-    if (!token || guardandoCostoEnvio) return
-    const normalizado = costoEnvioFijo.replace(',', '.').trim()
-    const monto = Number(normalizado)
-    if (!normalizado || !Number.isFinite(monto) || monto < 0) {
-      toast.error('Ingresá un costo de envío válido')
-      return
-    }
-    const valor = monto.toFixed(2)
-    if (valor === deliveryFeeActual) return
-    setGuardandoCostoEnvio(true)
-    setRestauranteLocal({ deliveryFee: valor })
-    try {
-      await restauranteApi.update(token, { deliveryFee: valor })
-      setCostoEnvioFijo(valor)
-      toast.success('Costo fijo de envío guardado')
-    } catch (error) {
-      setRestauranteLocal({ deliveryFee: deliveryFeeActual })
-      toast.error('No pudimos guardar el costo de envío', { description: error instanceof Error ? error.message : undefined })
-    } finally {
-      setGuardandoCostoEnvio(false)
-    }
-  }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
-      <header className="mx-auto mb-12 max-w-2xl text-center">
+    <div className={embedded ? "" : "mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14"}>
+      {!embedded && <header className="mx-auto mb-12 max-w-2xl text-center">
         <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">Módulos</h1>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
           Activá sólo las herramientas que necesitás. Los módulos incluidos no suman costo; los pagos se agregan a tu suscripción.
         </p>
-      </header>
+      </header>}
 
+      {!embedded && <div aria-label="Filtrar herramientas" className="mb-6 flex flex-wrap gap-2">{([['todos', 'Todas'], ['activos', 'Mis herramientas'], ['incluidos', 'Sin costo extra'], ['pagos', 'Con costo adicional']] as const).map(([id, label]) => <Button key={id} size="sm" variant={filtro === id ? 'default' : 'outline'} aria-pressed={filtro === id} className="rounded-full" onClick={() => setFiltro(id)}>{label}</Button>)}</div>}
+      {!cargando && !error && visibles.length === 0 && <p className="py-6 text-sm text-muted-foreground">{soloActivos ? 'Todavía no tenés módulos activos. Podés activarlos desde las secciones de ajustes de tu negocio.' : 'No hay módulos disponibles en esta sección.'}</p>}
       {vieneDeActivarSuscripcion && (
         <div className="mb-8 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm">
           <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
@@ -596,62 +498,11 @@ export default function Modulos() {
         <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-6 text-center">
           <p className="font-medium text-foreground">No pudimos cargar tus módulos</p>
           <p className="mt-1 text-sm text-muted-foreground">{error}</p>
-          <Button className="mt-4" variant="outline" onClick={() => void cargar(true)}>Reintentar</Button>
+          <Button className="mt-4" variant="outline" onClick={() => void cargar(true).catch(() => {})}>Reintentar</Button>
         </div>
-      ) : (
+      ) : embedded ? <div className="grid gap-3 sm:grid-cols-2">{visibles.map(modulo => <CardModulo key={modulo.codigo} modulo={modulo} onSeleccionar={() => setModuloSeleccionado(modulo)} />)}</div> : (
         <div className="space-y-11">
-          <section aria-labelledby="direccion-checkout">
-            <div>
-              <h2 id="direccion-checkout" className="text-lg font-semibold tracking-tight text-foreground">Checkout delivery</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Elegí cómo tus clientes cargan la dirección de entrega.</p>
-            </div>
-            <div className="mt-5 max-w-xl rounded-3xl border bg-card p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand/10 text-brand"><MapPin className="h-5 w-5" /></span>
-                  <div>
-                    <h3 className="font-semibold text-foreground">Pasar a dirección de solo texto</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                      {direccionSoloTexto
-                        ? 'Activo: el cliente escribe la dirección sin sugerencias ni validación de Google Maps.'
-                        : 'Desactivado: Google Maps sugiere y valida la dirección antes de confirmar el pedido.'}
-                    </p>
-                  </div>
-                </div>
-                <Switch checked={direccionSoloTexto} disabled={guardandoDireccion} onCheckedChange={cambiarDireccionSoloTexto} aria-label="Pasar a dirección de solo texto" />
-              </div>
-              {direccionSoloTexto && (
-                <div className="mt-5 border-t pt-5">
-                  <label htmlFor="costo-envio-texto" className="text-sm font-medium text-foreground">Costo fijo por envío</label>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Se aplicará a todos los pedidos delivery que ingresen con dirección escrita.</p>
-                  <div className="mt-3 flex max-w-sm gap-2">
-                    <div className="relative min-w-0 flex-1">
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
-                      <Input
-                        ref={costoEnvioRef}
-                        id="costo-envio-texto"
-                        value={costoEnvioFijo}
-                        onChange={(event) => setCostoEnvioFijo(event.target.value.replace(/[^\d.,]/g, ''))}
-                        onBlur={() => void guardarCostoEnvioFijo()}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            event.currentTarget.blur()
-                          }
-                        }}
-                        inputMode="decimal"
-                        placeholder="0"
-                        className="h-11 pl-7"
-                      />
-                    </div>
-                    <Button type="button" variant="outline" disabled={guardandoCostoEnvio} onClick={() => void guardarCostoEnvioFijo()}>
-                      {guardandoCostoEnvio ? 'Guardando…' : 'Guardar'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
+
 
           {categoriasNormales.map((categoria) => {
             const modulos = categoria.modulos.filter((modulo) => modulo.tipo === 'incluido')
@@ -662,7 +513,7 @@ export default function Modulos() {
                   <h2 id={`categoria-${categoria.codigo}`} className="text-lg font-semibold tracking-tight text-foreground">{categoria.nombre}</h2>
                   {categoria.descripcion && <p className="mt-1 text-sm text-muted-foreground">{categoria.descripcion}</p>}
                 </div>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   {modulos.map((modulo) => (
                     <CardModulo key={modulo.codigo} modulo={modulo} onSeleccionar={() => setModuloSeleccionado(modulo)} />
                   ))}
@@ -702,11 +553,12 @@ export default function Modulos() {
                 ? 'Podés dejar este módulo listo desde su pantalla de configuración.'
                 : null)
             const proximamente = moduloSeleccionado.estadoProducto === 'proximamente' || !moduloSeleccionado.activable
-            const activo = moduloSeleccionado.estado === 'activo'
+            const activo = moduloSeleccionado.activoAhora
             const estadoTexto = proximamente
               ? 'Este módulo está en preparación'
               : activo
                 ? requisito ? 'Está activo y necesita una configuración final' : 'Está activo y listo para usar'
+                : moduloSeleccionado.estado === 'activo' ? 'Revisá tu suscripción para volver a usarlo'
                 : moduloSeleccionado.estado === 'cancelacion_programada'
                   ? 'La baja está programada al finalizar el período'
                   : moduloSeleccionado.estado === 'pendiente_pago'
@@ -747,6 +599,11 @@ export default function Modulos() {
                   </div>
                 </div>
 
+                <ol className="space-y-3 text-sm" aria-label="Pasos para usar el módulo">
+                  <li className="flex gap-3"><span className="font-semibold text-brand">01</span><span>{activo ? 'Activación completada' : moduloSeleccionado.tipo === 'pago' ? 'Confirmá el pago para activar' : 'Activá sin costo adicional'}</span></li>
+                  <li className="flex gap-3"><span className="font-semibold text-brand">02</span><span>{configuracion ? 'Revisá la configuración para tu negocio' : 'La herramienta aparece en tu operación'}</span></li>
+                </ol>
+                {moduloSeleccionado.tipo === 'pago' && <p className="rounded-xl bg-muted p-4 text-sm">Incluye {moduloSeleccionado.mensajesUtilityIncluidos > 0 ? `${moduloSeleccionado.mensajesUtilityIncluidos} avisos de pedidos` : `${moduloSeleccionado.mensajesMarketingIncluidos} mensajes de campaña`} por ciclo. Las recargas se compran por separado.</p>}
                 {configuracion && (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Configuración</p>
@@ -765,16 +622,17 @@ export default function Modulos() {
               </div>
 
               <SheetFooter className="border-t px-6 py-5">
-                <AccionModulo
+                {activo && moduloSeleccionado.estado === 'cancelacion_programada' && RUTAS_CONFIGURACION[moduloSeleccionado.codigo] && <Button onClick={() => configurarModulo(moduloSeleccionado)}>Configurar</Button>}
+                {moduloSeleccionado.tipo === 'pago' && !moduloSeleccionado.activoAhora && !['activa', 'pago_pendiente'].includes(useModulosStore.getState().suscripcion?.estado ?? '') ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Primero necesitás una suscripción base activa. La prueba gratis no incluye herramientas pagas.</p><Button className="w-full" onClick={() => { setModuloSeleccionado(null); navigate('/dashboard/ajustes/suscripcion') }}>Ver mi suscripción</Button></div> : <AccionModulo
                   modulo={moduloSeleccionado}
                   procesando={procesandoCodigo === moduloSeleccionado.codigo}
                   onActivar={() => void activarIncluido(moduloSeleccionado)}
                   onDesactivar={() => moduloSeleccionado.tipo === 'pago' ? setConfirmandoBaja(moduloSeleccionado) : void desactivarIncluido(moduloSeleccionado)}
                   onActivarPago={() => setModuloPagoSeleccionado(moduloSeleccionado)}
                   onReactivarPago={() => void reactivarPago(moduloSeleccionado)}
-                  onActualizarPago={() => void cargar(true)}
+                  onActualizarPago={() => void cargar(true).catch(() => toast.error('No se pudo verificar el pago'))}
                   onConfigurar={() => configurarModulo(moduloSeleccionado)}
-                />
+                />}
               </SheetFooter>
             </>
           })()}

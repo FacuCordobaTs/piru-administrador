@@ -150,7 +150,7 @@ export default function Mozos() {
           <div>
             <p className="font-medium text-foreground">La app de mozos requiere los módulos POS y Mesas activos</p>
             <p className="mt-0.5 text-muted-foreground">Podés crear los accesos igual, pero los mozos no van a poder operar hasta activarlos.</p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate('/dashboard/modulos')}>Ver módulos</Button>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate('/dashboard/ajustes/ventas#modulos-seccion')}>Ver módulos</Button>
           </div>
         </div>
       )}

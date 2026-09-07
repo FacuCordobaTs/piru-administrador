@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ApiError, codigosDescuentoApi, crecimientoApi, type CampanaCrecimiento, type CrearCampanaCrecimiento } from '@/lib/api'
-import { ChevronRight, Copy, Globe2, Loader2, Megaphone, Pencil, Plus, Power, PowerOff, Tag, Trash2, Users } from 'lucide-react'
+import { ChevronRight, Copy, Globe2, Loader2, Megaphone, Pencil, Plus, Power, PowerOff, Tag, Trash2, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, type ProductoGrowth, type ResultadoCampana, type ResultadoCupon, type SucursalGrowth, formatCurrency, formatDate, normalizarHasta } from './types'
 
@@ -40,11 +40,11 @@ interface Props {
 const slug = (valor: string) => valor.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 191)
 
 type FormCampana = {
-  nombre: string; slug: string; estado: CampanaCrecimiento['estado']; productoId: string
-  descuentoProductoPorcentaje: string; limiteUsos: string; fechaInicio: string; fechaFin: string
+  nombre: string; slug: string; estado: CampanaCrecimiento['estado']; modalidad: 'seguimiento' | 'producto' | 'carrito'; productoId: string
+  carritoRep: string; descuentoProductoPorcentaje: string; limiteUsos: string; fechaInicio: string; fechaFin: string
 }
-const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', estado: 'activa', productoId: '', descuentoProductoPorcentaje: '', limiteUsos: '', fechaInicio: '', fechaFin: '' })
-const campanaAForm = (campana: CampanaCrecimiento): FormCampana => ({ nombre: campana.nombre, slug: campana.slug, estado: campana.estado, productoId: campana.productoId?.toString() ?? '', descuentoProductoPorcentaje: campana.descuentoProductoPorcentaje ? String(campana.descuentoProductoPorcentaje) : '', limiteUsos: campana.limiteUsos?.toString() ?? '', fechaInicio: campana.fechaInicio?.slice(0, 16) ?? '', fechaFin: campana.fechaFin?.slice(0, 16) ?? '' })
+const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', estado: 'activa', modalidad: 'seguimiento', productoId: '', carritoRep: '', descuentoProductoPorcentaje: '', limiteUsos: '', fechaInicio: '', fechaFin: '' })
+const campanaAForm = (campana: CampanaCrecimiento): FormCampana => ({ nombre: campana.nombre, slug: campana.slug, estado: campana.estado, modalidad: campana.destinoTipo === 'producto' && campana.productoId != null ? 'producto' : campana.destinoTipo === 'carrito' && campana.carritoRep ? 'carrito' : 'seguimiento', productoId: campana.productoId?.toString() ?? '', carritoRep: campana.carritoRep ?? '', descuentoProductoPorcentaje: campana.descuentoProductoPorcentaje ? String(campana.descuentoProductoPorcentaje) : '', limiteUsos: campana.limiteUsos?.toString() ?? '', fechaInicio: campana.fechaInicio?.slice(0, 16) ?? '', fechaFin: campana.fechaFin?.slice(0, 16) ?? '' })
 
 type FormCupon = { codigo: string; tipo: 'porcentaje' | 'monto_fijo'; valor: string; limiteUsos: string; montoMinimo: string; fechaInicio: string; fechaFin: string }
 const cuponVacio = (): FormCupon => ({ codigo: '', tipo: 'porcentaje', valor: '', limiteUsos: '', montoMinimo: '0', fechaInicio: '', fechaFin: '' })
@@ -90,19 +90,15 @@ export default function GrowthAssetsPanel(props: Props) {
     }).finally(() => setLoadingDetalle(false))
   }, [tab, cuponSeleccionado, token, filtrosApi, props.cuponesActivos])
 
-  const campanasProducto = useMemo(
-    () => campanas.filter((item) => item.destinoTipo === 'producto' && item.productoId != null),
-    [campanas],
-  )
   const campanasFiltradas = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return q ? campanasProducto.filter((item) => `${item.nombre} ${item.slug}`.toLowerCase().includes(q)) : campanasProducto
-  }, [campanasProducto, query])
+    return q ? campanas.filter((item) => `${item.nombre} ${item.slug}`.toLowerCase().includes(q)) : campanas
+  }, [campanas, query])
   const cuponesFiltrados = useMemo(() => {
     const q = query.trim().toLowerCase()
     return q ? cupones.filter((item) => item.codigo.toLowerCase().includes(q)) : cupones
   }, [cupones, query])
-  const campanaActual = typeof campanaSeleccionada === 'number' ? campanasProducto.find((item) => item.id === campanaSeleccionada) ?? null : null
+  const campanaActual = typeof campanaSeleccionada === 'number' ? campanas.find((item) => item.id === campanaSeleccionada) ?? null : null
   const cuponActual = cuponSeleccionado != null ? cupones.find((item) => item.id === cuponSeleccionado) ?? null : null
 
   const abrirCampana = (campana?: CampanaCrecimiento) => { setCampanaEditando(campana ?? null); setFormCampana(campana ? campanaAForm(campana) : campanaVacia()); setError(''); setCampanaDialog(true) }
@@ -110,16 +106,19 @@ export default function GrowthAssetsPanel(props: Props) {
 
   const payloadCampana = (): CrearCampanaCrecimiento | null => {
     if (!formCampana.nombre.trim() || !formCampana.slug.trim()) { setError('Completá el nombre y el slug.'); return null }
-    if (!formCampana.productoId) { setError('Elegí el producto de la promoción.'); return null }
-    const descuento = Number(formCampana.descuentoProductoPorcentaje || 0)
+    const esPromocionProducto = formCampana.modalidad === 'producto'
+    const esCarritoPrearmado = formCampana.modalidad === 'carrito'
+    if (esPromocionProducto && !formCampana.productoId) { setError('Elegí el producto de la promoción.'); return null }
+    if (esCarritoPrearmado && !parseCarritoPrearmado(formCampana.carritoRep).length) { setError('Agregá al menos un producto al carrito prearmado.'); return null }
+    const descuento = esPromocionProducto ? Number(formCampana.descuentoProductoPorcentaje || 0) : 0
     if (!Number.isInteger(descuento) || descuento < 0 || descuento > 100) { setError('El descuento debe ser un porcentaje entre 0 y 100.'); return null }
-    const limite = formCampana.limiteUsos ? Number(formCampana.limiteUsos) : null
+    const limite = esPromocionProducto && formCampana.limiteUsos ? Number(formCampana.limiteUsos) : null
     if (limite != null && (!Number.isInteger(limite) || limite <= 0)) { setError('El cupo debe ser un número mayor a cero.'); return null }
     if (formCampana.fechaInicio && formCampana.fechaFin && new Date(formCampana.fechaFin) <= new Date(formCampana.fechaInicio)) { setError('La fecha de fin debe ser posterior al inicio.'); return null }
     return {
       nombre: formCampana.nombre.trim(), slug: formCampana.slug, tipo: 'adquisicion', recetaCodigo: null,
-      estado: formCampana.estado, destinoTipo: 'producto', productoId: Number(formCampana.productoId),
-      carritoRep: null, codigoDescuentoId: null, descuentoProductoPorcentaje: descuento,
+      estado: formCampana.estado, destinoTipo: esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'tienda', productoId: esPromocionProducto ? Number(formCampana.productoId) : null,
+      carritoRep: esCarritoPrearmado ? formCampana.carritoRep : null, codigoDescuentoId: null, descuentoProductoPorcentaje: descuento,
       limiteUsos: limite, fechaInicio: formCampana.fechaInicio ? new Date(formCampana.fechaInicio).toISOString() : null,
       fechaFin: formCampana.fechaFin ? new Date(formCampana.fechaFin).toISOString() : null,
       inversionManual: 0, utmSource: null, utmMedium: null, utmCampaign: null, utmTerm: null, utmContent: null,
@@ -195,7 +194,7 @@ export default function GrowthAssetsPanel(props: Props) {
         {tab === 'campanas' ? <>
           {!props.crecimientoActivo && <Disabled label="Crecimiento está desactivado" />}
           {props.crecimientoActivo && (!query.trim() || 'orgánico sin campaña directo'.includes(query.trim().toLowerCase())) && <AssetButton active={campanaSeleccionada === 'organico'} onClick={() => props.onSelectCampana(campanaSeleccionada === 'organico' ? null : 'organico')} icon={<Globe2 className="h-4 w-4" />} title="Orgánico · sin campaña" subtitle="Visitas directas y compras sin touch de campaña" badge="Siempre disponible" />}
-          {props.crecimientoActivo && campanasFiltradas.map((campana) => <AssetButton key={campana.id} active={campanaSeleccionada === campana.id} onClick={() => props.onSelectCampana(campanaSeleccionada === campana.id ? null : campana.id)} icon={<Megaphone className="h-4 w-4" />} title={campana.nombre} subtitle={`/c/${campana.slug}`} badge={campana.estado} />)}
+          {props.crecimientoActivo && campanasFiltradas.map((campana) => <AssetButton key={campana.id} active={campanaSeleccionada === campana.id} onClick={() => props.onSelectCampana(campanaSeleccionada === campana.id ? null : campana.id)} icon={<Megaphone className="h-4 w-4" />} title={campana.nombre} subtitle={`${campana.destinoTipo === 'producto' && campana.productoId != null ? 'Promoción de producto' : campana.destinoTipo === 'carrito' ? 'Carrito prearmado' : 'Link de seguimiento'} · /c/${campana.slug}`} badge={campana.estado} />)}
           {props.crecimientoActivo && campanasFiltradas.length === 0 && query.trim() && <Empty label="No hay campañas que coincidan." />}
         </> : <>
           {!props.cuponesActivos && <Disabled label="Códigos de descuento está desactivado" />}
@@ -293,11 +292,13 @@ function CampaignDetail({ organic, campana, producto, resultado, onCopy, onEdit,
   const m = resultado.metricas
   const visitas = organic ? (m.visitas ?? resultado.funnel.session_start) : (m.visitas ?? campana?.visitas ?? resultado.funnel.session_start)
   const conversion = visitas ? Math.round((m.pedidos / visitas) * 10_000) / 100 : 0
+  const esPromocionProducto = campana?.destinoTipo === 'producto' && campana.productoId != null
+  const esCarritoPrearmado = campana?.destinoTipo === 'carrito' && Boolean(campana.carritoRep)
   return <div className="space-y-4">
     <div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold">{organic ? 'Orgánico · sin campaña' : campana?.nombre}</h3>{organic && <Badge className="bg-sky-600 hover:bg-sky-600">Vista automática</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{organic ? 'Personas que llegaron directamente a la tienda, sin Smart Link ni receta atribuible.' : `${campana?.tipo === 'adquisicion' ? 'Adquisición' : 'Recompra'} · ${campana?.estado}`}</p></div>
     <div className="grid grid-cols-2 gap-2"><Metric label="Ventas cobradas" value={formatCurrency(m.ventas)} /><Metric label="Ticket promedio" value={formatCurrency(m.ticketPromedio)} /><Metric label="Pedidos cobrados" value={m.pedidos} /><Metric label={organic ? 'Visitas directas' : 'Visitas al link'} value={visitas} /><Metric label="Compraron" value={resultado.funnel.purchase} /><Metric label="Clientes nuevos" value={m.clientesNuevos} /><Metric label="Conversión visita → compra" value={`${conversion}%`} /></div>
-    <div className="rounded-lg bg-muted/40 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Recorrido de la promoción</p><p className="mt-1 text-[11px] text-muted-foreground">“Otros productos” cuenta pedidos cobrados que incluyeron el producto de la promo y, además, otro producto.</p><div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs"><span>{organic ? 'Llegaron directo' : 'Visitaron el link'}</span><strong className="text-right">{visitas}</strong><span>Compraron</span><strong className="text-right">{resultado.funnel.purchase}</strong><span>Sumaron otros productos</span><strong className="text-right">{resultado.funnel.add_other_product ?? 0}</strong></div></div>
-    {!organic && campana && <><div className="rounded-lg bg-muted/50 p-3 text-xs"><p><strong>Producto:</strong> {producto?.nombre ?? `#${campana.productoId}`}</p><p className="mt-1"><strong>Oferta:</strong> {campana.descuentoProductoPorcentaje > 0 ? `${campana.descuentoProductoPorcentaje}% OFF sólo en este producto` : 'Producto destacado sin descuento'}</p><p className="mt-1"><strong>Cupo:</strong> {campana.limiteUsos == null ? 'Sin límite' : `${campana.usosActuales}/${campana.limiteUsos} compras`}</p><p className="mt-1"><strong>Vigencia:</strong> {campana.fechaInicio ? formatDate(campana.fechaInicio) : 'Desde ahora'} — {campana.fechaFin ? formatDate(campana.fechaFin) : 'Sin vencimiento'}</p></div><div className="grid grid-cols-2 gap-2"><Button size="sm" variant="outline" onClick={onCopy}><Copy className="mr-1.5 h-3.5 w-3.5" />Copiar link</Button><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1.5 h-3.5 w-3.5" />Editar</Button><Button size="sm" variant="outline" onClick={onToggle}>{campana.estado === 'activa' ? <PowerOff className="mr-1.5 h-3.5 w-3.5" /> : <Power className="mr-1.5 h-3.5 w-3.5" />}{campana.estado === 'activa' ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Eliminar</Button></div></>}
+    <div className="rounded-lg bg-muted/40 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{esPromocionProducto ? 'Recorrido de la promoción' : esCarritoPrearmado ? 'Recorrido del carrito prearmado' : 'Recorrido de la campaña'}</p><p className="mt-1 text-[11px] text-muted-foreground">{esPromocionProducto ? '“Otros productos” cuenta pedidos cobrados que incluyeron el producto de la promo y, además, otro producto.' : esCarritoPrearmado ? 'El link abre el carrito con los productos, variantes y extras configurados; el cliente puede revisarlo antes de comprar.' : 'El link abre la tienda normal: no modifica productos, precios ni descuentos.'}</p><div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs"><span>{organic ? 'Llegaron directo' : 'Visitaron el link'}</span><strong className="text-right">{visitas}</strong><span>Compraron</span><strong className="text-right">{resultado.funnel.purchase}</strong>{esPromocionProducto && <><span>Sumaron otros productos</span><strong className="text-right">{resultado.funnel.add_other_product ?? 0}</strong></>}</div></div>
+    {!organic && campana && <><div className="rounded-lg bg-muted/50 p-3 text-xs">{esPromocionProducto ? <><p><strong>Producto:</strong> {producto?.nombre ?? `#${campana.productoId}`}</p><p className="mt-1"><strong>Oferta:</strong> {campana.descuentoProductoPorcentaje > 0 ? `${campana.descuentoProductoPorcentaje}% OFF sólo en este producto` : 'Producto destacado sin descuento'}</p><p className="mt-1"><strong>Cupo:</strong> {campana.limiteUsos == null ? 'Sin límite' : `${campana.usosActuales}/${campana.limiteUsos} compras`}</p></> : esCarritoPrearmado ? <p><strong>Tipo:</strong> Carrito prearmado · abre los productos configurados y atribuye las visitas y pedidos a esta campaña.</p> : <p><strong>Tipo:</strong> Link de seguimiento · registra visitas y pedidos atribuidos sin cambiar la compra.</p>}<p className="mt-1"><strong>Vigencia:</strong> {campana.fechaInicio ? formatDate(campana.fechaInicio) : 'Desde ahora'} — {campana.fechaFin ? formatDate(campana.fechaFin) : 'Sin vencimiento'}</p></div><div className="grid grid-cols-2 gap-2"><Button size="sm" variant="outline" onClick={onCopy}><Copy className="mr-1.5 h-3.5 w-3.5" />Copiar link</Button><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1.5 h-3.5 w-3.5" />Editar</Button><Button size="sm" variant="outline" onClick={onToggle}>{campana.estado === 'activa' ? <PowerOff className="mr-1.5 h-3.5 w-3.5" /> : <Power className="mr-1.5 h-3.5 w-3.5" />}{campana.estado === 'activa' ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDelete}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Eliminar</Button></div></>}
   </div>
 }
 
@@ -308,16 +309,91 @@ function CouponDetail({ cupon, resultado, onEdit, onToggle, onDelete }: { cupon:
 
 function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos, error, saving, onSave, username }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CampanaCrecimiento | null; form: FormCampana; setForm: React.Dispatch<React.SetStateAction<FormCampana>>; productos: ProductoGrowth[]; error: string; saving: boolean; onSave: () => void; username?: string | null }) {
   const set = <K extends keyof FormCampana>(key: K, value: FormCampana[K]) => setForm((actual) => ({ ...actual, [key]: value }))
+  const esPromocionProducto = form.modalidad === 'producto'
+  const esCarritoPrearmado = form.modalidad === 'carrito'
   // Recetas, audiencias, carrito precargado, cupones, inversión, UTMs y grupo
   // de control quedan fuera de la UI hasta que cada flujo se reincorpore con
   // pruebas. El backend conserva esos campos por retrocompatibilidad.
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña de producto' : 'Nueva campaña de producto'}</DialogTitle><DialogDescription>Elegí un producto y Piru crea un link propio. Quien entre verá esa oferta destacada dentro del menú, podrá sumar otros productos y el pedido quedará asociado a esta campaña.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre de la campaña</Label><Input placeholder="Promo Smash" value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><FieldSelect label="Producto en oferta" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[["ninguno", "Elegí un producto"], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} /><div className="space-y-1.5"><Label>Descuento en ese producto</Label><div className="relative"><Input type="number" min="0" max="100" placeholder="0" value={form.descuentoProductoPorcentaje} onChange={(e) => set('descuentoProductoPorcentaje', e.target.value)} /><span className="pointer-events-none absolute right-3 top-2.5 text-sm text-muted-foreground">%</span></div><p className="text-[11px] text-muted-foreground">Opcional. No descuenta los demás productos.</p></div><div className="space-y-1.5"><Label>Cupo de compras</Label><Input type="number" min="1" placeholder="Sin límite" value={form.limiteUsos} onChange={(e) => set('limiteUsos', e.target.value)} /></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[["activa", "Activa"], ["borrador", "Borrador"], ["inactiva", "Inactiva"]]} /><div className="space-y-1.5"><Label>Disponible desde</Label><Input type="datetime-local" value={form.fechaInicio} onChange={(e) => set('fechaInicio', e.target.value)} /></div><div className="space-y-1.5"><Label>Disponible hasta</Label><Input type="datetime-local" value={form.fechaFin} onChange={(e) => set('fechaFin', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Link de campaña</Label><Input disabled value={`my.piru.app/${username ?? 'tu-local'}/c/${form.slug || 'promo'}`} /><p className="text-[11px] text-muted-foreground">La dirección queda fija después de crearla para no perder la medición.</p></div>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
+  const descripcion = esPromocionProducto
+    ? 'Elegí un producto y Piru crea un link propio. Quien entre verá esa oferta destacada dentro del menú.'
+    : esCarritoPrearmado
+      ? 'Elegí los productos y sus opciones. El link abrirá el carrito con esa selección ya lista para comprar.'
+      : 'Este link abre la tienda exactamente igual que siempre y mide las visitas y los pedidos que genere.'
+  const cambiarModalidad = (modalidad: FormCampana['modalidad']) => setForm((actual) => ({
+    ...actual, modalidad,
+    productoId: modalidad === 'producto' ? actual.productoId : '',
+    carritoRep: modalidad === 'carrito' ? actual.carritoRep : '',
+    descuentoProductoPorcentaje: modalidad === 'producto' ? actual.descuentoProductoPorcentaje : '',
+    limiteUsos: modalidad === 'producto' ? actual.limiteUsos : '',
+  }))
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>{descripcion}</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><FieldSelect label="Tipo de campaña" value={form.modalidad} onValueChange={(v) => cambiarModalidad(v as FormCampana['modalidad'])} options={[["seguimiento", "Link de seguimiento"], ["producto", "Promoción de producto"], ["carrito", "Carrito prearmado"]]} /><div className="hidden sm:block" /><div className="space-y-1.5 sm:col-span-2"><Label>Nombre de la campaña</Label><Input placeholder={esPromocionProducto ? 'Promo Smash' : esCarritoPrearmado ? 'Combo para compartir' : 'Instagram septiembre'} value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div>{esPromocionProducto && <><FieldSelect label="Producto en oferta" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[["ninguno", "Elegí un producto"], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} /><div className="space-y-1.5"><Label>Descuento en ese producto</Label><div className="relative"><Input type="number" min="0" max="100" placeholder="0" value={form.descuentoProductoPorcentaje} onChange={(e) => set('descuentoProductoPorcentaje', e.target.value)} /><span className="pointer-events-none absolute right-3 top-2.5 text-sm text-muted-foreground">%</span></div><p className="text-[11px] text-muted-foreground">Opcional. No descuenta los demás productos.</p></div><div className="space-y-1.5"><Label>Cupo de compras</Label><Input type="number" min="1" placeholder="Sin límite" value={form.limiteUsos} onChange={(e) => set('limiteUsos', e.target.value)} /></div></>}{esCarritoPrearmado && <CarritoPrearmadoBuilder productos={productos} value={form.carritoRep} onChange={(valor) => set('carritoRep', valor)} />}<FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[["activa", "Activa"], ["borrador", "Borrador"], ["inactiva", "Inactiva"]]} /><div className="space-y-1.5"><Label>Disponible desde</Label><Input type="datetime-local" value={form.fechaInicio} onChange={(e) => set('fechaInicio', e.target.value)} /></div><div className="space-y-1.5"><Label>Disponible hasta</Label><Input type="datetime-local" value={form.fechaFin} onChange={(e) => set('fechaFin', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Link de campaña</Label><Input disabled value={`my.piru.app/${username ?? 'tu-local'}/c/${form.slug || 'campana'}`} /><p className="text-[11px] text-muted-foreground">La dirección queda fija después de crearla para no perder la medición.</p></div>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
 
   /* Implementación anterior pausada: se conserva en el archivo para reactivar
      capacidades de a una, sin volver a inventar su composición visual.
   const recetaElegida = RECETAS.find((item) => item.codigo === form.recetaCodigo)
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>El Smart Link abre el destino elegido, conserva la atribución y aplica el beneficio en el checkout.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><div className="space-y-1.5"><Label>Dirección del link</Label><Input disabled={Boolean(editando)} value={form.slug} onChange={(e) => set('slug', slug(e.target.value))} /><p className="text-[11px] text-muted-foreground">my.piru.app/{username ?? 'tu-local'}/c/{form.slug || 'campana'}</p></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[['borrador', 'Borrador'], ['activa', 'Activa'], ['inactiva', 'Inactiva']]} /><FieldSelect label="Tipo" value={form.tipo} onValueChange={(v) => set('tipo', v as FormCampana['tipo'])} options={[['adquisicion', 'Adquisición'], ['recompra', 'Recompra']]} /><FieldSelect label="Receta" value={form.recetaCodigo || 'ninguna'} onValueChange={(v) => set('recetaCodigo', v === 'ninguna' ? '' : v)} options={[['ninguna', 'Sin receta'], ...RECETAS.map((r) => [r.codigo, `${r.nombre}${r.descuentoPorcentaje ? ` · ${r.descuentoPorcentaje}% OFF` : ''}`] as [string, string])]} /><FieldSelect label="Al abrir el link" value={form.destinoTipo} onValueChange={(v) => set('destinoTipo', v as FormCampana['destinoTipo'])} options={[['tienda', 'Mostrar la tienda'], ['producto', 'Abrir un producto'], ['carrito', 'Dejar un carrito listo']]} />{form.destinoTipo === 'producto' && <FieldSelect label="Producto" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[['ninguno', 'Elegí un producto'], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} />}{form.destinoTipo === 'carrito' && <CarritoBuilder productos={productos} value={form.carritoRep} onChange={(value) => set('carritoRep', value)} />}<FieldSelect label="Cupón" value={form.codigoDescuentoId || 'ninguno'} onValueChange={(v) => set('codigoDescuentoId', v === 'ninguno' ? '' : v)} options={[['ninguno', recetaElegida?.descuentoPorcentaje ? `Crear automáticamente ${recetaElegida.descuentoPorcentaje}% OFF` : 'Sin cupón'], ...cupones.filter((c) => c.activo).map((c) => [String(c.id), `${c.codigo} · ${c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : formatCurrency(c.valor)}`] as [string, string])]} /><div className="space-y-1.5"><Label>Inversión manual</Label><Input type="number" min="0" value={form.inversionManual} onChange={(e) => set('inversionManual', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>UTM avanzadas</Label><div className="grid gap-2 sm:grid-cols-2"><Input placeholder="utm_source" value={form.utmSource} onChange={(e) => set('utmSource', e.target.value)} /><Input placeholder="utm_medium" value={form.utmMedium} onChange={(e) => set('utmMedium', e.target.value)} /><Input placeholder="utm_campaign" value={form.utmCampaign} onChange={(e) => set('utmCampaign', e.target.value)} /><Input placeholder="utm_content" value={form.utmContent} onChange={(e) => set('utmContent', e.target.value)} /></div><Input className="mt-2" placeholder="utm_term" value={form.utmTerm} onChange={(e) => set('utmTerm', e.target.value)} /></div><p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground sm:col-span-2">Las campañas por link miden atribución real. El grupo de control no se ofrece acá porque una audiencia pública no es una cohorte cerrada comparable.</p>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
   */
+}
+
+type ItemCarritoPrearmado = { productoId: number; cantidad: number; varianteId?: number; varianteSecundariaId?: number; agregadoIds: number[] }
+
+function parseCarritoPrearmado(value: string): ItemCarritoPrearmado[] {
+  if (/^\d+x\d+(?:-\d+x\d+)*$/.test(value)) return value.split('-').map((part) => {
+    const [productoId, cantidad] = part.split('x').map(Number)
+    return { productoId, cantidad, agregadoIds: [] }
+  })
+  if (!value.startsWith('v2:')) return []
+  try {
+    const raw: unknown = JSON.parse(value.slice(3))
+    if (!Array.isArray(raw)) return []
+    return raw.flatMap((item): ItemCarritoPrearmado[] => {
+      if (!item || typeof item !== 'object') return []
+      const data = item as Record<string, unknown>
+      if (!Number.isInteger(data.p) || !Number.isInteger(data.q) || (data.q as number) < 1) return []
+      if (data.v !== undefined && !Number.isInteger(data.v)) return []
+      if (data.s !== undefined && !Number.isInteger(data.s)) return []
+      if (data.a !== undefined && (!Array.isArray(data.a) || data.a.some((id) => !Number.isInteger(id)))) return []
+      return [{ productoId: data.p as number, cantidad: Math.min(99, data.q as number), ...(data.v === undefined ? {} : { varianteId: data.v as number }), ...(data.s === undefined ? {} : { varianteSecundariaId: data.s as number }), agregadoIds: (data.a ?? []) as number[] }]
+    })
+  } catch { return [] }
+}
+
+function serializarCarritoPrearmado(items: ItemCarritoPrearmado[]) {
+  return `v2:${JSON.stringify(items.map((item) => ({ p: item.productoId, q: item.cantidad, ...(item.varianteId == null ? {} : { v: item.varianteId }), ...(item.varianteSecundariaId == null ? {} : { s: item.varianteSecundariaId }), ...(item.agregadoIds.length ? { a: item.agregadoIds } : {}) })))}`
+}
+
+function CarritoPrearmadoBuilder({ productos, value, onChange }: { productos: ProductoGrowth[]; value: string; onChange: (value: string) => void }) {
+  const seleccionados = parseCarritoPrearmado(value)
+  const [productoConfigurando, setProductoConfigurando] = useState<ProductoGrowth | null>(null)
+  const [cantidad, setCantidad] = useState(1)
+  const [varianteId, setVarianteId] = useState('')
+  const [varianteSecundariaId, setVarianteSecundariaId] = useState('')
+  const [agregadoIds, setAgregadoIds] = useState<number[]>([])
+  const actualizar = (items: ItemCarritoPrearmado[]) => onChange(items.length ? serializarCarritoPrearmado(items) : '')
+  const abrirConfiguracion = (producto: ProductoGrowth) => {
+    const actual = seleccionados.find((item) => item.productoId === producto.id)
+    setProductoConfigurando(producto)
+    setCantidad(actual?.cantidad ?? 1)
+    setVarianteId(actual?.varianteId?.toString() ?? '')
+    setVarianteSecundariaId(actual?.varianteSecundariaId?.toString() ?? '')
+    setAgregadoIds(actual?.agregadoIds ?? [])
+  }
+  const guardarConfiguracion = () => {
+    if (!productoConfigurando) return
+    if (productoConfigurando.variantes?.length && !varianteId) { toast.error(`Elegí ${productoConfigurando.tituloVariantesPrimarias || 'una variante'}.`); return }
+    if (productoConfigurando.variantesSecundarias?.length && !varianteSecundariaId) { toast.error(`Elegí ${productoConfigurando.tituloVariantesSecundarias || 'la segunda variante'}.`); return }
+    const item: ItemCarritoPrearmado = { productoId: productoConfigurando.id, cantidad: Math.max(1, Math.min(99, cantidad || 1)), ...(varianteId ? { varianteId: Number(varianteId) } : {}), ...(varianteSecundariaId ? { varianteSecundariaId: Number(varianteSecundariaId) } : {}), agregadoIds }
+    actualizar([...seleccionados.filter((actual) => actual.productoId !== productoConfigurando.id), item])
+    setProductoConfigurando(null)
+  }
+  const opcionNombre = (producto: ProductoGrowth, item: ItemCarritoPrearmado) => {
+    const primaria = producto.variantes?.find((opcion) => opcion.id === item.varianteId)?.nombre
+    const secundaria = producto.variantesSecundarias?.find((opcion) => opcion.id === item.varianteSecundariaId)?.nombre
+    const extras = (producto.agregados ?? []).filter((opcion) => item.agregadoIds.includes(opcion.id)).map((opcion) => opcion.nombre)
+    return [primaria, secundaria, ...extras].filter(Boolean).join(' · ')
+  }
+  const alternarExtra = (id: number) => setAgregadoIds((actual) => actual.includes(id) ? actual.filter((item) => item !== id) : [...actual, id])
+  return <div className="space-y-3 sm:col-span-2"><div><Label>Productos del carrito</Label><p className="mt-1 text-[11px] text-muted-foreground">Elegí un producto para configurar cantidad, variantes y extras antes de sumarlo.</p></div><div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border bg-background p-2">{productos.filter((producto) => producto.activo !== false).map((producto) => { const item = seleccionados.find((actual) => actual.productoId === producto.id); return <button type="button" key={producto.id} onClick={() => abrirConfiguracion(producto)} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${item ? 'bg-primary/10 hover:bg-primary/15' : 'hover:bg-muted'}`}><span className="min-w-0"><span className="block truncate text-sm font-medium">{producto.nombre}</span>{item && <span className="block truncate text-[11px] text-muted-foreground">{item.cantidad} u.{opcionNombre(producto, item) ? ` · ${opcionNombre(producto, item)}` : ''}</span>}</span><span className="shrink-0 text-xs font-semibold text-primary">{item ? 'Editar' : 'Agregar'}</span></button> })}</div>{seleccionados.length > 0 && <div className="rounded-xl bg-muted/50 p-2">{seleccionados.map((item) => { const producto = productos.find((actual) => actual.id === item.productoId); if (!producto) return null; return <div key={item.productoId} className="flex items-center gap-2 px-2 py-1.5 text-xs"><button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" onClick={() => abrirConfiguracion(producto)}>{producto.nombre} × {item.cantidad}</button><button type="button" aria-label={`Quitar ${producto.nombre}`} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => actualizar(seleccionados.filter((actual) => actual.productoId !== item.productoId))}><X className="h-3.5 w-3.5" /></button></div> })}</div>}<Dialog open={Boolean(productoConfigurando)} onOpenChange={(abierto) => !abierto && setProductoConfigurando(null)}><DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-md"><DialogHeader><DialogTitle>{productoConfigurando?.nombre}</DialogTitle><DialogDescription>Configurá cómo se agregará este producto al carrito de la campaña.</DialogDescription></DialogHeader>{productoConfigurando && <div className="space-y-4"><div className="space-y-1.5"><Label>Cantidad</Label><Input type="number" min="1" max="99" value={cantidad} onChange={(event) => setCantidad(Number(event.target.value))} /></div>{productoConfigurando.variantes?.length ? <FieldSelect label={productoConfigurando.tituloVariantesPrimarias || 'Elegí una opción'} value={varianteId || 'ninguna'} onValueChange={(valor) => setVarianteId(valor === 'ninguna' ? '' : valor)} options={[["ninguna", "Elegí una opción"], ...productoConfigurando.variantes.map((opcion) => [String(opcion.id), `${opcion.nombre} · $${opcion.precio}`] as [string, string])]} /> : null}{productoConfigurando.variantesSecundarias?.length ? <FieldSelect label={productoConfigurando.tituloVariantesSecundarias || 'Elegí la segunda opción'} value={varianteSecundariaId || 'ninguna'} onValueChange={(valor) => setVarianteSecundariaId(valor === 'ninguna' ? '' : valor)} options={[["ninguna", "Elegí una opción"], ...productoConfigurando.variantesSecundarias.map((opcion) => [String(opcion.id), `${opcion.nombre} · $${opcion.precio}`] as [string, string])]} /> : null}{productoConfigurando.agregados?.length ? <div className="space-y-2"><Label>Extras</Label><div className="space-y-1 rounded-xl border p-2">{productoConfigurando.agregados.map((extra) => <label key={extra.id} className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-muted"><span className="flex items-center gap-2 text-sm"><input type="checkbox" checked={agregadoIds.includes(extra.id)} onChange={() => alternarExtra(extra.id)} />{extra.nombre}</span><span className="text-xs text-muted-foreground">+${extra.precio}</span></label>)}</div></div> : null}</div>}<DialogFooter><Button variant="outline" onClick={() => setProductoConfigurando(null)}>Cancelar</Button><Button onClick={guardarConfiguracion}>Agregar al carrito</Button></DialogFooter></DialogContent></Dialog></div>
 }
 
 /* Builder anterior del destino carrito, pausado junto con recetas y audiencias.

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { AlertTriangle, Check, CreditCard, Loader2, ReceiptText, RotateCcw, XCircle } from 'lucide-react'
+import { AlertTriangle, CreditCard, Loader2, ReceiptText, RotateCcw, XCircle } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { CicloToggle, type Ciclo } from '@/components/CicloToggle'
@@ -16,7 +17,7 @@ const fmtARS = (value: number | string | null | undefined) =>
 
 const fmtFecha = (iso: string | null | undefined) => {
   if (!iso) return null
-  const fecha = new Date(iso)
+  const fecha = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00` : iso)
   return Number.isNaN(fecha.getTime()) ? null : fecha.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
@@ -27,12 +28,14 @@ const ESTADOS: Record<string, string> = {
 
 type Suscripcion = NonNullable<ReturnType<typeof useSuscripcion>['data']>
 
-export default function MiSuscripcion() {
+export default function MiSuscripcion({ embedded = false }: { embedded?: boolean }) {
   const { data, loading, refetch } = useSuscripcion()
   const categorias = useModulosStore((state) => state.categorias)
   const [ciclo, setCiclo] = useState<Ciclo>('mensual')
   const [pagos, setPagos] = useState<PagoSuscripcionResumen[]>([])
   const [cargandoPagos, setCargandoPagos] = useState(true)
+  const [errorPagos, setErrorPagos] = useState(false)
+  const [confirmarBaja, setConfirmarBaja] = useState(false)
   const [procesando, setProcesando] = useState<'checkout' | 'cancelar' | 'reactivar' | null>(null)
   const [packs, setPacks] = useState<PackRecarga[]>([])
   const [packId, setPackId] = useState<number | null>(null)
@@ -44,8 +47,9 @@ export default function MiSuscripcion() {
     const token = useAuthStore.getState().token
     if (!token) return
     setCargandoPagos(true)
+    setErrorPagos(false)
     try { setPagos((await suscripcionApi.pagos(token)).data ?? []) }
-    catch { setPagos([]) }
+    catch { setErrorPagos(true) }
     finally { setCargandoPagos(false) }
   }
 
@@ -58,10 +62,12 @@ export default function MiSuscripcion() {
   useEffect(() => { if (data && !data.telefonoPago) setUsarOtroTelefono(true) }, [data])
   useEffect(() => {
     if (searchParams.get('plan') !== 'success') return
-    toast.success('Pago recibido. Estamos actualizando tu suscripción…')
-    setSearchParams({}, { replace: true })
-    const timers = [1500, 4000, 8000].map((ms) => setTimeout(() => { void refetch(); void cargarPagos() }, ms))
-    return () => timers.forEach(clearTimeout)
+    toast.info('Estamos verificando la acreditación de tu pago…')
+    const next = new URLSearchParams(searchParams)
+    next.delete('plan')
+    const cleanup = setTimeout(() => setSearchParams(next, { replace: true }), 9000)
+    const timers = [1500, 4000, 8000].map((ms) => setTimeout(() => { void refetch().catch(() => {}); void cargarPagos() }, ms))
+    return () => { timers.forEach(clearTimeout); clearTimeout(cleanup) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
@@ -69,7 +75,9 @@ export default function MiSuscripcion() {
     .filter((modulo) => modulo.tipo === 'pago' && (modulo.estado === 'activo' || modulo.estado === 'cancelacion_programada')),
   [categorias])
 
-  if (loading || !data) return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+  if (loading && !data) return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+
+  if (!data) return <div role="alert" className="space-y-3 text-sm"><p>No pudimos consultar tu suscripción.</p><Button variant="outline" onClick={() => void refetch().catch(() => {})}>Reintentar</Button></div>
 
   const descuento = descuentoAnualEfectivo(data.suscripcionBase?.descuentoAnual ?? 0)
   // La configuración comercial es la fuente vigente; `precioBaseMensual` es
@@ -105,11 +113,10 @@ export default function MiSuscripcion() {
     finally { setProcesando(null) }
   }
   const cancelar = async () => {
-    if (!window.confirm('La baja se hará efectiva al finalizar el período ya pagado. ¿Querés continuar?')) return
     const token = useAuthStore.getState().token
     if (!token) return
     setProcesando('cancelar')
-    try { toast.success((await suscripcionApi.cancelar(token)).message); await refetch() }
+    try { toast.success((await suscripcionApi.cancelar(token)).message); setConfirmarBaja(false); await refetch() }
     catch (error: any) { toast.error(error?.message || 'No se pudo programar la baja') }
     finally { setProcesando(null) }
   }
@@ -122,13 +129,13 @@ export default function MiSuscripcion() {
     finally { setProcesando(null) }
   }
 
-  return <main className="mx-auto w-full max-w-4xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20">
-    <header className="mx-auto mb-12 max-w-xl text-center">
+  return <div className={embedded ? "" : "mx-auto w-full max-w-4xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20"}>
+    {!embedded && <header className="mx-auto mb-12 max-w-xl text-center">
       <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">Mi suscripción</h1>
       <p className="mt-3 text-sm text-muted-foreground">Gestioná tu suscripción y pagos de Piru.</p>
-    </header>
+    </header>}
 
-    <div className="mx-auto max-w-3xl space-y-10">
+    <div className="space-y-8">
       <Atencion data={data} />
       <SuscripcionActual
         data={data}
@@ -142,16 +149,17 @@ export default function MiSuscripcion() {
         procesando={procesando}
         onCiclo={setCiclo}
         onCheckout={iniciarCheckout}
-        onCancelar={cancelar}
+        onCancelar={() => setConfirmarBaja(true)}
         onReactivar={reactivar}
         habilitarPack={tieneAvisos} packs={packs} packId={packId} onPackId={setPackId}
         telefonoCuenta={data.telefonoPago} usarOtroTelefono={usarOtroTelefono} onUsarOtroTelefono={setUsarOtroTelefono}
         otroTelefono={otroTelefono} onOtroTelefono={setOtroTelefono}
       />
       <ModulosPagos modulos={modulosPagos} ciclo={ciclo} descuento={descuento} />
-      <Historial pagos={pagos} cargando={cargandoPagos} />
+      <details className="rounded-xl border p-4"><summary className="cursor-pointer text-sm font-semibold">Comprobantes e historial de pagos</summary>{errorPagos ? <div role="alert" className="mt-4 text-sm">No pudimos cargar el historial.<Button variant="link" onClick={() => void cargarPagos()}>Reintentar</Button></div> : <Historial pagos={pagos} cargando={cargandoPagos} />}</details>
     </div>
-  </main>
+    <Dialog open={confirmarBaja} onOpenChange={open => !procesando && setConfirmarBaja(open)}><DialogContent><DialogHeader><DialogTitle>¿Programar la baja de Piru?</DialogTitle><DialogDescription>Vas a conservar el servicio hasta el final del período ya pagado. Después se deshabilitarán las herramientas del negocio. Tus datos seguirán guardados.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" disabled={!!procesando} onClick={() => setConfirmarBaja(false)}>Conservar suscripción</Button><Button variant="destructive" disabled={!!procesando} onClick={() => void cancelar()}>{procesando ? 'Guardando…' : 'Programar baja'}</Button></DialogFooter></DialogContent></Dialog>
+  </div>
 }
 
 function Atencion({ data }: { data: Suscripcion }) {
@@ -195,23 +203,21 @@ function SuscripcionActual({ data, ciclo, descuento, precioBase, totalCiclo, sin
       <div className="shrink-0 space-y-2">
         {necesitaCheckout && <Button onClick={onCheckout} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'checkout' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}{sinSuscripcion || esTrial ? 'Enviar link para activar' : data.estado === 'pago_pendiente' ? 'Enviar link de renovación' : 'Enviar link para reactivar'}</Button>}
         {cancelacionProgramada && <Button variant="outline" onClick={onReactivar} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'reactivar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}Continuar suscripción</Button>}
-        {!sinSuscripcion && !cancelacionProgramada && !necesitaCheckout && <Button variant="outline" onClick={onCancelar} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'cancelar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Cancelar al final del período</Button>}
+        {!sinSuscripcion && !cancelacionProgramada && !necesitaCheckout && <details className="text-sm"><summary className="cursor-pointer text-muted-foreground">Administrar continuidad</summary><Button variant="ghost" onClick={onCancelar} disabled={!!procesando} className="mt-2 w-full sm:w-auto">{procesando === 'cancelar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Cancelar al final del período</Button></details>}
       </div>
     </div>
-    <div className="mt-6"><CicloToggle value={ciclo} onChange={onCiclo} descuentoMax={descuento} /></div>
+    <div className="mt-6"><p className="mb-2 text-xs text-muted-foreground">{necesitaCheckout ? "Elegí el período que querés pagar." : "Compará el costo mensual y anual. Consultar otro período no modifica tu suscripción."}</p><CicloToggle value={ciclo} onChange={onCiclo} descuentoMax={descuento} /></div>
     {necesitaCheckout && <CheckoutSuscripcionOpciones habilitarPack={habilitarPack} packs={packs} packId={packId} onPackId={onPackId} totalSuscripcion={totalCiclo} telefonoCuenta={telefonoCuenta} usarOtroTelefono={usarOtroTelefono} onUsarOtroTelefono={onUsarOtroTelefono} otroTelefono={otroTelefono} onOtroTelefono={onOtroTelefono} />}
   </section>
 }
 
 function ModulosPagos({ modulos, ciclo, descuento }: { modulos: ReturnType<typeof useModulosStore.getState>['categorias'][number]['modulos']; ciclo: Ciclo; descuento: number }) {
-  return <section className="border-t border-border pt-8 text-center">
-    <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Módulos pagos</p>
-    <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Tu suscripción, a tu medida</h2>
-    <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">Los módulos que activaste se cobran junto a la suscripción base. Podés administrarlos desde Módulos.</p>
-    {modulos.length === 0 ? <p className="mt-6 text-sm text-muted-foreground">Todavía no tenés módulos pagos activos.</p> : <div className="mt-8 grid gap-8 text-left sm:grid-cols-2">{modulos.map((modulo) => {
+  return <section className="rounded-2xl bg-muted/40 p-5">
+    <h3 className="text-sm font-semibold">Detalle de tus herramientas pagas</h3>
+    <p className="mt-1 text-xs text-muted-foreground">Estos importes componen el total de arriba. Podés administrar las herramientas en esta misma pantalla.</p>
+    {modulos.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">No tenés herramientas pagas activas. Solo pagás la base.</p> : <div className="mt-4 divide-y">{modulos.map(modulo => {
       const importe = Number(modulo.precioMensualCongelado ?? modulo.precioMensual)
-      const total = ciclo === 'anual' ? precioAnual(importe, descuento) : importe
-      return <article key={modulo.codigo} className="border-t pt-5"><div className="flex items-baseline justify-between gap-3"><h3 className="text-xl font-semibold">{modulo.nombre}</h3><span className={cn('text-xs font-medium', modulo.estado === 'cancelacion_programada' ? 'text-amber-600' : 'text-emerald-600')}>{modulo.estado === 'cancelacion_programada' ? 'Baja programada' : 'Activo'}</span></div><p className="mt-2 text-2xl font-semibold">{fmtARS(total)}<span className="text-sm font-normal text-muted-foreground"> {ciclo === 'anual' ? '/ año' : '/ mes'}</span></p>{modulo.descripcion && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{modulo.descripcion}</p>}{modulo.estado === 'cancelacion_programada' && <p className="mt-3 text-xs text-muted-foreground">Activo hasta el {fmtFecha(modulo.vigenteHasta) ?? 'fin del período'}.</p>}<p className="mt-5 flex items-center gap-1.5 text-sm text-muted-foreground"><Check className="h-4 w-4 text-emerald-500" />Incluido en tu factura</p></article>
+      return <div key={modulo.codigo} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div><p className="font-medium">{modulo.nombre}</p><p className={cn('mt-1 text-xs', modulo.estado === 'cancelacion_programada' ? 'text-amber-600' : 'text-muted-foreground')}>{modulo.estado === 'cancelacion_programada' ? `Baja programada: ${fmtFecha(modulo.vigenteHasta) ?? 'al finalizar el período'}` : 'Se cobra junto a la base'}</p></div><span className="font-semibold">{fmtARS(ciclo === 'anual' ? precioAnual(importe, descuento) : importe)}<span className="font-normal text-muted-foreground"> / {ciclo === 'anual' ? 'año' : 'mes'}</span></span></div>
     })}</div>}
   </section>
 }

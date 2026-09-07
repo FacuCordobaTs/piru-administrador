@@ -171,7 +171,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
             }
         } catch (err) {
             if (err instanceof ApiError && err.status === 403 && err.response?.upgradeRequired) {
-                toast.error('El Motor de Recompra está disponible en el plan Avanzado')
+                toast.error('Activá el módulo Motor de Recompra para usarlo')
             } else {
                 toast.error('No se pudo encender el motor')
             }
@@ -539,10 +539,10 @@ function PlanBloqueado() {
             <div className="w-16 h-16 rounded-2xl bg-white dark:bg-muted flex items-center justify-center mx-auto mb-5 text-foreground">
                 <Crown className="w-8 h-8" />
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">El Motor de Recompra es del plan Avanzado</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Activ? el Motor de Recompra</h1>
             <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
                 Convertí tu base de clientes en recompra automática: detección de quién se está por perder, mensajes con
-                tu marca goteados a su ritmo y atribución honesta con grupo de control. Subí al plan Avanzado para encenderlo.
+                tu marca goteados a su ritmo y atribución honesta con grupo de control. Activá el módulo para encenderlo.
             </p>
             <div className="grid sm:grid-cols-3 gap-3 mt-8 text-left max-w-2xl mx-auto">
                 <ExplainCard icon={TrendingUp} title="Detecta solo" text="Encuentra a los que se están por perder según la cadencia de cada uno." />

@@ -32,7 +32,7 @@ export default function CrecimientoAjustes() {
           oracion="Activá Crecimiento desde Módulos para configurar tu medición."
           estado="sin-configurar"
           accionLabel="Ver módulos"
-          onAccion={() => navigate('/dashboard/modulos')}
+          onAccion={() => navigate('/dashboard/ajustes/crecimiento#modulos-seccion')}
         />
       </section>
     )
