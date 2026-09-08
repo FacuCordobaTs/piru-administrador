@@ -1,9 +1,9 @@
 export interface SedeOperacion { id: number; activo: boolean; soloPos?: boolean }
 
-export function posPermitidoEnSede(sedes: SedeOperacion[], id: number | null): boolean {
+export function posPermitidoEnSede(sedes: SedeOperacion[], id: number | null, moduloPosActivo: boolean): boolean {
     const elegida = sedes.find(s => s.id === id)
-    if (elegida?.soloPos && !elegida.activo) return false
-    return !sedes.some(s => s.soloPos && s.activo) || !!elegida?.soloPos
+    if (elegida?.soloPos) return elegida.activo
+    return moduloPosActivo && !sedes.some(s => s.soloPos && s.activo)
 }
 
 /** Defensa de impresión frente a respuestas en vuelo y cambios de computadora. */

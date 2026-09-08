@@ -49,7 +49,8 @@ export function descargarDirectorioPos(id: number): Promise<void> {
         await cargarDirectorioPos(id)
         comprobarSesion()
         const rev = revision
-        const res = await clientesApi.indicePos(token!)
+        const sede = Number(localStorage.getItem('sucursal_activa_id'))
+        const res = await clientesApi.indicePos(token!, Number.isInteger(sede) && sede > 0 ? sede : undefined)
         comprobarSesion()
         if (!res.success || !validarIndice(res.data)) throw new Error('No se recibió un directorio completo. Intentá nuevamente.')
         if (rev !== revision) throw new Error('Los clientes cambiaron durante la descarga. Intentá nuevamente.')

@@ -1299,7 +1299,7 @@ const Dashboard = () => {
     const posModuloActivo = useModuloActivo('pos')
     const tieneEventos = sucursalesList.some(s => s.soloPos)
     const sedeEvento = sucursalesList.find(s => s.id === sucursalActivaId)?.soloPos === true
-    const posActivo = posModuloActivo && sucursalesValidas && posPermitidoEnSede(sucursalesList, sucursalActivaId)
+    const posActivo = sucursalesValidas && posPermitidoEnSede(sucursalesList, sucursalActivaId, posModuloActivo)
     const { catalogoEnColumna } = usePosConfig()
     const mesasActivo = useModuloActivo('mesas') && !sedeEvento
     const cierreManualActivo = useModuloActivo('cierre_turno_manual') && !sedeEvento

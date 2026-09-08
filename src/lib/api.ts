@@ -219,7 +219,7 @@ export const cartaIaApi = {
 }
 
 export const clientesApi = {
-  indicePos: (token: string) => fetchApi<{ success: boolean; data: unknown }>('/clientes/indice-pos', {
+  indicePos: (token: string, sucursalId?: number) => fetchApi<{ success: boolean; data: unknown }>(`/clientes/indice-pos${sucursalId ? `?sucursalId=${sucursalId}` : ''}`, {
     headers: { Authorization: `Bearer ${token}` },
   }),
   getAll: async (token: string, options?: { soloDespachados?: boolean }) => {

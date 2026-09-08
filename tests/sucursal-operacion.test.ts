@@ -17,14 +17,25 @@ test('cada computadora imprime únicamente su sede, incluidos pedidos NULL del l
 
 test('POS por sede opt-in sin alterar restaurantes normales', () => {
     const normales = [{ id: 10, activo: true }, { id: 11, activo: true }]
-    expect(posPermitidoEnSede([], null)).toBe(true)
-    expect(posPermitidoEnSede(normales, null)).toBe(true)
-    expect(posPermitidoEnSede(normales, 10)).toBe(true)
+    expect(posPermitidoEnSede([], null, true)).toBe(true)
+    expect(posPermitidoEnSede(normales, null, true)).toBe(true)
+    expect(posPermitidoEnSede(normales, 10, true)).toBe(true)
     const eventos = [...normales, { id: 20, activo: true, soloPos: true }]
-    expect(posPermitidoEnSede(eventos, null)).toBe(false)
-    expect(posPermitidoEnSede(eventos, 10)).toBe(false)
-    expect(posPermitidoEnSede(eventos, 20)).toBe(true)
+    expect(posPermitidoEnSede(eventos, null, true)).toBe(false)
+    expect(posPermitidoEnSede(eventos, 10, true)).toBe(false)
+    expect(posPermitidoEnSede(eventos, 20, true)).toBe(true)
     eventos[2].activo = false
-    expect(posPermitidoEnSede(eventos, 20)).toBe(false)
-    expect(posPermitidoEnSede(eventos, null)).toBe(true)
+    expect(posPermitidoEnSede(eventos, 20, true)).toBe(false)
+    expect(posPermitidoEnSede(eventos, null, true)).toBe(true)
+})
+
+test('evento activo habilita POS con módulo apagado; local e historial no', () => {
+    const sedes = [
+        { id: 10, activo: true, soloPos: false },
+        { id: 20, activo: true, soloPos: true },
+        { id: 21, activo: false, soloPos: true },
+    ]
+    expect(posPermitidoEnSede(sedes, 20, false)).toBe(true)
+    for (const id of [null, 10, 21, 999]) expect(posPermitidoEnSede(sedes, id, false)).toBe(false)
+    expect(posPermitidoEnSede([], null, false)).toBe(false)
 })

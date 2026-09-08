@@ -160,7 +160,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
             {soloPos ? (editando ? 'Editar evento' : 'Nuevo evento con POS') : (editando ? 'Editar sucursal' : 'Nueva sucursal')}
           </DialogTitle>
         </DialogHeader>
-        {soloPos && <p className="text-sm text-muted-foreground">La tienda sigue atendiendo en el local. Esta sede recibe únicamente pedidos del POS y tiene su propia cola de impresión. Mientras haya un evento activo, el POS se usa sólo en las sedes de evento.</p>}
+        {soloPos && <p className="text-sm text-muted-foreground">La tienda sigue atendiendo en el local. Esta sede habilita su POS aunque el módulo general esté desactivado, y tiene su propia cola de impresión. Mientras haya un evento activo, el POS se usa sólo en las sedes de evento.</p>}
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="sucursal-nombre" className="font-medium">Nombre</Label>

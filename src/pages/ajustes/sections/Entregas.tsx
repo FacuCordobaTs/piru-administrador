@@ -37,7 +37,6 @@ export default function Entregas() {
   const mostrarSucursales = sucLoaded && sucursales.filter(s => !s.soloPos).length >= 2
   const multisucursalActiva = useModuloActivo('multisucursal')
   const rapiboyActivo = useModuloActivo('rapiboy')
-  const posActivo = useModuloActivo('pos')
   const eventos = sucursales.filter(s => s.soloPos)
 
   useEffect(() => {
@@ -75,13 +74,13 @@ export default function Entregas() {
             onAccion={() => setEditor('sucursales')}
           />
         )}
-        {(posActivo || eventos.length > 0) && <AjusteRow
+        <AjusteRow
           titulo="Eventos con POS"
           oracion={eventos.some(s => s.activo) ? 'El POS atiende en el evento; la tienda sigue en el local' : 'Tomá e imprimí pedidos fuera del local sin mezclar la tienda'}
           estado={eventos.some(s => s.activo) ? 'configurado' : 'sin-configurar'}
           accionLabel={eventos.length ? 'Administrar' : 'Crear evento'}
           onAccion={() => setEditor('eventos')}
-        />}
+        />
         {!multisucursalActiva && (
           <AjusteRow
             titulo="Múltiples sucursales"
