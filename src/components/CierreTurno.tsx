@@ -44,7 +44,7 @@ interface CierreTurnoData {
   turnosDisponibles?: TurnoCaja[]
 }
 interface TurnoCaja { id: number; aperturaAt: string; cierreAt: string | null; abierto: boolean }
-interface CierreTurnoProps { open: boolean; onClose: () => void; fechaInicial?: string; turnoIdInicial?: number }
+interface CierreTurnoProps { sucursalNombre?: string; sucursalId?: number | null; open: boolean; onClose: () => void; fechaInicial?: string; turnoIdInicial?: number }
 
 /* ==========================================================================
    HELPERS
@@ -493,7 +493,7 @@ function HourlyChart({ pedidos }: { pedidos: CierreTurnoPedido[] }) {
 /* ==========================================================================
    MAIN COMPONENT
    ========================================================================== */
-export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoIdInicial }: CierreTurnoProps) {
+export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoIdInicial, sucursalId, sucursalNombre }: CierreTurnoProps) {
   const token = useAuthStore(s => s.token)
   const [data, setData] = useState<CierreTurnoData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -512,7 +512,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
     if (!token) return
     setLoading(true)
     try {
-      const res = await pedidosApi.cierreTurno(token, fecha, turnoId) as { success: boolean; data: CierreTurnoData }
+      const res = await pedidosApi.cierreTurno(token, fecha, turnoId, sucursalId) as { success: boolean; data: CierreTurnoData }
       if (res.success) {
         setData(res.data)
         if (!selectedFecha) setSelectedFecha(res.data.fecha)
@@ -521,7 +521,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
     } catch (e) {
       console.error(e)
     } finally { setLoading(false) }
-  }, [token, selectedFecha])
+  }, [token, selectedFecha, sucursalId])
 
   useEffect(() => {
     if (!open) return
@@ -716,6 +716,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
+        {sucursalNombre && <h1 className="ml-3 font-semibold">Caja · {sucursalNombre}</h1>}
       </div>
 
       {/* Content */}

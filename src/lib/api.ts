@@ -1219,8 +1219,9 @@ export const pedidosApi = {
   },
 
   // Cierre de turno - obtener resumen de ventas del día
-  cierreTurno: async (token: string, fecha?: string, turnoId?: number) => {
+  cierreTurno: async (token: string, fecha?: string, turnoId?: number, sucursalId?: number | null) => {
     const params = new URLSearchParams()
+    if (sucursalId != null) params.append('sucursalId', String(sucursalId))
     if (fecha) params.append('fecha', fecha)
     if (turnoId) params.append('turnoId', String(turnoId))
     const query = params.toString() ? `?${params}` : ''
@@ -1526,10 +1527,10 @@ export const pedidoUnificadoApi = {
   turnos: async (token: string) => fetchApi('/pedido-unificado/turnos', {
     method: 'GET', headers: { Authorization: `Bearer ${token}` },
   }),
-  cerrarTurno: async (token: string, turnoId?: number) => fetchApi('/pedido-unificado/turnos/cerrar', {
+  cerrarTurno: async (token: string, turnoId?: number, sucursalId?: number | null) => fetchApi('/pedido-unificado/turnos/cerrar', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(turnoId == null ? {} : { turnoId }),
+    body: JSON.stringify({ turnoId, sucursalId: sucursalId ?? undefined }),
   }),
   getById: async (token: string, id: number) => {
     return fetchApi(`/pedido-unificado/${id}`, {
@@ -1773,7 +1774,7 @@ export const takeawayApi = {
 
 export const sucursalesApi = {
   list: async (token: string) => {
-    return fetchApi('/sucursales/list', {
+    return fetchApi('/sucursales/list?incluirEventos=1', {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     })

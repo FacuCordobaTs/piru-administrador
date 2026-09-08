@@ -14,6 +14,7 @@ export interface Sucursal {
   whatsappNumber: string | null
   rapiboyToken: string | null
   activo: boolean
+  soloPos?: boolean
 }
 
 const apiBase = () => import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
@@ -27,7 +28,7 @@ export function useSucursales() {
     const token = useAuthStore.getState().token
     if (!token) return
     try {
-      const res = await fetch(`${apiBase()}/sucursales/list`, {
+      const res = await fetch(`${apiBase()}/sucursales/list?incluirEventos=1`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json()

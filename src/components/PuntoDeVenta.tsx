@@ -347,7 +347,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const [online, setOnline] = useState<boolean>(() => !navegadorOffline())
     const [showPendientes, setShowPendientes] = useState(false)
     const restauranteId = useAuthStore((s) => s.restaurante?.id ?? null)
-    const pendientes = usePosOfflineStore((s) => s.pendientes)
+    const todosPendientes = usePosOfflineStore((s) => s.pendientes)
+    const pendientes = useMemo(() => todosPendientes.filter(p => (p.payload.sucursalId ?? null) === sucursalActivaId), [todosPendientes, sucursalActivaId])
     const sincronizando = usePosOfflineStore((s) => s.sincronizando)
 
     useEffect(() => {

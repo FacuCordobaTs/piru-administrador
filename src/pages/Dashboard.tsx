@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
+import { pedidoEnSede, posPermitidoEnSede } from '@/lib/sucursalOperacion'
 import { pedidoUnificadoApi, restauranteApi, sucursalesApi, repartidoresApi, mesasLocalesApi, type MesaLocal } from '@/lib/api'
 import { SucursalSelector, type SucursalListRow } from '@/components/SucursalSelector'
 import { useAdminContext } from '@/context/AdminContext'
@@ -79,7 +80,7 @@ interface UnifiedPedido {
     nombreCliente: string | null; telefono: string | null; direccion?: string | null; notas?: string | null;
     items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
-    sucursalId?: number | null; sucursalNombre?: string | null;
+    sucursalId?: number | null; sucursalNombre?: string | null; sucursalSoloPos?: boolean;
     transferenciaAliasDestino?: string | null;
     demoraMinutos?: number | null; notificarWhatsapp?: boolean | null;
     horarioProgramado?: string | null; latitud?: string | null; longitud?: string | null;
@@ -1291,10 +1292,17 @@ const Dashboard = () => {
     const token = useAuthStore((state) => state.token)
     const restaurante = useAuthStore((state) => state.restaurante)
     const { restaurante: restauranteStore, productos: allProductos, suscripcion } = useRestauranteStore()
-    const posActivo = useModuloActivo('pos')
+    const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
+    const [sucursalesList, setSucursalesList] = useState<SucursalListRow[]>([])
+    const [sucursalesLoaded, setSucursalesLoaded] = useState(false)
+    const [sucursalesValidas, setSucursalesValidas] = useState(false)
+    const posModuloActivo = useModuloActivo('pos')
+    const tieneEventos = sucursalesList.some(s => s.soloPos)
+    const sedeEvento = sucursalesList.find(s => s.id === sucursalActivaId)?.soloPos === true
+    const posActivo = posModuloActivo && sucursalesValidas && posPermitidoEnSede(sucursalesList, sucursalActivaId)
     const { catalogoEnColumna } = usePosConfig()
-    const mesasActivo = useModuloActivo('mesas')
-    const cierreManualActivo = useModuloActivo('cierre_turno_manual')
+    const mesasActivo = useModuloActivo('mesas') && !sedeEvento
+    const cierreManualActivo = useModuloActivo('cierre_turno_manual') && !sedeEvento
     const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
     const puedeAvisarWhatsapp = useModuloActivo('avisos_automaticos_whatsapp')
 
@@ -1424,11 +1432,8 @@ const Dashboard = () => {
         return () => window.removeEventListener('focus', refrescarAlVolver)
     }, [cierreManualActivo, cargarTurnosCaja])
 
-    const [sucursalActivaId, setSucursalActivaId] = useState<number | null>(() => readStoredSucursalId())
     const [sucursalNombre, setSucursalNombre] = useState<string>('')
     const [showSucursalSelector, setShowSucursalSelector] = useState(false)
-    const [sucursalesList, setSucursalesList] = useState<SucursalListRow[]>([])
-    const [sucursalesLoaded, setSucursalesLoaded] = useState(false)
     const [prefsReady, setPrefsReady] = useState(false)
 
     const sucursalNombrePorId = useMemo(() => {
@@ -1473,6 +1478,7 @@ const Dashboard = () => {
             return
         }
         setSucursalesLoaded(false)
+        setSucursalesValidas(false)
         setPrefsReady(false)
         let cancelled = false
             ; (async () => {
@@ -1480,6 +1486,7 @@ const Dashboard = () => {
                     const res: any = await sucursalesApi.list(token)
                     if (!cancelled && res.success && Array.isArray(res.data)) {
                         setSucursalesList(res.data as SucursalListRow[])
+                        setSucursalesValidas(true)
                     }
                 } catch (e) {
                     console.error('Error cargando sucursales:', e)
@@ -1494,21 +1501,33 @@ const Dashboard = () => {
 
     useEffect(() => {
         if (!token || !sucursalesLoaded) return
-        const activas = sucursalesList.filter((s) => s.activo)
+        const activas = sucursalesList.filter((s) => s.activo || s.soloPos)
         if (activas.length === 0) {
+            if (sucursalesValidas) {
+                setSucursalActivaId(null)
+                localStorage.setItem(STORAGE_SUCURSAL, 'all')
+            }
             setSucursalNombre('')
             setPrefsReady(true)
             setShowSucursalSelector(false)
             return
         }
         const raw = localStorage.getItem(STORAGE_SUCURSAL)
+        if ((raw == null || raw === '') && activas.every(s => s.soloPos)) {
+            setSucursalActivaId(null)
+            setSucursalNombre('Local · pedidos web')
+            localStorage.setItem(STORAGE_SUCURSAL, 'all')
+            setPrefsReady(true)
+            setShowSucursalSelector(false)
+            return
+        }
         if (raw == null || raw === '') {
             setShowSucursalSelector(true)
             return
         }
         if (raw === 'all') {
             setSucursalActivaId(null)
-            setSucursalNombre('')
+            setSucursalNombre(sucursalesList.some(s => s.soloPos) ? 'Local · pedidos web' : '')
             setPrefsReady(true)
             setShowSucursalSelector(false)
             return
@@ -1522,16 +1541,27 @@ const Dashboard = () => {
         setSucursalNombre(activas.find((s) => s.id === id)?.nombre ?? '')
         setPrefsReady(true)
         setShowSucursalSelector(false)
-    }, [token, sucursalesLoaded, sucursalesList])
+    }, [token, sucursalesLoaded, sucursalesList, sucursalesValidas])
 
     const applySucursalChoice = useCallback((id: number | null, nombreVisual: string) => {
+        if (draftPos?.submitting) {
+            toast.info('Esperá a que termine de guardarse el pedido para cambiar de sede.')
+            return
+        }
+        if (tieneEventos && id !== sucursalActivaId) {
+            // Vacía componentes, respuestas pendientes y colas de impresión del ámbito anterior.
+            // Los borradores ya están guardados por sucursal en sessionStorage.
+            localStorage.setItem(STORAGE_SUCURSAL, id == null ? 'all' : String(id))
+            window.location.reload()
+            return
+        }
         setSucursalActivaId(id)
         setSucursalNombre(nombreVisual)
         if (id == null) localStorage.setItem(STORAGE_SUCURSAL, 'all')
         else localStorage.setItem(STORAGE_SUCURSAL, String(id))
         setShowSucursalSelector(false)
         setPrefsReady(true)
-    }, [])
+    }, [sucursalActivaId, draftPos?.submitting, tieneEventos])
 
     useEffect(() => {
         setPage(1)
@@ -1569,6 +1599,7 @@ const Dashboard = () => {
                 sucursalActivaId,
                 cierreManualActivo ? selectedTurnoId : null,
             ) as any
+            if (readStoredSucursalId() !== sucursalActivaId) return
             if (response.success && response.data) {
                 const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway' || p.tipo === 'mesa') as UnifiedPedido[]
 
@@ -1626,7 +1657,7 @@ const Dashboard = () => {
         if (!token || !turnoActual) return
         setCerrandoTurno(true)
         try {
-            const res: any = await pedidoUnificadoApi.cerrarTurno(token, turnoActual.id)
+            const res: any = await pedidoUnificadoApi.cerrarTurno(token, turnoActual.id, sucursalActivaId)
             if (!res.success) throw new Error(res.message || 'No se pudo cerrar el turno')
             setTurnoActual(res.data.actual)
             setTurnosCaja((turnos) => [res.data.actual, res.data.cerrado, ...turnos.filter((turno) => turno.id !== res.data.cerrado.id)])
@@ -1706,7 +1737,7 @@ const Dashboard = () => {
     // AUTO-IMPRESIÓN
     // ─────────────────────────────────────────────
     useEffect(() => {
-        if (!selectedPrinter) return
+        if (!selectedPrinter || !prefsReady) return
 
         // Una mesa puede seguir abierta desde el día anterior. También debe
         // participar de la impresión aunque no esté en la lista del día actual.
@@ -1718,6 +1749,7 @@ const Dashboard = () => {
         }
 
         pedidosParaImprimir.forEach(pedido => {
+            if ((tieneEventos || pedido.sucursalSoloPos) && !pedidoEnSede(pedido, readStoredSucursalId())) return
             const pedidoKey = `${pedido.tipo}-${pedido.id}`
             const currentPagado = pedido.pagado
             const prevData = processedOrdersRef.current.get(pedidoKey)
@@ -1883,7 +1915,7 @@ const Dashboard = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas, transferenciaAlias])
+    }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas, transferenciaAlias, prefsReady, tieneEventos])
 
     const reimprimirComanda = async (pedido: UnifiedPedido) => {
         if (printingManualOrderId !== null) return
@@ -2646,13 +2678,14 @@ const Dashboard = () => {
     const publicUrl = restauranteStore?.username ? `https://piru.app/${restauranteStore.username}` : null
 
     if (!prefsReady) {
-        const activasParaModal = sucursalesList.filter((s) => s.activo)
+        const activasParaModal = sucursalesList.filter((s) => s.activo || s.soloPos)
         return (
             <div className="relative h-full flex flex-col items-center justify-center bg-[#FFFBF0] dark:bg-background">
                 <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
                 <SucursalSelector
                     open={showSucursalSelector && activasParaModal.length > 0}
                     onOpenChange={setShowSucursalSelector}
+                    tieneEventos={tieneEventos}
                     sucursalesActivas={activasParaModal}
                     onSelect={(id, nombreEtiqueta) => applySucursalChoice(id, nombreEtiqueta)}
                     requireChoice
@@ -2740,7 +2773,7 @@ const Dashboard = () => {
                     <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={async () => { await cargarTurnosCaja(); setShowCierreTurno(true) }}>
                         <CalendarDays className="mr-2 h-4 w-4" /> Caja
                     </Button>
-                    {cierreManualActivo && turnoActual && selectedTurnoId === turnoActual.id && (
+                    {cierreManualActivo && !sedeEvento && turnoActual && selectedTurnoId === turnoActual.id && (
                         <Button className="h-10 rounded-xl" onClick={() => setShowCerrarTurno(true)}>
                             <Clock className="mr-2 h-4 w-4" /> Cerrar turno
                         </Button>
@@ -2946,7 +2979,7 @@ const Dashboard = () => {
                                                 <UserRound className="h-4 w-4 mr-2" /> Repartidores
                                             </DropdownMenuItem>
                                         )}
-                                        {sucursalesList.some((s) => s.activo) ? (
+                                        {sucursalesList.some((s) => s.activo || s.soloPos) ? (
                                             <DropdownMenuItem onClick={() => setShowSucursalSelector(true)}>
                                                 <Store className="h-4 w-4 mr-2" /> Cambiar sucursal
                                             </DropdownMenuItem>
@@ -4237,7 +4270,7 @@ const Dashboard = () => {
                 </DialogContent>
             </Dialog>
 
-            <CierreTurno open={showCierreTurno} onClose={() => setShowCierreTurno(false)} fechaInicial={cierreManualActivo ? undefined : selectedDay} turnoIdInicial={cierreManualActivo ? selectedTurnoId ?? undefined : undefined} />
+            <CierreTurno sucursalNombre={tieneEventos ? sucursalNombre : undefined} sucursalId={sucursalActivaId} open={showCierreTurno} onClose={() => setShowCierreTurno(false)} fechaInicial={cierreManualActivo ? undefined : selectedDay} turnoIdInicial={cierreManualActivo ? selectedTurnoId ?? undefined : undefined} />
             <Dialog open={showCerrarTurno} onOpenChange={setShowCerrarTurno}>
                 <DialogContent className="max-w-sm">
                     <DialogHeader>
@@ -4259,9 +4292,10 @@ const Dashboard = () => {
             </Dialog>
 
             <SucursalSelector
-                open={showSucursalSelector && sucursalesList.filter((s) => s.activo).length > 0 && prefsReady}
+                open={showSucursalSelector && sucursalesList.filter((s) => s.activo || s.soloPos).length > 0 && prefsReady}
                 onOpenChange={setShowSucursalSelector}
-                sucursalesActivas={sucursalesList.filter((s) => s.activo)}
+                tieneEventos={tieneEventos}
+                sucursalesActivas={sucursalesList.filter((s) => s.activo || s.soloPos)}
                 onSelect={(id, nombreEtiqueta) => applySucursalChoice(id, nombreEtiqueta)}
             />
         </div>

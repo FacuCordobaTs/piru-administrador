@@ -39,6 +39,7 @@ interface Sucursal {
     id: number
     nombre: string
     activo: boolean
+    soloPos?: boolean
 }
 
 const ZONE_COLORS = ['#FF7A00', '#3b82f6', '#ef4444', '#22c55e', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']
@@ -255,7 +256,7 @@ export default function ZonasDeliveryMap() {
                     headers: { Authorization: `Bearer ${token}` }
                 })
                 const data = await res.json()
-                if (data.success) setSucursales(data.data.filter((s: Sucursal) => s.activo))
+                if (data.success) setSucursales(data.data.filter((s: Sucursal) => s.activo && !s.soloPos))
             } catch { /* ignore */ }
         }
         fetchSucursales()

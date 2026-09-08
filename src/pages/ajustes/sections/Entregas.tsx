@@ -18,7 +18,7 @@ import { useModuloActivo } from '@/store/modulosStore'
 // El mapa (Leaflet, ~25KB) se carga solo al entrar a su editor.
 const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
 
-type EditorId = 'tipos' | 'sucursales' | null
+type EditorId = 'tipos' | 'sucursales' | 'eventos' | null
 
 export default function Entregas() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
@@ -34,9 +34,11 @@ export default function Entregas() {
 
   const { texto: zonasOracion, estado: zonasEstado } = useZonasResumen()
 
-  const mostrarSucursales = sucLoaded && sucursales.length >= 2
+  const mostrarSucursales = sucLoaded && sucursales.filter(s => !s.soloPos).length >= 2
   const multisucursalActiva = useModuloActivo('multisucursal')
   const rapiboyActivo = useModuloActivo('rapiboy')
+  const posActivo = useModuloActivo('pos')
+  const eventos = sucursales.filter(s => s.soloPos)
 
   useEffect(() => {
     const config = searchParams.get('config')
@@ -68,11 +70,18 @@ export default function Entregas() {
         {multisucursalActiva && mostrarSucursales && (
           <AjusteRow
             titulo="Sucursales"
-            oracion={`${sucursales.length} sucursales`}
+            oracion={`${sucursales.filter(s => !s.soloPos).length} sucursales`}
             estado="configurado"
             onAccion={() => setEditor('sucursales')}
           />
         )}
+        {(posActivo || eventos.length > 0) && <AjusteRow
+          titulo="Eventos con POS"
+          oracion={eventos.some(s => s.activo) ? 'El POS atiende en el evento; la tienda sigue en el local' : 'Tomá e imprimí pedidos fuera del local sin mezclar la tienda'}
+          estado={eventos.some(s => s.activo) ? 'configurado' : 'sin-configurar'}
+          accionLabel={eventos.length ? 'Administrar' : 'Crear evento'}
+          onAccion={() => setEditor('eventos')}
+        />}
         {!multisucursalActiva && (
           <AjusteRow
             titulo="Múltiples sucursales"
@@ -103,7 +112,11 @@ export default function Entregas() {
         titulo="Sucursales"
         descripcion="Tus locales y su ruteo de pedidos."
       >
-        <SucursalesLista sucursales={sucursales} onChanged={recargar} rapiboyActivo={rapiboyActivo} />
+        <SucursalesLista sucursales={sucursales.filter(s => !s.soloPos)} onChanged={recargar} rapiboyActivo={rapiboyActivo} />
+      </AjusteEditor>
+
+      <AjusteEditor open={editor === 'eventos'} onOpenChange={o => !o && setEditor(null)} titulo="Eventos con POS" descripcion="En la computadora del evento, elegí su sede desde Cambiar sucursal. La computadora del local conserva su vista habitual.">
+        <SucursalesLista sucursales={eventos} onChanged={recargar} rapiboyActivo={false} soloPos />
       </AjusteEditor>
 
       {/* Zonas: pantalla propia con el mapa lazy */}
@@ -211,10 +224,12 @@ function SucursalesLista({
   sucursales,
   onChanged,
   rapiboyActivo,
+  soloPos = false,
 }: {
   sucursales: Sucursal[]
   onChanged: () => void
   rapiboyActivo: boolean
+  soloPos?: boolean
 }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editando, setEditando] = useState<Sucursal | null>(null)
@@ -231,7 +246,7 @@ function SucursalesLista({
         onClick={() => abrir(null)}
         className="h-11 min-h-[44px] w-full font-medium"
       >
-        <Plus className="mr-2 h-4 w-4" /> Nueva sucursal
+        <Plus className="mr-2 h-4 w-4" /> {soloPos ? 'Nuevo evento' : 'Nueva sucursal'}
       </Button>
       <div className="divide-y divide-border">
         {sucursales.map((s) => (
@@ -260,6 +275,7 @@ function SucursalesLista({
         editando={editando}
         onSaved={onChanged}
         rapiboyActivo={rapiboyActivo}
+        crearSoloPos={soloPos}
       />
     </div>
   )

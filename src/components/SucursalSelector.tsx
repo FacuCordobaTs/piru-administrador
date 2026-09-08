@@ -13,6 +13,7 @@ export interface SucursalListRow {
   id: number
   nombre: string
   activo: boolean
+  soloPos?: boolean
 }
 
 type Props = {
@@ -22,6 +23,7 @@ type Props = {
   onSelect: (id: number | null, nombreEtiqueta: string) => void
   /** Si true, no se cierra al clic fuera ni Escape (solo eligiendo opción) */
   requireChoice?: boolean
+  tieneEventos?: boolean
 }
 
 export function SucursalSelector({
@@ -30,6 +32,7 @@ export function SucursalSelector({
   sucursalesActivas,
   onSelect,
   requireChoice = false,
+  tieneEventos = false,
 }: Props) {
   return (
     <Dialog
@@ -56,7 +59,7 @@ export function SucursalSelector({
             ¿Cuál es tu sucursal?
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground text-center sm:text-left">
-            Elegí dónde estás operando para ver solo esos pedidos, o todas si sos el dueño.
+            {tieneEventos ? 'Cada computadora recibe e imprime sólo los pedidos del lugar elegido.' : 'Elegí dónde estás operando para ver solo esos pedidos, o todas si sos el dueño.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -73,7 +76,7 @@ export function SucursalSelector({
               onClick={() => onSelect(s.id, s.nombre)}
             >
               <Store className="mr-2 h-4 w-4 shrink-0 text-[#FF7A00]" />
-              <span className="truncate">{s.nombre}</span>
+              <span className="truncate">{s.nombre}{s.soloPos ? (s.activo ? ' · POS del evento' : ' · historial del evento') : ''}</span>
             </Button>
           ))}
 
@@ -84,10 +87,10 @@ export function SucursalSelector({
               'h-12 w-full justify-start rounded-xl border-dashed border-border font-semibold',
               'hover:bg-muted/60',
             )}
-            onClick={() => onSelect(null, '')}
+            onClick={() => onSelect(null, tieneEventos ? 'Local · pedidos web' : '')}
           >
             <LayoutGrid className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-            Ver todas (dueño)
+            {tieneEventos ? 'Local · pedidos web (sin eventos)' : 'Ver todas (dueño)'}
           </Button>
         </div>
       </DialogContent>

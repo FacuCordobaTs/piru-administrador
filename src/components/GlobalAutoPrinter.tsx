@@ -1,8 +1,9 @@
+import { pedidoEnSede } from '@/lib/sucursalOperacion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { pedidoUnificadoApi } from '@/lib/api'
+import { pedidoUnificadoApi, sucursalesApi } from '@/lib/api'
 import { useAdminContext } from '@/context/AdminContext'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
@@ -23,7 +24,7 @@ interface UnifiedPedido {
     nombreCliente: string | null; telefono: string | null; direccion?: string | null; notas?: string | null;
     items: DeliveryItem[]; totalItems: number; pagado?: boolean; metodoPago?: string | null;
     montoDescuento?: string | number | null; codigoDescuentoCodigo?: string | null; impreso?: boolean;
-    sucursalId?: number | null; sucursalNombre?: string | null;
+    sucursalId?: number | null; sucursalNombre?: string | null; sucursalSoloPos?: boolean;
     transferenciaAliasDestino?: string | null;
     horarioProgramado?: string | null; deliveryFee?: string | null; grupal?: boolean | null;
     mesaNombre?: string | null;
@@ -94,6 +95,7 @@ const GlobalAutoPrinter = () => {
     const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
     const initialLoadDoneRef = useRef(false)
+    const fetchedSucursalRef = useRef<number | null | undefined>(undefined)
     // El evento del backend distingue un alta nueva de una carga inicial. Sin
     // esta marca, un refetch que gana la carrera al primer fetch puede registrar
     // el pedido como backlog y omitir su impresión.
@@ -114,17 +116,34 @@ const GlobalAutoPrinter = () => {
                 undefined,
                 sucursalActivaId,
             ) as any
+            if (readStoredSucursalId() !== sucursalActivaId) return
             if (response.success && response.data) {
                 const validPedidos = response.data.filter((p: any) => p.tipo === 'delivery' || p.tipo === 'takeaway' || p.tipo === 'mesa') as UnifiedPedido[]
                 // Una carga inicial sin pedidos también es una carga completa.
                 // Si no se marca, el primer pedido posterior se toma por backlog
                 // y queda sin impresión automática mientras se navega fuera del Dashboard.
                 if (validPedidos.length === 0) initialLoadDoneRef.current = true
+                fetchedSucursalRef.current = sucursalActivaId
                 setUnifiedPedidos(validPedidos)
             }
         } catch (error) {
             console.error('Error fetching pedidos (GlobalAutoPrinter):', error)
         }
+    }, [token])
+
+    useEffect(() => {
+        const cambiarSede = (event: StorageEvent) => {
+            if (event.key !== STORAGE_SUCURSAL || !token) return
+            // Sólo las cuentas con eventos necesitan descartar todo el estado
+            // de otra pestaña. Las sucursales convencionales conservan su flujo.
+            void sucursalesApi.list(token).then((response: any) => {
+                if (!response.success || !Array.isArray(response.data) || response.data.some((s: { soloPos?: boolean }) => s.soloPos)) {
+                    window.location.reload()
+                }
+            }).catch(() => window.location.reload())
+        }
+        window.addEventListener('storage', cambiarSede)
+        return () => window.removeEventListener('storage', cambiarSede)
     }, [token])
 
     // Carga inicial al montar
@@ -156,9 +175,10 @@ const GlobalAutoPrinter = () => {
     // AUTO-IMPRESIÓN (espejo exacto del Dashboard)
     // ─────────────────────────────────────────────
     useEffect(() => {
-        if (!selectedPrinter) return
+        if (!selectedPrinter || fetchedSucursalRef.current !== readStoredSucursalId()) return
 
         unifiedPedidos.forEach(pedido => {
+            if (pedido.sucursalSoloPos && !pedidoEnSede(pedido, readStoredSucursalId())) return
             const pedidoKey = `${pedido.tipo}-${pedido.id}`
             const currentPagado = pedido.pagado
             const prevData = processedOrdersRef.current.get(pedidoKey)

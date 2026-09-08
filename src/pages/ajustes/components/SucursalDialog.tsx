@@ -22,6 +22,7 @@ interface SucursalDialogProps {
   editando: Sucursal | null
   onSaved: () => void
   rapiboyActivo?: boolean
+  crearSoloPos?: boolean
 }
 
 type SucursalForm = {
@@ -53,7 +54,8 @@ const vacio: SucursalForm = {
 const apiBase = () => import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 /** Crear/editar sucursal. Transaccional: conserva Guardar/Cancelar. */
-export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyActivo = false }: SucursalDialogProps) {
+export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyActivo = false, crearSoloPos = false }: SucursalDialogProps) {
+  const soloPos = editando?.soloPos ?? crearSoloPos
   const [form, setForm] = useState<SucursalForm>(vacio)
   const [guardando, setGuardando] = useState(false)
 
@@ -89,7 +91,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
       toast.error('El nombre es requerido')
       return
     }
-    if (!form.direccion.trim() || form.direccionLat == null || form.direccionLng == null) {
+    if (!soloPos && (!form.direccion.trim() || form.direccionLat == null || form.direccionLng == null)) {
       toast.error('Seleccioná la dirección exacta desde las sugerencias')
       return
     }
@@ -108,7 +110,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
         whatsappNumber: form.whatsappNumber || null,
         ...(rapiboyActivo ? { rapiboyToken: rapiboyToken.trim() || null } : {}),
       }
-      const url = editando ? `${apiBase()}/sucursales/${editando.id}` : `${apiBase()}/sucursales/create`
+      const url = editando ? `${apiBase()}/sucursales/${editando.id}` : `${apiBase()}/sucursales/${soloPos ? 'evento-pos' : 'create'}`
       const res = await fetch(url, {
         method: editando ? 'PUT' : 'POST',
         headers: authHeaders(),
@@ -155,19 +157,22 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-lg font-medium">
-            {editando ? 'Editar sucursal' : 'Nueva sucursal'}
+            {soloPos ? (editando ? 'Editar evento' : 'Nuevo evento con POS') : (editando ? 'Editar sucursal' : 'Nueva sucursal')}
           </DialogTitle>
         </DialogHeader>
+        {soloPos && <p className="text-sm text-muted-foreground">La tienda sigue atendiendo en el local. Esta sede recibe únicamente pedidos del POS y tiene su propia cola de impresión. Mientras haya un evento activo, el POS se usa sólo en las sedes de evento.</p>}
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="font-medium">Nombre</Label>
+            <Label htmlFor="sucursal-nombre" className="font-medium">Nombre</Label>
             <Input
+              id="sucursal-nombre"
               value={form.nombre}
               onChange={(e) => setForm((p) => ({ ...p, nombre: e.target.value }))}
-              placeholder="Ej: Sucursal Centro"
+              placeholder={soloPos ? 'Ej: Fiesta de Alfajor' : 'Ej: Sucursal Centro'}
               className="h-11"
             />
           </div>
+          {!soloPos && <>
           <div className="space-y-1.5">
             <Label className="font-medium">Dirección exacta</Label>
             <AddressAutocomplete
@@ -208,6 +213,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
               />
             </div>
           )}
+          </>}
           <div className="space-y-1.5">
             <Label className="font-medium">
               Alias para transferencias <span className="font-normal text-muted-foreground">(opcional)</span>
@@ -224,7 +230,7 @@ export function SucursalDialog({ open, onOpenChange, editando, onSaved, rapiboyA
               Se muestra en el mensaje del pedido. Si queda vacío, se usa el alias general del negocio.
             </p>
           </div>
-          {rapiboyActivo && <div className="space-y-1.5">
+          {rapiboyActivo && !soloPos && <div className="space-y-1.5">
             <Label className="font-medium">
               Token Rapiboy <span className="font-normal text-muted-foreground">(opcional)</span>
             </Label>
