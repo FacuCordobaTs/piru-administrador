@@ -1776,6 +1776,7 @@ export const sucursalesApi = {
   list: async (token: string) => {
     return fetchApi('/sucursales/list?incluirEventos=1', {
       method: 'GET',
+      cache: 'no-store',
       headers: { Authorization: `Bearer ${token}` },
     })
   },

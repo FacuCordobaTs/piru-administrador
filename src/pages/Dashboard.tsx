@@ -1481,21 +1481,46 @@ const Dashboard = () => {
         setSucursalesValidas(false)
         setPrefsReady(false)
         let cancelled = false
-            ; (async () => {
-                try {
-                    const res: any = await sucursalesApi.list(token)
-                    if (!cancelled && res.success && Array.isArray(res.data)) {
-                        setSucursalesList(res.data as SucursalListRow[])
-                        setSucursalesValidas(true)
-                    }
-                } catch (e) {
-                    console.error('Error cargando sucursales:', e)
-                } finally {
-                    if (!cancelled) setSucursalesLoaded(true)
+        let cargando = false
+        let tieneEventosParaRefrescar = readStoredSucursalId() != null
+        const cargarSucursales = async () => {
+            if (cargando || cancelled) return
+            cargando = true
+            try {
+                const res: any = await sucursalesApi.list(token)
+                if (!cancelled && res.success && Array.isArray(res.data)) {
+                    const sedes = res.data as SucursalListRow[]
+                    tieneEventosParaRefrescar = sedes.some(s => s.soloPos)
+                    // No reiniciar preferencias ni desmontar el borrador en cada refresco.
+                    setSucursalesList(prev => prev.length === sedes.length && prev.every((s, i) =>
+                        s.id === sedes[i].id && s.nombre === sedes[i].nombre
+                        && s.activo === sedes[i].activo && s.soloPos === sedes[i].soloPos,
+                    ) ? prev : sedes)
+                    setSucursalesValidas(true)
                 }
-            })()
+            } catch (e) {
+                console.error('Error cargando sucursales:', e)
+            } finally {
+                cargando = false
+                if (!cancelled) setSucursalesLoaded(true)
+            }
+        }
+        // Abrir/cerrar un evento en otra pantalla debe actualizar el POS sin
+        // depender de un cambio de token ni de recargar toda la aplicación.
+        const alVolver = () => { if (!document.hidden) void cargarSucursales() }
+        const intervalo = window.setInterval(() => {
+            if (tieneEventosParaRefrescar) alVolver()
+        }, 30_000)
+        window.addEventListener('focus', alVolver)
+        window.addEventListener('online', alVolver)
+        document.addEventListener('visibilitychange', alVolver)
+        void cargarSucursales()
         return () => {
             cancelled = true
+            window.clearInterval(intervalo)
+            window.removeEventListener('focus', alVolver)
+            window.removeEventListener('online', alVolver)
+            document.removeEventListener('visibilitychange', alVolver)
         }
     }, [token])
 
@@ -2292,7 +2317,7 @@ const Dashboard = () => {
     // En móvil el POS arranca abierto cuando el módulo está activo: replica el
     // comportamiento de desktop, donde el panel no tiene cierre.
     useEffect(() => {
-        if (posActivo) setShowPosMovil(true)
+        setShowPosMovil(posActivo)
     }, [posActivo])
 
     const handlePedidoManualCreado = async (pedidoId: number, pedido?: Partial<PosEditablePedido>) => {
@@ -2961,7 +2986,7 @@ const Dashboard = () => {
                                 )}
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                                        <Button variant="outline" size="sm" className="h-8 w-8 p-0" aria-label="Opciones de pedidos">
                                             <MoreVertical className="h-4 w-4" />
                                         </Button>
                                     </DropdownMenuTrigger>
@@ -3703,6 +3728,13 @@ const Dashboard = () => {
 
                                 </div>
                                 </div>
+                            ) : sedeEvento ? (
+                                <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
+                                    <h2 className="text-xl font-semibold">Evento cerrado</h2>
+                                    <p className="max-w-sm text-sm text-muted-foreground">
+                                        Podés consultar sus pedidos. Al abrir el evento desde Ajustes → Entregas → Eventos con POS, aparecerá Nuevo pedido.
+                                    </p>
+                                </div>
                             ) : (
                                 <ShareLinkPanel publicUrl={publicUrl} />
                             )}
@@ -3711,7 +3743,7 @@ const Dashboard = () => {
                         {/* ── POS (solo móvil) ──
                             En lg+ el POS es la columna inline del medio (arriba). En móvil, en
                             cambio, cubre la pantalla como overlay y la comanda queda detrás. */}
-                        {showPosMovil && !isDesktopViewport && (
+                        {posActivo && showPosMovil && !isDesktopViewport && (
                             <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center px-3 pb-3 pt-16 sm:px-6 sm:pb-6 pointer-events-none">
                                 <div
                                     onClick={handlePosBackgroundClick}
