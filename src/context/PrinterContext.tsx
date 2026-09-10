@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { invoke } from '@tauri-apps/api/core';
 import { useModuloActivo } from '@/store/modulosStore';
 import { useRestauranteStore } from '@/store/restauranteStore';
-import { COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY, readComandaGrandeMayusculas } from '@/utils/printerUtils';
+import { COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY, readComandaGrandeMayusculas, prepararCopiasComanda } from '@/utils/printerUtils';
+import { getPosConfig } from '@/lib/posConfig';
 
 const STORAGE_KEY = 'tauri_printer_name';
 
@@ -11,6 +12,8 @@ interface PrinterContextType {
     selectedPrinter: string | null;
     refreshPrinters: () => Promise<void>;
     printRaw: (data: number[]) => Promise<void>;
+    /** Imprime una comanda respetando la cantidad de copias configurada en el equipo. */
+    printComanda: (data: number[]) => Promise<void>;
     setSelectedPrinter: (name: string) => void;
     comandaGrandeMayusculas: boolean;
     setComandaGrandeMayusculas: (enabled: boolean) => void;
@@ -83,6 +86,14 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     }, [impresionComandasActiva, selectedPrinter]);
 
+    const printComanda = useCallback(async (data: number[]) => {
+        // Leer al imprimir evita una preferencia obsoleta en operaciones pendientes.
+        // Mantener estable el callback evita volver a disparar efectos de autoimpresión
+        // sólo por cambiar la cantidad de copias.
+        const copias = getPosConfig().imprimirComandaDosVeces ? 2 : 1;
+        await printRaw(prepararCopiasComanda(data, copias));
+    }, [printRaw]);
+
     // Cargar impresoras al montar el componente
     useEffect(() => {
         refreshPrinters();
@@ -94,6 +105,7 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
             selectedPrinter,
             refreshPrinters,
             printRaw,
+            printComanda,
             setSelectedPrinter,
             comandaGrandeMayusculas,
             setComandaGrandeMayusculas,

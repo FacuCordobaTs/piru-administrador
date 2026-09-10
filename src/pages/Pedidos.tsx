@@ -160,7 +160,7 @@ const Pedidos = () => {
   const { restaurante, productos: allProductos, categorias: allCategorias } = useRestauranteStore()
   const esCarrito = restaurante?.esCarrito || false
   const splitPayment = restaurante?.splitPayment ?? true // Default to true if undefined
-  const { printRaw, selectedPrinter } = usePrinter()
+  const { printComanda, selectedPrinter } = usePrinter()
 
   const {
     mesas: mesasWS,
@@ -300,7 +300,7 @@ const Pedidos = () => {
             if (itemsToPrint.length > 0) {
               console.log("🖨️ Auto-printing confirmed order:", pedidoId);
               const comandaData = formatComanda({ ...mesa.pedido, tipo: 'mesa', mesaNombre: mesa.nombre }, itemsToPrint, restaurante?.nombre || 'Restaurante');
-              printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err));
+              printComanda(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing confirmed order:", err));
               // toast.success(`Imprimiendo comanda #${pedidoId}`);
             }
           }
@@ -331,7 +331,7 @@ const Pedidos = () => {
               if (itemsToPrint.length > 0) {
                 console.log("🖨️ Auto-printing new items for order:", pedidoId);
                 const comandaData = formatComanda({ ...mesa.pedido, tipo: 'mesa', mesaNombre: mesa.nombre }, itemsToPrint, restaurante?.nombre || 'Restaurante');
-                printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err));
+                printComanda(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error printing new items:", err));
                 // toast.info(`Imprimiendo ${itemsToPrint.length} items nuevos`);
               }
             }
@@ -445,7 +445,7 @@ const Pedidos = () => {
         return updated;
       });
     }
-  }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printRaw]);
+  }, [mesasWS, selectedPrinter, allProductos, allCategorias, restaurante?.nombre, printComanda]);
 
   // Cargar más
   const loadMore = () => {
@@ -498,7 +498,7 @@ const Pedidos = () => {
 
         if (itemsToPrint.length > 0) {
           const comandaData = formatComanda({ ...pedido, tipo: 'mesa' }, itemsToPrint, restaurante?.nombre || 'Restaurante');
-          printRaw(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error auto-printing:", err));
+          printComanda(commandsToBytes(comandaData)).catch((err: Error) => console.error("Error auto-printing:", err));
           // toast.success('Comanda enviada a cocina');
         }
       }

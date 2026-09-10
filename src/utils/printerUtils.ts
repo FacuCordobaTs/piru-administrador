@@ -619,6 +619,14 @@ const CP437_FALLBACKS: Readonly<Record<string, string>> = {
 }
 
 /**
+ * Repite la comanda completa, incluidos inicialización, avance y corte ESC/POS.
+ * Las copias viajan juntas en un solo trabajo; no duplican claims ni ventas.
+ * Se aplica después del formato para que fecha, importes y detalles sean iguales.
+ */
+export const prepararCopiasComanda = (data: number[], copias: 1 | 2): number[] =>
+    copias === 2 ? data.concat(data) : data;
+
+/**
  * Convierte comandos ESC/POS a bytes reales de PC437 y preserva los controles
  * (`ESC`, `GS`, saltos de línea, etc.). Nunca devuelve enteros fuera de u8.
  */

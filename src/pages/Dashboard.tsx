@@ -1310,7 +1310,7 @@ const Dashboard = () => {
     // exclusivamente con su módulo y no depende de este alias legacy.
     const esPlanBasico = suscripcion?.planCodigo === 'basico'
 
-    const { printRaw, selectedPrinter, comandaGrandeMayusculas, transferenciaAlias } = usePrinter()
+    const { printComanda, selectedPrinter, comandaGrandeMayusculas, transferenciaAlias } = usePrinter()
     const isDesktopViewport = useDesktopViewport()
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
     const initialLoadDoneRef = useRef(false)
@@ -1908,7 +1908,7 @@ const Dashboard = () => {
                                 grandeMayusculas: comandaGrandeMayusculas,
                             })
 
-                            await printRaw(commandsToBytes(comandaData))
+                            await printComanda(commandsToBytes(comandaData))
                         } catch (err) {
                             // Si Tauri/Windows rechaza el trabajo, compensar el claim para
                             // que el pedido siga pendiente y pueda reintentarse de verdad.
@@ -1940,7 +1940,7 @@ const Dashboard = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, comandaGrandeMayusculas, transferenciaAlias, prefsReady, tieneEventos])
+    }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printComanda, token, restauranteStore, comandaGrandeMayusculas, transferenciaAlias, prefsReady, tieneEventos])
 
     const reimprimirComanda = async (pedido: UnifiedPedido) => {
         if (printingManualOrderId !== null) return
@@ -1978,7 +1978,7 @@ const Dashboard = () => {
             }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
                 grandeMayusculas: comandaGrandeMayusculas,
             })
-            await printRaw(commandsToBytes(data))
+            await printComanda(commandsToBytes(data))
             // Si venía pendiente por un intento automático fallido, esta
             // impresión manual exitosa debe cerrar también el estado en DB.
             if (token && pedido.impreso === false) {
@@ -2449,7 +2449,7 @@ const Dashboard = () => {
         }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
             grandeMayusculas: comandaGrandeMayusculas,
         })
-        await printRaw(commandsToBytes(comandaData))
+        await printComanda(commandsToBytes(comandaData))
     }
 
     const imprimirPedidoEditadoDesdeServidor = async (
@@ -2489,7 +2489,7 @@ const Dashboard = () => {
         }, itemsToPrint, restaurante?.nombre || 'Restaurante', {
             grandeMayusculas: comandaGrandeMayusculas,
         })
-        await printRaw(commandsToBytes(data))
+        await printComanda(commandsToBytes(data))
         return true
     }
 

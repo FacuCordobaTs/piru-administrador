@@ -1,7 +1,21 @@
 import { describe, expect, test } from 'bun:test'
-import { commandsToBytes, formatComanda } from '../src/utils/printerUtils'
+import { commandsToBytes, formatComanda, prepararCopiasComanda } from '../src/utils/printerUtils'
 
 describe('impresión ESC/POS', () => {
+  test('dos copias conservan contenido, inicialización y corte de cada ticket sin modificar el original', () => {
+    const original = commandsToBytes(formatComanda({
+      id: 'LOCAL-42', tipo: 'takeaway', nombrePedido: 'José', sucursalNombre: 'Feria', metodoPago: 'cash',
+    }, [{ cantidad: 2, nombreProducto: 'Alfajor', precioUnitario: '1500', varianteNombre: 'Chocolate' }], 'Local'))
+    const snapshot = [...original]
+    const doble = prepararCopiasComanda(original, 2)
+    expect(doble).toHaveLength(original.length * 2)
+    expect(doble.slice(0, original.length)).toEqual(original)
+    expect(doble.slice(original.length)).toEqual(original)
+    expect(doble.slice(original.length - 4, original.length + 2)).toEqual([0x1d, 0x56, 0x41, 0, 0x1b, 0x40])
+    expect(doble.slice(-4)).toEqual([0x1d, 0x56, 0x41, 0])
+    expect(original).toEqual(snapshot)
+    expect(prepararCopiasComanda(original, 1)).toEqual(original)
+  })
   test('codifica español y Unicode como bytes u8 válidos', () => {
     const bytes = commandsToBytes(['OROÑO 🛵 – José'])
 

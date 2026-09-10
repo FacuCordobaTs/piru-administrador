@@ -4,6 +4,7 @@ import {
   Banknote,
   CreditCard,
   Columns3,
+  Copy,
   Download,
   Loader2,
   Landmark,
@@ -153,6 +154,13 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
         descripcion="Al seleccionar un evento, oculta los productos del catálogo web y muestra sólo los asignados a ese evento."
         checked={config.soloProductosEvento}
         onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, soloProductosEvento: checked }))}
+      />
+      <FilaConfig
+        icon={Copy}
+        label="Imprimir cada comanda dos veces"
+        descripcion="Dos copias iguales: una para el cliente y otra para el local. Incluye impresión automática y reimpresiones en este dispositivo."
+        checked={config.imprimirComandaDosVeces}
+        onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, imprimirComandaDosVeces: checked }))}
       />
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tipos de pedido</p>

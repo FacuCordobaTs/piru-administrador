@@ -89,7 +89,7 @@ const GlobalAutoPrinter = () => {
     const restaurante = useAuthStore((state) => state.restaurante)
     const { restaurante: restauranteStore, productos: allProductos } = useRestauranteStore()
 
-    const { printRaw, selectedPrinter, comandaGrandeMayusculas, transferenciaAlias } = usePrinter()
+    const { printComanda, selectedPrinter, comandaGrandeMayusculas, transferenciaAlias } = usePrinter()
     const { lastUpdate } = useAdminContext()
 
     const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
@@ -274,7 +274,7 @@ const GlobalAutoPrinter = () => {
                                 grandeMayusculas: comandaGrandeMayusculas,
                             })
 
-                            await printRaw(commandsToBytes(comandaData))
+                            await printComanda(commandsToBytes(comandaData))
                         } catch (err) {
                             try {
                                 await pedidoUnificadoApi.liberarImpreso(token, pedido.id, claimedItems)
@@ -303,7 +303,7 @@ const GlobalAutoPrinter = () => {
         if (!initialLoadDoneRef.current && unifiedPedidos.length > 0) {
             initialLoadDoneRef.current = true
         }
-    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printRaw, token, restauranteStore, isDashboardRoute, comandaGrandeMayusculas, transferenciaAlias])
+    }, [unifiedPedidos, selectedPrinter, allProductos, restaurante, printComanda, token, restauranteStore, isDashboardRoute, comandaGrandeMayusculas, transferenciaAlias])
 
     return null
 }

@@ -272,7 +272,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 ) {
     const token = useAuthStore((s) => s.token)
     // La impresión de comandas es local (Tauri invoke): funciona sin conexión.
-    const { printRaw, transferenciaAlias } = usePrinter()
+    const { printComanda, transferenciaAlias } = usePrinter()
     const restauranteNombre = useAuthStore((s) => s.restaurante?.nombre) || 'Restaurante'
     const { productos } = useRestauranteStore()
     const cucuruConfigurado = useRestauranteStore((s) => s.restaurante?.cucuruConfigurado) ?? false
@@ -925,7 +925,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             sucursalNombre: sucursalNombre || undefined,
             mesaNombre: draft.mesaNombre,
         }, itemsToPrint, restauranteNombre)
-        await printRaw(commandsToBytes(comandaData))
+        await printComanda(commandsToBytes(comandaData))
     }
 
     // Se recibe la misma fila durable creada ANTES del primer POST.
