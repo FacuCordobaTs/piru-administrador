@@ -14,6 +14,12 @@ useRestauranteStore.getState().setLocal({ id: 1, nombre: 'Local fixture', userna
 useRestauranteStore.getState().setProductos([{
     id: 1, restauranteId: 1, nombre: 'Alfajor de prueba', precio: '1500', activo: true,
     categoriaId: null, categoria: null, descripcion: null, imagenUrl: null, createdAt: '2026-09-09',
+}, {
+    id: 2, restauranteId: 1, nombre: 'Combo exclusivo feria', precio: '3500', activo: true,
+    categoriaId: null, categoria: null, descripcion: null, imagenUrl: null, createdAt: '2026-09-09', eventoSucursalId: 20,
+}, {
+    id: 3, restauranteId: 1, nombre: 'Combo de otro evento', precio: '4500', activo: true,
+    categoriaId: null, categoria: null, descripcion: null, imagenUrl: null, createdAt: '2026-09-09', eventoSucursalId: 21,
 }])
 createRoot(document.getElementById('root')!).render(
     <MemoryRouter><AdminProvider><PrinterProvider><Dashboard /><Toaster /></PrinterProvider></AdminProvider></MemoryRouter>,

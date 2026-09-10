@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
-import { productosApi, categoriasApi, ingredientesApi, agregadosApi } from '@/lib/api'
+import { productosApi, categoriasApi, ingredientesApi, agregadosApi, sucursalesApi } from '@/lib/api'
 import { toast } from 'sonner'
 import ImageUpload from '@/components/ImageUpload'
 import { cn } from '@/lib/utils'
@@ -45,6 +45,16 @@ const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
   const token = useAuthStore((state) => state.token)
   const [busqueda, setBusqueda] = useState('')
+  const [eventos, setEventos] = useState<Array<{ id: number; nombre: string; activo: boolean; soloPos: boolean }>>([])
+  useEffect(() => {
+    if (!token) return
+    let vigente = true
+    sucursalesApi.list(token).then((response) => {
+      const result = response as { success: boolean; data?: typeof eventos }
+      if (vigente && result.success) setEventos((result.data ?? []).filter(s => s.soloPos))
+    }).catch(() => { if (vigente) toast.error('No se pudieron cargar los eventos') })
+    return () => { vigente = false }
+  }, [token])
 
   // ─── Panel states ───
   const [panelProductoId, setPanelProductoId] = useState<number | null>(null)
@@ -71,6 +81,7 @@ const Productos = () => {
     nombre: string
     descripcion: string
     precio: string
+    eventoSucursalId: string
     categoriaId: string
     puntosGanados: string
     puntosNecesarios: string
@@ -89,6 +100,7 @@ const Productos = () => {
     nombre: '',
     descripcion: '',
     precio: '',
+    eventoSucursalId: '0',
     categoriaId: '0',
     puntosGanados: '',
     puntosNecesarios: '',
@@ -222,7 +234,7 @@ const Productos = () => {
     setPanelNuevo(true)
     setActivePanelType('product')
     setPanelModo('edicion')
-    setFormData({ nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras', permiteNota: false, tituloNota: '¿Querés aclarar algo?' })
+    setFormData({ eventoSucursalId: '0', nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras', permiteNota: false, tituloNota: '¿Querés aclarar algo?' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
@@ -235,6 +247,7 @@ const Productos = () => {
 
   const entrarEdicion = async (producto: typeof productos[0]) => {
     setFormData({
+      eventoSucursalId: String(producto.eventoSucursalId ?? 0),
       nombre: producto.nombre,
       descripcion: producto.descripcion || '',
       precio: producto.precio.toString(),
@@ -438,6 +451,7 @@ const Productos = () => {
         tituloVariantesSecundarias: formData.tituloVariantesSecundarias.trim(),
         tituloExtrasPrimarios: formData.tituloExtrasPrimarios.trim(),
         tituloExtrasSecundarios: formData.tituloExtrasSecundarios.trim(),
+        eventoSucursalId: formData.eventoSucursalId === '0' ? null : Number(formData.eventoSucursalId),
         permiteNota: formData.permiteNota,
         tituloNota: formData.tituloNota.trim() || '¿Querés aclarar algo?',
         puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
@@ -1070,6 +1084,7 @@ const Productos = () => {
 
                                 <div className="px-3 pt-2 pb-3">
                                   <h3 className="text-xs font-semibold leading-tight pt-2 text-zinc-950 dark:text-white truncate pl-2">{producto.nombre}</h3>
+                                  {producto.eventoSucursalId != null && <Badge variant="outline" className="ml-2 mt-1 text-[10px]">Sólo evento</Badge>}
                                   <p className="text-sm font-bold text-zinc-950 dark:text-white mt-1 pl-2 pb-2">
                                     ${precioFinal.toFixed(0)}
                                   </p>
@@ -1082,6 +1097,7 @@ const Productos = () => {
                                   <div className="flex items-start justify-between gap-2 mb-2">
                                     <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-zinc-950 dark:text-white [overflow-wrap:anywhere]">
                                       {producto.nombre}
+                                      {producto.eventoSucursalId != null && <Badge variant="outline" className="ml-2 text-[10px]">Sólo evento</Badge>}
                                     </h3>
                                     {tieneDescuento && (
                                       <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
@@ -1206,6 +1222,7 @@ const Productos = () => {
               <div>
                 <span className="text-xs text-muted-foreground dark:text-zinc-500">{panelProducto.categoria || 'Sin categoría'}</span>
                 <h2 className="text-xl font-bold text-zinc-950 dark:text-white mt-1">{panelProducto.nombre}</h2>
+                {panelProducto.eventoSucursalId != null && <Badge variant="outline" className="mt-2">Sólo {eventos.find(e => e.id === panelProducto.eventoSucursalId)?.nombre ?? 'evento'} · Oculto en web</Badge>}
                 {panelProducto.descripcion && (
                   <p className="text-sm text-muted-foreground dark:text-zinc-400 mt-1">{panelProducto.descripcion}</p>
                 )}
@@ -1288,6 +1305,21 @@ const Productos = () => {
             {/* Scrollable form */}
             <form id="panelForm" onSubmit={handleSalvar} className="flex-1 overflow-y-auto pb-24">
 
+              {(eventos.length > 0 || formData.eventoSucursalId !== '0') && (
+                <div className="px-6 py-4 space-y-2 border-b border-zinc-200 dark:border-white/5">
+                  <Label htmlFor="producto-evento">Dónde se vende</Label>
+                  <Select value={formData.eventoSucursalId} onValueChange={(value) => { setFormData({ ...formData, eventoSucursalId: value }); markDirty() }}>
+                    <SelectTrigger id="producto-evento" className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Catálogo habitual (web y POS)</SelectItem>
+                      {eventos.map(evento => <SelectItem key={evento.id} value={String(evento.id)}>Sólo {evento.nombre}{!evento.activo ? ' (cerrado)' : ''}</SelectItem>)}
+                      {formData.eventoSucursalId !== '0' && !eventos.some(e => String(e.id) === formData.eventoSucursalId) &&
+                        <SelectItem value={formData.eventoSucursalId}>Evento asignado #{formData.eventoSucursalId}</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{formData.eventoSucursalId === '0' ? 'Disponible en la tienda y en los puntos de venta, incluidos los eventos.' : 'Exclusivo de este evento. No aparece en la web ni en otros puntos de venta.'}</p>
+                </div>
+              )}
               {/* ── SECCIÓN: INFO ── */}
               <div
                 className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"

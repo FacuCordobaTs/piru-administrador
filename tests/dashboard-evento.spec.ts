@@ -28,6 +28,27 @@ async function prepararDashboard(page: Page, abierto = true) {
     return estado
 }
 
+test('ocultar pedidos amplía el catálogo, conserva el borrador y permite restaurar la lista', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await prepararDashboard(page)
+    await page.addInitScript(() => localStorage.setItem('piru:pos-config', JSON.stringify({ catalogoEnColumna: true })))
+    await page.goto('/tests/dashboard-evento.html')
+    const catalogo = page.locator('#pos-catalogo-compacto')
+    const anchoAntes = (await catalogo.boundingBox())!.width
+    await page.getByRole('button', { name: /Combo exclusivo feria/ }).click()
+    await page.evaluate(() => {
+        localStorage.setItem('piru:pos-config', JSON.stringify({ catalogoEnColumna: true, mostrarColumnaPedidos: false }))
+        window.dispatchEvent(new Event('piru:pos-config-changed'))
+    })
+    await expect(page.getByRole('button', { name: 'Opciones de pedidos', exact: true })).toBeHidden()
+    await expect.poll(async () => (await catalogo.boundingBox())!.width).toBeGreaterThan(anchoAntes + 100)
+    await expect(page.getByRole('button', { name: 'Anotar pedido', exact: true })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /Combo de otro evento/ })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Mostrar pedidos', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Opciones de pedidos', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Anotar pedido', exact: true })).toBeEnabled()
+})
+
 for (const width of [1920, 390]) {
     test(`actualiza apertura y cierre del evento al volver a la ventana (${width}px)`, async ({ page }) => {
         page.on('pageerror', error => { throw error })

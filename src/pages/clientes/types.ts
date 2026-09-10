@@ -47,6 +47,7 @@ export interface ClienteGrowth {
   nombre: string
   telefono: string
   direccion: string | null
+  puntos?: number
   createdAt: string
   cantidadPedidos: number
   totalGastado: number
@@ -150,3 +151,37 @@ export const recetaNombre = (codigo: string | null | undefined) => RECETAS.find(
 export const nuevaClave = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export const normalizarHasta = (fecha?: string) => fecha ? `${fecha}T23:59:59.999` : undefined
+
+// Tipos para Filtrado y Ordenamiento
+export type SortClienteKey = 'attention' | 'recent' | 'orders' | 'spend' | 'alphabetical'
+export type SegmentFilter = 'todos' | SegmentoCrecimiento
+
+export type SortCampanaKey = 'recent' | 'conversions' | 'visits' | 'alphabetical'
+export type EstadoCampanaFilter = 'todas' | 'activa' | 'inactiva'
+export type TipoCampanaFilter = 'todos' | 'producto' | 'carrito' | 'link'
+
+export type SortCuponKey = 'recent' | 'uses' | 'discount' | 'alphabetical'
+export type EstadoCuponFilter = 'todos' | 'vigentes' | 'inactivos' | 'agotados' | 'expirados'
+export type TipoCuponFilter = 'todos' | 'porcentaje' | 'monto_fijo'
+
+export const SORT_CLIENTE_LABELS: Record<SortClienteKey, string> = {
+  attention: 'Necesitan atención',
+  recent: 'Más recientes',
+  orders: 'Mayor volumen de pedidos',
+  spend: 'Mayor gasto',
+  alphabetical: 'Nombre (A → Z)',
+}
+
+export const SORT_CAMPANA_LABELS: Record<SortCampanaKey, string> = {
+  recent: 'Más recientes',
+  conversions: 'Más compras',
+  visits: 'Más visitas',
+  alphabetical: 'Nombre (A → Z)',
+}
+
+export const SORT_CUPON_LABELS: Record<SortCuponKey, string> = {
+  recent: 'Más recientes',
+  uses: 'Más usados',
+  discount: 'Mayor beneficio',
+  alphabetical: 'Código (A → Z)',
+}

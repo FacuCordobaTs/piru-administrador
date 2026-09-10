@@ -1,5 +1,17 @@
 import { test, expect } from '@playwright/test'
 
+test('ocultar pedidos activa el catálogo y persiste al recargar', async ({ page }) => {
+    await page.goto('/tests/pos-catalogo-ui.html')
+    await page.getByRole('button', { name: 'Configurar POS', exact: true }).click()
+    await page.getByRole('switch', { name: 'Mostrar columna de pedidos', exact: true }).click()
+    await expect(page.getByRole('switch', { name: 'Catálogo en tercera columna' })).toBeChecked()
+    await expect(page.getByRole('switch', { name: 'Catálogo en tercera columna' })).toBeDisabled()
+    await page.getByRole('button', { name: 'Guardar', exact: true }).click()
+    await page.reload()
+    await page.getByRole('button', { name: 'Configurar POS', exact: true }).click()
+    await expect(page.getByRole('switch', { name: 'Mostrar columna de pedidos', exact: true })).not.toBeChecked()
+})
+
 test('buscador compacto, teclado, cambio de columna y borrador persistente', async ({ page }) => {
     await page.goto('/tests/pos-catalogo-ui.html')
     const search = page.getByPlaceholder('Buscar producto o tag...')

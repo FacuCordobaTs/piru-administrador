@@ -9,6 +9,7 @@ export interface PosConfig {
     camposCliente: { nombre: boolean; telefono: boolean; direccion: boolean }
     notas: boolean
     catalogoEnColumna: boolean
+    mostrarColumnaPedidos: boolean
 }
 
 export const POS_CONFIG_KEY = 'piru:pos-config'
@@ -28,6 +29,7 @@ export const DEFAULT_POS_CONFIG: PosConfig = {
     camposCliente: { nombre: true, telefono: true, direccion: true },
     notas: true,
     catalogoEnColumna: false,
+    mostrarColumnaPedidos: true,
 }
 
 /** Fusiona lo guardado con los defaults; la columna de catálogo requiere activación explícita. */
@@ -52,7 +54,8 @@ const mergeConfig = (raw: unknown): PosConfig => {
             direccion: parsed.camposCliente?.direccion !== false,
         },
         notas: parsed.notas !== false,
-        catalogoEnColumna: parsed.catalogoEnColumna === true,
+        catalogoEnColumna: parsed.mostrarColumnaPedidos === false || parsed.catalogoEnColumna === true,
+        mostrarColumnaPedidos: parsed.mostrarColumnaPedidos !== false,
     }
 }
 

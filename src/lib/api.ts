@@ -866,7 +866,7 @@ export const productosApi = {
       descripcion: string
       precio: number
       image?: string // Base64 string
-      categoriaId?: number
+      categoriaId?: number | null
       ingredienteIds?: number[]
       agregadoIds?: number[]
       agregadoIdsSecundarios?: number[]
@@ -877,6 +877,7 @@ export const productosApi = {
       tituloExtrasPrimarios?: string
       tituloExtrasSecundarios?: string
       permiteNota?: boolean
+      eventoSucursalId?: number | null
       tituloNota?: string
       etiquetas?: string[]
       puntosGanados?: number
@@ -912,6 +913,7 @@ export const productosApi = {
       tituloExtrasPrimarios?: string
       tituloExtrasSecundarios?: string
       permiteNota?: boolean
+      eventoSucursalId?: number | null
       tituloNota?: string
       activo?: boolean
       etiquetas?: string[]
@@ -2547,5 +2549,72 @@ export const claimApi = {
     fetchApi<{ success: boolean; token: string; restaurante: any }>(
       `/public/claim/${token}/verify`,
       { method: 'POST', body: JSON.stringify({ verificationId, codigo }) },
+    ),
+}
+
+export interface ConfiguracionPuntosData {
+  id?: number
+  restauranteId?: number
+  activo: boolean
+  pesosPorPunto: number
+  puntosPrimerPedido: number
+  puntosMinimosCanje: number
+  permiteCanjeEnvioGratis: boolean
+  puntosEnvioGratis: number
+  permiteCanjeDescuento: boolean
+  descuentoPuntosCosto: number
+  descuentoTipo: 'porcentaje' | 'monto_fijo'
+  descuentoValor: number
+  descuentoMontoMinimo: number
+}
+
+export interface TransaccionPuntosData {
+  id: number
+  clienteId: number
+  pedidoUnificadoId?: number | null
+  tipo: string
+  puntos: number
+  saldoResultante: number
+  motivo: string
+  createdAt: string
+}
+
+export const puntosApi = {
+  getConfig: (token: string) =>
+    fetchApi<{ success: boolean; data: ConfiguracionPuntosData }>(
+      '/puntos/config',
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
+  updateConfig: (token: string, data: Partial<ConfiguracionPuntosData>) =>
+    fetchApi<{ success: boolean; message: string; data: ConfiguracionPuntosData }>(
+      '/puntos/config',
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(data),
+      }
+    ),
+
+  getHistorialCliente: (token: string, clienteId: number) =>
+    fetchApi<{
+      success: boolean
+      data: {
+        cliente: { id: number; nombre: string; telefono: string; puntos: number }
+        transacciones: TransaccionPuntosData[]
+      }
+    }>(
+      `/puntos/cliente/${clienteId}/historial`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
+  ajusteManual: (token: string, clienteId: number, data: { puntos: number; motivo: string }) =>
+    fetchApi<{ success: boolean; message: string; data: { clienteId: number; puntosActuales: number; transaccion: any } }>(
+      `/puntos/cliente/${clienteId}/ajuste`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(data),
+      }
     ),
 }

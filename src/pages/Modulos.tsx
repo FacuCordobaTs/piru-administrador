@@ -76,8 +76,8 @@ function requisitoConfiguracion(modulo: Modulo) {
 const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mesas: '/dashboard/mesas',
   motor_recompra: '/dashboard/ajustes/recompra',
-  puntos_clientes: '/dashboard/ajustes/experiencia',
-  codigos_descuento: '/dashboard/codigos-descuento',
+  puntos_clientes: '/dashboard/ajustes/experiencia?config=puntos',
+  codigos_descuento: '/dashboard/clientes?tab=cupones',
   mercadopago: '/dashboard/ajustes/pagos?config=mercadopago',
   talo: '/dashboard/ajustes/pagos?config=talo',
   rapiboy: '/dashboard/ajustes/entregas?config=rapiboy',

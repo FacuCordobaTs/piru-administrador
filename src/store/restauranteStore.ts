@@ -20,6 +20,7 @@ interface Categoria {
 }
 
 interface Producto {
+  eventoSucursalId?: number | null
   id: number
   restauranteId: number
   categoriaId: number | null

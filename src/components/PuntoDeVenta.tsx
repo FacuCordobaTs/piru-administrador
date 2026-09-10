@@ -583,7 +583,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // "Sandwich gratinado" de categoría "Milanesa", igual que "gratinado sandwich".
     const productosFiltrados = useMemo(() => {
         const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-        const activos = productos.filter((p) => p.activo !== false)
+        const activos = productos.filter((p) => p.activo !== false && (p.eventoSucursalId == null || p.eventoSucursalId === sucursalActivaId))
         if (terms.length === 0) return activos
         return activos.filter((p) => {
             const texto = [
@@ -594,7 +594,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             ].filter(Boolean).join(' ').toLowerCase()
             return terms.every((term) => texto.includes(term))
         })
-    }, [productos, query])
+    }, [productos, query, sucursalActivaId])
 
     const catalogoEnColumna = catalogoCompacto && config.catalogoEnColumna
     const mostrarListado = catalogoEnColumna || query.trim() !== ''
@@ -660,9 +660,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const calcularColumnas = () => {
         const contenedor = scrollRef.current
         const tarjeta = contenedor?.querySelector<HTMLElement>('[data-flat-index]')
-        if (!contenedor || !tarjeta || tarjeta.offsetWidth === 0) return 1
-        const gap = 12 // gap-3 entre tarjetas del grid
-        return Math.max(1, Math.round((contenedor.clientWidth + gap) / (tarjeta.offsetWidth + gap)))
+        const grid = tarjeta?.parentElement
+        if (!grid || !tarjeta || tarjeta.offsetWidth === 0) return 1
+        const style = window.getComputedStyle(grid)
+        if (style.display !== 'grid') return 1
+        return Math.max(1, style.gridTemplateColumns.split(' ').filter(Boolean).length)
     }
 
     const cartTotal = useMemo(
@@ -1425,7 +1427,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     {porCategoria.map(([categoria, items]) => (
                                         <section key={categoria}>
                                             <h3 className={cn('text-[10px] font-bold uppercase tracking-widest text-muted-foreground', catalogoEnColumna ? 'mb-2' : 'px-3 pb-1 pt-2')}>{categoria}</h3>
-                                            <div className={catalogoEnColumna ? 'grid grid-cols-4 gap-2' : 'flex flex-col'}>
+                                            <div className={catalogoEnColumna ? 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,130px),1fr))] gap-2' : 'flex flex-col'}>
                                                 {items.map((producto) => {
                                                     const flatIndex = indicePorId.get(producto.id)
                                                     const seleccionado = flatIndex === indiceSeleccionado

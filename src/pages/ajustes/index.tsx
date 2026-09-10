@@ -114,7 +114,7 @@ const MODULOS_SECCION: Record<string, string> = {
   mercadopago: 'pagos', talo: 'pagos',
   rapiboy: 'entregas', gestion_cadetes: 'entregas', multisucursal: 'entregas',
   avisos_automaticos_whatsapp: 'experiencia',
-  puntos_clientes: 'crecimiento', codigos_descuento: 'crecimiento', motor_recompra: 'crecimiento', crecimiento: 'crecimiento',
+  puntos_clientes: 'experiencia', codigos_descuento: 'crecimiento', motor_recompra: 'crecimiento', crecimiento: 'crecimiento',
   pos: 'ventas', mesas: 'ventas', gestion_stock: 'ventas', cierre_turno_manual: 'ventas',
   facturacion_arca: 'facturacion', impresion_comandas: 'impresion',
 }

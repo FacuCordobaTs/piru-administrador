@@ -134,9 +134,17 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
     <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
       <FilaConfig
         icon={Columns3}
+        label="Mostrar columna de pedidos"
+        descripcion="En pantallas grandes, ocultala para darle más espacio al catálogo de productos."
+        checked={config.mostrarColumnaPedidos}
+        onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, mostrarColumnaPedidos: checked, catalogoEnColumna: checked ? prev.catalogoEnColumna : true }))}
+      />
+      <FilaConfig
+        icon={Columns3}
         label="Catálogo en tercera columna"
         descripcion="En pantallas grandes, muestra todos los productos junto a la comanda. Desactivado, aparecen sólo al buscar."
         checked={config.catalogoEnColumna}
+        disabled={!config.mostrarColumnaPedidos}
         onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, catalogoEnColumna: checked }))}
       />
       <div>

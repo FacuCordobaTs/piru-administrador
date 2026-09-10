@@ -4,20 +4,43 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
-import { ChevronRight, CircleDollarSign, Crown, DollarSign, Gift, Globe2, Package, Phone, ReceiptText, Search, ShoppingBag, Sparkles, Store, Tag, Ticket, Timer, Trash2, TrendingUp, User, Users, WandSparkles, X } from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import DeepLinkDialog from './clientes/DeepLinkDialog'
+import { HistorialPuntosDialog } from './clientes/HistorialPuntosDialog'
 import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
-import { type ClienteGrowth, type CodigoDescuentoGrowth, type FiltroCampana, type PedidoCliente, type ProductoGrowth, SEGMENTOS, type SucursalGrowth, formatCurrency, formatDate, getSegmento, recetaNombre } from './clientes/types'
+import {
+  type ClienteGrowth,
+  type CodigoDescuentoGrowth,
+  type FiltroCampana,
+  type PedidoCliente,
+  type ProductoGrowth,
+  SEGMENTOS,
+  type SucursalGrowth,
+  type SortClienteKey,
+  type SortCampanaKey,
+  type SortCuponKey,
+  type EstadoCampanaFilter,
+  type TipoCampanaFilter,
+  type EstadoCuponFilter,
+  type TipoCuponFilter,
+  SORT_CLIENTE_LABELS,
+  SORT_CAMPANA_LABELS,
+  SORT_CUPON_LABELS,
+  formatCurrency,
+  formatDate,
+  getSegmento,
+  recetaNombre,
+} from './clientes/types'
+import { FiltrosDialog } from './clientes/FiltrosDialog'
 
 type AssetTab = 'campanas' | 'cupones'
 type WorkspaceTab = 'clientes' | AssetTab
-type SortKey = 'attention' | 'recent' | 'orders' | 'spend' | 'alphabetical'
+type SortKey = SortClienteKey
 type SegmentFilter = ReturnType<typeof getSegmento> | 'todos'
 type MobileView = 'clientes' | 'detalle' | 'pedidos'
 type AssetMobileView = 'lista' | 'detalle' | 'clientes'
@@ -45,23 +68,55 @@ export default function Clientes() {
   const [from, setFrom] = useState<string>()
   const [to, setTo] = useState<string>()
   const [sort, setSort] = useState<SortKey>('attention')
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(() => {
+  const [filtrosDialogOpen, setFiltrosDialogOpen] = useState(false)
+  const [sortCampana, setSortCampana] = useState<SortCampanaKey>('recent')
+  const [estadoCampana, setEstadoCampana] = useState<EstadoCampanaFilter>('todas')
+  const [tipoCampana, setTipoCampana] = useState<TipoCampanaFilter>('todos')
+  const [sortCupon, setSortCupon] = useState<SortCuponKey>('recent')
+  const [estadoCupon, setEstadoCupon] = useState<EstadoCuponFilter>('todos')
+  const [tipoCupon, setTipoCupon] = useState<TipoCuponFilter>('todos')
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab | null>(() => {
     const tab = searchParams.get('tab')
     if (tab === 'campanas' || tab === 'crecimiento') return 'campanas'
     if (tab === 'cupones') return 'cupones'
-    return 'clientes'
+    if (tab === 'clientes') return 'clientes'
+    return null
   })
   const [clienteSeleccionado, setClienteSeleccionado] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<MobileView>('clientes')
+  const [mostrarPedidos, setMostrarPedidos] = useState(false)
   const [assetMobileView, setAssetMobileView] = useState<AssetMobileView>('lista')
   const [campanaSeleccionada, setCampanaSeleccionada] = useState<FiltroCampana>(null)
   const [cuponSeleccionado, setCuponSeleccionado] = useState<number | null>(null)
   const [deepLinkOpen, setDeepLinkOpen] = useState(false)
   const mobileNavRef = useRef<HTMLElement>(null)
 
+  const actualizarPuntosCliente = (clienteId: number, nuevosPuntos: number) => {
+    setClientes((prev) =>
+      prev.map((c) => (c.id === clienteId ? { ...c, puntos: nuevosPuntos } : c))
+    )
+  }
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'campanas' || tab === 'crecimiento') {
+      setWorkspaceTab((prev) => (prev !== 'campanas' ? 'campanas' : prev))
+    } else if (tab === 'cupones') {
+      setWorkspaceTab((prev) => (prev !== 'cupones' ? 'cupones' : prev))
+    } else if (tab === 'clientes') {
+      setWorkspaceTab((prev) => (prev !== 'clientes' ? 'clientes' : prev))
+    } else if (!tab) {
+      setWorkspaceTab((prev) => (prev !== null ? null : prev))
+    }
+  }, [searchParams])
+
   useEffect(() => {
     const siguiente = new URLSearchParams(searchParams)
-    siguiente.set('tab', workspaceTab)
+    if (workspaceTab) {
+      siguiente.set('tab', workspaceTab)
+    } else {
+      siguiente.delete('tab')
+    }
     siguiente.delete('vista'); siguiente.delete('seccion')
     if (siguiente.toString() === searchParams.toString()) return
     setSearchParams(siguiente, { replace: true })
@@ -141,11 +196,125 @@ export default function Clientes() {
     requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
   }
   const seleccionarCliente = (id: number) => { setClienteSeleccionado(id); cambiarMobileView('detalle') }
-  const cambiarWorkspaceTab = (tab: WorkspaceTab) => { setWorkspaceTab(tab); setMobileView('clientes'); setAssetMobileView('lista'); if (tab === 'campanas') setCuponSeleccionado(null); if (tab === 'cupones') setCampanaSeleccionada(null) }
+  const togglePedidos = () => {
+    setMostrarPedidos((prev) => {
+      const next = !prev
+      if (next && typeof window !== 'undefined' && window.innerWidth < 1280) {
+        cambiarMobileView('pedidos')
+      }
+      return next
+    })
+  }
+  const cerrarPedidos = () => {
+    setMostrarPedidos(false)
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+      cambiarMobileView('detalle')
+    }
+  }
+  const cambiarWorkspaceTab = (tab: WorkspaceTab | null) => { setWorkspaceTab(tab); setMobileView('clientes'); setAssetMobileView('lista'); if (tab === 'campanas') setCuponSeleccionado(null); if (tab === 'cupones') setCampanaSeleccionada(null) }
   const abrirClienteAsociado = (id: number) => { setWorkspaceTab('clientes'); seleccionarCliente(id) }
   const seleccionarCampanaMobile = (id: FiltroCampana) => { seleccionarCampana(id); if (id != null) { setAssetMobileView('detalle'); requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })) } }
   const seleccionarCuponMobile = (id: number | null) => { seleccionarCupon(id); if (id != null) { setAssetMobileView('detalle'); requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })) } }
-  const limpiarFiltros = () => { setSegmento('todos'); setSucursalId(undefined); setFrom(undefined); setTo(undefined); setCampanaSeleccionada(null); setCuponSeleccionado(null) }
+  const limpiarFiltros = () => {
+    if (workspaceTab === 'clientes') {
+      setSegmento('todos')
+      setSort('attention')
+      setSucursalId(undefined)
+      setFrom(undefined)
+      setTo(undefined)
+      setCampanaSeleccionada(null)
+      setCuponSeleccionado(null)
+    } else if (workspaceTab === 'campanas') {
+      setSortCampana('recent')
+      setEstadoCampana('todas')
+      setTipoCampana('todos')
+      setSucursalId(undefined)
+      setFrom(undefined)
+      setTo(undefined)
+    } else if (workspaceTab === 'cupones') {
+      setSortCupon('recent')
+      setEstadoCupon('todos')
+      setTipoCupon('todos')
+      setSucursalId(undefined)
+      setFrom(undefined)
+      setTo(undefined)
+    }
+  }
+
+  const filtrosActivosClientesCount = useMemo(() => {
+    let count = 0
+    if (segmento !== 'todos') count++
+    if (sucursalId != null) count++
+    if (from || to) count++
+    if (campanaSeleccionada != null || cuponSeleccionado != null) count++
+    if (sort !== 'attention') count++
+    return count
+  }, [segmento, sucursalId, from, to, campanaSeleccionada, cuponSeleccionado, sort])
+
+  const filtrosActivosCampanasCount = useMemo(() => {
+    let count = 0
+    if (estadoCampana !== 'todas') count++
+    if (tipoCampana !== 'todos') count++
+    if (sucursalId != null) count++
+    if (from || to) count++
+    if (sortCampana !== 'recent') count++
+    return count
+  }, [estadoCampana, tipoCampana, sucursalId, from, to, sortCampana])
+
+  const filtrosActivosCuponesCount = useMemo(() => {
+    let count = 0
+    if (estadoCupon !== 'todos') count++
+    if (tipoCupon !== 'todos') count++
+    if (sucursalId != null) count++
+    if (from || to) count++
+    if (sortCupon !== 'recent') count++
+    return count
+  }, [estadoCupon, tipoCupon, sucursalId, from, to, sortCupon])
+
+  const filtrosActivosCount =
+    workspaceTab === 'clientes'
+      ? filtrosActivosClientesCount
+      : workspaceTab === 'campanas'
+        ? filtrosActivosCampanasCount
+        : filtrosActivosCuponesCount
+
+  const hasActiveFilters = filtrosActivosCount > 0
+
+  const totalResultados = useMemo(() => {
+    if (workspaceTab === 'clientes') return filtrados.length
+    if (workspaceTab === 'campanas') {
+      const q = query.trim().toLowerCase()
+      return campanas.filter((item) => {
+        if (q && !`${item.nombre} ${item.slug}`.toLowerCase().includes(q)) return false
+        if (estadoCampana === 'activa' && item.estado !== 'activa') return false
+        if (estadoCampana === 'inactiva' && item.estado === 'activa') return false
+        if (tipoCampana !== 'todos' && item.destinoTipo !== tipoCampana) return false
+        return true
+      }).length
+    }
+    if (workspaceTab === 'cupones') {
+      const q = query.trim().toLowerCase()
+      const now = new Date()
+      return cupones.filter((item) => {
+        if (q && !item.codigo.toLowerCase().includes(q)) return false
+        if (tipoCupon !== 'todos' && item.tipo !== tipoCupon) return false
+        if (estadoCupon === 'vigentes') {
+          if (!item.activo) return false
+          if (item.fechaInicio && new Date(item.fechaInicio) > now) return false
+          if (item.fechaFin && new Date(item.fechaFin) < now) return false
+          if (item.limiteUsos != null && item.usosActuales >= item.limiteUsos) return false
+        } else if (estadoCupon === 'inactivos') {
+          if (!item.activo) return false
+        } else if (estadoCupon === 'agotados') {
+          if (item.limiteUsos == null || item.usosActuales < item.limiteUsos) return false
+        } else if (estadoCupon === 'expirados') {
+          if (!item.fechaFin || new Date(item.fechaFin) >= now) return false
+        }
+        return true
+      }).length
+    }
+    return 0
+  }, [workspaceTab, filtrados.length, campanas, cupones, query, estadoCampana, tipoCampana, estadoCupon, tipoCupon])
 
   const eliminarPedido = async (pedidoId: number) => {
     if (!token || !cliente || !window.confirm(`¿Eliminar el pedido #${pedidoId} del historial de ${cliente.nombre}?`)) return
@@ -158,14 +327,261 @@ export default function Clientes() {
     catch { toast.error('No se pudo eliminar el cliente.') }
   }
 
+  if (workspaceTab === null) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto bg-[#FFFBF0] px-4 py-12 dark:bg-background sm:px-6">
+        <div className="mx-auto w-full max-w-3xl text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl md:text-5xl">
+            Clientes
+          </h1>
+          <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base">
+            Conocé tu base, medí el recorrido de cada promoción y seguí tus cupones.
+          </p>
+
+          <div className="mx-auto mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => cambiarWorkspaceTab('clientes')}
+              className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-foreground transition-colors group-hover:bg-foreground group-hover:text-background">
+                <Users className="h-6 w-6" />
+              </div>
+              <div className="mt-4">
+                <h2 className="text-base font-semibold text-foreground">Clientes</h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Base de clientes, historial de pedidos, cadencia y diagnóstico de recompras.
+                </p>
+              </div>
+              <span className="mt-4 inline-flex items-center text-xs font-semibold text-muted-foreground group-hover:text-foreground group-hover:underline">
+                Ingresar <ChevronRight className="ml-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => cambiarWorkspaceTab('campanas')}
+              className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 transition-colors group-hover:bg-emerald-600 group-hover:text-white dark:text-emerald-400">
+                <TrendingUp className="h-6 w-6" />
+              </div>
+              <div className="mt-4">
+                <h2 className="text-base font-semibold text-foreground">Crecimiento</h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Campañas de adquisición, smart links y atribución de ventas generadas.
+                </p>
+              </div>
+              <span className="mt-4 inline-flex items-center text-xs font-semibold text-emerald-600 dark:text-emerald-400 group-hover:underline">
+                Ingresar <ChevronRight className="ml-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => cambiarWorkspaceTab('cupones')}
+              className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-600 transition-colors group-hover:bg-purple-600 group-hover:text-white dark:text-purple-400">
+                <Ticket className="h-6 w-6" />
+              </div>
+              <div className="mt-4">
+                <h2 className="text-base font-semibold text-foreground">Cupones</h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Códigos de descuento para tus clientes, condiciones y límites de uso.
+                </p>
+              </div>
+              <span className="mt-4 inline-flex items-center text-xs font-semibold text-purple-600 dark:text-purple-400 group-hover:underline">
+                Ingresar <ChevronRight className="ml-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#FFFBF0] dark:bg-background xl:overflow-hidden">
     <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
       <div className="mx-auto max-w-[1680px]">
-        <div className="mb-4 flex flex-col items-center gap-3"><div className="text-center"><h1 className="text-2xl font-semibold tracking-tight">Clientes</h1><p className="mt-0.5 text-sm text-muted-foreground">Conocé tu base, medí el recorrido de cada promoción y seguí tus cupones.</p></div><WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} /></div>
-        <div className="relative"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 rounded-xl bg-background pl-11 text-sm shadow-sm" placeholder={workspaceTab === 'clientes' ? 'Buscar clientes, teléfonos, campañas o cupones…' : workspaceTab === 'campanas' ? 'Buscar campañas…' : 'Buscar cupones…'} /></div>
-        {workspaceTab === 'clientes' && <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7"><FilterPill active={segmento === 'todos'} onClick={() => setSegmento('todos')} label="Todos" count={clientes.length} />{SEGMENTOS.map((item) => <FilterPill key={item.value} active={segmento === item.value} onClick={() => setSegmento(segmento === item.value ? 'todos' : item.value)} label={item.label} count={conteoSegmentos[item.value]} dot={item.dot} />)}</div>}
-        {sucursales.length > 1 && <div className="mt-2 flex flex-wrap gap-2"><FilterPill active={!sucursalId} onClick={() => setSucursalId(undefined)} label="Todas las sucursales" />{sucursales.map((sucursal) => <FilterPill key={sucursal.id} active={sucursalId === sucursal.id} onClick={() => setSucursalId(sucursalId === sucursal.id ? undefined : sucursal.id)} label={sucursal.nombre} icon={<Store className="h-3 w-3" />} />)}</div>}
-        <div className="mt-3 flex flex-wrap items-end gap-2"><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Desde</label><Input type="date" value={from ?? ''} onChange={(event) => setFrom(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div><div><label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hasta</label><Input type="date" value={to ?? ''} onChange={(event) => setTo(event.target.value || undefined)} className="h-9 w-[150px] bg-background text-xs" /></div>{workspaceTab === 'clientes' && filtroActivo && <Badge variant="outline" className="h-9 max-w-[280px] gap-1.5 rounded-lg bg-background px-3"><span className="truncate">Filtrando por {filtroActivo}</span><button onClick={() => { setCampanaSeleccionada(null); setCuponSeleccionado(null) }} aria-label="Quitar filtro"><X className="h-3.5 w-3.5" /></button></Badge>}{((workspaceTab === 'clientes' && segmento !== 'todos') || sucursalId || from || to || (workspaceTab === 'clientes' && filtroActivo)) && <Button variant="ghost" size="sm" onClick={limpiarFiltros}>Limpiar filtros</Button>}</div>
+        <div className="relative mb-4 flex flex-col items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => cambiarWorkspaceTab(null)}
+            className="self-start text-xs text-muted-foreground hover:text-foreground sm:absolute sm:left-0 sm:top-1/2 sm:-translate-y-1/2"
+          >
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+            Volver
+          </Button>
+          <div className="text-center">
+            <h1 className="text-2xl font-bold tracking-tight">Clientes</h1>
+            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Conocé tu base, medí el recorrido de cada promoción y seguí tus cupones.</p>
+          </div>
+          <WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} />
+        </div>
+        {/* Barra de Búsqueda y Botón de Filtros / Orden con estilo Apple */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-10 rounded-full border-border/40 bg-background/80 pl-10 pr-9 text-sm shadow-2xs backdrop-blur-xs transition-all placeholder:text-muted-foreground/60 focus-visible:ring-1"
+              placeholder={
+                workspaceTab === 'clientes'
+                  ? 'Buscar clientes, teléfonos, campañas o cupones…'
+                  : workspaceTab === 'campanas'
+                    ? 'Buscar campañas por nombre o slug…'
+                    : 'Buscar cupones por código…'
+              }
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 transition-colors hover:text-foreground"
+                title="Borrar búsqueda"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setFiltrosDialogOpen(true)}
+            className={`h-10 gap-2 rounded-full px-4 text-xs font-medium transition-all shadow-2xs ${
+              hasActiveFilters
+                ? 'border-foreground/20 bg-foreground text-background hover:bg-foreground/90'
+                : 'border-border/60 bg-background/80 hover:bg-muted/50'
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Filtrar y ordenar</span>
+            <span className="sm:hidden">Filtros</span>
+            {filtrosActivosCount > 0 && (
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                {filtrosActivosCount}
+              </span>
+            )}
+          </Button>
+        </div>
+
+        {/* Tiras de Filtros Activos (solo si hay filtros aplicados) */}
+        {hasActiveFilters && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground/70 mr-1">Filtros aplicados:</span>
+
+            {/* Clientes: Segmento */}
+            {workspaceTab === 'clientes' && segmento !== 'todos' && (
+              <ActiveFilterBadge
+                label={`Segmento: ${SEGMENTOS.find((s) => s.value === segmento)?.label ?? segmento}`}
+                onRemove={() => setSegmento('todos')}
+              />
+            )}
+
+            {/* Clientes: Orden no por defecto */}
+            {workspaceTab === 'clientes' && sort !== 'attention' && (
+              <ActiveFilterBadge
+                label={`Orden: ${SORT_CLIENTE_LABELS[sort]}`}
+                onRemove={() => setSort('attention')}
+              />
+            )}
+
+            {/* Clientes: Filtro por campaña o cupón */}
+            {workspaceTab === 'clientes' && filtroActivo && (
+              <ActiveFilterBadge
+                label={`Vinculado a: ${filtroActivo}`}
+                onRemove={() => { setCampanaSeleccionada(null); setCuponSeleccionado(null) }}
+              />
+            )}
+
+            {/* Campañas: Estado */}
+            {workspaceTab === 'campanas' && estadoCampana !== 'todas' && (
+              <ActiveFilterBadge
+                label={`Estado: ${estadoCampana === 'activa' ? 'Solo activas' : 'Pausadas / Inactivas'}`}
+                onRemove={() => setEstadoCampana('todas')}
+              />
+            )}
+
+            {/* Campañas: Modalidad */}
+            {workspaceTab === 'campanas' && tipoCampana !== 'todos' && (
+              <ActiveFilterBadge
+                label={`Modalidad: ${
+                  tipoCampana === 'producto' ? 'Producto' : tipoCampana === 'carrito' ? 'Carrito' : 'Link'
+                }`}
+                onRemove={() => setTipoCampana('todos')}
+              />
+            )}
+
+            {/* Campañas: Orden */}
+            {workspaceTab === 'campanas' && sortCampana !== 'recent' && (
+              <ActiveFilterBadge
+                label={`Orden: ${SORT_CAMPANA_LABELS[sortCampana]}`}
+                onRemove={() => setSortCampana('recent')}
+              />
+            )}
+
+            {/* Cupones: Estado */}
+            {workspaceTab === 'cupones' && estadoCupon !== 'todos' && (
+              <ActiveFilterBadge
+                label={`Estado: ${
+                  estadoCupon === 'vigentes'
+                    ? 'Vigentes'
+                    : estadoCupon === 'inactivos'
+                      ? 'Inactivos'
+                      : estadoCupon === 'agotados'
+                        ? 'Agotados'
+                        : 'Vencidos'
+                }`}
+                onRemove={() => setEstadoCupon('todos')}
+              />
+            )}
+
+            {/* Cupones: Tipo */}
+            {workspaceTab === 'cupones' && tipoCupon !== 'todos' && (
+              <ActiveFilterBadge
+                label={`Tipo: ${tipoCupon === 'porcentaje' ? '% OFF' : '$ OFF'}`}
+                onRemove={() => setTipoCupon('todos')}
+              />
+            )}
+
+            {/* Cupones: Orden */}
+            {workspaceTab === 'cupones' && sortCupon !== 'recent' && (
+              <ActiveFilterBadge
+                label={`Orden: ${SORT_CUPON_LABELS[sortCupon]}`}
+                onRemove={() => setSortCupon('recent')}
+              />
+            )}
+
+            {/* Sucursal */}
+            {sucursalId != null && (
+              <ActiveFilterBadge
+                label={`Sucursal: ${sucursales.find((s) => s.id === sucursalId)?.nombre ?? sucursalId}`}
+                onRemove={() => setSucursalId(undefined)}
+              />
+            )}
+
+            {/* Rango de Fechas */}
+            {(from || to) && (
+              <ActiveFilterBadge
+                label={`Período: ${from ? formatDate(from) : 'Inicio'} — ${to ? formatDate(to) : 'Hoy'}`}
+                onRemove={() => { setFrom(undefined); setTo(undefined) }}
+              />
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={limpiarFiltros}
+              className="h-6 rounded-full px-2 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Restablecer todo
+            </Button>
+          </div>
+        )}
       </div>
     </header>
 
@@ -184,22 +600,181 @@ export default function Clientes() {
     </nav>
 
     <main className="flex-none overflow-visible px-4 pb-4 sm:px-6 xl:min-h-0 xl:flex-1 xl:overflow-hidden">
-      {workspaceTab === 'clientes' ? <div className="mx-auto grid min-h-full max-w-[1680px] gap-4 xl:h-full xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]">
-        <section className={`${mobileView === 'clientes' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
-          <div className="flex items-center justify-between gap-2 p-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p><p className="text-[11px] text-muted-foreground">{filtrados.length} resultados</p></div><Select value={sort} onValueChange={(value) => setSort(value as SortKey)}><SelectTrigger className="h-8 w-[165px] text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="attention">Necesitan atención</SelectItem><SelectItem value="recent">Más recientes</SelectItem><SelectItem value="orders">Más pedidos</SelectItem><SelectItem value="spend">Mayor gasto</SelectItem><SelectItem value="alphabetical">A → Z</SelectItem></SelectContent></Select></div>
-          <ScrollArea className="min-h-0 flex-1">{loading ? <div className="space-y-2 p-3">{Array.from({ length: 7 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-xl" />)}</div> : filtrados.length === 0 ? <EmptyClients /> : <div className="space-y-1.5 p-2">{filtrados.map((item) => <ClientRow key={item.id} cliente={item} selected={item.id === clienteSeleccionado} onClick={() => seleccionarCliente(item.id)} />)}</div>}</ScrollArea>
-        </section>
+      {workspaceTab === 'clientes' ? (
+        <div
+          className={`mx-auto grid min-h-full max-w-[1680px] gap-4 xl:h-full transition-all ${
+            mostrarPedidos
+              ? 'xl:grid-cols-[minmax(260px,0.85fr)_minmax(430px,1.45fr)_minmax(310px,1fr)]'
+              : 'xl:grid-cols-[minmax(280px,360px)_1fr]'
+          }`}
+        >
+          <section className={`${mobileView === 'clientes' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
+            <div className="flex items-center justify-between gap-2 p-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p>
+                <p className="text-[11px] text-muted-foreground">{filtrados.length} resultados</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFiltrosDialogOpen(true)}
+                className="h-8 gap-1.5 rounded-full border border-border/40 px-3 text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                title="Filtrar y ordenar"
+              >
+                <ArrowUpDown className="h-3 w-3" />
+                <span>{SORT_CLIENTE_LABELS[sort]}</span>
+              </Button>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
+              {loading ? (
+                <div className="space-y-2 p-3">
+                  {Array.from({ length: 7 }).map((_, index) => (
+                    <Skeleton key={index} className="h-20 rounded-xl" />
+                  ))}
+                </div>
+              ) : filtrados.length === 0 ? (
+                <EmptyClients />
+              ) : (
+                <div className="space-y-1.5 p-2">
+                  {filtrados.map((item) => (
+                    <ClientRow
+                      key={item.id}
+                      cliente={item}
+                      selected={item.id === clienteSeleccionado}
+                      onClick={() => seleccionarCliente(item.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </section>
 
-        <section className={`${mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[640px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
-          {cliente ? <ClienteDetalle cliente={cliente} onDeepLink={() => setDeepLinkOpen(true)} onDeleteClient={() => void eliminarCliente()} /> : <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><User className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Seleccioná un cliente</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Vas a ver su ciclo de vida, campañas, cupones y la receta recomendada.</p></div>}
-        </section>
+          <section className={`${mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[640px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
+            {cliente ? (
+              <ClienteDetalle
+                cliente={cliente}
+                token={token ?? undefined}
+                mostrarPedidos={mostrarPedidos}
+                onTogglePedidos={togglePedidos}
+                onDeepLink={() => setDeepLinkOpen(true)}
+                onDeleteClient={() => void eliminarCliente()}
+                onPuntosActualizados={(nuevos) => actualizarPuntosCliente(cliente.id, nuevos)}
+              />
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
+                  <User className="h-5 w-5" />
+                </div>
+                <h2 className="mt-3.5 text-sm font-semibold tracking-tight text-foreground">Seleccioná un cliente</h2>
+                <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                  Vas a ver su ciclo de vida, campañas, cupones y la receta recomendada.
+                </p>
+              </div>
+            )}
+          </section>
 
-        <section className={`${mobileView === 'pedidos' ? 'flex' : 'hidden'} min-h-[620px] flex-col overflow-hidden xl:flex xl:min-h-0`}><PedidosClientePanel cliente={cliente} sucursales={sucursales} onDeleteOrder={(pedidoId) => void eliminarPedido(pedidoId)} /></section>
-      </div> : token ? <div className="mx-auto min-h-full max-w-[1680px] xl:h-full"><GrowthAssetsPanel token={token} username={username} tab={workspaceTab} campanas={campanas} cupones={cupones} clientes={clientes} sucursales={sucursales} productos={productos} query={query} filtros={{ from, to, sucursalId }} campanaSeleccionada={campanaSeleccionada} cuponSeleccionado={cuponSeleccionado} onSelectCampana={seleccionarCampanaMobile} onSelectCupon={seleccionarCuponMobile} onSelectClient={abrirClienteAsociado} onReload={cargar} crecimientoActivo={crecimientoActivo} cuponesActivos={cuponesActivos} mobileView={assetMobileView} /></div> : null}
+          <section
+            className={`${
+              mobileView === 'pedidos' ? 'flex' : 'hidden'
+            } min-h-[620px] flex-col overflow-hidden ${
+              mostrarPedidos ? 'xl:flex' : 'xl:hidden'
+            } xl:min-h-0`}
+          >
+            <PedidosClientePanel
+              cliente={cliente}
+              sucursales={sucursales}
+              onClose={cerrarPedidos}
+              onDeleteOrder={(pedidoId) => void eliminarPedido(pedidoId)}
+            />
+          </section>
+        </div>
+      ) : token ? (
+        <div className="mx-auto min-h-full max-w-[1680px] xl:h-full">
+          <GrowthAssetsPanel
+            token={token}
+            username={username}
+            tab={workspaceTab}
+            campanas={campanas}
+            cupones={cupones}
+            clientes={clientes}
+            sucursales={sucursales}
+            productos={productos}
+            query={query}
+            filtros={{ from, to, sucursalId }}
+            campanaSeleccionada={campanaSeleccionada}
+            cuponSeleccionado={cuponSeleccionado}
+            onSelectCampana={seleccionarCampanaMobile}
+            onSelectCupon={seleccionarCuponMobile}
+            onSelectClient={abrirClienteAsociado}
+            onReload={cargar}
+            crecimientoActivo={crecimientoActivo}
+            cuponesActivos={cuponesActivos}
+            sortCampana={sortCampana}
+            estadoCampana={estadoCampana}
+            tipoCampana={tipoCampana}
+            sortCupon={sortCupon}
+            estadoCupon={estadoCupon}
+            tipoCupon={tipoCupon}
+            onOpenFiltros={() => setFiltrosDialogOpen(true)}
+            mobileView={assetMobileView}
+            onMobileViewChange={setAssetMobileView}
+          />
+        </div>
+      ) : null}
     </main>
 
     {token && <DeepLinkDialog open={deepLinkOpen} onOpenChange={setDeepLinkOpen} token={token} cliente={cliente} onPrepared={cargar} />}
+
+    {workspaceTab && (
+      <FiltrosDialog
+        open={filtrosDialogOpen}
+        onOpenChange={setFiltrosDialogOpen}
+        tab={workspaceTab}
+        totalResultados={totalResultados}
+        segmento={segmento}
+        onSegmentoChange={setSegmento}
+        conteoSegmentos={conteoSegmentos}
+        sortCliente={sort}
+        onSortClienteChange={setSort}
+        sortCampana={sortCampana}
+        onSortCampanaChange={setSortCampana}
+        estadoCampana={estadoCampana}
+        onEstadoCampanaChange={setEstadoCampana}
+        tipoCampana={tipoCampana}
+        onTipoCampanaChange={setTipoCampana}
+        sortCupon={sortCupon}
+        onSortCuponChange={setSortCupon}
+        estadoCupon={estadoCupon}
+        onEstadoCuponChange={setEstadoCupon}
+        tipoCupon={tipoCupon}
+        onTipoCuponChange={setTipoCupon}
+        sucursales={sucursales}
+        sucursalId={sucursalId}
+        onSucursalChange={setSucursalId}
+        from={from}
+        to={to}
+        onDateRangeChange={(f, t) => { setFrom(f); setTo(t) }}
+        onReset={limpiarFiltros}
+        hasActiveFilters={hasActiveFilters}
+      />
+    )}
   </div>
+}
+
+function ActiveFilterBadge({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/80 py-0.5 pl-2.5 pr-1.5 text-[11px] font-medium text-foreground backdrop-blur-xs">
+      <span>{label}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="rounded-full p-0.5 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+        aria-label={`Quitar filtro ${label}`}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  )
 }
 
 function MobileTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -215,48 +790,708 @@ function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (va
   return <nav className="flex items-center gap-2" aria-label="Secciones de clientes">{tabs.map((tab) => <button key={tab.value} type="button" onClick={() => onChange(tab.value)} className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${value === tab.value ? 'bg-foreground text-background shadow-sm' : 'bg-muted/70 text-muted-foreground hover:text-foreground'}`}>{tab.icon}{tab.label}</button>)}</nav>
 }
 
-function FilterPill({ active, onClick, label, count, dot, icon }: { active: boolean; onClick: () => void; label: string; count?: number; dot?: string; icon?: React.ReactNode }) {
-  return <button onClick={onClick} className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${active ? 'border-foreground bg-foreground text-background' : 'border-border bg-background text-muted-foreground hover:text-foreground'}`}>{dot && <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />}{icon}{label}{count != null && <span className={active ? 'text-background/65' : 'text-muted-foreground/70'}>{count}</span>}</button>
-}
 
 function ClientRow({ cliente, selected, onClick }: { cliente: ClienteGrowth; selected: boolean; onClick: () => void }) {
   const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
-  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{cliente.nombre}</p>{cliente.esVip && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} /><span>{segmento.label}</span><span>·</span><span>{cliente.cantidadPedidos} pedidos</span></div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
+  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{cliente.nombre}</p>{cliente.esVip && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} /><span>{segmento.label}</span><span>·</span><span>{cliente.cantidadPedidos} pedidos</span>{(cliente.puntos ?? 0) > 0 && (<><span>·</span><span className="font-semibold text-amber-600 dark:text-amber-400">{cliente.puntos} pts</span></>)}</div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
 }
 
 function EmptyClients() { return <div className="flex flex-col items-center justify-center px-6 py-20 text-center"><Users className="h-8 w-8 text-muted-foreground/30" /><p className="mt-3 text-sm font-medium">No hay clientes con estos filtros</p><p className="mt-1 text-xs text-muted-foreground">Probá ampliar las fechas o quitar una campaña o cupón.</p></div> }
 
-function ClienteDetalle({ cliente, onDeepLink, onDeleteClient }: { cliente: ClienteGrowth; onDeepLink: () => void; onDeleteClient: () => void }) {
+function ClienteDetalle({
+  cliente,
+  token,
+  mostrarPedidos = false,
+  onTogglePedidos,
+  onDeepLink,
+  onDeleteClient,
+  onPuntosActualizados,
+}: {
+  cliente: ClienteGrowth
+  token?: string
+  mostrarPedidos?: boolean
+  onTogglePedidos?: () => void
+  onDeepLink: () => void
+  onDeleteClient: () => void
+  onPuntosActualizados?: (nuevos: number) => void
+}) {
+  const [puntosDialogOpen, setPuntosDialogOpen] = useState(false)
   const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
-  const fuente = cliente.fuenteAdquisicion === 'organico' ? 'Orgánico · sin campaña' : cliente.campanaAdquisicion?.nombre ?? (cliente.fuenteAdquisicion === 'receta' ? 'Receta personalizada' : 'Sin atribución disponible')
-  return <><div className="flex items-start justify-between gap-3 p-4"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-semibold">{cliente.nombre}</h2><Badge variant="outline" className="gap-1"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} />{segmento.label}</Badge>{cliente.esVip && <Badge className="bg-amber-500 text-white hover:bg-amber-500"><Crown className="mr-1 h-3 w-3" />VIP</Badge>}</div><p className="mt-0.5 text-xs text-muted-foreground">Cliente desde {formatDate(cliente.primerPedidoAt ?? cliente.createdAt)}</p></div></div><Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={onDeleteClient} aria-label="Eliminar cliente"><Trash2 className="h-4 w-4" /></Button></div>
-    <ScrollArea className="min-h-0 flex-1"><div className="space-y-4 p-4">
-      <div className="rounded-xl bg-muted/45 p-4"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background"><TrendingUp className="h-4 w-4" /></div><div><div className="flex items-center gap-2"><p className="text-sm font-semibold">{segmento.label}</p>{cliente.esVip && getSegmento(cliente) !== 'vip' && <Badge variant="secondary">VIP {segmento.label.toLowerCase()}</Badge>}</div><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{segmento.description} {cliente.resumenCadencia ?? ''}</p></div></div></div>
+  const fuente =
+    cliente.fuenteAdquisicion === 'organico'
+      ? 'Orgánico · sin campaña'
+      : cliente.campanaAdquisicion?.nombre ?? (cliente.fuenteAdquisicion === 'receta' ? 'Receta personalizada' : 'Sin atribución disponible')
 
-      <div className="rounded-xl bg-emerald-50/70 p-4 dark:bg-emerald-950/20"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"><WandSparkles className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">Deep link personalizado</p><Badge className="bg-emerald-600 hover:bg-emerald-600">{recetaNombre(cliente.recetaRecomendada?.codigo)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">Piru recomienda una receta según este segmento. Podés elegir esa o cualquiera de las otras cinco.</p><Button size="sm" className="mt-3" onClick={onDeepLink}><Sparkles className="mr-2 h-3.5 w-3.5" />Elegir receta y crear link</Button></div></div></div>
+  // VISTA COMPACTA: cuando la columna de pedidos está abierta
+  if (mostrarPedidos) {
+    return (
+      <>
+        <div className="flex items-start justify-between gap-3 p-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted/80 text-sm font-semibold tracking-tight text-foreground">
+              {iniciales(cliente.nombre)}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                  {cliente.nombre}
+                </h2>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-2.5 py-0.5 text-xs font-medium text-foreground backdrop-blur-xs">
+                  <span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} />
+                  {segmento.label}
+                </span>
+                {cliente.esVip && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                    <Crown className="h-3 w-3" />
+                    VIP
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground/80">
+                Cliente desde {formatDate(cliente.primerPedidoAt ?? cliente.createdAt)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onTogglePedidos}
+              className="h-8 gap-1.5 rounded-full px-3 text-xs font-medium"
+              title="Ocultar historial de pedidos"
+            >
+              <ReceiptText className="h-3.5 w-3.5" />
+              <span>Ocultar pedidos</span>
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 rounded-full text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              onClick={onDeleteClient}
+              aria-label="Eliminar cliente"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><MiniMetric icon={<ShoppingBag className="h-4 w-4" />} label="Pedidos" value={cliente.cantidadPedidos} /><MiniMetric icon={<DollarSign className="h-4 w-4" />} label="Total gastado" value={formatCurrency(cliente.totalGastado)} /><MiniMetric icon={<CircleDollarSign className="h-4 w-4" />} label="Ticket" value={formatCurrency(cliente.ticketPromedio ?? (cliente.cantidadPedidos ? cliente.totalGastado / cliente.cantidadPedidos : 0))} /><MiniMetric icon={<Timer className="h-4 w-4" />} label="Cadencia" value={cliente.cadenciaDias != null ? `~${cliente.cadenciaDias} días` : 'Sin ritmo'} /></div>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-6 px-4 pb-8 sm:px-6">
+            {/* Diagnóstico de ciclo de vida */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${segmento.dot}`} />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                  Diagnóstico de ciclo de vida
+                </span>
+                {cliente.esVip && getSegmento(cliente) !== 'vip' && (
+                  <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                    VIP {segmento.label.toLowerCase()}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm font-normal leading-relaxed text-foreground/90">
+                {segmento.description}{' '}
+                {cliente.resumenCadencia && (
+                  <span className="text-muted-foreground">{cliente.resumenCadencia}</span>
+                )}
+              </p>
+            </div>
 
-      <Card title="Adquisición y actividad" icon={<Globe2 className="h-4 w-4" />}><InfoRow label="Primera fuente" value={fuente} /><InfoRow label="Primera compra" value={cliente.primeraCompra ? `${formatDate(cliente.primeraCompra.fecha)} · ${formatCurrency(cliente.primeraCompra.revenue)}` : 'Sin datos'} /><InfoRow label="Revenue de recetas" value={formatCurrency(cliente.revenueAcciones ?? 0)} /></Card>
+            {/* Métricas flotantes */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-border/30 py-4 sm:grid-cols-5">
+              <div className="flex flex-col">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Pedidos
+                </span>
+                <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground">
+                  {cliente.cantidadPedidos}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Total gastado
+                </span>
+                <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground">
+                  {formatCurrency(cliente.totalGastado)}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Ticket prom.
+                </span>
+                <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground">
+                  {formatCurrency(
+                    cliente.ticketPromedio ??
+                      (cliente.cantidadPedidos ? cliente.totalGastado / cliente.cantidadPedidos : 0),
+                  )}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Cadencia
+                </span>
+                <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground">
+                  {cliente.cadenciaDias != null ? `~${cliente.cadenciaDias} días` : 'Sin ritmo'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPuntosDialogOpen(true)}
+                className="flex flex-col text-left group hover:opacity-80 transition-opacity"
+              >
+                <span className="text-[11px] font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Puntos
+                </span>
+                <span className="mt-1 text-2xl font-black tracking-tight tabular-nums text-amber-600 dark:text-amber-400 group-hover:underline">
+                  {cliente.puntos ?? 0}
+                </span>
+              </button>
+            </div>
 
-      <div className="grid gap-3 sm:grid-cols-2"><Card title="Campañas" icon={<ReceiptText className="h-4 w-4" />}>{(cliente.campanasParticipadas ?? []).length ? <div className="space-y-2">{cliente.campanasParticipadas!.map((campana) => <div key={campana.id} className="rounded-lg bg-muted/50 p-2.5"><p className="text-xs font-medium">{campana.nombre}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{campana.pedidos} pedidos · {formatCurrency(campana.revenueAtribuido)}</p></div>)}</div> : <EmptyText>Sin campañas atribuidas.</EmptyText>}</Card><Card title="Cupones usados" icon={<Tag className="h-4 w-4" />}>{(cliente.cuponesUsados ?? []).length ? <div className="space-y-2">{cliente.cuponesUsados!.map((cupon) => <div key={cupon.id} className="rounded-lg bg-muted/50 p-2.5"><p className="text-xs font-medium">{cupon.codigo}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{cupon.usos} usos · {formatCurrency(cupon.montoDescontado)} descontados</p></div>)}</div> : <EmptyText>No usó cupones.</EmptyText>}</Card></div>
+            {/* Acción / Receta recomendada */}
+            <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4 transition-all dark:bg-emerald-500/[0.07]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Sparkles className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-xs font-semibold tracking-tight text-foreground">
+                      Receta recomendada
+                    </span>
+                    <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                      {recetaNombre(cliente.recetaRecomendada?.codigo)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Piru sugiere una acción según este segmento. Podés elegir esa o cualquiera de las otras cinco.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={onDeepLink}
+                  className="shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+                >
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  Elegir receta y link
+                </Button>
+              </div>
+            </div>
 
-      {cliente.productosTop && cliente.productosTop.length > 0 && <Card title="Lo que más pide" icon={<Gift className="h-4 w-4" />}><div className="flex flex-wrap gap-2">{cliente.productosTop.map((producto) => <Badge key={producto.nombre} variant="secondary">{producto.cantidad}× {producto.nombre}</Badge>)}</div></Card>}
+            {/* Lo que más pide */}
+            {cliente.productosTop && cliente.productosTop.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Lo que más pide
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {cliente.productosTop.map((producto) => (
+                    <span
+                      key={producto.nombre}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/60 px-3 py-1 text-xs text-foreground backdrop-blur-xs transition-colors hover:border-border"
+                    >
+                      <span className="font-semibold tabular-nums text-foreground/70">{producto.cantidad}×</span>
+                      <span>{producto.nombre}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
-      <Card title="Contacto" icon={<Phone className="h-4 w-4" />}><InfoRow label="Teléfono" value={cliente.telefono} /><InfoRow label="Dirección" value={cliente.direccion ?? 'Retira en local'} /><InfoRow label="Último pedido" value={formatDate(cliente.ultimoPedidoAt)} /></Card>
+            {/* Adquisición y actividad */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Adquisición y actividad
+              </span>
+              <div className="divide-y divide-border/25 border-y border-border/25">
+                <div className="flex items-center justify-between py-2 text-xs">
+                  <span className="text-muted-foreground">Primera fuente</span>
+                  <span className="text-right font-medium text-foreground">{fuente}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 text-xs">
+                  <span className="text-muted-foreground">Primera compra</span>
+                  <span className="text-right font-medium text-foreground">
+                    {cliente.primeraCompra
+                      ? `${formatDate(cliente.primeraCompra.fecha)} · ${formatCurrency(cliente.primeraCompra.revenue)}`
+                      : 'Sin datos'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2 text-xs">
+                  <span className="text-muted-foreground">Revenue de recetas</span>
+                  <span className="text-right font-medium text-foreground">
+                    {formatCurrency(cliente.revenueAcciones ?? 0)}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-    </div></ScrollArea></>
+            {/* Campañas y Cupones */}
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-1">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Campañas
+                </span>
+                {(cliente.campanasParticipadas ?? []).length ? (
+                  <div className="divide-y divide-border/20 border-y border-border/20">
+                    {cliente.campanasParticipadas!.map((campana) => (
+                      <div key={campana.id} className="flex items-center justify-between py-2 text-xs">
+                        <div className="min-w-0 pr-2">
+                          <p className="truncate font-medium text-foreground">{campana.nombre}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {campana.pedidos} {campana.pedidos === 1 ? 'pedido' : 'pedidos'}
+                          </p>
+                        </div>
+                        <span className="shrink-0 font-semibold tabular-nums text-foreground">
+                          {formatCurrency(campana.revenueAtribuido)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-2 text-xs italic text-muted-foreground/60">Sin campañas atribuidas.</p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  Cupones usados
+                </span>
+                {(cliente.cuponesUsados ?? []).length ? (
+                  <div className="divide-y divide-border/20 border-y border-border/20">
+                    {cliente.cuponesUsados!.map((cupon) => (
+                      <div key={cupon.id} className="flex items-center justify-between py-2 text-xs">
+                        <div className="min-w-0 pr-2">
+                          <span className="font-mono text-xs font-medium text-foreground">{cupon.codigo}</span>
+                          <p className="text-[11px] text-muted-foreground">
+                            {cupon.usos} {cupon.usos === 1 ? 'uso' : 'usos'}
+                          </p>
+                        </div>
+                        <span className="shrink-0 font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                          -{formatCurrency(cupon.montoDescontado)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-2 text-xs italic text-muted-foreground/60">No usó cupones.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Contacto */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Contacto
+              </span>
+              <div className="divide-y divide-border/25 border-y border-border/25">
+                <div className="flex items-center justify-between py-2 text-xs">
+                  <span className="text-muted-foreground">Teléfono</span>
+                  <span className="text-right font-medium text-foreground">{cliente.telefono}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 text-xs">
+                  <span className="text-muted-foreground">Dirección</span>
+                  <span className="text-right font-medium text-foreground">
+                    {cliente.direccion ?? 'Retira en local'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2 text-xs">
+                  <span className="text-muted-foreground">Último pedido</span>
+                  <span className="text-right font-medium text-foreground">
+                    {formatDate(cliente.ultimoPedidoAt)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+        {token && (
+          <HistorialPuntosDialog
+            open={puntosDialogOpen}
+            onOpenChange={setPuntosDialogOpen}
+            token={token}
+            clienteId={cliente.id}
+            clienteNombre={cliente.nombre}
+            puntosActuales={cliente.puntos ?? 0}
+            onPuntosActualizados={(nuevos) => onPuntosActualizados?.(nuevos)}
+          />
+        )}
+      </>
+    )
+  }
+
+  // VISTA AMPLIA: cuando la columna de pedidos está oculta, aprovecha todo el ancho con diseño de 2 columnas
+  return (
+    <>
+      <div className="flex items-start justify-between gap-4 p-5 sm:px-8">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-muted/80 text-base font-semibold tracking-tight text-foreground">
+            {iniciales(cliente.nombre)}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h2 className="truncate text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                {cliente.nombre}
+              </h2>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-3 py-0.5 text-xs font-medium text-foreground backdrop-blur-xs">
+                <span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} />
+                {segmento.label}
+              </span>
+              {cliente.esVip && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                  <Crown className="h-3.5 w-3.5" />
+                  VIP
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground/80">
+              Cliente desde {formatDate(cliente.primerPedidoAt ?? cliente.createdAt)}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onTogglePedidos}
+            className="h-8.5 gap-2 rounded-full border-border/60 px-4 text-xs font-medium shadow-2xs transition-colors hover:bg-muted/50"
+          >
+            <ReceiptText className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>Ver pedidos</span>
+            <span className="ml-0.5 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-semibold text-foreground">
+              {cliente.cantidadPedidos}
+            </span>
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8.5 w-8.5 rounded-full text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDeleteClient}
+            aria-label="Eliminar cliente"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-8 px-6 pb-12 sm:px-8">
+          {/* Métricas flotantes en ancho completo */}
+          <div className="grid grid-cols-2 gap-x-8 gap-y-4 border-y border-border/30 py-5 sm:grid-cols-5">
+            <div className="flex flex-col">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Pedidos
+              </span>
+              <span className="mt-1 text-3xl font-bold tracking-tight tabular-nums text-foreground">
+                {cliente.cantidadPedidos}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Total gastado
+              </span>
+              <span className="mt-1 text-3xl font-bold tracking-tight tabular-nums text-foreground">
+                {formatCurrency(cliente.totalGastado)}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Ticket prom.
+              </span>
+              <span className="mt-1 text-3xl font-bold tracking-tight tabular-nums text-foreground">
+                {formatCurrency(
+                  cliente.ticketPromedio ??
+                    (cliente.cantidadPedidos ? cliente.totalGastado / cliente.cantidadPedidos : 0),
+                )}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                Cadencia
+              </span>
+              <span className="mt-1 text-3xl font-bold tracking-tight tabular-nums text-foreground">
+                {cliente.cadenciaDias != null ? `~${cliente.cadenciaDias} días` : 'Sin ritmo'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPuntosDialogOpen(true)}
+              className="flex flex-col text-left group hover:opacity-80 transition-opacity"
+            >
+              <span className="text-[11px] font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> Puntos
+              </span>
+              <span className="mt-1 text-3xl font-black tracking-tight tabular-nums text-amber-600 dark:text-amber-400 group-hover:underline">
+                {cliente.puntos ?? 0}
+              </span>
+            </button>
+          </div>
+
+          {/* Distribución en 2 columnas: Inteligencia/Acción a la izquierda, Identidad/Contacto a la derecha */}
+          <div className="grid grid-cols-1 gap-8 items-start lg:grid-cols-12 lg:gap-12">
+            {/* Columna Principal / Recompra */}
+            <div className="space-y-8 lg:col-span-7">
+              {/* Diagnóstico de ciclo de vida */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2.5 w-2.5 rounded-full ${segmento.dot}`} />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    Diagnóstico de ciclo de vida · {segmento.label}
+                  </span>
+                  {cliente.esVip && getSegmento(cliente) !== 'vip' && (
+                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                      VIP {segmento.label.toLowerCase()}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-normal leading-relaxed text-foreground/90">
+                  {segmento.description}{' '}
+                  {cliente.resumenCadencia && (
+                    <span className="text-muted-foreground">{cliente.resumenCadencia}</span>
+                  )}
+                </p>
+              </div>
+
+              {/* Acción / Receta recomendada */}
+              <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-5 transition-all dark:bg-emerald-500/[0.07]">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Sparkles className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-sm font-semibold tracking-tight text-foreground">
+                        Receta recomendada
+                      </span>
+                      <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                        {recetaNombre(cliente.recetaRecomendada?.codigo)}
+                      </span>
+                    </div>
+                    <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
+                      Piru sugiere una acción según este segmento. Podés elegir esa o cualquiera de las otras cinco recetas para generar un link personalizado.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={onDeepLink}
+                    className="h-9 shrink-0 rounded-full bg-emerald-600 px-5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+                  >
+                    <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                    Elegir receta y link
+                  </Button>
+                </div>
+              </div>
+
+              {/* Lo que más pide */}
+              {cliente.productosTop && cliente.productosTop.length > 0 && (
+                <div className="space-y-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    Lo que más pide
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {cliente.productosTop.map((producto) => (
+                      <span
+                        key={producto.nombre}
+                        className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/60 px-3.5 py-1.5 text-xs text-foreground backdrop-blur-xs transition-colors hover:border-border shadow-2xs"
+                      >
+                        <span className="font-semibold tabular-nums text-foreground/70">{producto.cantidad}×</span>
+                        <span className="font-medium">{producto.nombre}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Campañas y Cupones usados en la columna principal */}
+              <div className="grid grid-cols-1 gap-6 pt-2 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    Campañas
+                  </span>
+                  {(cliente.campanasParticipadas ?? []).length ? (
+                    <div className="divide-y divide-border/20 border-y border-border/20">
+                      {cliente.campanasParticipadas!.map((campana) => (
+                        <div key={campana.id} className="flex items-center justify-between py-2.5 text-xs">
+                          <div className="min-w-0 pr-2">
+                            <p className="truncate font-medium text-foreground">{campana.nombre}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {campana.pedidos} {campana.pedidos === 1 ? 'pedido' : 'pedidos'}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-semibold tabular-nums text-foreground">
+                            {formatCurrency(campana.revenueAtribuido)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-2 text-xs italic text-muted-foreground/60">Sin campañas atribuidas.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    Cupones usados
+                  </span>
+                  {(cliente.cuponesUsados ?? []).length ? (
+                    <div className="divide-y divide-border/20 border-y border-border/20">
+                      {cliente.cuponesUsados!.map((cupon) => (
+                        <div key={cupon.id} className="flex items-center justify-between py-2.5 text-xs">
+                          <div className="min-w-0 pr-2">
+                            <span className="font-mono text-xs font-medium text-foreground">{cupon.codigo}</span>
+                            <p className="text-[11px] text-muted-foreground">
+                              {cupon.usos} {cupon.usos === 1 ? 'uso' : 'usos'}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                            -{formatCurrency(cupon.montoDescontado)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-2 text-xs italic text-muted-foreground/60">No usó cupones.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Columna Secundaria / Contacto y Procedencia */}
+            <div className="space-y-8 lg:col-span-5">
+              {/* Contacto */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  Contacto
+                </span>
+                <div className="divide-y divide-border/25 border-y border-border/25">
+                  <div className="flex items-center justify-between py-2.5 text-xs">
+                    <span className="text-muted-foreground">Teléfono</span>
+                    <span className="text-right font-medium text-foreground">{cliente.telefono}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2.5 text-xs">
+                    <span className="text-muted-foreground">Dirección</span>
+                    <span className="text-right font-medium text-foreground">
+                      {cliente.direccion ?? 'Retira en local'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-2.5 text-xs">
+                    <span className="text-muted-foreground">Último pedido</span>
+                    <span className="text-right font-medium text-foreground">
+                      {formatDate(cliente.ultimoPedidoAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Adquisición y actividad */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  Adquisición y actividad
+                </span>
+                <div className="divide-y divide-border/25 border-y border-border/25">
+                  <div className="flex items-center justify-between py-2.5 text-xs">
+                    <span className="text-muted-foreground">Primera fuente</span>
+                    <span className="text-right font-medium text-foreground">{fuente}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2.5 text-xs">
+                    <span className="text-muted-foreground">Primera compra</span>
+                    <span className="text-right font-medium text-foreground">
+                      {cliente.primeraCompra
+                        ? `${formatDate(cliente.primeraCompra.fecha)} · ${formatCurrency(cliente.primeraCompra.revenue)}`
+                        : 'Sin datos'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-2.5 text-xs">
+                    <span className="text-muted-foreground">Revenue de recetas</span>
+                    <span className="text-right font-medium text-foreground">
+                      {formatCurrency(cliente.revenueAcciones ?? 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ScrollArea>
+      {token && (
+        <HistorialPuntosDialog
+          open={puntosDialogOpen}
+          onOpenChange={setPuntosDialogOpen}
+          token={token}
+          clienteId={cliente.id}
+          clienteNombre={cliente.nombre}
+          puntosActuales={cliente.puntos ?? 0}
+          onPuntosActualizados={(nuevos) => onPuntosActualizados?.(nuevos)}
+        />
+      )}
+    </>
+  )
 }
 
-function PedidosClientePanel({ cliente, sucursales, onDeleteOrder }: { cliente: ClienteGrowth | null; sucursales: SucursalGrowth[]; onDeleteOrder: (pedidoId: number) => void }) {
+function PedidosClientePanel({
+  cliente,
+  sucursales,
+  onClose,
+  onDeleteOrder,
+}: {
+  cliente: ClienteGrowth | null
+  sucursales: SucursalGrowth[]
+  onClose?: () => void
+  onDeleteOrder: (pedidoId: number) => void
+}) {
   const sucursalPorId = new Map(sucursales.map((item) => [item.id, item.nombre]))
-  if (!cliente) return <div className="flex flex-1 flex-col items-center justify-center p-8 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted"><Package className="h-6 w-6 text-muted-foreground" /></div><h2 className="mt-4 font-semibold">Pedidos del cliente</h2><p className="mt-1 max-w-xs text-sm text-muted-foreground">Seleccioná un cliente para recorrer todo su historial.</p></div>
-  return <><div className="p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Historial de pedidos</p><p className="text-[11px] text-muted-foreground">{cliente.nombre} · {cliente.pedidos.length} pedidos</p></div><ScrollArea className="min-h-0 flex-1"><div className="space-y-2 p-2">{cliente.pedidos.length ? cliente.pedidos.map((pedido) => <PedidoRow key={pedido.id} pedido={pedido} sucursal={pedido.sucursalId ? sucursalPorId.get(pedido.sucursalId) : undefined} onDelete={() => onDeleteOrder(pedido.id)} />) : <EmptyText>Todavía no tiene pedidos.</EmptyText>}</div></ScrollArea></>
+  if (!cliente)
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+          <Package className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <h2 className="mt-4 font-semibold">Pedidos del cliente</h2>
+        <p className="mt-1 max-w-xs text-sm text-muted-foreground">
+          Seleccioná un cliente para recorrer todo su historial.
+        </p>
+      </div>
+    )
+  return (
+    <>
+      <div className="flex items-center justify-between p-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Historial de pedidos
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {cliente.nombre} · {cliente.pedidos.length} {cliente.pedidos.length === 1 ? 'pedido' : 'pedidos'}
+          </p>
+        </div>
+        {onClose && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground"
+            onClick={onClose}
+            aria-label="Cerrar panel de pedidos"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-2 p-2">
+          {cliente.pedidos.length ? (
+            cliente.pedidos.map((pedido) => (
+              <PedidoRow
+                key={pedido.id}
+                pedido={pedido}
+                sucursal={pedido.sucursalId ? sucursalPorId.get(pedido.sucursalId) : undefined}
+                onDelete={() => onDeleteOrder(pedido.id)}
+              />
+            ))
+          ) : (
+            <EmptyText>Todavía no tiene pedidos.</EmptyText>
+          )}
+        </div>
+      </ScrollArea>
+    </>
+  )
 }
 
-function MiniMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) { return <div className="rounded-xl bg-muted/45 p-3"><div className="text-muted-foreground">{icon}</div><p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-0.5 text-sm font-semibold">{value}</p></div> }
-function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) { return <section className="p-1"><div className="mb-3 flex items-center gap-2 text-muted-foreground">{icon}<h3 className="text-xs font-semibold uppercase tracking-wide">{title}</h3></div>{children}</section> }
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) { return <div className="flex items-start justify-between gap-4 py-2 text-xs"><span className="text-muted-foreground">{label}</span><span className="text-right font-medium">{value}</span></div> }
 function EmptyText({ children }: { children: React.ReactNode }) { return <p className="py-2 text-xs text-muted-foreground">{children}</p> }
 
 function PedidoRow({ pedido, sucursal, onDelete }: { pedido: PedidoCliente; sucursal?: string; onDelete: () => void }) {

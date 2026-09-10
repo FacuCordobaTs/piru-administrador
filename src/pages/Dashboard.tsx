@@ -42,7 +42,7 @@ import {
 } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig } from '@/lib/posConfig'
+import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, getPosConfig, setPosConfig } from '@/lib/posConfig'
 import { PosConfigDialog } from '@/components/PosConfigDialog'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
@@ -1300,7 +1300,7 @@ const Dashboard = () => {
     const tieneEventos = sucursalesList.some(s => s.soloPos)
     const sedeEvento = sucursalesList.find(s => s.id === sucursalActivaId)?.soloPos === true
     const posActivo = sucursalesValidas && posPermitidoEnSede(sucursalesList, sucursalActivaId, posModuloActivo)
-    const { catalogoEnColumna } = usePosConfig()
+    const { catalogoEnColumna, mostrarColumnaPedidos } = usePosConfig()
     const mesasActivo = useModuloActivo('mesas') && !sedeEvento
     const cierreManualActivo = useModuloActivo('cierre_turno_manual') && !sedeEvento
     const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
@@ -2953,7 +2953,8 @@ const Dashboard = () => {
                             "mt-14 min-h-0 w-full flex-col shrink-0 bg-[#FFFBF0] dark:bg-background lg:rounded-2xl lg:overflow-hidden",
                             "lg:w-[400px] xl:w-[520px] 2xl:w-[600px]",
                             showPOS && isDesktopViewport && catalogoEnColumna && "lg:flex-1 lg:w-auto xl:w-auto 2xl:w-auto min-w-0",
-                            mobileView === 'orders' ? 'flex' : 'hidden lg:flex'
+                            mobileView === 'orders' ? 'flex' : 'hidden lg:flex',
+                            showPOS && isDesktopViewport && !mostrarColumnaPedidos && 'lg:hidden'
                         )}>
                             <div className="p-3 flex items-center justify-between bg-[#FFFBF0]/95 dark:bg-background/95 backdrop-blur">
                                 {posActivo && mesasActivo ? (
@@ -3219,10 +3220,15 @@ const Dashboard = () => {
                         {/* ── COLUMNA CENTRAL: CATÁLOGO DEL POS ── */}
                         {showPOS && isDesktopViewport && catalogoEnColumna && (
                             <div className="relative mt-14 hidden min-h-0 min-w-0 flex-1 lg:flex">
+                                {!mostrarColumnaPedidos && <Button
+                                    variant="outline"
+                                    className="absolute -top-12 right-0 z-20 h-11"
+                                    onClick={() => setPosConfig({ ...getPosConfig(), mostrarColumnaPedidos: true })}
+                                >Mostrar pedidos</Button>}
                                 <Button
                                     type="button"
                                     onClick={abrirNuevoPedido}
-                                    className="absolute -top-12 left-0 right-0 z-10 h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00]"
+                                    className={cn('absolute -top-12 left-0 right-0 z-10 h-11 rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00]', !mostrarColumnaPedidos && 'right-36')}
                                 >
                                     + Nuevo pedido
                                 </Button>
