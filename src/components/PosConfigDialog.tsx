@@ -147,6 +147,13 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
         disabled={!config.mostrarColumnaPedidos}
         onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, catalogoEnColumna: checked }))}
       />
+      <FilaConfig
+        icon={ShoppingBag}
+        label="Sólo productos del evento"
+        descripcion="Al seleccionar un evento, oculta los productos del catálogo web y muestra sólo los asignados a ese evento."
+        checked={config.soloProductosEvento}
+        onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, soloProductosEvento: checked }))}
+      />
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tipos de pedido</p>
         <div className="mt-2 space-y-2">

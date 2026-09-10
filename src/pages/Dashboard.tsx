@@ -3278,6 +3278,7 @@ const Dashboard = () => {
                                     onPrintNewMesa={() => imprimirPedidoEditado(true)}
                                     onPrintAllMesa={() => imprimirPedidoEditado(false)}
                                     sucursalActivaId={sucursalActivaId}
+                                    sedeEvento={sedeEvento}
                                     sucursalNombre={sucursalNombre}
                                     onDraftChange={setDraftPos}
                                     onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}
@@ -3767,6 +3768,7 @@ const Dashboard = () => {
                                         onPrintNewMesa={() => imprimirPedidoEditado(true)}
                                         onPrintAllMesa={() => imprimirPedidoEditado(false)}
                                         sucursalActivaId={sucursalActivaId}
+                                        sedeEvento={sedeEvento}
                                         sucursalNombre={sucursalNombre}
                                         onDraftChange={setDraftPos}
                                         onStartDraft={pedidoPosEditando ? undefined : volverAlBorrador}

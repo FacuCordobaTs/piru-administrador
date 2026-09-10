@@ -170,6 +170,7 @@ interface PuntoDeVentaProps {
     onPrintNewMesa?: () => void | Promise<void>
     onPrintAllMesa?: () => void | Promise<void>
     sucursalActivaId: number | null
+    sedeEvento?: boolean
     /** El padre (Dashboard) espeja este borrador en la comanda de la derecha en vivo. */
     onDraftChange?: (draft: PosDraft | null) => void
     /** Volver al grid desde un pedido existente conserva el borrador. */
@@ -266,7 +267,7 @@ const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
 })
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, onExistingMesaProductsAdded, onExistingPedidoUpdated, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, onDraftChange, onStartDraft, onViewPedido, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, onProductSearchIntent, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
+    { onClose, onCreated, onUpdated, onExistingMesaProductsAdded, onExistingPedidoUpdated, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, sedeEvento = false, onDraftChange, onStartDraft, onViewPedido, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, onProductSearchIntent, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -583,7 +584,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // "Sandwich gratinado" de categoría "Milanesa", igual que "gratinado sandwich".
     const productosFiltrados = useMemo(() => {
         const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-        const activos = productos.filter((p) => p.activo !== false && (p.eventoSucursalId == null || p.eventoSucursalId === sucursalActivaId))
+        const activos = productos.filter((p) => p.activo !== false && (
+            p.eventoSucursalId != null
+                ? p.eventoSucursalId === sucursalActivaId
+                : !(sedeEvento && config.soloProductosEvento)
+        ))
         if (terms.length === 0) return activos
         return activos.filter((p) => {
             const texto = [
@@ -594,7 +599,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             ].filter(Boolean).join(' ').toLowerCase()
             return terms.every((term) => texto.includes(term))
         })
-    }, [productos, query, sucursalActivaId])
+    }, [productos, query, sucursalActivaId, sedeEvento, config.soloProductosEvento])
 
     const catalogoEnColumna = catalogoCompacto && config.catalogoEnColumna
     const mostrarListado = catalogoEnColumna || query.trim() !== ''

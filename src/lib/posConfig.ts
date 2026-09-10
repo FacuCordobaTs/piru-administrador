@@ -10,6 +10,7 @@ export interface PosConfig {
     notas: boolean
     catalogoEnColumna: boolean
     mostrarColumnaPedidos: boolean
+    soloProductosEvento: boolean
 }
 
 export const POS_CONFIG_KEY = 'piru:pos-config'
@@ -30,6 +31,7 @@ export const DEFAULT_POS_CONFIG: PosConfig = {
     notas: true,
     catalogoEnColumna: false,
     mostrarColumnaPedidos: true,
+    soloProductosEvento: false,
 }
 
 /** Fusiona lo guardado con los defaults; la columna de catálogo requiere activación explícita. */
@@ -56,6 +58,7 @@ const mergeConfig = (raw: unknown): PosConfig => {
         notas: parsed.notas !== false,
         catalogoEnColumna: parsed.mostrarColumnaPedidos === false || parsed.catalogoEnColumna === true,
         mostrarColumnaPedidos: parsed.mostrarColumnaPedidos !== false,
+        soloProductosEvento: parsed.soloProductosEvento === true,
     }
 }
 
