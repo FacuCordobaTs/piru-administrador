@@ -26,9 +26,14 @@ export default function AccesoInterno() {
       try {
         const response = await restauranteApi.getProfile(token) as {
           success: boolean
-          data?: { restaurante?: RestauranteData[] }
+          // El endpoint actual devuelve un objeto. Se conserva la alternativa de arreglo
+          // para que este acceso siga funcionando mientras haya backends anteriores activos.
+          data?: { restaurante?: RestauranteData | RestauranteData[] }
         }
-        const restaurante = response.data?.restaurante?.[0]
+        const restauranteRespuesta = response.data?.restaurante
+        const restaurante = Array.isArray(restauranteRespuesta)
+          ? restauranteRespuesta[0]
+          : restauranteRespuesta
         if (!response.success || !restaurante) throw new Error('No se pudo cargar el local')
 
         useRestauranteStore.getState().reset()
