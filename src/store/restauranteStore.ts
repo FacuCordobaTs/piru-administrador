@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { restauranteApi } from '@/lib/api'
 import { useAuthStore } from './authStore'
+import { leerCatalogoLocal, reemplazarCatalogoLocal } from '@/lib/posLocalDb'
 
 interface Mesa {
   id: number
@@ -164,9 +165,28 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
 
   fetchData: async () => {
     const token = useAuthStore.getState().token
+    const restauranteId = useAuthStore.getState().restaurante?.id
     if (!token) {
       set({ error: 'No hay token de autenticación' })
       return
+    }
+
+    // 1. Si no hay productos en memoria pero hay sesión, intentar hidratar inmediatamente desde IndexedDB
+    if (restauranteId != null && useRestauranteStore.getState().productos.length === 0) {
+      try {
+        const local = await leerCatalogoLocal(restauranteId)
+        if (local && (local.productos.length > 0 || local.restaurante)) {
+          set({
+            restaurante: local.restaurante || (useAuthStore.getState().restaurante as any),
+            suscripcion: local.suscripcion || null,
+            mesas: local.mesas || [],
+            productos: local.productos || [],
+            categorias: local.categorias || [],
+            error: null,
+            isLoading: false,
+          })
+        }
+      } catch { /* Fallo silencioso de hidratación previa */ }
     }
 
     set({ isLoading: true, error: null })
@@ -174,9 +194,6 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
       const response = await restauranteApi.getProfile(token) as {
         success: boolean
         data?: {
-          // El backend actual responde un objeto; los despliegues anteriores
-          // devolvían un arreglo. El store es el punto común del admin, así
-          // que admite ambos contratos durante la transición.
           restaurante: RestauranteData | RestauranteData[]
           mesas: Mesa[]
           productos: Producto[]
@@ -202,19 +219,54 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
           return
         }
 
+        const categorias = categoriasResponse.success && categoriasResponse.categorias ? categoriasResponse.categorias : []
+        const productos = response.data.productos || []
+        const mesas = response.data.mesas || []
+        const suscripcion = response.data.suscripcion ?? null
+
         set({
           restaurante,
-          suscripcion: response.data.suscripcion ?? null,
-          mesas: response.data.mesas,
-          productos: response.data.productos,
-          categorias: categoriasResponse.success && categoriasResponse.categorias ? categoriasResponse.categorias : [],
+          suscripcion,
+          mesas,
+          productos,
+          categorias,
           isLoading: false,
+          error: null,
         })
+
+        // Guardar respaldo offline en IndexedDB de forma no bloqueante
+        if (restauranteId != null) {
+          void reemplazarCatalogoLocal(restauranteId, {
+            productos,
+            categorias,
+            restaurante,
+            suscripcion,
+            mesas,
+          }).catch(() => { /* Fallo no bloqueante de almacenamiento local */ })
+        }
       } else {
         set({ error: 'Error al cargar los datos', isLoading: false })
       }
     } catch (error) {
       console.error('Error fetching restaurante data:', error)
+      // Si falló la red o estamos offline, comprobar si tenemos copia en IndexedDB
+      if (restauranteId != null) {
+        try {
+          const local = await leerCatalogoLocal(restauranteId)
+          if (local && (local.productos.length > 0 || local.restaurante)) {
+            set({
+              restaurante: local.restaurante || (useAuthStore.getState().restaurante as any),
+              suscripcion: local.suscripcion || null,
+              mesas: local.mesas || [],
+              productos: local.productos || [],
+              categorias: local.categorias || [],
+              isLoading: false,
+              error: null,
+            })
+            return
+          }
+        } catch { /* Error leyendo copia local */ }
+      }
       set({ error: 'Error al conectar con el servidor', isLoading: false })
     }
   },
@@ -283,4 +335,3 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
       error: null,
     }),
 }))
-

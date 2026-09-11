@@ -212,7 +212,7 @@ const router = createBrowserRouter([
 
 function PerfilRedirect() {
   const { search } = useLocation()
-  return <Navigate to={`/dashboard/ajustes/pagos${search}`} replace />
+  return <Navigate to={`/dashboard/ajustes/monetizacion${search}`} replace />
 }
 
 function App() {

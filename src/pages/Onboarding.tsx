@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router'
 import { MapContainer, TileLayer, Circle, CircleMarker, Polygon, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -12,27 +13,83 @@ import {
   ArrowRight, ArrowLeft, Check, Camera, FileText, Link2,
   Clock, Plus, Trash2, MapPin, Sparkles, Loader2,
   Banknote, ArrowDownToLine, Store, Utensils, Target, PencilRuler, Save, X,
-  ImagePlus, Lock, RefreshCw, Pencil, CircleDashed
+  ImagePlus, Lock, RefreshCw, Pencil, CircleDashed,
+  Printer, MonitorSmartphone, Armchair, ChevronDown, CircleCheck, Maximize2, Download,
+  ShoppingBag, Settings, Minus, MessageCircle,
+  type LucideIcon
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ImageUpload from '@/components/ImageUpload'
 import { toast } from 'sonner'
-import { onboardingApi, productosApi, pedidoUnificadoApi, zonasDeliveryApi, cartaIaApi, restauranteApi, type ClaimInventario } from '@/lib/api'
+import {
+  onboardingApi, productosApi, pedidoUnificadoApi, zonasDeliveryApi, cartaIaApi, restauranteApi,
+  modulosApi, sucursalesApi, mesasLocalesApi, suscripcionApi,
+  type ClaimInventario, type MiSuscripcion
+} from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { TiendaPreview } from '@/components/TiendaPreview'
+import { ExplainerTienda } from './onboarding/components/ExplainerTienda'
+import { ExplainerActivacion } from './onboarding/components/ExplainerActivacion'
+import { ExplainerMonetizacion } from './onboarding/components/ExplainerMonetizacion'
+import { ExplainerCrecimiento } from './onboarding/components/ExplainerCrecimiento'
 
 const MP_APP_ID = 38638191854826
 const MP_REDIRECT_URI = import.meta.env.VITE_MP_REDIRECT_URI || 'https://api.piru.app/api/mp/callback'
+const WHATSAPP_HELP_NUMBER = '5493408681915'
+const LATEST_DESKTOP_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 
-// ── Fases del onboarding. No se muestran como "pasos"; sólo alimentan la barra de progreso ──
-// La lectura de la carta con IA (lenta) corre en segundo plano desde 'creando'; mientras tanto
-// el usuario avanza por 'preparativos' (logo/horarios) y 'entrega' (delivery/pago). Recién en
-// 'revision' se confirman los productos ya detectados.
-const PHASES = ['nombre', 'ownership', 'carta', 'creando', 'preparativos', 'entrega', 'pagos', 'revision', 'prueba', 'final'] as const
+// ── Fases del onboarding ──
+// Las explicaciones van metidas entre pasos de manera didáctica y NO se cuentan en la barra de progreso arriba.
+const PHASES = [
+  'explainer-tienda',
+  'nombre',
+  'explainer-activacion',
+  'carta',
+  'creando',
+  'preparativos',
+  'explainer-monetizacion',
+  'modalidadSucursales',
+  'sucursales',
+  'entrega',
+  'pagos',
+  'mensaje',
+  'whatsapps',
+  'revision',
+  'explainer-crecimiento',
+  'prueba',
+  'modos',
+  'configImpresion',
+  'configMesas',
+  'plan',
+] as const
 type Phase = typeof PHASES[number]
-const phaseIndex = (p: Phase) => PHASES.indexOf(p)
+
+// Pasos de configuración real que alimentan la barra de progreso.
+const PHASE_PROGRESS_STEP: Record<Phase, number> = {
+  'explainer-tienda': 1,
+  'nombre': 1,
+  'explainer-activacion': 1,
+  'carta': 2,
+  'creando': 2,
+  'preparativos': 3,
+  'explainer-monetizacion': 3,
+  'modalidadSucursales': 4,
+  'sucursales': 4,
+  'entrega': 5,
+  'pagos': 6,
+  'mensaje': 7,
+  'whatsapps': 7,
+  'revision': 8,
+  'explainer-crecimiento': 8,
+  'prueba': 9,
+  'modos': 10,
+  'configImpresion': 10,
+  'configMesas': 10,
+  'plan': 11,
+}
+const computeProgress = (p: Phase) => (PHASE_PROGRESS_STEP[p] / 11) * 100
 
 // Convierte la dirección en un slug de URL: sin espacios, minúsculas, sin símbolos raros
 const toSlug = (v: string) =>
@@ -311,6 +368,32 @@ function Confetti() {
 type DetectedProduct = { nombre: string; descripcion: string; precio: number; ambiguo?: string | null; conPapas?: boolean }
 type StoreProduct = { id: number; nombre: string; descripcion: string; precio: string }
 
+type ModalidadSucursales = 'unica' | 'multiple'
+type PagosDraft = { efectivo: boolean; transferenciaManual: boolean; transferenciaAlias: string }
+type ZonaDraft = { nombre: string; precio: string; poligono: { lat: number; lng: number }[]; color: string }
+type TiposPedidoDraft = { delivery: boolean; takeaway: boolean }
+type DeliveryDraft =
+  | { mode: 'radio'; precio: string; radius: number; center: { lat: number; lng: number }; address: string }
+  | { mode: 'zonas'; zonas: ZonaDraft[]; center: { lat: number; lng: number }; address: string }
+type SucursalDraft = {
+  localId: string
+  nombre: string
+  address: string
+  center: { lat: number; lng: number } | null
+  pagos: PagosDraft
+  whatsappNumber: string
+  delivery?: DeliveryDraft
+}
+type ModoUso = 'impresion' | 'pos'
+type WhatsAppHelp = { label: string; message: string }
+
+const normalizarTelefono = (raw: string): string | null => {
+  let limpio = (raw || '').replace(/\D/g, '')
+  if (limpio.length < 8) return null
+  if (!limpio.startsWith('54')) limpio = `54${limpio}`
+  return limpio
+}
+
 // ── Estructura de la carta detectada por la IA (coincide con el backend carta-ia) ──
 type VarianteExtraida = { nombre: string; precio: number }
 type ExtraExtraido = { nombre: string; precio: number }
@@ -562,7 +645,7 @@ const SelfServeOnboarding = () => {
   const restauranteStore = useRestauranteStore()
   const restaurante = restauranteStore.restaurante as any
 
-  const [phase, setPhase] = useState<Phase>('nombre')
+  const [phase, setPhase] = useState<Phase>('explainer-tienda')
   const [busy, setBusy] = useState(false)
   const persistedRef = useRef(false)
 
@@ -601,6 +684,10 @@ const SelfServeOnboarding = () => {
       detected: MENU_SIMULADO as DetectedProduct[],
       // Carta detectada por la IA a partir de las fotos (estructura completa).
       cartaDetectada: null as CartaExtraida | null,
+      modalidadSucursales: 'unica' as ModalidadSucursales,
+      sucursales: [] as SucursalDraft[],
+      tiposPedido: { delivery: true, takeaway: true } as TiposPedidoDraft,
+      whatsappNumber: (restaurante?.whatsappNumber || restaurante?.telefono || '').toString().replace(/\D/g, ''),
     }
     // Mergeamos sobre los defaults para tolerar datos guardados con formato viejo
     try {
@@ -613,6 +700,10 @@ const SelfServeOnboarding = () => {
           metodosPago: { ...defaults.metodosPago, ...(parsed.metodosPago || {}) },
           turnos: Array.isArray(parsed.turnos) && parsed.turnos.length > 0 ? parsed.turnos : defaults.turnos,
           detected: Array.isArray(parsed.detected) && parsed.detected.length > 0 ? parsed.detected : defaults.detected,
+          tiposPedido: parsed.tiposPedido || defaults.tiposPedido,
+          sucursales: Array.isArray(parsed.sucursales) ? parsed.sucursales : defaults.sucursales,
+          modalidadSucursales: parsed.modalidadSucursales || defaults.modalidadSucursales,
+          whatsappNumber: parsed.whatsappNumber || defaults.whatsappNumber,
         }
       }
     } catch { /* si el guardado está corrupto, usamos defaults */ }
@@ -622,6 +713,19 @@ const SelfServeOnboarding = () => {
   // Productos reales ya creados + carrito de la tienda de prueba
   const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
   const [pedidoOk, setPedidoOk] = useState(false)
+  const [pasoTiposEntrega, setPasoTiposEntrega] = useState<'delivery' | 'takeaway' | 'configuracion'>('delivery')
+  const [modosAbiertos, setModosAbiertos] = useState<ModoUso[]>([])
+  const [modosActivos, setModosActivos] = useState<ModoUso[]>([])
+  const [activarMesasConPos, setActivarMesasConPos] = useState(false)
+  const [mesasActivas, setMesasActivas] = useState(false)
+  const [cantidadMesas, setCantidadMesas] = useState(10)
+  const [activandoModo, setActivandoModo] = useState<ModoUso | null>(null)
+  const [creandoMesas, setCreandoMesas] = useState(false)
+  const [desktopDownloadUrl, setDesktopDownloadUrl] = useState('https://piru.app')
+  const [desktopVersion, setDesktopVersion] = useState('')
+  const [buscandoDescarga, setBuscandoDescarga] = useState(false)
+  const [miSusc, setMiSusc] = useState<MiSuscripcion | null>(null)
+  const [pagandoSuscripcion, setPagandoSuscripcion] = useState(false)
 
   // Regreso desde MercadoPago → aterrizar en la pantalla de entrega/pago
   useEffect(() => {
@@ -699,15 +803,92 @@ const SelfServeOnboarding = () => {
     <IaWaitIndicator estado={iaEstado} progress={iaProgress} total={iaTotal} errorMsg={iaError} onRetry={lanzarExtraccion} />
   )
 
+  useEffect(() => {
+    if (phase !== 'configImpresion') return
+    let vigente = true
+    setBuscandoDescarga(true)
+    fetch(LATEST_DESKTOP_JSON_URL)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: { version?: string; platforms?: { 'windows-x86_64'?: { url?: string } } }) => {
+        if (!vigente) return
+        const url = data.platforms?.['windows-x86_64']?.url
+        if (url) setDesktopDownloadUrl(url)
+        if (data.version) setDesktopVersion(data.version)
+      })
+      .catch(() => {})
+      .finally(() => vigente && setBuscandoDescarga(false))
+    return () => { vigente = false }
+  }, [phase])
+
+  useEffect(() => {
+    if (phase === 'plan' && token) {
+      suscripcionApi.miSuscripcion(token).then((res) => setMiSusc(res.data)).catch(() => {})
+    }
+  }, [phase, token])
+
   const goTo = (p: Phase) => { setPhase(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  const next = () => { const i = phaseIndex(phase); if (i < PHASES.length - 1) goTo(PHASES[i + 1]) }
+  const next = () => {
+    switch (phase) {
+      case 'explainer-tienda': return goTo('nombre')
+      case 'nombre': return goTo('explainer-activacion')
+      case 'explainer-activacion': return goTo('carta')
+      case 'carta': return goTo('creando')
+      case 'creando': return goTo('preparativos')
+      case 'preparativos': return goTo('explainer-monetizacion')
+      case 'explainer-monetizacion': return goTo('modalidadSucursales')
+      case 'modalidadSucursales':
+        return goTo(formData.modalidadSucursales === 'multiple' ? 'sucursales' : 'entrega')
+      case 'sucursales': return goTo('entrega')
+      case 'entrega': return goTo('pagos')
+      case 'pagos': return goTo('mensaje')
+      case 'mensaje': return goTo('whatsapps')
+      case 'whatsapps': return guardarWhatsapps()
+      case 'revision': return goTo('explainer-crecimiento')
+      case 'explainer-crecimiento': return goTo('prueba')
+      case 'prueba': return goTo('modos')
+      case 'modos':
+        if (modosActivos.includes('impresion')) return goTo('configImpresion')
+        if (mesasActivas) return goTo('configMesas')
+        return goTo('plan')
+      case 'configImpresion':
+        if (mesasActivas) return goTo('configMesas')
+        return goTo('plan')
+      case 'configMesas': return goTo('plan')
+      case 'plan': return
+    }
+  }
   const back = () => {
     // Dentro del paso "carta", si estamos en el uploader volvemos a elegir la forma de carga
     if (phase === 'carta' && cartaModo === 'foto') return setCartaModo('opciones')
-    const i = phaseIndex(phase); if (i > 0) goTo(PHASES[i - 1])
+    switch (phase) {
+      case 'nombre': return goTo('explainer-tienda')
+      case 'explainer-activacion': return goTo('nombre')
+      case 'carta': return goTo('explainer-activacion')
+      case 'creando': return goTo('carta')
+      case 'preparativos': return goTo('creando')
+      case 'explainer-monetizacion': return goTo('preparativos')
+      case 'modalidadSucursales': return goTo('explainer-monetizacion')
+      case 'sucursales': return goTo('modalidadSucursales')
+      case 'entrega':
+        return goTo(formData.modalidadSucursales === 'multiple' ? 'sucursales' : 'modalidadSucursales')
+      case 'pagos': return goTo('entrega')
+      case 'mensaje': return goTo('pagos')
+      case 'whatsapps': return goTo('mensaje')
+      case 'revision': return goTo('whatsapps')
+      case 'explainer-crecimiento': return goTo('revision')
+      case 'prueba': return goTo('explainer-crecimiento')
+      case 'modos': return goTo('prueba')
+      case 'configImpresion': return goTo('modos')
+      case 'configMesas':
+        return goTo(modosActivos.includes('impresion') ? 'configImpresion' : 'modos')
+      case 'plan':
+        if (mesasActivas) return goTo('configMesas')
+        if (modosActivos.includes('impresion')) return goTo('configImpresion')
+        return goTo('modos')
+    }
   }
 
-  const progress = ((phaseIndex(phase) + 1) / PHASES.length) * 100
+  const progress = computeProgress(phase)
 
   const handleConnectMP = () => {
     if (!MP_APP_ID || !restaurante?.id) return
@@ -731,7 +912,7 @@ const SelfServeOnboarding = () => {
       const prods = await productosApi.getAll(token) as { productos: StoreProduct[] }
       setStoreProducts(prods.productos || [])
       toast.success('Menú cargado', { description: `${res.productosCreados ?? prods.productos?.length ?? 0} productos listos` })
-      goTo('prueba')
+      goTo('explainer-crecimiento')
     } catch (e: any) {
       toast.error('No se pudo cargar el menú', { description: e?.message })
     } finally {
@@ -744,14 +925,14 @@ const SelfServeOnboarding = () => {
     if (!token || persistedRef.current) return true
     setBusy(true)
     try {
-      const waNumber = (restaurante?.whatsappNumber || restaurante?.telefono || '').toString().replace(/\D/g, '')
+      const waNumber = (formData.whatsappNumber || restaurante?.whatsappNumber || restaurante?.telefono || '').toString().replace(/\D/g, '')
       await onboardingApi.complete(token, {
         username: formData.username,
         nombre: formData.nombre,
         address: formData.address,
         notifyWhatsapp: true,
         whatsappNumber: waNumber,
-        notifyPrinter: false,
+        notifyPrinter: modosActivos.includes('impresion'),
         turnos: formData.turnos,
         deliveryPrice: formData.deliveryPrice || '0',
         friendsOrdering: true,
@@ -763,9 +944,39 @@ const SelfServeOnboarding = () => {
         transferenciaAlias: formData.metodosPago.transferenciaManual ? formData.transferenciaAlias : '',
       })
 
-      // Guardar el radio de reparto como zona (best-effort). En modo "zonas" las áreas
-      // dibujadas ya se guardaron en vivo, así que acá no creamos el círculo.
-      if (formData.deliveryMode === 'radio' && formData.lat != null && formData.lng != null) {
+      // Tipos de pedido: toggles si difieren
+      if (formData.tiposPedido.delivery === false) {
+        try { await restauranteApi.toggleDeliveryEnabled(token) } catch { /* ignore */ }
+      }
+      if (formData.tiposPedido.takeaway === false) {
+        try { await restauranteApi.toggleTakeawayEnabled(token) } catch { /* ignore */ }
+      }
+
+      // Multisucursal
+      if (formData.modalidadSucursales === 'multiple' && formData.sucursales.length > 0) {
+        try { await modulosApi.activar(token, 'multisucursal') } catch { /* ignore */ }
+        for (const sucursal of formData.sucursales) {
+          try {
+            const creada = await sucursalesApi.create(token, {
+              nombre: sucursal.nombre,
+              direccion: sucursal.address,
+              direccionLat: sucursal.center?.lat ?? null,
+              direccionLng: sucursal.center?.lng ?? null,
+              transferenciaAlias: sucursal.pagos.transferenciaManual ? sucursal.pagos.transferenciaAlias : null,
+              whatsappEnabled: true,
+              whatsappNumber: sucursal.whatsappNumber,
+              activo: true,
+            })
+            if (!sucursal.delivery) continue
+            const targets = sucursal.delivery.mode === 'radio'
+              ? [{ nombre: 'Radio de reparto', precio: sucursal.delivery.precio || '0', poligono: circleToPolygon(sucursal.delivery.center, sucursal.delivery.radius), color: '#FF7A00' }]
+              : sucursal.delivery.zonas.map((z: ZonaDraft) => ({ nombre: z.nombre, precio: z.precio || '0', poligono: z.poligono, color: z.color }))
+            for (const zona of targets) {
+              await zonasDeliveryApi.create(token, { ...zona, sucursalId: creada.data.id })
+            }
+          } catch { /* ignore */ }
+        }
+      } else if (formData.tiposPedido.delivery && formData.deliveryMode === 'radio' && formData.lat != null && formData.lng != null) {
         try {
           await zonasDeliveryApi.create(token, {
             nombre: 'Radio de reparto',
@@ -776,9 +987,6 @@ const SelfServeOnboarding = () => {
         } catch { /* no bloqueamos el onboarding si falla la zona */ }
       }
 
-      // Ojo: NO refrescamos el store acá. Al marcar completedOnboarding=true,
-      // ProtectedLayout redirige /onboarding → /dashboard y nos saltaría las
-      // pantallas de prueba y final. El refresh se hace recién en finalizar().
       persistedRef.current = true
       return true
     } catch (e: any) {
@@ -789,18 +997,185 @@ const SelfServeOnboarding = () => {
     }
   }
 
-  const irARevision = async () => {
+  const guardarWhatsapps = async () => {
+    if (formData.modalidadSucursales === 'multiple') {
+      const sucursales: SucursalDraft[] = formData.sucursales ?? []
+      const normalizados = sucursales.map((s: SucursalDraft) => normalizarTelefono(s.whatsappNumber))
+      if (normalizados.some((tel: string | null) => !tel)) {
+        toast.error('Ingresá un WhatsApp válido para cada sucursal')
+        return
+      }
+      const actualizadas = sucursales.map((s: SucursalDraft, i: number) => ({ ...s, whatsappNumber: normalizados[i]! }))
+      patch({ sucursales: actualizadas })
+      if (!normalizados.includes(normalizarTelefono(formData.whatsappNumber))) {
+        patch({ whatsappNumber: normalizados[0]! })
+      }
+    } else {
+      const normalizado = normalizarTelefono(formData.whatsappNumber)
+      if (!normalizado) {
+        toast.error('Ingresá un número de WhatsApp válido')
+        return
+      }
+      patch({ whatsappNumber: normalizado })
+    }
     const ok = await persistOnboarding()
     if (ok) goTo('revision')
   }
 
-  const finalizar = async () => {
-    localStorage.removeItem('piru_onboarding_data')
-    // Sincronizamos el store (completedOnboarding=true + suscripción). Como el local nuevo aún
-    // no tiene una suscripción activa, el hard paywall lo lleva a /suscribir antes del panel.
-    await restauranteStore.fetchData()
-    navigate('/suscribir')
+  const toggleModoAbierto = (modo: ModoUso) => {
+    setModosAbiertos((actuales) => actuales.includes(modo)
+      ? actuales.filter((item) => item !== modo)
+      : [...actuales, modo])
   }
+
+  const activarModoUso = async (modo: ModoUso) => {
+    if (!token || modosActivos.includes(modo)) return
+    setActivandoModo(modo)
+    try {
+      if (modo === 'impresion') await modulosApi.activar(token, 'impresion_comandas')
+      if (modo === 'pos') {
+        await modulosApi.activar(token, 'pos')
+        if (activarMesasConPos) {
+          await modulosApi.activar(token, 'mesas')
+          setMesasActivas(true)
+        }
+      }
+      setModosActivos((actuales) => [...actuales, modo])
+      setModosAbiertos((actuales) => actuales.filter((item) => item !== modo))
+      toast.success(modo === 'impresion'
+          ? 'Impresión automática activada'
+          : activarMesasConPos ? 'Punto de Venta y Mesas activados' : 'Punto de Venta activado')
+    } catch (error) {
+      toast.error('No pudimos activar esta forma de trabajo', {
+        description: error instanceof Error ? error.message : 'Probá nuevamente en un momento.',
+      })
+    } finally {
+      setActivandoModo(null)
+    }
+  }
+
+  const avanzarDesdeModos = () => {
+    const siguiente: Phase = modosActivos.includes('impresion')
+      ? 'configImpresion'
+      : mesasActivas ? 'configMesas' : 'plan'
+    goTo(siguiente)
+  }
+
+  const crearPlanoInicialMesas = async () => {
+    if (!token || creandoMesas) return
+    setCreandoMesas(true)
+    try {
+      const existentes = (await mesasLocalesApi.list(token, true)).data
+      const activas = existentes.filter((mesa) => mesa.activo)
+      const faltantes = Math.max(0, cantidadMesas - activas.length)
+      if (faltantes > 0) {
+        const columnas = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(cantidadMesas))))
+        const inicioY = activas.length > 0
+          ? Math.max(...activas.map((mesa) => mesa.posicionY + mesa.alto)) + 1
+          : 0
+        await Promise.all(Array.from({ length: faltantes }, (_, indice) => {
+          const orden = activas.length + indice
+          return mesasLocalesApi.create(token, {
+            nombre: `Mesa ${orden + 1}`,
+            sucursalId: null,
+            posicionX: (indice % columnas) * 3,
+            posicionY: inicioY + Math.floor(indice / columnas) * 3,
+            ancho: 2,
+            alto: 2,
+            capacidad: 4,
+            estadoManual: null,
+            activo: true,
+            orden,
+          })
+        }))
+      }
+      toast.success(faltantes > 0
+        ? `${faltantes} ${faltantes === 1 ? 'mesa creada' : 'mesas creadas'} en tu plano inicial`
+        : `Ya tenés ${activas.length} mesas configuradas`)
+      goTo('plan')
+    } catch (error) {
+      toast.error('No pudimos crear el plano inicial', {
+        description: error instanceof Error ? error.message : 'Probá nuevamente en un momento.',
+      })
+    } finally {
+      setCreandoMesas(false)
+    }
+  }
+
+  const pagarSuscripcionAhora = async () => {
+    if (!token) {
+      navigate('/dashboard', { replace: true })
+      return
+    }
+    setPagandoSuscripcion(true)
+    try {
+      const res = await suscripcionApi.checkout(token, 'mensual')
+      window.location.href = res.data.url_pago
+    } catch {
+      toast.error('No se pudo iniciar el pago', { description: 'Podés activar tu suscripción desde el panel.' })
+      setPagandoSuscripcion(false)
+    }
+  }
+
+  const terminarOnboarding = async () => {
+    setBusy(true)
+    try {
+      localStorage.removeItem('piru_onboarding_data')
+      if (token) await onboardingApi.marcarCompletado(token)
+      await restauranteStore.fetchData()
+      navigate('/dashboard', { replace: true })
+    } catch (e: any) {
+      toast.error('No se pudo terminar', { description: e?.message })
+      setBusy(false)
+    }
+  }
+
+  const whatsappHelp = useMemo<WhatsAppHelp>(() => {
+    const local = formData.nombre ? ` de ${formData.nombre}` : ''
+    const help = (label: string, context: string): WhatsAppHelp => ({
+      label,
+      message: `Hola Facu, estoy creando mi tienda${local} en Piru. ${context}`,
+    })
+
+    switch (phase) {
+      case 'explainer-tienda':
+      case 'nombre':
+        return help('Consultar por mi tienda', 'Estoy definiendo el nombre de mi local y tengo una consulta.')
+      case 'explainer-activacion':
+      case 'carta':
+      case 'creando':
+        return help('Ayuda con mi carta', 'Estoy subiendo las fotos de mi menú y tengo una consulta.')
+      case 'preparativos':
+        return help('Ayuda con logo y horarios', 'Estoy configurando el logo y los horarios de atención.')
+      case 'explainer-monetizacion':
+      case 'modalidadSucursales':
+      case 'sucursales':
+        return help('Ayuda con mis sucursales', 'Estoy configurando las sucursales de mi negocio.')
+      case 'entrega':
+        return help('Ayuda con el delivery', 'Estoy configurando el reparto y las zonas de entrega.')
+      case 'pagos':
+        return help('Ayuda con los cobros', 'Estoy configurando los medios de pago de mi tienda.')
+      case 'mensaje':
+      case 'whatsapps':
+        return help('Ayuda con los pedidos', 'Estoy configurando dónde recibir los pedidos por WhatsApp.')
+      case 'revision':
+        return help('Consultar por mi menú', 'Estoy revisando los productos detectados por la IA.')
+      case 'explainer-crecimiento':
+        return help('Consultar por el sistema de crecimiento', 'Estoy viendo el sistema de clientes y tengo una consulta.')
+      case 'prueba':
+        return help('Ayuda con la prueba', 'Estoy probando la tienda y haciendo el pedido de prueba.')
+      case 'modos':
+        return help('Ayuda para elegir', 'Estoy eligiendo cómo usar Piru y necesito que me recomiendes la mejor configuración.')
+      case 'configImpresion':
+        return help('Ayuda con la impresión', 'Estoy configurando la app de escritorio para imprimir comandas.')
+      case 'configMesas':
+        return help('Ayuda con mis mesas', 'Estoy armando la cantidad de mesas iniciales.')
+      case 'plan':
+        return help('Consultar por la suscripción', 'Estoy viendo la prueba gratis y la suscripción de Piru.')
+      default:
+        return help('Hablar con Facu', 'Necesito ayuda para continuar con la configuración.')
+    }
+  }, [formData.nombre, phase])
 
   // ────────────────────────────── RENDER DE FASES ──────────────────────────────
 
@@ -810,7 +1185,9 @@ const SelfServeOnboarding = () => {
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
         <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">¿Cómo se llama tu local?</h1>
-        <p className="text-[15px] text-muted-foreground mt-3">Con esto armamos tu link para compartir.</p>
+        <p className="text-[15px] text-muted-foreground mt-3">
+          El primer paso es tener tu propia tienda online: con buena presentación, carga ultrarrápida y en la que el cliente compre en menos de un minuto.
+        </p>
 
         <Input
           autoFocus
@@ -840,29 +1217,13 @@ const SelfServeOnboarding = () => {
     )
   }
 
-  const renderOwnership = () => {
+  const renderExplainerTienda = () => {
     const slug = toSlug(formData.nombre) || 'tulocal'
     return (
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 text-center flex flex-col items-center">
-        {/* Icono discreto y centrado: caja neutra con la tienda como acento sutil */}
-        <div className="mb-7 h-14 w-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center ring-1 ring-black/[0.04] dark:ring-white/[0.06]">
-          <Store className="h-6 w-6 text-[#FF7A00]" strokeWidth={2} />
-        </div>
-
-        <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Este link ya es tuyo</h1>
-        <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
-          Nadie más lo puede usar. Es la dirección de tu local en internet.
-        </p>
-
-        <div className="mt-7 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 font-mono text-base">
-          <span className="text-muted-foreground/60">piru.app/</span>
-          <span className="font-semibold text-[#FF7A00]">{slug}</span>
-        </div>
-
-        <Button onClick={next} className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
-          Cargar mi carta <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
+      <ExplainerTienda
+        slug={slug}
+        onContinue={() => goTo('nombre')}
+      />
     )
   }
 
@@ -1015,12 +1376,16 @@ const SelfServeOnboarding = () => {
     </div>
   )
 
+  const renderExplainerActivacion = () => (
+    <ExplainerActivacion onContinue={() => goTo('carta')} />
+  )
+
   const renderPreparativos = () => (
     <PreparativosScreen
       formData={formData}
       patch={patch}
       indicator={renderIaIndicator()}
-      onContinue={() => goTo('entrega')}
+      onContinue={() => goTo('explainer-monetizacion')}
     />
   )
 
@@ -1110,12 +1475,164 @@ const SelfServeOnboarding = () => {
     )
   }
 
+  const renderExplainerMonetizacion = () => (
+    <ExplainerMonetizacion onContinue={() => goTo('modalidadSucursales')} />
+  )
+
+  const elegirModalidadSucursales = (modalidad: ModalidadSucursales) => {
+    const basePagos: PagosDraft = {
+      efectivo: formData.metodosPago.efectivo,
+      transferenciaManual: formData.metodosPago.transferenciaManual,
+      transferenciaAlias: formData.transferenciaAlias,
+    }
+    const firstCenter = formData.lat != null && formData.lng != null ? { lat: formData.lat, lng: formData.lng } : null
+    patch({
+      modalidadSucursales: modalidad,
+      sucursales: modalidad === 'multiple'
+        ? (formData.sucursales.length ? formData.sucursales : [
+            { localId: crypto.randomUUID(), nombre: 'Casa central', address: formData.address || '', center: firstCenter, pagos: { ...basePagos }, whatsappNumber: formData.whatsappNumber || '' },
+            { localId: crypto.randomUUID(), nombre: 'Sucursal 2', address: '', center: null, pagos: { ...basePagos }, whatsappNumber: '' },
+          ])
+        : [],
+    })
+    goTo(modalidad === 'multiple' ? 'sucursales' : 'entrega')
+  }
+
+  const renderModalidadSucursales = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+      <div className="h-14 w-14 rounded-2xl bg-orange-500/10 flex items-center justify-center ring-1 ring-orange-500/15">
+        <Store className="h-6 w-6 text-[#FF7A00]" />
+      </div>
+      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">¿Cuántos locales tenés?</h1>
+      <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+        Así configuramos correctamente los cobros, direcciones y zonas de envío.
+      </p>
+      <div className="w-full space-y-2.5 mt-7">
+        <button
+          type="button"
+          onClick={() => elegirModalidadSucursales('unica')}
+          className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left hover:border-[#FF7A00]/60 hover:bg-orange-500/[0.04] transition-colors"
+        >
+          <span className="block text-sm font-semibold">Una única sucursal</span>
+          <span className="block text-xs text-muted-foreground mt-1">Una dirección, sus medios de pago y su delivery.</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => elegirModalidadSucursales('multiple')}
+          className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left hover:border-[#FF7A00]/60 hover:bg-orange-500/[0.04] transition-colors"
+        >
+          <span className="block text-sm font-semibold">Múltiples sucursales</span>
+          <span className="block text-xs text-muted-foreground mt-1">Cada local tendrá dirección, alias y zonas propias.</span>
+        </button>
+      </div>
+    </div>
+  )
+
+  const guardarSucursales = (sucursales: SucursalDraft[]) => {
+    patch({ sucursales })
+    goTo('entrega')
+  }
+
+  const renderSucursales = () => {
+    const pagosDefault: PagosDraft = {
+      efectivo: formData.metodosPago.efectivo,
+      transferenciaManual: formData.metodosPago.transferenciaManual,
+      transferenciaAlias: formData.transferenciaAlias,
+    }
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+        <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight">Configurá tus sucursales</h1>
+        <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">Poné el nombre y la dirección exacta de cada local.</p>
+        <SucursalesClaimEditor initial={formData.sucursales} pagosDefault={pagosDefault} onGuardar={guardarSucursales} />
+      </div>
+    )
+  }
+
   const renderEntrega = () => {
     const center: [number, number] = [formData.lat ?? -34.6037, formData.lng ?? -58.3816]
     const gratis = (parseInt(formData.deliveryPrice) || 0) === 0
-    // El mapa (radio/zonas) recién aparece cuando hay una dirección geolocalizada,
-    // así lo podemos centrar exactamente en el local en vez de en un punto genérico.
     const tieneUbicacion = formData.lat != null && formData.lng != null
+
+    if (pasoTiposEntrega === 'delivery') {
+      return (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-6">
+          {renderIaIndicator()}
+          <PreguntaTipoPedido
+            icon={MapPin}
+            pregunta="¿Hacés pedidos con delivery?"
+            aclaracion="Es decir, llevás el pedido hasta la dirección del cliente."
+            onSi={() => {
+              patch({ tiposPedido: { ...formData.tiposPedido, delivery: true } })
+              setPasoTiposEntrega('takeaway')
+            }}
+            onNo={() => {
+              patch({ tiposPedido: { ...formData.tiposPedido, delivery: false } })
+              setPasoTiposEntrega('takeaway')
+            }}
+            onCancelar={back}
+          />
+        </div>
+      )
+    }
+
+    if (pasoTiposEntrega === 'takeaway') {
+      return (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-6">
+          {renderIaIndicator()}
+          <PreguntaTipoPedido
+            icon={ShoppingBag}
+            pregunta="¿Hacés pedidos takeaway?"
+            aclaracion="Es decir, el cliente hace el pedido y lo retira en tu local."
+            onSi={() => {
+              patch({ tiposPedido: { ...formData.tiposPedido, takeaway: true } })
+              setPasoTiposEntrega('configuracion')
+            }}
+            onNo={() => {
+              if (!formData.tiposPedido.delivery) {
+                toast.error('Necesitás ofrecer delivery, takeaway o ambos')
+                return
+              }
+              patch({ tiposPedido: { ...formData.tiposPedido, takeaway: false } })
+              setPasoTiposEntrega('configuracion')
+            }}
+            onVolver={() => setPasoTiposEntrega('delivery')}
+            onCancelar={back}
+          />
+        </div>
+      )
+    }
+
+    // pasoTiposEntrega === 'configuracion'
+    if (!formData.tiposPedido.delivery) {
+      return (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-6">
+          {renderIaIndicator()}
+          <div>
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Cómo entregás tus pedidos</h1>
+            <p className="text-[15px] text-muted-foreground mt-3">
+              Elegiste operar sólo con retiro en el local (takeaway).
+            </p>
+          </div>
+          <div className="rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-3 text-sm text-muted-foreground">
+            Como elegiste solo takeaway, no necesitás configurar dirección ni costos de envío para reparto a domicilio.
+          </div>
+          <Button
+            onClick={() => goTo('pagos')}
+            className="w-full h-14 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
+          >
+            Continuar <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+          <button
+            type="button"
+            onClick={() => setPasoTiposEntrega('delivery')}
+            className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cambiar tipos de entrega
+          </button>
+        </div>
+      )
+    }
+
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-6">
         {/* La lectura de la carta sigue corriendo en segundo plano: mostramos su estado acá también. */}
@@ -1205,6 +1722,13 @@ const SelfServeOnboarding = () => {
           className="w-full h-14 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
           Continuar <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
+        <button
+          type="button"
+          onClick={() => setPasoTiposEntrega('delivery')}
+          className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Cambiar tipos de entrega
+        </button>
       </div>
     )
   }
@@ -1254,13 +1778,111 @@ const SelfServeOnboarding = () => {
           </button>
         </div>
 
-        <Button onClick={irARevision} disabled={busy}
+        <Button onClick={() => goTo('mensaje')} disabled={busy}
           className="w-full h-14 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
-          {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando…</> : <>Casi listo <ArrowRight className="ml-2 h-4 w-4" /></>}
+          Continuar <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </div>
     )
   }
+
+  const renderMensaje = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+      <div className="h-14 w-14 rounded-2xl bg-[#25D366]/10 ring-1 ring-[#25D366]/20 flex items-center justify-center">
+        <MessageCircle className="h-6 w-6 text-[#20B957]" strokeWidth={2} />
+      </div>
+      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">Tus pedidos, claros y al instante</h1>
+      <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
+        Cada compra te llega por WhatsApp con el detalle completo, para que puedas prepararla sin ir y venir con el cliente.
+      </p>
+
+      <img
+        src="/Ejemplo_mensaje_basico.png"
+        alt="Ejemplo de un pedido recibido por WhatsApp"
+        className="mt-6 block w-full rounded-2xl"
+      />
+
+      <div className="mt-4 flex w-full items-start gap-3 rounded-2xl bg-zinc-100/80 px-4 py-3.5 text-left dark:bg-zinc-900">
+        <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#FF7A00]" strokeWidth={2.5} />
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          Producto, extras, pago, dirección y datos de entrega: todo junto en un solo mensaje.
+        </p>
+      </div>
+
+      <Button
+        onClick={() => goTo('whatsapps')}
+        className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
+      >
+        Entendido, continuar <ArrowRight className="ml-2 h-4 w-4" />
+      </Button>
+    </div>
+  )
+
+  const renderWhatsapps = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
+      <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">¿Dónde querés recibir los pedidos?</h1>
+      <p className="text-[15px] text-muted-foreground mt-3">
+        {formData.modalidadSucursales === 'multiple'
+          ? 'Ingresá el WhatsApp de cada sucursal. Cada local recibirá directamente los pedidos que le correspondan.'
+          : 'Ingresá el WhatsApp donde querés que lleguen los pedidos de tu tienda.'}
+      </p>
+
+      <div className="mt-7 space-y-3">
+        {formData.modalidadSucursales === 'multiple' ? (
+          formData.sucursales?.map((sucursal: SucursalDraft, idx: number) => (
+            <div key={sucursal.localId} className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4">
+              <label className="mb-2 block text-sm font-semibold text-foreground">{sucursal.nombre}</label>
+              <div className="group flex items-center gap-3 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30">
+                <MessageCircle className="h-4 w-4 shrink-0 text-[#20B957]" />
+                <span className="text-sm text-muted-foreground">+54</span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={sucursal.whatsappNumber}
+                  onChange={(e) => {
+                    const sucursales = [...formData.sucursales]
+                    sucursales[idx] = { ...sucursales[idx], whatsappNumber: e.target.value }
+                    patch({ sucursales })
+                  }}
+                  placeholder="9 351 123 4567"
+                  className="flex-1 min-w-0 bg-transparent border-0 outline-none text-sm placeholder:text-zinc-400"
+                />
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="group flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30">
+            <MessageCircle className="h-4 w-4 shrink-0 text-[#20B957]" />
+            <span className="text-base text-muted-foreground">+54</span>
+            <input
+              type="tel"
+              inputMode="numeric"
+              autoFocus
+              value={formData.whatsappNumber}
+              onChange={(e) => patch({ whatsappNumber: e.target.value })}
+              placeholder="9 351 123 4567"
+              className="flex-1 min-w-0 bg-transparent border-0 outline-none text-base placeholder:text-zinc-400"
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-start gap-3 rounded-2xl bg-zinc-100/80 px-4 py-3.5 dark:bg-zinc-900">
+        <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#FF7A00]" />
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          Cada vez que un cliente confirme una compra, te llega el pedido completo acá.
+        </p>
+      </div>
+
+      <Button
+        onClick={guardarWhatsapps}
+        disabled={busy}
+        className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Continuar <ArrowRight className="ml-2 h-4 w-4" /></>}
+      </Button>
+    </div>
+  )
 
   // Crea el pedido de prueba real a partir de los items del preview de tienda.
   const hacerPedidoPrueba = async (
@@ -1299,7 +1921,7 @@ const SelfServeOnboarding = () => {
           <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Te llegó el pedido</h1>
           <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">Así vas a recibir cada pedido real: al toque, en tu WhatsApp y en el panel.</p>
 
-          <Button onClick={() => goTo('final')}
+          <Button onClick={() => goTo('modos')} disabled={busy}
             className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
             Continuar <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
@@ -1325,50 +1947,262 @@ const SelfServeOnboarding = () => {
           onConfirmar={hacerPedidoPrueba}
         />
 
-        <button onClick={() => goTo('final')} className="w-full text-center text-sm text-muted-foreground hover:text-foreground mt-5 transition-colors">
+        <button onClick={() => goTo('modos')} className="w-full text-center text-sm text-muted-foreground hover:text-foreground mt-5 transition-colors">
           Omitir la prueba
         </button>
       </div>
     )
   }
 
-  const renderFinal = () => {
-    return (
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 text-center flex flex-col items-center">
-        <div className="w-16 h-16 rounded-2xl bg-[#FF7A00] flex items-center justify-center mb-6">
-          <Sparkles className="h-8 w-8 text-white" />
+  const renderExplainerCrecimiento = () => (
+    <ExplainerCrecimiento onContinue={() => goTo('prueba')} />
+  )
+
+  const renderModos = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="text-center flex flex-col items-center">
+        <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
+          <Settings className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
         </div>
-        <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Tu local está listo</h1>
-        <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
-          Tu tienda, tu menú y tus medios de pago quedaron cargados. Activá tu suscripción para
-          salir a recibir pedidos: es una cuota fija sin comisión por venta, y podés pagarla mes
-          a mes o por año con descuento.
+        <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">¿Cómo querés usar Piru?</h1>
+        <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+          Elegí todas las formas que te sirvan. Podés combinarlas y cambiarlas después.
         </p>
+      </div>
 
-        <div className="mt-6 w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left">
-          <p className="text-sm font-semibold">Tu suscripción incluye toda la operación base</p>
-          <p className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
-            Pedidos por WhatsApp, comandas automáticas, productos ilimitados, todos los medios de
-            pago, cupones, estadísticas, horarios y mapa de pedidos. Cuota fija, sin comisión por venta.
+      <div className="mt-7 space-y-3">
+        <div className="rounded-2xl bg-white dark:bg-zinc-900 p-4 flex items-center gap-3">
+          <span className="h-11 w-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+            <MessageCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          </span>
+          <span className="flex-1 min-w-0 text-left">
+            <span className="block text-sm font-semibold leading-tight">Recibir pedidos al WhatsApp</span>
+            <span className="block text-xs text-muted-foreground mt-1 leading-relaxed">Es el funcionamiento normal de Piru: cada pedido nuevo te llega al celular y queda guardado en el panel.</span>
+          </span>
+          <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+            <Check className="h-3.5 w-3.5" /> Activo
+          </span>
+        </div>
+        <ModoUsoCard
+          id="impresion"
+          icon={Printer}
+          titulo="Quiero imprimir los pedidos automáticamente"
+          resumen="La comanda sale apenas entra el pedido, sin copiar nada a mano."
+          detalle="Conectás Piru a la impresora del local y cada pedido aceptado imprime su comanda automáticamente. Vas a poder elegir impresora, cantidad de copias y formato desde el panel."
+          imagenes={[{
+            src: '/claim/modos/impresora-comanda.webp',
+            alt: 'Impresora térmica imprimiendo una comanda generada por Piru',
+          }]}
+          abierto={modosAbiertos.includes('impresion')}
+          activo={modosActivos.includes('impresion')}
+          procesando={activandoModo === 'impresion'}
+          textoActivar="Activar impresión automática"
+          onToggle={() => toggleModoAbierto('impresion')}
+          onActivar={() => activarModoUso('impresion')}
+        />
+        <ModoUsoCard
+          id="pos"
+          icon={MonitorSmartphone}
+          titulo="Quiero anotar pedidos en el Punto de Venta"
+          resumen="Cargá desde Piru los pedidos que te hacen en persona o por teléfono."
+          detalle="El Punto de Venta convierte Piru en la caja del local: armás el pedido desde la carta, elegís cómo pagó y lo enviás a cocina. Los pedidos online y los anotados quedan juntos en una sola operación."
+          imagenes={[
+            { src: '/claim/modos/punto-de-venta.webp', alt: 'Punto de Venta de Piru gestionando un pedido' },
+            { src: '/claim/modos/mesas.webp', alt: 'Punto de Venta de Piru gestionando el pedido de una mesa' },
+          ]}
+          abierto={modosAbiertos.includes('pos')}
+          activo={modosActivos.includes('pos')}
+          procesando={activandoModo === 'pos'}
+          textoActivar="Activar Punto de Venta"
+          onToggle={() => toggleModoAbierto('pos')}
+          onActivar={() => activarModoUso('pos')}
+        >
+          <button
+            type="button"
+            disabled={modosActivos.includes('pos') || activandoModo === 'pos'}
+            onClick={() => setActivarMesasConPos((valor) => !valor)}
+            className="w-full rounded-2xl bg-zinc-100 dark:bg-zinc-800 p-3.5 flex items-center gap-3 text-left transition-colors disabled:cursor-default"
+          >
+            <span className="h-9 w-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+              <Armchair className="h-4 w-4 text-muted-foreground" />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-semibold">También voy a usar mesas</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">Abrí cuentas por mesa y cerralas desde el POS.</span>
+            </span>
+            <span className={`h-6 w-10 rounded-full p-0.5 transition-colors ${activarMesasConPos || mesasActivas ? 'bg-[#FF7A00]' : 'bg-zinc-300 dark:bg-zinc-700'}`}>
+              <span className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${activarMesasConPos || mesasActivas ? 'translate-x-4' : ''}`} />
+            </span>
+          </button>
+        </ModoUsoCard>
+      </div>
+
+      <Button
+        onClick={avanzarDesdeModos}
+        className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
+      >
+        Continuar <ArrowRight className="ml-2 h-4 w-4" />
+      </Button>
+      <p className="text-center text-xs text-muted-foreground mt-3">Lo que no actives ahora seguirá disponible en Módulos.</p>
+    </div>
+  )
+
+  const renderConfigImpresion = () => (
+    <div className="text-center flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
+        <Printer className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
+      </div>
+      <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">Descargá Piru en tu computadora</h1>
+      <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+        La impresión automática funciona desde la app de escritorio. Instalála en la computadora conectada a tu impresora térmica.
+      </p>
+
+      <div className="w-full rounded-2xl bg-white dark:bg-zinc-900 p-5 mt-7 text-left">
+        <div className="flex items-start gap-3">
+          <span className="h-10 w-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+            <Download className="h-5 w-5 text-[#FF7A00]" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold">Piru para Windows</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {desktopVersion ? `Versión ${desktopVersion}` : 'Buscando la última versión disponible…'}
+            </p>
+          </div>
+        </div>
+        <p className="text-[13px] leading-relaxed text-muted-foreground mt-4">
+          Cuando abras la app, entrá a Ajustes → Impresión para elegir la impresora y hacer una prueba.
+        </p>
+      </div>
+
+      <a
+        href={desktopDownloadUrl}
+        target="_blank"
+        rel="noreferrer"
+        download
+        className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
+      >
+        {buscandoDescarga ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        Descargar la app
+      </a>
+      <button
+        type="button"
+        onClick={() => goTo(mesasActivas ? 'configMesas' : 'plan')}
+        className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+      >
+        Ya la descargué, continuar
+      </button>
+    </div>
+  )
+
+  const renderConfigMesas = () => (
+    <div className="text-center flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
+        <Armchair className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
+      </div>
+      <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">¿Cuántas mesas tenés?</h1>
+      <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+        Las vamos a crear y distribuir automáticamente en un plano inicial.
+      </p>
+
+      <div className="w-full rounded-2xl bg-white dark:bg-zinc-900 p-5 mt-7">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cantidad de mesas</p>
+        <div className="flex items-center justify-center gap-5 mt-4">
+          <button
+            type="button"
+            aria-label="Quitar una mesa"
+            disabled={cantidadMesas <= 1 || creandoMesas}
+            onClick={() => setCantidadMesas((cantidad) => Math.max(1, cantidad - 1))}
+            className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+          >
+            <Minus className="h-5 w-5" />
+          </button>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={cantidadMesas}
+            disabled={creandoMesas}
+            onChange={(event) => setCantidadMesas(Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
+            className="w-24 bg-transparent text-center text-4xl font-semibold tabular-nums outline-none"
+            aria-label="Cantidad de mesas"
+          />
+          <button
+            type="button"
+            aria-label="Agregar una mesa"
+            disabled={cantidadMesas >= 100 || creandoMesas}
+            onClick={() => setCantidadMesas((cantidad) => Math.min(100, cantidad + 1))}
+            className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+          >
+            <Plus className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="text-[13px] leading-relaxed text-muted-foreground mt-5">
+          Empezarán como mesas compactas para 4 personas. Después podés moverlas, cambiar tamaño, capacidad y armar el mapa real de tu salón desde Mesas.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={crearPlanoInicialMesas}
+        disabled={creandoMesas}
+        className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+      >
+        {creandoMesas ? <><Loader2 className="h-4 w-4 animate-spin" /> Creando mesas…</> : <>Crear mis {cantidadMesas} mesas <ArrowRight className="ml-2 h-4 w-4" /></>}
+      </button>
+    </div>
+  )
+
+  const renderPlan = () => {
+    const precioBase = miSusc?.suscripcionBase?.precioMensual
+      ?? miSusc?.cotizacionProximaFactura?.montoBaseMensual
+      ?? miSusc?.precioBaseMensual
+      ?? miSusc?.precioMensual
+    const precio = precioBase != null ? `$${fmtPrecio(Number(precioBase))}` : null
+    const trialDias = miSusc?.trialFin
+      ? Math.max(0, Math.ceil((new Date(miSusc.trialFin).getTime() - Date.now()) / 86_400_000))
+      : null
+
+    return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className="text-center flex flex-col items-center">
+          <div className="w-16 h-16 rounded-2xl bg-[#FF7A00] flex items-center justify-center mb-6">
+            <Sparkles className="h-8 w-8 text-white" />
+          </div>
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">
+            {trialDias != null ? `Tenés ${trialDias} días de prueba gratis` : 'Empezás con tu prueba gratis'}
+          </h1>
+          <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+            Usá toda la operación base sin pagar nada. {trialDias != null ? 'Cuando termine' : 'Cuando termine la prueba'}, activás tu suscripción y seguís ofreciendo la mejor experiencia de compra.
           </p>
-          <p className="mt-3 text-[13px] text-muted-foreground leading-relaxed">
-            Después de activar, podés elegir módulos incluidos o sumar módulos pagos desde Módulos.
-            <span className="font-medium text-foreground"> No activamos ninguno automáticamente.</span>
-          </p>
+
+          {precio && (
+            <div className="mt-8">
+              <p className="text-sm font-semibold text-muted-foreground">Suscripción Piru</p>
+              <p className="mt-1 text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums">
+                {precio}<span className="text-base font-medium text-muted-foreground">/mes</span>
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">Cuota fija · sin comisión por venta.</p>
+            </div>
+          )}
         </div>
 
-        <div className="mt-4 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-4 text-left">
-          <p className="text-sm font-semibold">Tu link</p>
-          <p className="font-mono text-sm mt-1 truncate">
-            <span className="text-muted-foreground/60">piru.app/</span>
-            <span className="font-semibold text-[#FF7A00]">{toSlug(formData.nombre) || 'tulocal'}</span>
-          </p>
-          <p className="text-[13px] text-muted-foreground mt-2">Queda activo apenas actives tu suscripción.</p>
-        </div>
-
-        <Button onClick={finalizar} disabled={busy} className="w-full h-14 mt-4 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Activar mi suscripción <ArrowRight className="ml-2 h-4 w-4" /></>}
+        <Button
+          onClick={terminarOnboarding}
+          disabled={busy}
+          className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Empezar la prueba gratis <ArrowRight className="ml-2 h-4 w-4" /></>}
         </Button>
+
+        {precio && (
+          <button
+            onClick={pagarSuscripcionAhora}
+            disabled={pagandoSuscripcion}
+            className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            {pagandoSuscripcion ? <Loader2 className="h-4 w-4 animate-spin" /> : `Activar ${precio}/mes ahora`}
+          </button>
+        )}
       </div>
     )
   }
@@ -1376,20 +2210,33 @@ const SelfServeOnboarding = () => {
   const renderPhase = () => {
     switch (phase) {
       case 'nombre': return renderNombre()
-      case 'ownership': return renderOwnership()
+      case 'explainer-tienda': return renderExplainerTienda()
       case 'carta': return renderCarta()
       case 'creando': return renderCreando()
+      case 'explainer-activacion': return renderExplainerActivacion()
       case 'preparativos': return renderPreparativos()
-      case 'revision': return renderRevision()
+      case 'explainer-monetizacion': return renderExplainerMonetizacion()
+      case 'modalidadSucursales': return renderModalidadSucursales()
+      case 'sucursales': return renderSucursales()
       case 'entrega': return renderEntrega()
       case 'pagos': return renderPagos()
+      case 'mensaje': return renderMensaje()
+      case 'whatsapps': return renderWhatsapps()
+      case 'revision': return renderRevision()
+      case 'explainer-crecimiento': return renderExplainerCrecimiento()
       case 'prueba': return renderPrueba()
-      case 'final': return renderFinal()
+      case 'modos': return renderModos()
+      case 'configImpresion': return renderConfigImpresion()
+      case 'configMesas': return renderConfigMesas()
+      case 'plan': return renderPlan()
     }
   }
 
   // Fases donde tiene sentido volver atrás (no en pantallas de proceso/éxito)
-  const canGoBack = ['ownership', 'carta', 'creando', 'preparativos', 'entrega', 'pagos', 'revision'].includes(phase)
+  const canGoBack = ![
+    'explainer-tienda',
+    'creando',
+  ].includes(phase)
 
   return (
     <div className="min-h-dvh bg-background flex flex-col items-center justify-center px-6 py-6 relative selection:bg-orange-500/10 selection:text-[#FF7A00]">
@@ -1404,7 +2251,7 @@ const SelfServeOnboarding = () => {
 
       {/* El bloque (logo + barra + contenido) queda centrado verticalmente en toda
           pantalla, con la barra de progreso justo encima del título. */}
-      <div className="w-full max-w-md mx-auto">
+      <div className="w-full max-w-lg mx-auto">
         {/* Header: logo Piru + barra de progreso continua (sin enumerar pasos) */}
         <header className="pb-3">
           <div className="flex items-center gap-3">
@@ -1422,6 +2269,7 @@ const SelfServeOnboarding = () => {
           {renderPhase()}
         </main>
       </div>
+      <WhatsAppHelpButton help={whatsappHelp} />
     </div>
   )
 }
@@ -1593,13 +2441,258 @@ function PreparativosScreen({ formData, patch, indicator, onContinue }: {
   )
 }
 
+function WhatsAppHelpButton({ help }: { help: WhatsAppHelp }) {
+  const href = `https://wa.me/${WHATSAPP_HELP_NUMBER}?text=${encodeURIComponent(help.message)}`
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${help.label}. Abre WhatsApp en una pestaña nueva`}
+      className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[1000] inline-flex min-h-12 max-w-[calc(100vw-2rem)] items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-950/20 transition-all hover:bg-[#20BD5A] hover:shadow-xl active:scale-[0.98] sm:bottom-6 sm:right-6"
+    >
+      <MessageCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
+      <span className="truncate">{help.label}</span>
+    </a>
+  )
+}
+
+function ModoUsoCard({
+  id,
+  icon: Icon,
+  titulo,
+  resumen,
+  detalle,
+  imagenes,
+  abierto,
+  activo,
+  procesando,
+  textoActivar,
+  onToggle,
+  onActivar,
+  children,
+}: {
+  id: ModoUso
+  icon: LucideIcon
+  titulo: string
+  resumen: string
+  detalle: string
+  imagenes: Array<{ src: string; alt: string }>
+  abierto: boolean
+  activo: boolean
+  procesando: boolean
+  textoActivar: string
+  onToggle: () => void
+  onActivar: () => void
+  children?: React.ReactNode
+}) {
+  const [imagenesConError, setImagenesConError] = useState<string[]>([])
+  const [imagenAmpliada, setImagenAmpliada] = useState<{ src: string; alt: string } | null>(null)
+
+  useEffect(() => {
+    if (!imagenAmpliada) return
+    const cerrarConEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImagenAmpliada(null)
+    }
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => document.removeEventListener('keydown', cerrarConEscape)
+  }, [imagenAmpliada])
+
+  return (
+    <section className="overflow-hidden rounded-2xl bg-white dark:bg-zinc-900">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={abierto}
+        aria-controls={`detalle-modo-${id}`}
+        className="w-full p-4 flex items-center gap-3 text-left"
+      >
+        <span className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ${activo ? 'bg-emerald-500/10' : 'bg-[#FF7A00]/10'}`}>
+          {activo ? <CircleCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /> : <Icon className="h-5 w-5 text-[#FF7A00]" />}
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-semibold leading-tight">{titulo}</span>
+          </span>
+          <span className="block text-xs text-muted-foreground mt-1 leading-relaxed">{resumen}</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${abierto ? 'rotate-180' : ''}`} />
+      </button>
+
+      {abierto && (
+        <div id={`detalle-modo-${id}`} className="px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="h-px bg-black/[0.06] dark:bg-white/[0.08] mb-4" />
+          <div className={imagenes.length > 1 ? 'grid grid-cols-2 gap-2' : ''}>
+            {imagenes.map((imagen) => imagenesConError.includes(imagen.src) ? (
+              <div key={imagen.src} className="w-full aspect-video rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center px-3 text-center">
+                <Icon className="h-6 w-6 text-[#FF7A00]" />
+                <p className="text-[11px] font-semibold mt-2">Imagen a colocar</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{imagen.alt}</p>
+              </div>
+            ) : (
+              <div key={imagen.src} className="relative group overflow-hidden rounded-xl">
+                <img
+                  src={imagen.src}
+                  alt={imagen.alt}
+                  onError={() => setImagenesConError((actuales) => [...actuales, imagen.src])}
+                  className={imagenes.length > 1 ? 'w-full aspect-video object-cover' : 'w-full h-auto'}
+                />
+                <button
+                  type="button"
+                  onClick={() => setImagenAmpliada(imagen)}
+                  className="absolute bottom-2 right-2 h-8 rounded-lg bg-black/70 hover:bg-black/85 px-2.5 text-[11px] font-semibold text-white backdrop-blur-sm flex items-center gap-1.5 transition-colors"
+                  aria-label={`Ver en grande: ${imagen.alt}`}
+                >
+                  <Maximize2 className="h-3.5 w-3.5" /> Ver en grande
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[13.5px] leading-relaxed text-muted-foreground mt-4">{detalle}</p>
+          {children && <div className="mt-4">{children}</div>}
+          <button
+            type="button"
+            onClick={onActivar}
+            disabled={activo || procesando}
+            className={`w-full h-12 mt-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${activo ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985]'} disabled:cursor-default`}
+          >
+            {procesando ? <><Loader2 className="h-4 w-4 animate-spin" /> Activando…</> : activo ? <><Check className="h-4 w-4" /> Activado</> : textoActivar}
+          </button>
+        </div>
+      )}
+      {imagenAmpliada && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={imagenAmpliada.alt}
+          className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center animate-in fade-in duration-200"
+          onClick={() => setImagenAmpliada(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setImagenAmpliada(null)}
+            className="fixed right-4 top-4 h-10 w-10 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center"
+            aria-label="Cerrar imagen"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={imagenAmpliada.src}
+            alt={imagenAmpliada.alt}
+            className="max-h-[92vh] max-w-[96vw] object-contain"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>,
+        document.body,
+      )}
+    </section>
+  )
+}
+
+function PreguntaTipoPedido({ icon: Icon, pregunta, aclaracion, onSi, onNo, onVolver, onCancelar }: {
+  icon: LucideIcon
+  pregunta: string
+  aclaracion: string
+  onSi: () => void
+  onNo: () => void
+  onVolver?: () => void
+  onCancelar: () => void
+}) {
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="h-12 w-12 mx-auto rounded-2xl bg-zinc-100 dark:bg-zinc-900 text-muted-foreground flex items-center justify-center">
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="mt-4 text-center text-lg font-semibold text-foreground">{pregunta}</p>
+      <p className="mt-1.5 text-center text-sm text-muted-foreground">{aclaracion}</p>
+      <div className="grid grid-cols-2 gap-2 mt-6">
+        <button type="button" onClick={onSi} className="h-12 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm font-semibold text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+          Sí
+        </button>
+        <button type="button" onClick={onNo} className="h-12 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm font-semibold text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+          No
+        </button>
+      </div>
+      <div className="flex items-center justify-center gap-2 mt-3">
+        {onVolver && (
+          <button type="button" onClick={onVolver} className="h-10 px-4 rounded-xl text-sm font-medium text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+            Volver
+          </button>
+        )}
+        <button type="button" onClick={onCancelar} className="h-10 px-4 rounded-xl text-sm font-medium text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SucursalesClaimEditor({ initial, pagosDefault, onGuardar }: {
+  initial: SucursalDraft[]
+  pagosDefault: PagosDraft
+  onGuardar: (sucursales: SucursalDraft[]) => void
+}) {
+  const [items, setItems] = useState<SucursalDraft[]>(() => (initial || []).map((s) => ({ ...s, pagos: { ...s.pagos } })))
+
+  const patchItem = (idx: number, patch: Partial<SucursalDraft>) => {
+    setItems((prev) => prev.map((s, i) => i === idx ? { ...s, ...patch } : s))
+  }
+  const agregar = () => setItems((prev) => [...prev, {
+    localId: crypto.randomUUID(),
+    nombre: `Sucursal ${prev.length + 1}`,
+    address: '',
+    center: null,
+    pagos: { ...pagosDefault },
+    whatsappNumber: '',
+  }])
+  const quitar = (idx: number) => {
+    if (items.length <= 2) return toast.error('Para elegir múltiples sucursales necesitás al menos dos')
+    setItems((prev) => prev.filter((_, i) => i !== idx))
+  }
+  const guardar = () => {
+    if (items.some((s) => s.nombre.trim().length < 2)) return toast.error('Poné un nombre para cada sucursal')
+    if (items.some((s) => !s.address.trim() || !s.center)) return toast.error('Elegí la dirección exacta de cada sucursal')
+    onGuardar(items.map((s) => ({ ...s, nombre: s.nombre.trim(), address: s.address.trim() })))
+  }
+
+  return (
+    <div className="w-full mt-6 space-y-3 text-left">
+      {items.map((sucursal, idx) => (
+        <div key={sucursal.localId} className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <span className="text-xs font-semibold text-muted-foreground">Local {idx + 1}</span>
+            <button type="button" onClick={() => quitar(idx)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-500/10" aria-label={`Quitar ${sucursal.nombre}`}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <input value={sucursal.nombre} onChange={(e) => patchItem(idx, { nombre: e.target.value })} placeholder="Ej: Centro" className="w-full h-11 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-0 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#FF7A00]/30" />
+          <div className="mt-2.5">
+            <AddressAutocomplete
+              value={sucursal.address}
+              onChange={(address, lat, lng) => patchItem(idx, { address, center: lat != null && lng != null ? { lat, lng } : null, delivery: undefined })}
+              placeholder="Dirección exacta del local"
+            />
+          </div>
+        </div>
+      ))}
+      <button type="button" onClick={agregar} className="w-full h-11 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-sm font-semibold text-muted-foreground hover:text-foreground hover:border-[#FF7A00]/60 flex items-center justify-center gap-2">
+        <Plus className="h-4 w-4" /> Agregar otra sucursal
+      </button>
+      <button type="button" onClick={guardar} className="w-full h-14 mt-3 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2">
+        <Check className="h-4 w-4" /> Continuar con estas sucursales
+      </button>
+    </div>
+  )
+}
+
 // ─────────────────────────────── ONBOARDING OUTBOUND (CLAIM) ───────────────────────────────
 // La tienda YA está construida por el fundador. El onboarding acá no CONSTRUYE valor: lo REVELA y
 // deja que el dueño se lo apropie (efecto dotación). Dos momentos: (1) checklist "esto ya está
 // listo" (reciprocidad: mirá cuánto trabajo se te regaló), (2) primer pedido de prueba (gate real:
 // no avanza al panel hasta que exista 1 pedidoUnificado). Recién ahí marcamos completedOnboarding.
 
-type ClaimPaso = 'checklist' | 'prueba' | 'final'
+type ClaimPaso = 'checklist' | 'prueba' | 'crecimiento' | 'final'
 
 // Ítem del checklist de reclamo (lo que Facu completó va tildado; lo pendiente en gris).
 function ClaimCheckItem({ ok, label }: { ok: boolean; label: string }) {
@@ -1728,7 +2821,7 @@ const ClaimOnboarding = () => {
           {items.map((it, i) => <ClaimCheckItem key={i} ok={it.ok} label={it.label} />)}
         </ul>
 
-        <Button onClick={() => (inv?.primerPedido ? finalizar() : goTo('prueba'))} disabled={busy}
+        <Button onClick={() => (inv?.primerPedido ? finalizar() : goTo('crecimiento'))} disabled={busy}
           className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
           {busy
             ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -1767,7 +2860,7 @@ const ClaimOnboarding = () => {
 
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-        <button onClick={() => goTo('checklist')}
+        <button onClick={() => goTo('crecimiento')}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5">
           <ArrowLeft className="h-4 w-4" /> Volver
         </button>
@@ -1812,7 +2905,7 @@ const ClaimOnboarding = () => {
       </div>
 
       <Button onClick={finalizar} disabled={busy}
-        className="w-full h-14 mt-4 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
+        className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Entrar a mi panel <ArrowRight className="ml-2 h-4 w-4" /></>}
       </Button>
     </div>
@@ -1820,7 +2913,7 @@ const ClaimOnboarding = () => {
 
   return (
     <div className="min-h-dvh bg-background flex flex-col items-center justify-center px-6 py-6 relative selection:bg-orange-500/10 selection:text-[#FF7A00]">
-      <div className="w-full max-w-md mx-auto">
+      <div className="w-full max-w-lg mx-auto">
         <header className="pb-6">
           <img src="/logopiru.jpeg" alt="Piru" className="h-8 w-auto rounded-lg" />
         </header>
@@ -1830,6 +2923,7 @@ const ClaimOnboarding = () => {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : paso === 'checklist' ? renderChecklist()
+            : paso === 'crecimiento' ? <ExplainerCrecimiento onContinue={() => goTo('prueba')} />
             : paso === 'prueba' ? renderPrueba()
             : renderFinal()}
         </main>

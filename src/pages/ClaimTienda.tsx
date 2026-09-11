@@ -18,8 +18,14 @@ import { useAuthStore } from '@/store/authStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import {
   claimApi, restauranteApi, zonasDeliveryApi, suscripcionApi, modulosApi, sucursalesApi, mesasLocalesApi, ApiError,
+  pedidoUnificadoApi, productosApi,
   type ClaimTienda as ClaimTiendaData, type ClaimInventario, type ClaimConfig, type MiSuscripcion,
 } from '@/lib/api'
+import { TiendaPreview } from '@/components/TiendaPreview'
+import { ExplainerTienda } from './onboarding/components/ExplainerTienda'
+import { ExplainerActivacion } from './onboarding/components/ExplainerActivacion'
+import { ExplainerMonetizacion } from './onboarding/components/ExplainerMonetizacion'
+import { ExplainerCrecimiento } from './onboarding/components/ExplainerCrecimiento'
 
 const CODE_LENGTH = 6
 const RESEND_COOLDOWN = 45 // segundos
@@ -46,7 +52,7 @@ const DEFAULT_CENTER: [number, number] = [-31.4201, -64.1888]
  * pedido de prueba (`prueba`) → modos de uso (`modos`) → configuración elegida (impresión y/o
  * mesas) → info de la suscripción y prueba gratis (`plan`) → panel.
  */
-type Paso = 'walk' | 'codigo' | 'prueba' | 'modos' | 'configImpresion' | 'configMesas' | 'plan'
+type Paso = 'walk' | 'codigo' | 'crecimiento' | 'prueba' | 'modos' | 'configImpresion' | 'configMesas' | 'plan'
 type ModoUso = 'impresion' | 'pos'
 type PasoPostClaim = Exclude<Paso, 'walk' | 'codigo'>
 
@@ -66,7 +72,7 @@ const STORE_BASE = 'https://piru.app'
 const WHATSAPP_HELP_NUMBER = '5493408681915'
 const LATEST_DESKTOP_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 const DESKTOP_DOWNLOAD_FALLBACK = 'https://piru.app'
-const PASOS_POST_CLAIM: PasoPostClaim[] = ['prueba', 'modos', 'configImpresion', 'configMesas', 'plan']
+const PASOS_POST_CLAIM: PasoPostClaim[] = ['crecimiento', 'prueba', 'modos', 'configImpresion', 'configMesas', 'plan']
 
 const progresoClaimKey = (claimToken: string) => `piru:claim-progress:${claimToken}`
 
@@ -131,9 +137,12 @@ type Draft = {
 // ── Tarjeta del recorrido ──
 type Card =
   | { kind: 'intro' }
+  | { kind: 'explainerTienda' }
   | { kind: 'link' }
   | { kind: 'logo' }
+  | { kind: 'explainerActivacion' }
   | { kind: 'productos' }
+  | { kind: 'explainerMonetizacion' }
   | { kind: 'modalidadSucursales' }
   | { kind: 'sucursales' }
   | { kind: 'pagos' }
@@ -261,6 +270,32 @@ function DrawControl({ onPolygonCreated }: { onPolygonCreated: (coords: { lat: n
   return null
 }
 
+// ── Confeti minimalista, sin dependencias ──
+function Confetti() {
+  const colors = ['#FF7A00', '#22c55e', '#3b82f6', '#eab308', '#ec4899']
+  const pieces = useMemo(() => Array.from({ length: 70 }).map((_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 0.6,
+    duration: 1.8 + Math.random() * 1.4,
+    color: colors[i % colors.length],
+    size: 6 + Math.random() * 6,
+    rotate: Math.random() * 360,
+  })), [])
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[100] overflow-hidden">
+      <style>{`@keyframes piru-confetti { 0% { transform: translateY(-10vh) rotate(0deg); opacity: 1 } 100% { transform: translateY(110vh) rotate(720deg); opacity: 0 } }`}</style>
+      {pieces.map(p => (
+        <span key={p.id} style={{
+          position: 'absolute', top: 0, left: `${p.left}%`, width: p.size, height: p.size * 1.6,
+          background: p.color, borderRadius: 2, transform: `rotate(${p.rotate}deg)`,
+          animation: `piru-confetti ${p.duration}s ${p.delay}s ease-in forwards`,
+        }} />
+      ))}
+    </div>
+  )
+}
+
 export default function ClaimTienda() {
   const { token = '' } = useParams()
   const navigate = useNavigate()
@@ -273,6 +308,8 @@ export default function ClaimTienda() {
   const [tienda, setTienda] = useState<ClaimTiendaData | null>(progresoInicial.current?.tienda ?? null)
   const [inventario, setInventario] = useState<ClaimInventario | null>(null)
   const [config, setConfig] = useState<ClaimConfig | null>(null)
+  const [storeProducts, setStoreProducts] = useState<any[]>([])
+  const [pedidoOk, setPedidoOk] = useState(false)
 
   const [paso, setPaso] = useState<Paso>(progresoInicial.current?.paso ?? 'walk')
   const [cardIdx, setCardIdx] = useState(0)
@@ -395,6 +432,47 @@ export default function ClaimTienda() {
     return () => clearTimeout(t)
   }, [cooldown])
 
+  useEffect(() => {
+    const authToken = useAuthStore.getState().token
+    if ((paso === 'prueba' || paso === 'crecimiento') && storeProducts.length === 0) {
+      if (authToken) {
+        productosApi.getAll(authToken)
+          .then((res: any) => setStoreProducts(res.productos || []))
+          .catch(() => {})
+      } else if (config?.productos) {
+        setStoreProducts(config.productos.map((p) => ({
+          id: p.id,
+          nombre: p.nombre,
+          descripcion: p.descripcion || '',
+          precio: p.precio,
+        })))
+      }
+    }
+  }, [paso, config, storeProducts.length])
+
+  const hacerPedidoPrueba = async (
+    items: { productoId: number; cantidad: number }[],
+    meta: { nombreCliente: string; notas: string },
+  ) => {
+    const authToken = useAuthStore.getState().token
+    if (!authToken || items.length === 0) return
+    try {
+      await pedidoUnificadoApi.create(authToken, {
+        tipo: 'takeaway',
+        nombreCliente: meta.nombreCliente || 'Pedido de prueba',
+        notas: meta.notas || 'Pedido de prueba generado en el claim',
+        anotadoManualmente: true,
+        notificarWhatsappPrueba: true,
+        items,
+      })
+      await new Promise((r) => setTimeout(r, 3500))
+      setPedidoOk(true)
+    } catch (e: any) {
+      toast.error('No se pudo crear el pedido', { description: e?.message })
+      throw e
+    }
+  }
+
   // La URL del instalador cambia con cada release. Usamos la misma fuente que el banner de Ajustes
   // y conservamos la landing como fallback si el manifiesto no responde.
   useEffect(() => {
@@ -444,12 +522,17 @@ export default function ClaimTienda() {
     const inv = inventario
     const list: Card[] = [{ kind: 'intro' }]
 
+    list.push({ kind: 'explainerTienda' })
     if (inv?.tieneLink && tienda.username) list.push({ kind: 'link' })
     if (inv?.tieneImagen) list.push({ kind: 'logo' })
 
     if (config) {
       // Preview extendido: tarjetas ricas (ver/editar).
-      if (config.productos.length > 0) list.push({ kind: 'productos' })
+      if (config.productos.length > 0) {
+        list.push({ kind: 'explainerActivacion' })
+        list.push({ kind: 'productos' })
+      }
+      list.push({ kind: 'explainerMonetizacion' })
       list.push({ kind: 'modalidadSucursales' })
       if (draft.modalidadSucursales === 'multiple') {
         list.push({ kind: 'sucursales' })
@@ -465,9 +548,11 @@ export default function ClaimTienda() {
     } else {
       // Backend viejo sin `config`: caemos al resumen no editable.
       if ((inv?.productos ?? 0) > 0) {
+        list.push({ kind: 'explainerActivacion' })
         const n = inv!.productos
         list.push({ kind: 'reassure', id: 'menu', icon: UtensilsCrossed, titulo: 'Tu menú ya está cargado', valor: `${n} ${n === 1 ? 'producto listo' : 'productos listos'} para vender` })
       }
+      list.push({ kind: 'explainerMonetizacion' })
       if (inv?.tieneCobros) list.push({ kind: 'reassure', id: 'cobros', icon: Banknote, titulo: 'Tus cobros están activados', valor: 'Podés cobrar online y en efectivo' })
       if ((inv?.zonasDelivery ?? 0) > 0) {
         const n = inv!.zonasDelivery
@@ -498,6 +583,7 @@ export default function ClaimTienda() {
     if (bloqueo) return help('Ayuda para ingresar', `Me aparece este mensaje: “${bloqueo.titulo}”. ¿Me ayudás a ingresar?`)
 
     if (paso === 'codigo') return help('Ayuda con el código', 'Estoy en la verificación de WhatsApp y necesito ayuda con el código.')
+    if (paso === 'crecimiento') return help('Consultar por el sistema de crecimiento', 'Estoy viendo el sistema de crecimiento de clientes y tengo una consulta.')
     if (paso === 'prueba') return help('Ayuda con el pedido de prueba', 'Estoy por hacer el pedido de prueba y tengo una consulta.')
     if (paso === 'modos') return help('Ayuda para elegir', 'Estoy eligiendo cómo usar Piru y necesito que me recomiendes la mejor configuración para mi local.')
     if (paso === 'configImpresion') return help('Ayuda con la impresión', 'Estoy configurando la impresión automática y necesito ayuda para instalar o conectar la app.')
@@ -522,12 +608,18 @@ export default function ClaimTienda() {
     switch (card.kind) {
       case 'intro':
         return help('Consultar por mis datos', 'Estoy revisando el nombre y los datos iniciales de mi tienda.')
+      case 'explainerTienda':
+        return help('Consultar por mi tienda', 'Estoy viendo cómo funciona mi tienda online propia y tengo una consulta.')
       case 'link':
         return help('Consultar por mi link', `Estoy revisando el link piru.app/${dispUsername || 'mi-tienda'} y tengo una consulta.`)
       case 'logo':
         return help('Ayuda con mi logo', 'Estoy revisando el logo de mi tienda y necesito ayuda.')
+      case 'explainerActivacion':
+        return help('Consultar por la carta', 'Estoy viendo cómo está pensada la carta en Piru y tengo una consulta.')
       case 'productos':
         return help('Consultar por mi menú', 'Estoy revisando los productos que cargaron en mi menú y tengo una consulta.')
+      case 'explainerMonetizacion':
+        return help('Consultar por los cobros', 'Estoy viendo cómo funcionan los cobros y entregas y tengo una consulta.')
       case 'modalidadSucursales':
         return help('Ayuda con mis sucursales', 'Estoy eligiendo si configurar una o varias sucursales y necesito ayuda.')
       case 'sucursales':
@@ -847,7 +939,7 @@ export default function ClaimTienda() {
         if (tienda) {
           const progreso: ProgresoClaim = {
             restauranteId: r.restaurante.id,
-            paso: 'prueba',
+            paso: 'crecimiento',
             tienda,
             telefono,
             modosActivos: [],
@@ -862,8 +954,8 @@ export default function ClaimTienda() {
         // Traemos la suscripción base + trial para la pantalla final (best-effort, no bloquea).
         suscripcionApi.miSuscripcion(r.token).then((res) => setMiSusc(res.data)).catch(() => {})
         toast.success('¡Tu tienda es tuya! 🎉')
-        // No vamos directo al panel: primero el pedido de prueba y la info de la suscripción.
-        setPaso('prueba')
+        // No vamos directo al panel: primero el sistema didáctico de crecimiento, prueba y suscripción.
+        setPaso('crecimiento')
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } catch (e) {
         setDigits(Array(CODE_LENGTH).fill(''))
@@ -1163,6 +1255,14 @@ export default function ClaimTienda() {
               </div>
             )}
 
+            {/* ── Didáctico 1: Tu tienda propia ── */}
+            {card?.kind === 'explainerTienda' && (
+              <ExplainerTienda
+                slug={dispUsername || 'tulocal'}
+                onContinue={continuar}
+              />
+            )}
+
             {/* ── Link público (editable) ── */}
             {card?.kind === 'link' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
@@ -1226,6 +1326,13 @@ export default function ClaimTienda() {
               </div>
             )}
 
+            {/* ── Didáctico 2: Activación sin fricción (la carta) ── */}
+            {card?.kind === 'explainerActivacion' && (
+              <ExplainerActivacion
+                onContinue={continuar}
+              />
+            )}
+
             {/* ── Productos (solo ver) ── */}
             {card?.kind === 'productos' && config && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
@@ -1246,6 +1353,13 @@ export default function ClaimTienda() {
                   Continuar
                 </button>
               </div>
+            )}
+
+            {/* ── Didáctico 3: Monetización directa ── */}
+            {card?.kind === 'explainerMonetizacion' && (
+              <ExplainerMonetizacion
+                onContinue={continuar}
+              />
             )}
 
             {/* ── Bifurcación del recorrido: un local o configuración por sucursal ── */}
@@ -1656,32 +1770,82 @@ export default function ClaimTienda() {
               )}
             </div>
           </>
-        ) : paso === 'prueba' ? (
-          // ── Ante último paso: pedido de prueba en su propia tienda ──
-          <div className="text-center flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-500/15 flex items-center justify-center">
-              <ShoppingBag className="h-7 w-7 text-emerald-600 dark:text-emerald-400" strokeWidth={2} />
-            </div>
-            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">¡Tu tienda ya está lista!</h1>
-            <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-              Hacé un pedido de prueba completo para conocer la experiencia de tu cliente.
-            </p>
-
-            <a
-              href={`${STORE_BASE}/${dispUsername}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
-            >
-              <ShoppingBag className="h-4 w-4" /> Hacer mi primer pedido de prueba
-            </a>
-            <button
-              onClick={() => { setPaso('modos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-              className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-            >
-              Ya lo hice, seguir
-            </button>
+        ) : paso === 'crecimiento' ? (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <ExplainerCrecimiento
+              onContinue={() => {
+                setPaso('prueba')
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            />
           </div>
+        ) : paso === 'prueba' ? (
+          pedidoOk ? (
+            <div className="text-center flex flex-col items-center animate-in fade-in duration-500 py-6">
+              <Confetti />
+              <div className="w-16 h-16 rounded-2xl bg-[#25D366] flex items-center justify-center mb-6">
+                <svg viewBox="0 0 24 24" className="h-8 w-8 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884Z" /></svg>
+              </div>
+              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Te llegó el pedido</h1>
+              <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">Así vas a recibir cada pedido real: al toque, en tu WhatsApp y en el panel.</p>
+
+              <button
+                onClick={() => { setPaso('modos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
+              >
+                Continuar <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <button
+                onClick={() => { setPaso('crecimiento'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"
+              >
+                <ArrowLeft className="h-4 w-4" /> Volver
+              </button>
+              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight text-center">Probá tu tienda</h1>
+              <p className="text-[15px] text-muted-foreground mt-3 text-center max-w-sm mx-auto">
+                Recorré tu tienda tal como la verán tus clientes y hacé un pedido de prueba para ver cómo te llega.
+              </p>
+
+              <div className="mt-6">
+                <TiendaPreview
+                  nombre={dispNombre || 'tu local'}
+                  logo={dispLogo}
+                  slug={dispUsername || 'tulocal'}
+                  direccion={draft.delivery?.address || ''}
+                  deliveryPrice={draft.delivery?.mode === 'radio' ? draft.delivery.precio : config?.delivery.zonas?.[0]?.precio || '0'}
+                  metodosPago={{
+                    transferenciaManual: pagosView.transferenciaManual,
+                    efectivo: pagosView.efectivo,
+                  }}
+                  proveedorPago={config?.pagos.mpConnected ? 'mercadopago' : 'manual'}
+                  productos={storeProducts}
+                  onConfirmar={hacerPedidoPrueba}
+                />
+              </div>
+
+              <div className="mt-6 space-y-2 text-center">
+                <a
+                  href={`${STORE_BASE}/${dispUsername}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 text-xs font-semibold text-[#FF7A00] hover:underline"
+                >
+                  <ShoppingBag className="h-3.5 w-3.5" /> Abrir en una pestaña nueva
+                </a>
+                <div>
+                  <button
+                    onClick={() => { setPaso('modos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Omitir la prueba
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
         ) : paso === 'modos' ? (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="text-center flex flex-col items-center">

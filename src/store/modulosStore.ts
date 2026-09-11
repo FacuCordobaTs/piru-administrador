@@ -9,6 +9,7 @@ import {
   type Modulo,
 } from '@/lib/api'
 import { useAuthStore } from './authStore'
+import { guardarModulosLocal, leerModulosLocal } from '@/lib/posLocalDb'
 
 const CACHE_TTL_MS = 30_000
 
@@ -57,9 +58,27 @@ export const useModulosStore = create<ModulosState>((set, get) => ({
 
   cargar: async (forzar = false) => {
     const token = useAuthStore.getState().token
+    const restauranteId = useAuthStore.getState().restaurante?.id
     if (!token) {
       set({ categorias: [], suscripcion: null, cargando: false, error: null, actualizadoEn: null, tokenActual: null })
       return
+    }
+
+    // 1. Si no hay módulos en memoria pero hay sesión, intentar hidratar inmediatamente desde IndexedDB
+    if (restauranteId != null && get().categorias.length === 0) {
+      try {
+        const local = await leerModulosLocal(restauranteId)
+        if (local.modulos && local.modulos.length > 0) {
+          set({
+            categorias: local.modulos,
+            suscripcion: local.suscripcion,
+            cargando: false,
+            error: null,
+            actualizadoEn: Date.now(),
+            tokenActual: token,
+          })
+        }
+      } catch { /* Fallo silencioso de hidratación previa */ }
     }
 
     const actualizadoEn = get().actualizadoEn
@@ -79,7 +98,27 @@ export const useModulosStore = create<ModulosState>((set, get) => ({
         actualizadoEn: Date.now(),
         tokenActual: token,
       })
+      if (restauranteId != null) {
+        void guardarModulosLocal(restauranteId, modulos.data, suscripcion.data).catch(() => {})
+      }
     } catch (error) {
+      // Si falla la red, intentar restaurar desde IndexedDB
+      if (restauranteId != null) {
+        try {
+          const local = await leerModulosLocal(restauranteId)
+          if (local.modulos && local.modulos.length > 0) {
+            set({
+              categorias: local.modulos,
+              suscripcion: local.suscripcion,
+              cargando: false,
+              error: null,
+              actualizadoEn: Date.now(),
+              tokenActual: token,
+            })
+            return
+          }
+        } catch { /* Error leyendo copia local */ }
+      }
       set({
         cargando: false,
         error: error instanceof Error ? error.message : 'No se pudo cargar la suscripción',

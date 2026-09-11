@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Check, ChevronDown, ChevronUp, Crown, Loader2, Lock, LogOut, MessageCircle, PauseCircle, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Loader2, Lock, LogOut, MessageCircle, PauseCircle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { descuentoAnualEfectivo, precioAnual } from '@/lib/utils'
@@ -111,9 +111,7 @@ export default function Suscribir() {
           {miSub?.valorPausa && miSub.valorPausa.pedidos > 0 ? <>Tu local recibió <strong className="font-medium text-foreground">{fmtInt(miSub.valorPausa.pedidos)} pedidos por {fmtARS(miSub.valorPausa.monto)}</strong> con Piru. Tu tienda, menú y clientes siguen intactos.</> : 'Tu tienda, tu menú y tus clientes siguen cargados. Reactivá con un pago y volvés a recibir pedidos justo donde lo dejaste.'}
         </p>
       </> : <>
-        <p className="inline-flex items-center gap-2 text-sm text-muted-foreground"><Crown className="h-4 w-4" />{restaurante?.nombre ? `${restaurante.nombre} está casi listo` : 'Casi listo'}</p>
         <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">Empezá a recibir pedidos</h1>
-        <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">Activá tu local con una cuota fija, sin comisión por venta. Después elegís los módulos que necesitás, sin activar extras automáticamente.</p>
       </>}
     </section>
 
@@ -121,7 +119,7 @@ export default function Suscribir() {
       {catalogo === null ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       : !suscripcionBase ? <p className="text-center text-sm text-muted-foreground">La suscripción no está disponible por ahora. Escribinos y lo resolvemos.</p>
       : <>
-        {descuentoMax > 0 && <div className="mb-8 text-center"><CicloToggle value={ciclo} onChange={setCiclo} descuentoMax={descuentoMax} /><p className="mt-2 text-xs text-muted-foreground">Pagá por año y ahorrá hasta {descuentoMax}%.</p></div>}
+        {descuentoMax > 0 && <div className="mb-8 text-center"><CicloToggle value={ciclo} onChange={setCiclo} descuentoMax={descuentoMax} /></div>}
         <SuscripcionInicio suscripcion={suscripcionBase} cotizacion={cotizacion} ciclo={ciclo} activando={activando} onActivar={activarSuscripcion} pausado={pausado}
           packs={packs} packId={packId} onPackId={setPackId} telefonoCuenta={miSub?.telefonoPago ?? restaurante?.telefono}
           usarOtroTelefono={usarOtroTelefono} onUsarOtroTelefono={setUsarOtroTelefono} otroTelefono={otroTelefono} onOtroTelefono={setOtroTelefono} />
@@ -150,7 +148,6 @@ function SuscripcionInicio({ suscripcion, cotizacion, ciclo, activando, onActiva
   const modulos = cotizacion?.modulosFacturables ?? []
   return <article className="border-y border-border py-7 text-center">
     <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Tu suscripción</p>
-    <h2 className="mt-2 text-3xl font-semibold tracking-tight">{suscripcion.nombre}</h2>
     <p className="mt-3 text-3xl font-semibold">{ciclo === 'anual' ? fmtARS(total) : fmtARS(precio)}<span className="text-base font-normal text-muted-foreground"> {ciclo === 'anual' ? '/ año' : '/ mes'}</span></p>
     {ciclo === 'anual' && <p className="mt-1 text-xs text-muted-foreground">Equivale a {fmtARS(total / 12)}/mes{desc > 0 ? ` · ahorrás ${desc}%` : ''}</p>}
     {modulos.length > 0 && <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">Incluye suscripción base ({fmtARS(cotizacion?.montoBaseMensual ?? precioBase)}) + {modulos.map((modulo) => `${modulo.codigo === 'avisos_automaticos_whatsapp' ? 'Avisos automáticos por WhatsApp' : modulo.codigo} (${fmtARS(modulo.montoMensual)})`).join(', ')}.</p>}

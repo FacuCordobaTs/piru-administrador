@@ -299,11 +299,21 @@ export type DestinoCrecimiento =
   | { tipo: 'producto'; productoId: number; nombreProducto?: string | null }
   | { tipo: 'carrito'; carritoRep: string }
 
+export type CategoriaCampana =
+  | 'historias_instagram'
+  | 'reels_tiktok'
+  | 'pauta_digital'
+  | 'qr_salon_mostrador'
+  | 'volantes_packaging'
+  | 'whatsapp_difusion'
+  | 'influencers_colaboraciones'
+
 export interface CampanaCrecimiento {
   id: number
   slug: string
   nombre: string
-  tipo: 'adquisicion' | 'recompra'
+  tipo: 'adquisicion' | 'recompra' | 'retencion' | 'lo_mismo' | 'reactivacion'
+  categoria?: CategoriaCampana | null
   recetaCodigo: RecetaCrecimiento | null
   estado: 'borrador' | 'activa' | 'inactiva'
   destinoTipo: DestinoCrecimiento['tipo']
@@ -378,7 +388,8 @@ export interface PrepararEnlaceCrecimiento {
 }
 export interface ContactarEnlaceCrecimiento { token: string; idempotenciaClave: string }
 export interface CrearCampanaCrecimiento {
-  slug: string; nombre: string; tipo: 'adquisicion' | 'recompra'; recetaCodigo?: RecetaCrecimiento | null
+  slug: string; nombre: string; tipo: 'adquisicion' | 'recompra' | 'retencion' | 'lo_mismo' | 'reactivacion'; recetaCodigo?: RecetaCrecimiento | null
+  categoria?: CategoriaCampana | null
   estado?: CampanaCrecimiento['estado']; destinoTipo: DestinoCrecimiento['tipo']; productoId?: number | null
   carritoRep?: string | null; codigoDescuentoId?: number | null; utmSource?: string | null; utmMedium?: string | null
   utmCampaign?: string | null; utmTerm?: string | null; utmContent?: string | null; inversionManual?: number; usaGrupoControl?: boolean

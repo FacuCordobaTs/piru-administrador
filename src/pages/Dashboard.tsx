@@ -23,7 +23,7 @@ import {
     Phone, ShoppingBag, CalendarDays, Tag, Settings,
     Receipt, Wallet, Zap, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, CheckCircle,
     MessageCircle, Store, Map as MapIcon, X, UserRound, UserCheck, UserX, List, ShoppingCart,
-    Copy, ExternalLink, MoreVertical, Armchair, Megaphone,
+    Copy, ExternalLink, MoreVertical, Armchair, Megaphone, WifiOff,
 } from 'lucide-react'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -46,6 +46,8 @@ import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, g
 import { PosConfigDialog } from '@/components/PosConfigDialog'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
+import { sincronizarPendientes } from '@/lib/posOffline'
+import { leerParticion, transaccionPos } from '@/lib/posLocalDb'
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -164,13 +166,31 @@ function MesasGrid({
             return
         }
         const esPrimeraCarga = tokenMesasCargadoRef.current !== token
+        const restauranteId = useAuthStore.getState().restaurante?.id
         if (esPrimeraCarga) setCargando(true)
         try {
             const response = await mesasLocalesApi.list(token, false)
             setMesas(response.data)
             setError(null)
             tokenMesasCargadoRef.current = token
+            if (restauranteId != null && Array.isArray(response.data)) {
+                void transaccionPos(['mesas'], 'readwrite', tx => {
+                    const store = tx.objectStore('mesas')
+                    response.data.forEach((m: MesaLocal) => store.put({ ...m, restauranteId }))
+                }).catch(() => {})
+            }
         } catch (cause) {
+            if (restauranteId != null) {
+                try {
+                    const localMesas = await leerParticion<MesaLocal>('mesas', restauranteId)
+                    if (localMesas && localMesas.length > 0) {
+                        setMesas(localMesas)
+                        setError(null)
+                        tokenMesasCargadoRef.current = token
+                        return
+                    }
+                } catch {}
+            }
             setError(cause instanceof Error ? cause.message : 'No se pudieron cargar las mesas')
         } finally {
             if (esPrimeraCarga) setCargando(false)
@@ -1396,6 +1416,22 @@ const Dashboard = () => {
     // durante esta visita, incluso cuando el estado de suscripción/saldo sigue vigente.
     const [showTrialBanner, setShowTrialBanner] = useState(true)
     const [showSaldoBanner, setShowSaldoBanner] = useState(true)
+    const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
+
+    useEffect(() => {
+        const onOnline = () => {
+            setIsOffline(false)
+            void sincronizarPendientes()
+            void useRestauranteStore.getState().fetchData()
+        }
+        const onOffline = () => setIsOffline(true)
+        window.addEventListener('online', onOnline)
+        window.addEventListener('offline', onOffline)
+        return () => {
+            window.removeEventListener('online', onOnline)
+            window.removeEventListener('offline', onOffline)
+        }
+    }, [])
     // La ubicación se muestra en un mapa flotante (dialog), no inline.
     const [showMapaDialog, setShowMapaDialog] = useState(false)
     const [showMesasDialog, setShowMesasDialog] = useState(false)
@@ -1483,6 +1519,7 @@ const Dashboard = () => {
         let cancelled = false
         let cargando = false
         let tieneEventosParaRefrescar = readStoredSucursalId() != null
+        const restauranteId = useAuthStore.getState().restaurante?.id
         const cargarSucursales = async () => {
             if (cargando || cancelled) return
             cargando = true
@@ -1497,9 +1534,30 @@ const Dashboard = () => {
                         && s.activo === sedes[i].activo && s.soloPos === sedes[i].soloPos,
                     ) ? prev : sedes)
                     setSucursalesValidas(true)
+                    if (restauranteId != null) {
+                        void transaccionPos(['sucursales'], 'readwrite', tx => {
+                            const store = tx.objectStore('sucursales')
+                            sedes.forEach(s => store.put({ ...s, restauranteId }))
+                        }).catch(() => {})
+                    }
                 }
             } catch (e) {
                 console.error('Error cargando sucursales:', e)
+                if (restauranteId != null) {
+                    try {
+                        const localSedes = await leerParticion<SucursalListRow>('sucursales', restauranteId)
+                        if (!cancelled && localSedes && localSedes.length > 0) {
+                            tieneEventosParaRefrescar = localSedes.some(s => s.soloPos)
+                            setSucursalesList(localSedes)
+                            setSucursalesValidas(true)
+                            return
+                        }
+                    } catch { /* Error leyendo sucursales locales */ }
+                }
+                if (!cancelled) {
+                    // Si no hay sucursales o falló la red, marcar válidas para permitir operar el POS
+                    setSucursalesValidas(true)
+                }
             } finally {
                 cargando = false
                 if (!cancelled) setSucursalesLoaded(true)
@@ -1507,7 +1565,13 @@ const Dashboard = () => {
         }
         // Abrir/cerrar un evento en otra pantalla debe actualizar el POS sin
         // depender de un cambio de token ni de recargar toda la aplicación.
-        const alVolver = () => { if (!document.hidden) void cargarSucursales() }
+        const alVolver = () => {
+            if (!document.hidden) {
+                void cargarSucursales()
+                void sincronizarPendientes()
+                void useRestauranteStore.getState().fetchData()
+            }
+        }
         const intervalo = window.setInterval(() => {
             if (tieneEventosParaRefrescar) alVolver()
         }, 30_000)
@@ -2932,6 +2996,21 @@ const Dashboard = () => {
             {/* Los banners superiores son siempre descartables desde el Dashboard. */}
             {showTrialBanner && <TrialValorBanner onDismiss={() => setShowTrialBanner(false)} />}
             {showSaldoBanner && <SaldoAlertaBanner onDismiss={() => setShowSaldoBanner(false)} />}
+            {isOffline && (
+                <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs sm:text-sm text-amber-700 dark:text-amber-300 font-medium">
+                    <div className="flex items-center gap-2">
+                        <WifiOff className="h-4 w-4 shrink-0 animate-pulse text-amber-600" />
+                        <span>Modo sin conexión: podés seguir usando el punto de venta. Las ventas se guardan en este dispositivo y se sincronizarán al volver internet.</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => void sincronizarPendientes()}
+                        className="shrink-0 ml-3 underline hover:no-underline font-semibold cursor-pointer"
+                    >
+                        Reintentar sincronización
+                    </button>
+                </div>
+            )}
 
             {/* ── MAIN CONTENT ── */}
             <div className="relative flex-1 flex overflow-hidden lg:justify-center lg:gap-4 lg:p-4">

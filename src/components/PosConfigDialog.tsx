@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Armchair,
   Banknote,
@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
 import { descargarDirectorioPos } from '@/lib/directorioClientesPos'
+import { descargarCatalogoPos, consultarEstadoCatalogoLocal } from '@/lib/catalogoLocalPos'
 import { getPosConfig, POS_METODOS_ORDER, POS_TIPOS_ORDER, setPosConfig, type PosConfig, type PosMetodoPago, type PosTipo } from '@/lib/posConfig'
 
 const TIPOS_POS: Array<{ id: PosTipo; label: string; icon: typeof Truck }> = [
@@ -75,6 +76,19 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
   const token = useAuthStore(s => s.token)
   const [descargando, setDescargando] = useState(false)
   const [descargado, setDescargado] = useState(false)
+  const [descargandoCatalogo, setDescargandoCatalogo] = useState(false)
+  const [descargadoCatalogo, setDescargadoCatalogo] = useState(false)
+  const [estadoLocal, setEstadoLocal] = useState<{ syncedAt: string | null; productosCount: number; categoriasCount: number }>({
+    syncedAt: null,
+    productosCount: 0,
+    categoriasCount: 0,
+  })
+
+  useEffect(() => {
+    if (restauranteId != null) {
+      void consultarEstadoCatalogoLocal(restauranteId).then(setEstadoLocal)
+    }
+  }, [restauranteId])
 
   const descargarClientes = async () => {
     if (restauranteId == null || !token || descargando) return
@@ -87,6 +101,41 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudieron descargar los clientes. Intentá nuevamente.')
     } finally {
+      setDescargando(false)
+    }
+  }
+
+  const descargarCatalogo = async () => {
+    if (restauranteId == null || !token || descargandoCatalogo) return
+    setDescargandoCatalogo(true)
+    setDescargadoCatalogo(false)
+    try {
+      const res = await descargarCatalogoPos(restauranteId)
+      setDescargadoCatalogo(true)
+      setEstadoLocal(res)
+      toast.success('Catálogo de productos guardado en este dispositivo para usar sin conexión')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo descargar el catálogo. Intentá nuevamente.')
+    } finally {
+      setDescargandoCatalogo(false)
+    }
+  }
+
+  const descargarTodo = async () => {
+    if (restauranteId == null || !token || descargando || descargandoCatalogo) return
+    setDescargandoCatalogo(true)
+    setDescargando(true)
+    try {
+      const res = await descargarCatalogoPos(restauranteId)
+      await descargarDirectorioPos(restauranteId)
+      setDescargadoCatalogo(true)
+      setDescargado(true)
+      setEstadoLocal(res)
+      toast.success('Catálogo y clientes guardados para operar sin conexión')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al descargar datos sin conexión.')
+    } finally {
+      setDescargandoCatalogo(false)
       setDescargando(false)
     }
   }
@@ -183,16 +232,68 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
         </div>
       </div>
       <FilaConfig icon={StickyNote} label="Nota" checked={config.notas} onCheckedChange={() => setConfig((prev) => ({ ...prev, notas: !prev.notas }))} />
-      <div className="space-y-3 rounded-2xl border p-3.5">
+      <div className="space-y-4 rounded-2xl border p-3.5">
         <div>
-          <p className="text-sm font-medium">Clientes sin conexión</p>
-          <p className="mt-1 text-xs text-muted-foreground">Descargá los nombres y celulares en este dispositivo para buscar clientes sin internet. La copia se guarda al tocar este botón; volvé a descargarla cuando quieras actualizarla.</p>
+          <p className="text-sm font-medium">Datos para usar sin conexión</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Descargá el catálogo de productos y tus clientes para tomar pedidos y comisionar ventas aunque se corte internet.
+            Las ventas se imprimen por la comanda local y se sincronizan automáticamente al volver la red.
+          </p>
         </div>
-        <Button type="button" variant="outline" className="h-auto w-full whitespace-normal" disabled={descargando || restauranteId == null || !token} onClick={descargarClientes}>
-          {descargando ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Download className="h-4 w-4 shrink-0" />}
-          {descargando ? 'Descargando clientes…' : 'Descargar clientes para usar sin conexión'}
+
+        <Button
+          type="button"
+          variant="default"
+          className="h-auto w-full whitespace-normal bg-[#FF7A00] hover:bg-[#E66E00] text-white font-medium py-2.5"
+          disabled={descargando || descargandoCatalogo || restauranteId == null || !token}
+          onClick={descargarTodo}
+        >
+          {descargando || descargandoCatalogo ? <Loader2 className="h-4 w-4 shrink-0 animate-spin mr-2" /> : <Download className="h-4 w-4 shrink-0 mr-2" />}
+          {descargando || descargandoCatalogo ? 'Descargando datos completos…' : 'Descargar todo (catálogo + clientes)'}
         </Button>
-        <p role="status" className="text-xs text-muted-foreground">{descargado ? 'Copia de clientes guardada en este dispositivo.' : 'Requiere conexión a internet.'}</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-auto w-full whitespace-normal text-xs py-2"
+            disabled={descargandoCatalogo || restauranteId == null || !token}
+            onClick={descargarCatalogo}
+          >
+            {descargandoCatalogo ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin mr-1.5" /> : <ShoppingBag className="h-3.5 w-3.5 shrink-0 mr-1.5" />}
+            {descargandoCatalogo ? 'Descargando productos…' : 'Solo productos'}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-auto w-full whitespace-normal text-xs py-2"
+            disabled={descargando || restauranteId == null || !token}
+            onClick={descargarClientes}
+          >
+            {descargando ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin mr-1.5" /> : <User className="h-3.5 w-3.5 shrink-0 mr-1.5" />}
+            {descargando ? 'Descargando clientes…' : 'Solo clientes'}
+          </Button>
+        </div>
+
+        <div className="text-xs text-muted-foreground space-y-1 border-t pt-2.5">
+          {estadoLocal.productosCount > 0 ? (
+            <p className="text-foreground/80 font-medium">
+              ✓ {estadoLocal.productosCount} producto{estadoLocal.productosCount === 1 ? '' : 's'} guardado{estadoLocal.productosCount === 1 ? '' : 's'} en este dispositivo
+              {estadoLocal.syncedAt ? ` (${new Date(estadoLocal.syncedAt).toLocaleDateString('es-AR', { hour: '2-digit', minute: '2-digit' })})` : ''}.
+            </p>
+          ) : (
+            <p>No hay copia de productos guardada en este dispositivo.</p>
+          )}
+          {descargadoCatalogo && (
+            <p className="text-foreground/80 font-medium">✓ Catálogo actualizado en este dispositivo.</p>
+          )}
+          {descargado && (
+            <p className="text-foreground/80 font-medium">✓ Copia de clientes guardada en este dispositivo.</p>
+          )}
+        </div>
       </div>
       <DialogFooter className="gap-2 sm:gap-2">
         <Button variant="outline" onClick={onSaved}>Cancelar</Button>

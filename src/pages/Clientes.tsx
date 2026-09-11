@@ -243,13 +243,12 @@ export default function Clientes() {
 
   const filtrosActivosClientesCount = useMemo(() => {
     let count = 0
-    if (segmento !== 'todos') count++
     if (sucursalId != null) count++
     if (from || to) count++
     if (campanaSeleccionada != null || cuponSeleccionado != null) count++
     if (sort !== 'attention') count++
     return count
-  }, [segmento, sucursalId, from, to, campanaSeleccionada, cuponSeleccionado, sort])
+  }, [sucursalId, from, to, campanaSeleccionada, cuponSeleccionado, sort])
 
   const filtrosActivosCampanasCount = useMemo(() => {
     let count = 0
@@ -469,18 +468,64 @@ export default function Clientes() {
           </Button>
         </div>
 
+        {/* Segmentos de clientes debajo del buscador */}
+        {workspaceTab === 'clientes' && (
+          <div className="mt-3 flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap">
+            <button
+              type="button"
+              onClick={() => setSegmento('todos')}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                segmento === 'todos'
+                  ? 'bg-foreground text-background shadow-2xs'
+                  : 'border border-border/50 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground shadow-2xs backdrop-blur-xs'
+              }`}
+            >
+              <span>Todos</span>
+              <span
+                className={`ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums ${
+                  segmento === 'todos'
+                    ? 'bg-background/20 text-background'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                {clientes.length}
+              </span>
+            </button>
+            {SEGMENTOS.map((item) => {
+              const active = segmento === item.value
+              const count = conteoSegmentos[item.value] ?? 0
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setSegmento(item.value)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                    active
+                      ? 'bg-foreground text-background shadow-2xs'
+                      : 'border border-border/50 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground shadow-2xs backdrop-blur-xs'
+                  }`}
+                >
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
+                  <span>{item.label}</span>
+                  <span
+                    className={`ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums ${
+                      active
+                        ? 'bg-background/20 text-background'
+                        : 'bg-muted text-foreground'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Tiras de Filtros Activos (solo si hay filtros aplicados) */}
         {hasActiveFilters && (
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pt-0.5">
             <span className="text-[11px] font-medium text-muted-foreground/70 mr-1">Filtros aplicados:</span>
-
-            {/* Clientes: Segmento */}
-            {workspaceTab === 'clientes' && segmento !== 'todos' && (
-              <ActiveFilterBadge
-                label={`Segmento: ${SEGMENTOS.find((s) => s.value === segmento)?.label ?? segmento}`}
-                onRemove={() => setSegmento('todos')}
-              />
-            )}
 
             {/* Clientes: Orden no por defecto */}
             {workspaceTab === 'clientes' && sort !== 'attention' && (
@@ -731,9 +776,6 @@ export default function Clientes() {
         onOpenChange={setFiltrosDialogOpen}
         tab={workspaceTab}
         totalResultados={totalResultados}
-        segmento={segmento}
-        onSegmentoChange={setSegmento}
-        conteoSegmentos={conteoSegmentos}
         sortCliente={sort}
         onSortClienteChange={setSort}
         sortCampana={sortCampana}

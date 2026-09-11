@@ -24,6 +24,9 @@ import {
   type TipoCuponFilter,
   SORT_CAMPANA_LABELS,
   SORT_CUPON_LABELS,
+  LISTA_CATEGORIAS_CAMPANA,
+  getCategoriaMeta,
+  type CategoriaCampana,
   formatCurrency,
   formatDate,
   normalizarHasta,
@@ -66,11 +69,11 @@ interface Props {
 const slug = (valor: string) => valor.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 191)
 
 type FormCampana = {
-  nombre: string; slug: string; estado: CampanaCrecimiento['estado']; modalidad: 'seguimiento' | 'producto' | 'carrito'; productoId: string
+  nombre: string; slug: string; categoria: CategoriaCampana | ''; estado: CampanaCrecimiento['estado']; modalidad: 'seguimiento' | 'producto' | 'carrito'; productoId: string
   carritoRep: string; descuentoProductoPorcentaje: string; limiteUsos: string; fechaInicio: string; fechaFin: string
 }
-const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', estado: 'activa', modalidad: 'seguimiento', productoId: '', carritoRep: '', descuentoProductoPorcentaje: '', limiteUsos: '', fechaInicio: '', fechaFin: '' })
-const campanaAForm = (campana: CampanaCrecimiento): FormCampana => ({ nombre: campana.nombre, slug: campana.slug, estado: campana.estado, modalidad: campana.destinoTipo === 'producto' && campana.productoId != null ? 'producto' : campana.destinoTipo === 'carrito' && campana.carritoRep ? 'carrito' : 'seguimiento', productoId: campana.productoId?.toString() ?? '', carritoRep: campana.carritoRep ?? '', descuentoProductoPorcentaje: campana.descuentoProductoPorcentaje ? String(campana.descuentoProductoPorcentaje) : '', limiteUsos: campana.limiteUsos?.toString() ?? '', fechaInicio: campana.fechaInicio?.slice(0, 16) ?? '', fechaFin: campana.fechaFin?.slice(0, 16) ?? '' })
+const campanaVacia = (): FormCampana => ({ nombre: '', slug: '', categoria: '', estado: 'activa', modalidad: 'seguimiento', productoId: '', carritoRep: '', descuentoProductoPorcentaje: '', limiteUsos: '', fechaInicio: '', fechaFin: '' })
+const campanaAForm = (campana: CampanaCrecimiento): FormCampana => ({ nombre: campana.nombre, slug: campana.slug, categoria: campana.categoria ?? '', estado: campana.estado, modalidad: campana.destinoTipo === 'producto' && campana.productoId != null ? 'producto' : campana.destinoTipo === 'carrito' && campana.carritoRep ? 'carrito' : 'seguimiento', productoId: campana.productoId?.toString() ?? '', carritoRep: campana.carritoRep ?? '', descuentoProductoPorcentaje: campana.descuentoProductoPorcentaje ? String(campana.descuentoProductoPorcentaje) : '', limiteUsos: campana.limiteUsos?.toString() ?? '', fechaInicio: campana.fechaInicio?.slice(0, 16) ?? '', fechaFin: campana.fechaFin?.slice(0, 16) ?? '' })
 
 type FormCupon = { codigo: string; tipo: 'porcentaje' | 'monto_fijo'; valor: string; limiteUsos: string; montoMinimo: string; fechaInicio: string; fechaFin: string }
 const cuponVacio = (): FormCupon => ({ codigo: '', tipo: 'porcentaje', valor: '', limiteUsos: '', montoMinimo: '0', fechaInicio: '', fechaFin: '' })
@@ -132,6 +135,16 @@ function getCampaignStatus(campana: CampanaCrecimiento | null, organic: boolean)
   return { estado: 'Inactiva', dotColor: 'bg-zinc-400' }
 }
 
+function formatTipoCampana(tipo?: string) {
+  if (!tipo) return ''
+  if (tipo === 'lo_mismo') return 'Lo Mismo de Siempre'
+  if (tipo === 'reactivacion') return 'Reactivación'
+  if (tipo === 'retencion') return 'Retención'
+  if (tipo === 'adquisicion') return 'Adquisición'
+  if (tipo === 'recompra') return 'Recompra'
+  return tipo
+}
+
 export default function GrowthAssetsPanel(props: Props) {
   const { token, tab, campanas, cupones, query, filtros, campanaSeleccionada, cuponSeleccionado } = props
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false)
@@ -190,7 +203,9 @@ export default function GrowthAssetsPanel(props: Props) {
   const campanasFiltradas = useMemo(() => {
     const q = query.trim().toLowerCase()
     let lista = campanas.filter((item) => {
-      if (q && !`${item.nombre} ${item.slug}`.toLowerCase().includes(q)) return false
+      const catMeta = getCategoriaMeta(item.categoria)
+      const textoCategoria = catMeta ? `${catMeta.label} ${catMeta.subtitulo} ${catMeta.canal}`.toLowerCase() : ''
+      if (q && !`${item.nombre} ${item.slug} ${textoCategoria}`.toLowerCase().includes(q)) return false
       if (props.estadoCampana === 'activa' && item.estado !== 'activa') return false
       if (props.estadoCampana === 'inactiva' && item.estado === 'activa') return false
       if (props.tipoCampana && props.tipoCampana !== 'todos' && item.destinoTipo !== props.tipoCampana) return false
@@ -285,6 +300,7 @@ export default function GrowthAssetsPanel(props: Props) {
     if (formCampana.fechaInicio && formCampana.fechaFin && new Date(formCampana.fechaFin) <= new Date(formCampana.fechaInicio)) { setError('La fecha de fin debe ser posterior al inicio.'); return null }
     return {
       nombre: formCampana.nombre.trim(), slug: formCampana.slug, tipo: 'adquisicion', recetaCodigo: null,
+      categoria: formCampana.categoria || null,
       estado: formCampana.estado, destinoTipo: esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'tienda', productoId: esPromocionProducto ? Number(formCampana.productoId) : null,
       carritoRep: esCarritoPrearmado ? formCampana.carritoRep : null, codigoDescuentoId: null, descuentoProductoPorcentaje: descuento,
       limiteUsos: limite, fechaInicio: formCampana.fechaInicio ? new Date(formCampana.fechaInicio).toISOString() : null,
@@ -427,23 +443,28 @@ export default function GrowthAssetsPanel(props: Props) {
                     />
                   )}
                 {props.crecimientoActivo &&
-                  campanasFiltradas.map((campana) => (
-                    <AssetButton
-                      key={campana.id}
-                      active={campanaSeleccionada === campana.id}
-                      onClick={() => props.onSelectCampana(campanaSeleccionada === campana.id ? null : campana.id)}
-                      icon={<Megaphone className="h-4 w-4" />}
-                      title={campana.nombre}
-                      subtitle={`${
-                        campana.destinoTipo === 'producto' && campana.productoId != null
-                          ? 'Promoción de producto'
-                          : campana.destinoTipo === 'carrito'
-                            ? 'Carrito prearmado'
-                            : 'Link de seguimiento'
-                      } · /c/${campana.slug}`}
-                      badge={campana.estado}
-                    />
-                  ))}
+                  campanasFiltradas.map((campana) => {
+                    const catMeta = getCategoriaMeta(campana.categoria)
+                    return (
+                      <AssetButton
+                        key={campana.id}
+                        active={campanaSeleccionada === campana.id}
+                        onClick={() => props.onSelectCampana(campanaSeleccionada === campana.id ? null : campana.id)}
+                        icon={catMeta ? <span className="text-base leading-none select-none">{catMeta.emoji}</span> : <Megaphone className="h-4 w-4" />}
+                        title={campana.nombre}
+                        subtitle={`${
+                          catMeta ? `${catMeta.label} · ` : ''
+                        }${
+                          campana.destinoTipo === 'producto' && campana.productoId != null
+                            ? 'Promoción de producto'
+                            : campana.destinoTipo === 'carrito'
+                              ? 'Carrito prearmado'
+                              : 'Link de seguimiento'
+                        } · /c/${campana.slug}`}
+                        badge={campana.estado}
+                      />
+                    )
+                  })}
                 {props.crecimientoActivo && campanasFiltradas.length === 0 && query.trim() && (
                   <Empty label="No hay campañas que coincidan." />
                 )}
@@ -954,6 +975,7 @@ function CampaignDetail({
   const esPromocionProducto = campana?.destinoTipo === 'producto' && campana.productoId != null
   const esCarritoPrearmado = campana?.destinoTipo === 'carrito' && Boolean(campana.carritoRep)
   const status = getCampaignStatus(campana, organic)
+  const catMeta = !organic ? getCategoriaMeta(campana?.categoria) : null
 
   if (mostrarAsociaciones) {
     // VISTA COMPACTA (cuando la 3ra columna está abierta)
@@ -969,6 +991,12 @@ function CampaignDetail({
                 <span className={`h-1.5 w-1.5 rounded-full ${status.dotColor}`} />
                 {status.estado}
               </span>
+              {catMeta && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  <span>{catMeta.emoji}</span>
+                  <span className="truncate max-w-[130px]">{catMeta.label}</span>
+                </span>
+              )}
             </div>
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {organic
@@ -1048,6 +1076,7 @@ function CampaignDetail({
               <div className="space-y-5">
                 <CampaignExplanation
                   nombre={campana.nombre}
+                  categoria={campana.categoria}
                   modalidad={esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'seguimiento'}
                   productoId={campana.productoId}
                   carritoRep={campana.carritoRep}
@@ -1065,6 +1094,14 @@ function CampaignDetail({
                     Configuración
                   </span>
                   <div className="divide-y divide-border/25 border-y border-border/25 text-xs">
+                  {catMeta && (
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-muted-foreground">Categoría de canal</span>
+                      <span className="font-medium text-foreground">
+                        {catMeta.emoji} {catMeta.label}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between py-2">
                     <span className="text-muted-foreground">Modalidad</span>
                     <span className="font-medium text-foreground">
@@ -1151,8 +1188,14 @@ function CampaignDetail({
                 {status.estado}
               </span>
               {!organic && campana && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground capitalize">
-                  {campana.tipo}
+                <span className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                  {formatTipoCampana(campana.tipo)}
+                </span>
+              )}
+              {catMeta && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-0.5 text-xs font-medium text-primary">
+                  <span className="text-sm">{catMeta.emoji}</span>
+                  <span>{catMeta.label}</span>
                 </span>
               )}
             </div>
@@ -1336,6 +1379,7 @@ function CampaignDetail({
               {!organic && campana && (
                 <CampaignExplanation
                   nombre={campana.nombre}
+                  categoria={campana.categoria}
                   modalidad={esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'seguimiento'}
                   productoId={campana.productoId}
                   carritoRep={campana.carritoRep}
@@ -1353,6 +1397,14 @@ function CampaignDetail({
                   Configuración y condiciones
                 </span>
                 <div className="divide-y divide-border/25 border-y border-border/25">
+                  {catMeta && (
+                    <div className="flex items-center justify-between py-2.5 text-xs">
+                      <span className="text-muted-foreground">Categoría de canal</span>
+                      <span className="text-right font-medium text-foreground">
+                        {catMeta.emoji} {catMeta.label}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between py-2.5 text-xs">
                     <span className="text-muted-foreground">Destino</span>
                     <span className="text-right font-medium text-foreground">
@@ -1400,8 +1452,8 @@ function CampaignDetail({
                       </div>
                       <div className="flex items-center justify-between py-2.5 text-xs">
                         <span className="text-muted-foreground">Tipo de campaña</span>
-                        <span className="text-right font-medium text-foreground capitalize">
-                          {campana.tipo}
+                        <span className="text-right font-medium text-foreground">
+                          {formatTipoCampana(campana.tipo)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between py-2.5 text-xs">
@@ -1801,6 +1853,7 @@ function CouponDetail({
 
 function CampaignExplanation({
   nombre,
+  categoria,
   modalidad,
   productoId,
   carritoRep,
@@ -1814,6 +1867,7 @@ function CampaignExplanation({
   compact = false,
 }: {
   nombre?: string
+  categoria?: CategoriaCampana | string | null
   modalidad: FormCampana['modalidad']
   productoId?: string | number | null
   carritoRep?: string | null
@@ -1826,6 +1880,7 @@ function CampaignExplanation({
   productos: ProductoGrowth[]
   compact?: boolean
 }) {
+  const catMeta = getCategoriaMeta(categoria)
   const productoIdNormalizado = productoId == null || productoId === '' ? null : Number(productoId)
   const producto = productoIdNormalizado == null ? null : productos.find((item) => item.id === productoIdNormalizado) ?? null
   const descuento = Number(descuentoProductoPorcentaje || 0)
@@ -1888,6 +1943,43 @@ function CampaignExplanation({
         <p className={`${compact ? 'mt-2 text-sm' : 'mt-3 text-base'} leading-relaxed text-muted-foreground`}>{introduccion}</p>
       </header>
 
+      {/* Explicación de utilidades por categoría de canal */}
+      {catMeta ? (
+        <div className="rounded-2xl border border-primary/25 bg-primary/[0.04] p-4 sm:p-5 dark:bg-primary/[0.08]">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl select-none">{catMeta.emoji}</span>
+            <div className="min-w-0">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
+                Canal y utilidad recomendada
+              </span>
+              <h4 className="text-sm font-bold text-foreground sm:text-base">
+                {catMeta.label}
+              </h4>
+            </div>
+          </div>
+          <p className="mt-1 text-xs font-medium text-muted-foreground">
+            {catMeta.subtitulo}
+          </p>
+          <p className="mt-2.5 text-xs sm:text-sm leading-relaxed text-foreground/90">
+            {catMeta.utilidad}
+          </p>
+          <div className="mt-3 rounded-lg bg-background/60 p-2.5 text-xs text-muted-foreground border border-border/40">
+            <span className="font-semibold text-foreground">Tip de uso: </span>
+            {catMeta.ejemploUso}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground/75 italic">
+            * Esta categoría es una etiqueta organizativa para tus métricas; no altera la funcionalidad con el cliente ni la experiencia en la tienda.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 p-3.5 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">💡 Utilidad y canales de campañas:</p>
+          <p className="mt-1 leading-relaxed">
+            Podés asociar una categoría de canal (Historias de Instagram, Reels & TikTok, Pauta Digital, QR en Mostrador, Volantes en Packaging, WhatsApp o Influencers) para organizar tus métricas y saber de dónde proviene cada venta.
+          </p>
+        </div>
+      )}
+
       <div className={`${compact ? 'space-y-4' : 'space-y-5'}`}>
         <div>
           <h4 className={`${compact ? 'text-sm' : 'text-base'} font-medium text-foreground`}>Compartís el link</h4>
@@ -1940,10 +2032,21 @@ function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos,
 
             <div className="mt-6 grid gap-5 sm:grid-cols-2">
               <FieldSelect label="Tipo de campaña" value={form.modalidad} onValueChange={(v) => cambiarModalidad(v as FormCampana['modalidad'])} options={[["seguimiento", "Link de seguimiento"], ["producto", "Promoción de producto"], ["carrito", "Carrito prearmado"]]} />
-              <div className="hidden sm:block" />
+              <FieldSelect
+                label="Categoría / Canal (etiqueta organizativa)"
+                value={form.categoria || 'ninguna'}
+                onValueChange={(v) => set('categoria', (v === 'ninguna' ? '' : v) as FormCampana['categoria'])}
+                options={[
+                  ["ninguna", "Sin categoría específica"],
+                  ...LISTA_CATEGORIAS_CAMPANA.map((c) => [c.key, `${c.emoji} ${c.label}`] as [string, string]),
+                ]}
+              />
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Nombre de la campaña</Label>
                 <Input placeholder={esPromocionProducto ? 'Promo Smash' : esCarritoPrearmado ? 'Combo para compartir' : 'Instagram septiembre'} value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} />
+                <p className="text-[11px] text-muted-foreground">
+                  La categorización es sólo una etiqueta organizativa para el administrador; no modifica la experiencia del cliente.
+                </p>
               </div>
               {esPromocionProducto && (
                 <>
@@ -1990,6 +2093,7 @@ function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos,
             <div className="md:sticky md:top-0">
               <CampaignExplanation
                 nombre={form.nombre}
+                categoria={form.categoria}
                 modalidad={form.modalidad}
                 productoId={form.productoId}
                 carritoRep={form.carritoRep}

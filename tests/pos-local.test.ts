@@ -37,8 +37,8 @@ beforeEach(async () => {
     indice.mockImplementation(async () => { throw new ApiError('Offline', 0) })
     localStorage.clear(); sessionStorage.clear()
     useAuthStore.getState().logout()
-    await local.transaccionPos<void>(['clientes', 'pedidosPendientes', 'meta'], 'readwrite', tx => {
-        for (const name of ['clientes', 'pedidosPendientes', 'meta']) tx.objectStore(name).clear()
+    await local.transaccionPos<void>(['clientes', 'pedidosPendientes', 'meta', 'productos', 'categorias', 'sucursales', 'mesas'], 'readwrite', tx => {
+        for (const name of ['clientes', 'pedidosPendientes', 'meta', 'productos', 'categorias', 'sucursales', 'mesas']) tx.objectStore(name).clear()
     })
     sesion()
     await queue.usePosOfflineStore.getState().initPendientes(1)
@@ -205,4 +205,64 @@ test('descarga manual guarda el snapshot, comparte requests y conserva la copia 
     indice.mockImplementation(async () => { throw new ApiError('Offline', 0) })
     await expect(dir.descargarDirectorioPos(1)).rejects.toThrow('Offline')
     expect((await local.leerParticion<local.ClienteLocal>('clientes', 1)).map(c => c.id)).toEqual([3])
+})
+
+test('reemplazarCatalogoLocal guarda productos, categorías, mesas y sucursales aisladas por tenant', async () => {
+    const productos1 = [
+        { id: 101, nombre: 'Hamburguesa Clásica', precio: '5000', activo: true, categoriaId: 10 },
+        { id: 102, nombre: 'Papas Fritas', precio: '2500', activo: true, categoriaId: 11 },
+    ]
+    const categorias1 = [
+        { id: 10, nombre: 'Hamburguesas', esBebida: false },
+        { id: 11, nombre: 'Guarniciones', esBebida: false },
+    ]
+    const sucursales1 = [{ id: 1, nombre: 'Local Centro', activo: true, soloPos: false }]
+    const mesas1 = [{ id: 1, nombre: 'Mesa 1', orden: 1 }]
+
+    await local.reemplazarCatalogoLocal(1, {
+        productos: productos1,
+        categorias: categorias1,
+        sucursales: sucursales1,
+        mesas: mesas1,
+        restaurante: { id: 1, nombre: 'Piru Burger' },
+        suscripcion: { accesoPanel: true, features: ['pos'] },
+    })
+
+    const cat1 = await local.leerCatalogoLocal(1)
+    expect(cat1.productos).toHaveLength(2)
+    expect(cat1.categorias).toHaveLength(2)
+    expect(cat1.sucursales).toHaveLength(1)
+    expect(cat1.mesas).toHaveLength(1)
+    expect(cat1.restaurante?.nombre).toBe('Piru Burger')
+    expect(cat1.suscripcion?.accesoPanel).toBe(true)
+    expect(cat1.count).toBe(2)
+    expect(typeof cat1.syncedAt).toBe('string')
+
+    // Tenant 2 debe estar completamente vacío
+    const cat2 = await local.leerCatalogoLocal(2)
+    expect(cat2.productos).toHaveLength(0)
+    expect(cat2.categorias).toHaveLength(0)
+
+    // Purgar tenant 1 no afecta a la cola ni a otros tenants
+    await local.purgarCatalogoLocal(1)
+    const cat1Purgado = await local.leerCatalogoLocal(1)
+    expect(cat1Purgado.productos).toHaveLength(0)
+    expect(cat1Purgado.categorias).toHaveLength(0)
+    expect(cat1Purgado.restaurante).toBeNull()
+})
+
+test('guardarModulosLocal y leerModulosLocal preservan módulos activos para POS offline', async () => {
+    const modulosMock = [
+        { codigo: 'pos', activoAhora: true, estado: 'activo' },
+        { codigo: 'mesas', activoAhora: true, estado: 'activo' },
+    ]
+    await local.guardarModulosLocal(1, modulosMock, { accesoPanel: true })
+    const cached = await local.leerModulosLocal(1)
+    expect(cached.modulos).toHaveLength(2)
+    expect(cached.modulos?.[0]?.codigo).toBe('pos')
+    expect(cached.suscripcion?.accesoPanel).toBe(true)
+
+    // Tenant 2 no ve los módulos de tenant 1
+    const cached2 = await local.leerModulosLocal(2)
+    expect(cached2.modulos).toBeNull()
 })

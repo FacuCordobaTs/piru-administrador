@@ -75,17 +75,18 @@ function requisitoConfiguracion(modulo: Modulo) {
 
 const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mesas: '/dashboard/mesas',
-  motor_recompra: '/dashboard/ajustes/recompra',
-  puntos_clientes: '/dashboard/ajustes/experiencia?config=puntos',
+  motor_recompra: '/dashboard/ajustes/retencion',
+  puntos_clientes: '/dashboard/ajustes/retencion?config=puntos',
   codigos_descuento: '/dashboard/clientes?tab=cupones',
-  mercadopago: '/dashboard/ajustes/pagos?config=mercadopago',
-  talo: '/dashboard/ajustes/pagos?config=talo',
+  mercadopago: '/dashboard/ajustes/monetizacion?config=mercadopago',
+  talo: '/dashboard/ajustes/monetizacion?config=talo',
   rapiboy: '/dashboard/ajustes/entregas?config=rapiboy',
   gestion_cadetes: '/dashboard/repartidores',
-  facturacion_arca: '/dashboard/ajustes/facturacion?config=arca',
+  facturacion_arca: '/dashboard/ajustes/monetizacion?config=arca',
   impresion_comandas: '/dashboard/ajustes/impresion?config=impresion',
   multisucursal: '/dashboard/ajustes/entregas?config=sucursales',
-  avisos_automaticos_whatsapp: '/dashboard/ajustes/avisos',
+  avisos_automaticos_whatsapp: '/dashboard/ajustes/retencion?config=avisos',
+  crecimiento: '/dashboard/ajustes/adquisicion?config=gtm',
 }
 
 /**

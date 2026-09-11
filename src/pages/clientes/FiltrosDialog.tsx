@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Calendar,
   Store,
-  Sparkles,
   Percent,
   Tag,
   Megaphone,
@@ -23,7 +22,6 @@ import {
 } from 'lucide-react'
 import type {
   SucursalGrowth,
-  SegmentFilter,
   SortClienteKey,
   SortCampanaKey,
   SortCuponKey,
@@ -32,7 +30,6 @@ import type {
   EstadoCuponFilter,
   TipoCuponFilter,
 } from './types'
-import { SEGMENTOS } from './types'
 
 export interface FiltrosDialogProps {
   open: boolean
@@ -41,9 +38,6 @@ export interface FiltrosDialogProps {
   totalResultados: number
 
   // Clientes
-  segmento: SegmentFilter
-  onSegmentoChange: (seg: SegmentFilter) => void
-  conteoSegmentos: Record<string, number>
   sortCliente: SortClienteKey
   onSortClienteChange: (sort: SortClienteKey) => void
 
@@ -81,9 +75,6 @@ export function FiltrosDialog({
   onOpenChange,
   tab,
   totalResultados,
-  segmento,
-  onSegmentoChange,
-  conteoSegmentos,
   sortCliente,
   onSortClienteChange,
   sortCampana,
@@ -279,47 +270,6 @@ export function FiltrosDialog({
 
             {/* 2. SECCIÓN FILTROS ESPECÍFICOS DE LA PESTAÑA */}
 
-            {/* TAB CLIENTES: SEGMENTOS RFM */}
-            {tab === 'clientes' && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                      Segmento de ciclo de vida (RFM)
-                    </span>
-                  </div>
-                  {segmento !== 'todos' && (
-                    <button
-                      type="button"
-                      onClick={() => onSegmentoChange('todos')}
-                      className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                    >
-                      Ver todos
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  <FilterChip
-                    active={segmento === 'todos'}
-                    onClick={() => onSegmentoChange('todos')}
-                    label="Todos los segmentos"
-                    count={Object.values(conteoSegmentos).reduce((a, b) => a + b, 0)}
-                  />
-                  {SEGMENTOS.map((item) => (
-                    <FilterChip
-                      key={item.value}
-                      active={segmento === item.value}
-                      onClick={() => onSegmentoChange(item.value)}
-                      label={item.label}
-                      dot={item.dot}
-                      count={conteoSegmentos[item.value] ?? 0}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* TAB CAMPAÑAS: ESTADO Y MODALIDAD */}
             {tab === 'campanas' && (

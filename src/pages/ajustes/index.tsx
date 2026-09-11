@@ -1,6 +1,26 @@
 import { lazy, Suspense, useEffect, useRef, type ComponentType } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
-import { Store, CreditCard, Clock, Truck, Sparkles, ChartNoAxesCombined, FileText, Printer, User, UtensilsCrossed, ArrowLeft, Blocks, Copy, ExternalLink, Globe, ChevronRight, type LucideIcon } from 'lucide-react'
+import {
+  Store,
+  CreditCard,
+  Clock,
+  Truck,
+  Sparkles,
+  TrendingUp,
+  Zap,
+  Repeat,
+  FileText,
+  Printer,
+  User,
+  UtensilsCrossed,
+  ArrowLeft,
+  Blocks,
+  Copy,
+  ExternalLink,
+  Globe,
+  ChevronRight,
+  type LucideIcon,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -13,50 +33,64 @@ import MiSuscripcion from '../MiSuscripcion'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean; visibleInNav?: boolean }
+
 const SECTIONS: SectionDef[] = [
-  { id: 'ventas', label: 'Ventas en el local', descripcion: 'Las herramientas para atender, vender y organizar tu operación.', Icon: Store, Component: () => <SectionHeading title="Ventas en el local" description="Organizá la atención, el punto de venta y el stock de tu negocio." /> },
-  { id: 'recompra', label: 'Motor de Recompra', descripcion: 'Tu campaña de recupero y sus resultados.', Icon: Sparkles, Component: lazy(() => import('../MotorRecompra')) },
+  // --- Pilares del Sistema de Crecimiento ---
   {
-    id: 'general',
-    label: 'Tu negocio',
-    descripcion: 'Información del negocio, tu link y tu identidad visual.',
-    Icon: Store,
-    Component: lazy(() => import('./sections/General')),
+    id: 'adquisicion',
+    label: 'Adquisición',
+    descripcion: 'Campañas con atribución, códigos de descuento, QR del local y medición con GTM / Pixel.',
+    Icon: TrendingUp,
+    Component: lazy(() => import('./sections/Adquisicion')),
   },
   {
-    id: 'pagos',
-    label: 'Cómo cobrás',
-    descripcion: 'Cómo cobrás y qué integraciones usás.',
+    id: 'activacion',
+    label: 'Activación',
+    descripcion: 'Tu tienda web en el navegador, experiencia sin fricción y loop viral con pedidos en grupo.',
+    Icon: Zap,
+    Component: lazy(() => import('./sections/Activacion')),
+  },
+  {
+    id: 'retencion',
+    label: 'Retención',
+    descripcion: 'Fidelizá y hacé que vuelvan: Motor de Recompra, Avisos por WhatsApp y Club de Puntos.',
+    Icon: Repeat,
+    Component: lazy(() => import('./sections/Retencion')),
+  },
+  {
+    id: 'monetizacion',
+    label: 'Monetización',
+    descripcion: 'Cómo cobrás: Mercado Pago, Talo 3.0, efectivo y facturación electrónica ARCA.',
     Icon: CreditCard,
-    Component: lazy(() => import('./sections/Pagos')),
+    Component: lazy(() => import('./sections/Monetizacion')),
   },
-  {
-    id: 'horarios',
-    label: 'Horarios',
-    descripcion: 'Cuándo abrís y si aceptás pedidos para más tarde.',
-    Icon: Clock,
-    Component: lazy(() => import('./sections/Horarios')),
-  },
+
+  // --- Operación del Restaurante ---
   {
     id: 'entregas',
-    label: 'Entregas',
-    descripcion: 'Cómo entregás: tipos de pedido, zonas y locales.',
+    label: 'Entregas y zonas',
+    descripcion: 'Cómo entregás: delivery, takeaway, zonas de reparto y sucursales.',
     Icon: Truck,
     Component: lazy(() => import('./sections/Entregas')),
   },
   {
-    id: 'experiencia',
-    label: 'Tu tienda online',
-    descripcion: 'Cómo viven tus clientes el pedido.',
-    Icon: Sparkles,
-    Component: lazy(() => import('./sections/Experiencia')),
+    id: 'horarios',
+    label: 'Horarios',
+    descripcion: 'Cuándo abrís y si aceptás pedidos diferidos para más tarde.',
+    Icon: Clock,
+    Component: lazy(() => import('./sections/Horarios')),
   },
   {
-    id: 'facturacion',
-    label: 'Facturación',
-    descripcion: 'Facturación electrónica con AFIP/ARCA.',
-    Icon: FileText,
-    Component: lazy(() => import('./sections/Facturacion')),
+    id: 'ventas',
+    label: 'Ventas en el local',
+    descripcion: 'Las herramientas para atender, vender y organizar tu operación.',
+    Icon: Store,
+    Component: () => (
+      <SectionHeading
+        title="Ventas en el local"
+        description="Organizá la atención, el punto de venta, mesas y el stock de tu negocio."
+      />
+    ),
   },
   {
     id: 'mozos',
@@ -73,20 +107,14 @@ const SECTIONS: SectionDef[] = [
     Component: lazy(() => import('./sections/Impresion')),
     tauriOnly: true,
   },
+
+  // --- Negocio y Cuenta ---
   {
-    id: 'avisos',
-    label: 'Avisos automáticos',
-    descripcion: 'Configuración del módulo de avisos por WhatsApp.',
-    Icon: Sparkles,
-    Component: lazy(() => import('./sections/AvisosAutomaticos')),
-    visibleInNav: false,
-  },
-  {
-    id: 'crecimiento',
-    label: 'Crecimiento',
-    descripcion: 'Medición y contenedor de Google Tag Manager de tu tienda.',
-    Icon: ChartNoAxesCombined,
-    Component: lazy(() => import('./sections/Crecimiento')),
+    id: 'general',
+    label: 'Tu negocio',
+    descripcion: 'Información del negocio, tu link y tu identidad visual.',
+    Icon: Store,
+    Component: lazy(() => import('./sections/General')),
   },
   {
     id: 'cuenta',
@@ -95,51 +123,141 @@ const SECTIONS: SectionDef[] = [
     Icon: User,
     Component: lazy(() => import('./sections/Cuenta')),
   },
+
+  // --- Aliases de compatibilidad con rutas/enlaces antiguos ---
+  {
+    id: 'crecimiento',
+    label: 'Adquisición',
+    descripcion: 'Redirigido a Adquisición.',
+    Icon: TrendingUp,
+    Component: lazy(() => import('./sections/Adquisicion')),
+    visibleInNav: false,
+  },
+  {
+    id: 'experiencia',
+    label: 'Activación',
+    descripcion: 'Redirigido a Activación.',
+    Icon: Zap,
+    Component: lazy(() => import('./sections/Activacion')),
+    visibleInNav: false,
+  },
+  {
+    id: 'pagos',
+    label: 'Monetización',
+    descripcion: 'Redirigido a Monetización.',
+    Icon: CreditCard,
+    Component: lazy(() => import('./sections/Monetizacion')),
+    visibleInNav: false,
+  },
+  {
+    id: 'avisos',
+    label: 'Retención',
+    descripcion: 'Redirigido a Retención.',
+    Icon: Repeat,
+    Component: lazy(() => import('./sections/Retencion')),
+    visibleInNav: false,
+  },
+  {
+    id: 'facturacion',
+    label: 'Monetización',
+    descripcion: 'Redirigido a Monetización.',
+    Icon: FileText,
+    Component: lazy(() => import('./sections/Monetizacion')),
+    visibleInNav: false,
+  },
+  {
+    id: 'recompra',
+    label: 'Motor de Recompra',
+    descripcion: 'Tu campaña de recupero y sus resultados.',
+    Icon: Sparkles,
+    Component: lazy(() => import('../MotorRecompra')),
+    visibleInNav: false,
+  },
 ]
 
+const ALIASES_SECCION: Record<string, string> = {
+  crecimiento: 'adquisicion',
+  experiencia: 'activacion',
+  pagos: 'monetizacion',
+  avisos: 'retencion',
+  facturacion: 'monetizacion',
+}
 
 const REQUISITOS: Record<string, string[]> = {
-  facturacion: ['facturacion_arca'], impresion: ['impresion_comandas'],
-  recompra: ['motor_recompra'], avisos: ['avisos_automaticos_whatsapp'], mozos: ['pos', 'mesas'], crecimiento: ['crecimiento'],
+  impresion: ['impresion_comandas'],
+  mozos: ['pos', 'mesas'],
+  recompra: ['motor_recompra'],
 }
+
 const GROUPS = [
-  { label: 'Tu negocio', ids: ['general', 'pagos', 'horarios', 'entregas', 'experiencia'] },
-  { label: 'Operación', ids: ['ventas', 'facturacion', 'impresion', 'crecimiento'] },
-  { label: 'Piru', ids: ['modulos', 'suscripcion', 'cuenta'] },
+  { label: 'Crecimiento', ids: ['adquisicion', 'activacion', 'retencion', 'monetizacion'] },
+  { label: 'Operación', ids: ['entregas', 'horarios', 'ventas'] },
+  { label: 'Tu negocio', ids: ['general', 'modulos', 'suscripcion', 'cuenta'] },
 ]
 
-// Un único destino por módulo. Las capacidades nuevas quedan accesibles en Ventas
-// hasta que se les asigne una sección más específica.
+// Un único destino canónico por módulo en el Sistema de Crecimiento y Operación.
 const MODULOS_SECCION: Record<string, string> = {
-  mercadopago: 'pagos', talo: 'pagos',
-  rapiboy: 'entregas', gestion_cadetes: 'entregas', multisucursal: 'entregas',
-  avisos_automaticos_whatsapp: 'experiencia',
-  puntos_clientes: 'experiencia', codigos_descuento: 'crecimiento', motor_recompra: 'crecimiento', crecimiento: 'crecimiento',
-  pos: 'ventas', mesas: 'ventas', gestion_stock: 'ventas', cierre_turno_manual: 'ventas',
-  facturacion_arca: 'facturacion', impresion_comandas: 'impresion',
+  // Monetización
+  mercadopago: 'monetizacion',
+  talo: 'monetizacion',
+  facturacion_arca: 'monetizacion',
+
+  // Adquisición
+  crecimiento: 'adquisicion',
+  codigos_descuento: 'adquisicion',
+
+  // Retención
+  motor_recompra: 'retencion',
+  avisos_automaticos_whatsapp: 'retencion',
+  puntos_clientes: 'retencion',
+
+  // Operación
+  pos: 'ventas',
+  mesas: 'ventas',
+  gestion_stock: 'ventas',
+  cierre_turno_manual: 'ventas',
+  rapiboy: 'entregas',
+  gestion_cadetes: 'entregas',
+  multisucursal: 'entregas',
+  impresion_comandas: 'impresion',
 }
 const seccionModulo = (codigo: string) => MODULOS_SECCION[codigo] ?? 'ventas'
 
 export default function AjustesPage() {
   const { seccion: seccionParam } = useParams()
-  const seccion = seccionParam ?? 'general'
+  const seccion = seccionParam ? ALIASES_SECCION[seccionParam] ?? seccionParam : 'general'
   const { hash, key: locationKey } = useLocation()
-  const restaurante = useRestauranteStore(s => s.restaurante)
+  const restaurante = useRestauranteStore((s) => s.restaurante)
   const { categorias, suscripcion, cargar, error, cargando } = useModulosStore()
   const contenidoRef = useRef<HTMLDivElement>(null)
-  const modulos = categorias.flatMap(c => c.modulos)
-  const habilitada = (id: string) => (REQUISITOS[id] ?? []).every(codigo => modulos.some(m => m.codigo === codigo && m.activoAhora))
-  const active = SECTIONS.find(s => s.id === seccion)
+  const modulos = categorias.flatMap((c) => c.modulos)
+  const habilitada = (id: string) =>
+    (REQUISITOS[id] ?? []).every((codigo) =>
+      modulos.some((m) => m.codigo === codigo && m.activoAhora)
+    )
+  const active = SECTIONS.find((s) => s.id === seccion)
   const ActiveSection = active?.Component
-  const secundaria = !!active && !GROUPS.some(g => g.ids.includes(active.id))
+  const secundaria = !!active && !GROUPS.some((g) => g.ids.includes(active.id))
   const link = restaurante?.username ? `https://piru.app/${restaurante.username}` : null
   const atencion = ['suspendida', 'cancelada', 'pago_pendiente'].includes(suscripcion?.estado ?? '')
-  const operacion = SECTIONS.filter(s => !GROUPS.some(g => g.ids.includes(s.id)) && s.visibleInNav !== false && habilitada(s.id) && (!s.tauriOnly || isTauri))
-  const grupos = GROUPS.map(g => g.label === 'Operación' ? { ...g, ids: [...g.ids, ...operacion.map(s => s.id)] } : g)
-  const asociados = modulos.filter(m => seccionModulo(m.codigo) === seccion && (m.activable || m.activoAhora)).map(m => m.codigo)
+  const operacion = SECTIONS.filter(
+    (s) =>
+      !GROUPS.some((g) => g.ids.includes(s.id)) &&
+      s.visibleInNav !== false &&
+      habilitada(s.id) &&
+      (!s.tauriOnly || isTauri)
+  )
+  const grupos = GROUPS.map((g) =>
+    g.label === 'Operación' ? { ...g, ids: [...g.ids, ...operacion.map((s) => s.id)] } : g
+  )
+  const asociados = modulos
+    .filter((m) => seccionModulo(m.codigo) === seccion && (m.activable || m.activoAhora))
+    .map((m) => m.codigo)
   const destinoPadre = seccionModulo(REQUISITOS[seccion]?.[0] ?? '')
 
-  useEffect(() => { void cargar().catch(() => {}) }, [cargar])
+  useEffect(() => {
+    void cargar().catch(() => {})
+  }, [cargar])
   useEffect(() => {
     if (contenidoRef.current) contenidoRef.current.scrollTop = 0
     contenidoRef.current?.focus({ preventScroll: true })

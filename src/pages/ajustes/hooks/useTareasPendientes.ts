@@ -124,7 +124,7 @@ export function useTareasPendientes(): TareasResumen {
         : 'Solo cobrás en efectivo — sumá pagos online',
       hecha: cobroOnline,
       cta: 'Configurar pagos',
-      to: '/dashboard/ajustes/pagos',
+      to: '/dashboard/ajustes/monetizacion',
     })
 
     // 4. Horarios de atención.
@@ -162,7 +162,7 @@ export function useTareasPendientes(): TareasResumen {
       oracion: waOk ? 'WhatsApp conectado' : 'Sin conectar — recibí y avisá pedidos por WhatsApp',
       hecha: waOk,
       cta: 'Conectar WhatsApp',
-      to: '/dashboard/ajustes/pagos',
+      to: '/dashboard/ajustes/monetizacion',
     })
 
     return list
