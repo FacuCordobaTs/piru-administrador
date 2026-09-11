@@ -174,7 +174,10 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
       const response = await restauranteApi.getProfile(token) as {
         success: boolean
         data?: {
-          restaurante: RestauranteData[]
+          // El backend actual responde un objeto; los despliegues anteriores
+          // devolvían un arreglo. El store es el punto común del admin, así
+          // que admite ambos contratos durante la transición.
+          restaurante: RestauranteData | RestauranteData[]
           mesas: Mesa[]
           productos: Producto[]
           suscripcion?: SuscripcionResumen
@@ -189,8 +192,18 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
       }
 
       if (response.success && response.data) {
+        const restauranteRespuesta = response.data.restaurante
+        const restaurante = Array.isArray(restauranteRespuesta)
+          ? restauranteRespuesta[0]
+          : restauranteRespuesta
+
+        if (!restaurante) {
+          set({ error: 'El servidor no devolvió los datos del restaurante', isLoading: false })
+          return
+        }
+
         set({
-          restaurante: response.data.restaurante[0],
+          restaurante,
           suscripcion: response.data.suscripcion ?? null,
           mesas: response.data.mesas,
           productos: response.data.productos,
