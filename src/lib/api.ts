@@ -381,10 +381,17 @@ export interface ResumenCrecimiento {
 }
 
 export interface PrepararEnlaceCrecimiento {
-  clienteId: number; campanaId?: number | null; recetaCodigo?: RecetaCrecimiento
+  clienteId: number
+  campanaId?: number | null
+  tipoCampana?: 'lo_mismo' | 'reactivacion'
+  descuentoPorcentaje?: number
+  expiraHoras?: number | null
+  recetaCodigo?: RecetaCrecimiento
   codigoDescuentoId?: number | null
   incentivo?: { descuentoPorcentaje: number; expiraHoras: number | null }
-  incentivoConfirmado?: boolean; expiraEnHoras?: number; idempotenciaClave: string
+  incentivoConfirmado?: boolean
+  expiraEnHoras?: number
+  idempotenciaClave: string
 }
 export interface ContactarEnlaceCrecimiento { token: string; idempotenciaClave: string }
 export interface CrearCampanaCrecimiento {
@@ -409,7 +416,7 @@ export const crecimientoApi = {
   resumen: (token: string, filtros?: FiltrosCrecimiento) => fetchApi<{ success: boolean; data: ResumenCrecimiento }>(`/marketing/resumen${queryCrecimiento(filtros)}`, { headers: authCrecimiento(token) }),
   oportunidades: (token: string, filtros?: { segmento?: SegmentoCrecimiento; receta?: RecetaCrecimiento }) => fetchApi<{ success: boolean; data: { oportunidades: OportunidadCrecimiento[]; total: number } }>(`/marketing/oportunidades${queryCrecimiento(filtros)}`, { headers: authCrecimiento(token) }),
   recomendacion: (token: string, clienteId: number) => fetchApi<{ success: boolean; data: OportunidadCrecimiento }>(`/marketing/clientes/${clienteId}/recomendacion`, { headers: authCrecimiento(token) }),
-  prepararEnlace: (token: string, data: PrepararEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { enlace: EnlaceCrecimiento; token?: string; idempotente: boolean; receta: OportunidadCrecimiento['receta']; destino: DestinoCrecimiento; textoSugerido: string } }>('/marketing/enlaces', { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
+  prepararEnlace: (token: string, data: PrepararEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { enlace: EnlaceCrecimiento; token?: string; campanaSlug?: string; campanaCodigo?: string; modalidad?: string; dto?: number; idempotente: boolean; receta?: OportunidadCrecimiento['receta']; destino?: DestinoCrecimiento; textoSugerido?: string } }>('/marketing/enlaces', { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
   copiarEnlace: (token: string, enlaceId: number, data: ContactarEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { url: string; entregado: false; idempotente: boolean } }>(`/marketing/enlaces/${enlaceId}/copiar`, { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
   abrirWaMe: (token: string, enlaceId: number, data: ContactarEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { url: string; waMeUrl: string; entregado: false; idempotente: boolean } }>(`/marketing/enlaces/${enlaceId}/wa-me`, { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),
   enviarConPiru: (token: string, enlaceId: number, data: ContactarEnlaceCrecimiento) => fetchApi<{ success: boolean; data: { entregado: boolean; idempotente: boolean } }>(`/marketing/enlaces/${enlaceId}/enviar-whatsapp`, { method: 'POST', headers: authCrecimiento(token), body: JSON.stringify(data) }),

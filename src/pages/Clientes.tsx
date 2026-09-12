@@ -8,9 +8,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
-import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X } from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
-import DeepLinkDialog from './clientes/DeepLinkDialog'
+import MicroCampanaModal from './clientes/MicroCampanaModal'
 import { HistorialPuntosDialog } from './clientes/HistorialPuntosDialog'
 import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
 import {
@@ -34,7 +34,6 @@ import {
   formatCurrency,
   formatDate,
   getSegmento,
-  recetaNombre,
 } from './clientes/types'
 import { FiltrosDialog } from './clientes/FiltrosDialog'
 
@@ -88,7 +87,7 @@ export default function Clientes() {
   const [assetMobileView, setAssetMobileView] = useState<AssetMobileView>('lista')
   const [campanaSeleccionada, setCampanaSeleccionada] = useState<FiltroCampana>(null)
   const [cuponSeleccionado, setCuponSeleccionado] = useState<number | null>(null)
-  const [deepLinkOpen, setDeepLinkOpen] = useState(false)
+  const [microCampanaOpen, setMicroCampanaOpen] = useState(false)
   const mobileNavRef = useRef<HTMLElement>(null)
 
   const actualizarPuntosCliente = (clienteId: number, nuevosPuntos: number) => {
@@ -701,7 +700,7 @@ export default function Clientes() {
                 token={token ?? undefined}
                 mostrarPedidos={mostrarPedidos}
                 onTogglePedidos={togglePedidos}
-                onDeepLink={() => setDeepLinkOpen(true)}
+                onMicroCampana={() => setMicroCampanaOpen(true)}
                 onDeleteClient={() => void eliminarCliente()}
                 onPuntosActualizados={(nuevos) => actualizarPuntosCliente(cliente.id, nuevos)}
               />
@@ -712,7 +711,7 @@ export default function Clientes() {
                 </div>
                 <h2 className="mt-3.5 text-sm font-semibold tracking-tight text-foreground">Seleccioná un cliente</h2>
                 <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                  Vas a ver su ciclo de vida, campañas, cupones y la receta recomendada.
+                  Vas a ver su ciclo de vida, campañas, cupones y la micro-campaña sugerida.
                 </p>
               </div>
             )}
@@ -768,7 +767,16 @@ export default function Clientes() {
       ) : null}
     </main>
 
-    {token && <DeepLinkDialog open={deepLinkOpen} onOpenChange={setDeepLinkOpen} token={token} cliente={cliente} onPrepared={cargar} />}
+    {token && (
+      <MicroCampanaModal
+        open={microCampanaOpen}
+        onOpenChange={setMicroCampanaOpen}
+        token={token}
+        cliente={cliente}
+        username={username ?? undefined}
+        onPrepared={cargar}
+      />
+    )}
 
     {workspaceTab && (
       <FiltrosDialog
@@ -837,15 +845,54 @@ function ClientRow({ cliente, selected, onClick }: { cliente: ClienteGrowth; sel
   const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
   return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{cliente.nombre}</p>{cliente.esVip && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} /><span>{segmento.label}</span><span>·</span><span>{cliente.cantidadPedidos} pedidos</span>{(cliente.puntos ?? 0) > 0 && (<><span>·</span><span className="font-semibold text-amber-600 dark:text-amber-400">{cliente.puntos} pts</span></>)}</div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
 }
+function EmptyClients() {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
+      <Users className="h-8 w-8 text-muted-foreground/30" />
+      <p className="mt-3 text-sm font-medium">No hay clientes con estos filtros</p>
+      <p className="mt-1 text-xs text-muted-foreground">Probá ampliar las fechas o quitar una campaña o cupón.</p>
+    </div>
+  )
+}
 
-function EmptyClients() { return <div className="flex flex-col items-center justify-center px-6 py-20 text-center"><Users className="h-8 w-8 text-muted-foreground/30" /><p className="mt-3 text-sm font-medium">No hay clientes con estos filtros</p><p className="mt-1 text-xs text-muted-foreground">Probá ampliar las fechas o quitar una campaña o cupón.</p></div> }
+function getMicroCampanaInfo(cliente: ClienteGrowth) {
+  const seg = cliente.segmento ?? 'nuevo'
+  if (seg === 'nuevo') {
+    return {
+      badge: '¿Lo mismo de siempre? (Primer Pedido)',
+      descripcion: 'Prepara un enlace con su primer pedido cargado en el drawer para repetir en 1 toque.',
+    }
+  }
+  if (seg === 'en_riesgo') {
+    return {
+      badge: '¿Lo mismo de siempre? (En Riesgo)',
+      descripcion: 'Prepara su pedido habitual para rescatar su ritmo de compra antes de que se enfríe.',
+    }
+  }
+  if (seg === 'dormido') {
+    return {
+      badge: 'Reactivación (10% OFF)',
+      descripcion: 'Ofrecele un 10% de descuento automático en su pedido para reactivar el hábito.',
+    }
+  }
+  if (seg === 'perdido') {
+    return {
+      badge: 'Reactivación urgente (20% OFF · 48hs)',
+      descripcion: 'Una propuesta fuerte con 20% OFF por 48 horas como última oportunidad para recuperarlo.',
+    }
+  }
+  return {
+    badge: '¿Lo mismo de siempre? (Habitual)',
+    descripcion: 'Facilitale su compra recurrente con un link directo a su pedido de siempre en 1 click.',
+  }
+}
 
 function ClienteDetalle({
   cliente,
   token,
   mostrarPedidos = false,
   onTogglePedidos,
-  onDeepLink,
+  onMicroCampana,
   onDeleteClient,
   onPuntosActualizados,
 }: {
@@ -853,7 +900,7 @@ function ClienteDetalle({
   token?: string
   mostrarPedidos?: boolean
   onTogglePedidos?: () => void
-  onDeepLink: () => void
+  onMicroCampana: () => void
   onDeleteClient: () => void
   onPuntosActualizados?: (nuevos: number) => void
 }) {
@@ -991,30 +1038,30 @@ function ClienteDetalle({
               </button>
             </div>
 
-            {/* Acción / Receta recomendada */}
+            {/* Micro-Campaña sugerida */}
             <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4 transition-all dark:bg-emerald-500/[0.07]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Sparkles className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                     <span className="text-xs font-semibold tracking-tight text-foreground">
-                      Receta recomendada
+                      Micro-Campaña sugerida
                     </span>
                     <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                      {recetaNombre(cliente.recetaRecomendada?.codigo)}
+                      {getMicroCampanaInfo(cliente).badge}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Piru sugiere una acción según este segmento. Podés elegir esa o cualquiera de las otras cinco.
+                    {getMicroCampanaInfo(cliente).descripcion}
                   </p>
                 </div>
                 <Button
                   size="sm"
-                  onClick={onDeepLink}
+                  onClick={onMicroCampana}
                   className="shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
                 >
-                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                  Elegir receta y link
+                  <Zap className="mr-1.5 h-3.5 w-3.5" />
+                  Compartir Micro-Campaña
                 </Button>
               </div>
             </div>
@@ -1293,30 +1340,30 @@ function ClienteDetalle({
                 </p>
               </div>
 
-              {/* Acción / Receta recomendada */}
+              {/* Micro-Campaña sugerida */}
               <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-5 transition-all dark:bg-emerald-500/[0.07]">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Sparkles className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                       <span className="text-sm font-semibold tracking-tight text-foreground">
-                        Receta recomendada
+                        Micro-Campaña sugerida
                       </span>
                       <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                        {recetaNombre(cliente.recetaRecomendada?.codigo)}
+                        {getMicroCampanaInfo(cliente).badge}
                       </span>
                     </div>
                     <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
-                      Piru sugiere una acción según este segmento. Podés elegir esa o cualquiera de las otras cinco recetas para generar un link personalizado.
+                      {getMicroCampanaInfo(cliente).descripcion}
                     </p>
                   </div>
                   <Button
                     size="sm"
-                    onClick={onDeepLink}
+                    onClick={onMicroCampana}
                     className="h-9 shrink-0 rounded-full bg-emerald-600 px-5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
                   >
-                    <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                    Elegir receta y link
+                    <Zap className="mr-1.5 h-3.5 w-3.5" />
+                    Compartir Micro-Campaña
                   </Button>
                 </div>
               </div>
