@@ -2578,12 +2578,14 @@ export interface ConfiguracionPuntosData {
   puntosPrimerPedido: number
   puntosMinimosCanje: number
   permiteCanjeEnvioGratis: boolean
+  permitirCanjeEnvioGratis?: boolean
   puntosEnvioGratis: number
   permiteCanjeDescuento: boolean
+  permitirCanjeDescuento?: boolean
   descuentoPuntosCosto: number
-  descuentoTipo: 'porcentaje' | 'monto_fijo'
-  descuentoValor: number
-  descuentoMontoMinimo: number
+  descuentoTipo: 'porcentaje' | 'monto_fijo' | 'fijo'
+  descuentoValor: number | string
+  descuentoMontoMinimo: number | string
 }
 
 export interface TransaccionPuntosData {

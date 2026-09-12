@@ -122,12 +122,11 @@ export default function MicroCampanaModal({
   // Construir URL pública para el cliente
   const urlPublica = useMemo(() => {
     if (!tokenCifrado) return ''
-    const baseOrigin = window.location.origin.includes('localhost')
-      ? 'http://localhost:5173'
-      : username
-        ? `https://${username}.piru.app`
-        : window.location.origin
-    return `${baseOrigin}/c/${campanaSlug}?c=${tokenCifrado}`
+    const u = username ? encodeURIComponent(username) : 'local'
+    const base = window.location.origin.includes('localhost')
+      ? `http://localhost:5173/${u}`
+      : `https://my.piru.app/${u}`
+    return `${base}/c/${campanaSlug}?tk=${tokenCifrado}`
   }, [tokenCifrado, username, campanaSlug])
 
   // Compartir por canales

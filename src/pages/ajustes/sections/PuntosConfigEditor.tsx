@@ -48,7 +48,21 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
       .getConfig(token)
       .then((res) => {
         if (res.success && res.data) {
-          setConfig(res.data)
+          const d = res.data as any
+          setConfig({
+            restauranteId: d.restauranteId || 0,
+            activo: d.activo !== false,
+            pesosPorPunto: Number(d.pesosPorPunto) || 100,
+            puntosPrimerPedido: Number(d.puntosPrimerPedido) || 0,
+            puntosMinimosCanje: Number(d.puntosMinimosCanje) || 0,
+            permiteCanjeEnvioGratis: Boolean(d.permiteCanjeEnvioGratis ?? d.permitirCanjeEnvioGratis),
+            puntosEnvioGratis: Number(d.puntosEnvioGratis) || 300,
+            permiteCanjeDescuento: Boolean(d.permiteCanjeDescuento ?? d.permitirCanjeDescuento),
+            descuentoPuntosCosto: Number(d.descuentoPuntosCosto) || 0,
+            descuentoTipo: d.descuentoTipo === 'fijo' || d.descuentoTipo === 'monto_fijo' ? 'monto_fijo' : 'porcentaje',
+            descuentoValor: Number(d.descuentoValor) || 0,
+            descuentoMontoMinimo: Number(d.descuentoMontoMinimo) || 0,
+          })
         }
       })
       .catch((err) => {
@@ -77,14 +91,16 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
         pesosPorPunto: Number(config.pesosPorPunto),
         puntosPrimerPedido: Number(config.puntosPrimerPedido),
         puntosMinimosCanje: Number(config.puntosMinimosCanje),
+        permitirCanjeEnvioGratis: config.permiteCanjeEnvioGratis,
         permiteCanjeEnvioGratis: config.permiteCanjeEnvioGratis,
         puntosEnvioGratis: Number(config.puntosEnvioGratis),
+        permitirCanjeDescuento: config.permiteCanjeDescuento,
         permiteCanjeDescuento: config.permiteCanjeDescuento,
         descuentoPuntosCosto: Number(config.descuentoPuntosCosto),
-        descuentoTipo: config.descuentoTipo,
-        descuentoValor: Number(config.descuentoValor),
-        descuentoMontoMinimo: Number(config.descuentoMontoMinimo),
-      })
+        descuentoTipo: config.descuentoTipo === 'monto_fijo' ? 'fijo' : 'porcentaje',
+        descuentoValor: String(config.descuentoValor ?? 0),
+        descuentoMontoMinimo: String(config.descuentoMontoMinimo ?? 0),
+      } as any)
 
       if (res.success) {
         toast.success('Configuración de puntos guardada')
