@@ -16,6 +16,9 @@ if (!isTauri) {
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['piru192.png', 'piru512.png', 'piruappletouch.png'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      },
       manifest: {
         name: 'Piru Admin - Panel de Control',
         short_name: 'Piru Admin',

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { restauranteApi } from '@/lib/api'
+import { restauranteApi, categoriasApi } from '@/lib/api'
 import { useAuthStore } from './authStore'
 import { leerCatalogoLocal, reemplazarCatalogoLocal } from '@/lib/posLocalDb'
 
@@ -202,7 +202,6 @@ export const useRestauranteStore = create<RestauranteState>((set) => ({
       }
 
       // Obtener categorías por separado
-      const { categoriasApi } = await import('@/lib/api')
       const categoriasResponse = await categoriasApi.getAll(token) as {
         success: boolean
         categorias?: Categoria[]
