@@ -1255,47 +1255,68 @@ const PosComandaPreview = ({
                                 ${draft.total.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
                             </span>
                         </div>
-                        {editingPedidoId && (
+                        {(editingPedidoId || draft.tipo === 'mesa') && (
                             <div className="flex items-center justify-end gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                                 {draft.submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                                <span>{draft.submitting ? 'Guardando…' : draft.hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}</span>
+                                <span>
+                                    {draft.items.length === 0 && !editingPedidoId
+                                        ? 'Agregá un producto para abrir la mesa'
+                                        : draft.submitting
+                                            ? 'Guardando…'
+                                            : draft.hasChanges
+                                                ? 'Guardado pendiente…'
+                                                : 'Guardado'}
+                                </span>
                             </div>
                         )}
-                        <div className="flex items-center gap-2">
-                            {editingPedidoId ? (
-                                <div className="grid flex-1 grid-cols-2 gap-2">
-                                    <Button type="button" variant="outline" className="h-14 rounded-2xl px-2 text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintNewMesa?.()}>
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                                {editingPedidoId || draft.tipo === 'mesa' ? (
+                                    <Button
+                                        type="button"
+                                        onClick={onSubmit}
+                                        disabled={draft.submitting || !draft.hasChanges || draft.items.length === 0}
+                                        className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00] disabled:opacity-50"
+                                    >
+                                        {draft.submitting ? (
+                                            <>
+                                                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Guardando…
+                                            </>
+                                        ) : (
+                                            'Guardar cambios'
+                                        )}
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        onClick={onSubmit}
+                                        disabled={draft.items.length === 0 || draft.submitting}
+                                        className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
+                                    >
+                                        {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
+                                    </Button>
+                                )}
+                                {editingPedidoId && draft.tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
+                                    <button
+                                        type="button"
+                                        onClick={() => void onDispatchMesa()}
+                                        disabled={draft.items.length === 0 || draft.submitting}
+                                        aria-label="Despachar pedido de la mesa"
+                                        title="Despachar"
+                                        className="h-14 w-14 shrink-0 rounded-2xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
+                                    >
+                                        <Truck className="h-5 w-5" />
+                                    </button>
+                                )}
+                            </div>
+                            {editingPedidoId && (
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintNewMesa?.()}>
                                         <Printer className="mr-1.5 h-4 w-4" /> Imprimir productos nuevos
                                     </Button>
-                                    <Button type="button" variant="outline" className="h-14 rounded-2xl px-2 text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintAllMesa?.()}>
+                                    <Button type="button" variant="outline" className="h-11 rounded-xl px-2 text-xs font-bold" disabled={draft.submitting} onClick={() => void onPrintAllMesa?.()}>
                                         <Printer className="mr-1.5 h-4 w-4" /> Reimprimir comanda entera
                                     </Button>
                                 </div>
-                            ) : draft.tipo === 'mesa' ? (
-                                <div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                                    {draft.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                                    {draft.submitting ? 'Guardando…' : draft.items.length === 0 ? 'Agregá un producto para abrir la mesa' : draft.hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
-                                </div>
-                            ) : (
-                                <Button
-                                    onClick={onSubmit}
-                                    disabled={draft.items.length === 0 || draft.submitting}
-                                    className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
-                                >
-                                    {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
-                                </Button>
-                            )}
-                            {editingPedidoId && draft.tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
-                                <button
-                                    type="button"
-                                    onClick={() => void onDispatchMesa()}
-                                    disabled={draft.items.length === 0 || draft.submitting}
-                                    aria-label="Despachar pedido de la mesa"
-                                    title="Despachar"
-                                    className="h-14 w-14 shrink-0 rounded-2xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
-                                >
-                                    <Truck className="h-5 w-5" />
-                                </button>
                             )}
                         </div>
                     </div>

@@ -1032,6 +1032,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
         enviandoRef.current = true
         setSubmitting(true)
+        lastAutoSaveAttemptRef.current = currentSignature
         try {
             // Editar un pedido existente requiere el servidor: la cola offline
             // es sólo para altas nuevas del POS.
@@ -1131,7 +1132,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             await usePosOfflineStore.getState().initPendientes(restauranteId)
             if (useAuthStore.getState().restaurante?.id !== restauranteId) return null
             await aplicarClienteRespuesta(restauranteId, res)
-            if (!automatico) toast.success('Pedido anotado correctamente')
+            if (!automatico) toast.success(data.tipo === 'mesa' ? 'Mesa guardada correctamente' : 'Pedido anotado correctamente')
             if (res.data?.id) await onCreated(res.data.id, res.data)
             return res.data?.id ?? null
         } catch (error: unknown) {
@@ -1168,7 +1169,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         const debeAutoguardar = modoEdicion || (tipo === 'mesa' && !!mesaAsignada)
         if (!online || !debeAutoguardar || cart.length === 0 || !hasChanges || submitting) return
         if (lastAutoSaveAttemptRef.current === currentSignature) return
-        const demoraAutoguardado = modoEdicion ? 8_000 : 450
+        const demoraAutoguardado = modoEdicion ? 8_000 : 4_000
         const timeout = window.setTimeout(() => {
             lastAutoSaveAttemptRef.current = currentSignature
             void autoSaveRef.current(true)
@@ -1342,47 +1343,68 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     <span className="text-sm font-bold text-foreground">Total</span>
                     <span className="text-2xl font-black text-[#FF7A00]">${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
                 </div>
-                {modoEdicion && (
+                {(modoEdicion || tipo === 'mesa') && (
                     <div className="mb-2 flex items-center justify-end gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                         {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                        <span>{submitting ? 'Guardando…' : hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}</span>
+                        <span>
+                            {cart.length === 0 && !modoEdicion
+                                ? 'Agregá un producto para abrir la mesa'
+                                : submitting
+                                    ? 'Guardando…'
+                                    : hasChanges
+                                        ? 'Guardado pendiente…'
+                                        : 'Guardado'}
+                        </span>
                     </div>
                 )}
-                <div className="flex items-center gap-2">
-                    {modoEdicion ? (
-                        <div className="grid flex-1 grid-cols-2 gap-2">
-                            <Button type="button" variant="outline" className="h-12 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintNewMesa?.()}>
+                <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                        {modoEdicion || tipo === 'mesa' ? (
+                            <Button
+                                type="button"
+                                onClick={() => void handleSubmit()}
+                                disabled={submitting || !hasChanges || cart.length === 0}
+                                className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base disabled:opacity-50"
+                            >
+                                {submitting ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando…
+                                    </>
+                                ) : (
+                                    'Guardar cambios'
+                                )}
+                            </Button>
+                        ) : (
+                            <Button
+                                onClick={() => void handleSubmit()}
+                                disabled={submitting || cart.length === 0}
+                                className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
+                            >
+                                {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
+                            </Button>
+                        )}
+                        {modoEdicion && tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
+                            <button
+                                type="button"
+                                onClick={() => void onDispatchMesa()}
+                                disabled={cart.length === 0 || submitting}
+                                aria-label="Despachar pedido de la mesa"
+                                title="Despachar"
+                                className="h-12 w-12 shrink-0 rounded-xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
+                            >
+                                <Truck className="h-5 w-5" />
+                            </button>
+                        )}
+                    </div>
+                    {modoEdicion && (
+                        <div className="grid grid-cols-2 gap-2">
+                            <Button type="button" variant="outline" className="h-10 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintNewMesa?.()}>
                                 <Printer className="mr-1.5 h-4 w-4" /> Imprimir productos nuevos
                             </Button>
-                            <Button type="button" variant="outline" className="h-12 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintAllMesa?.()}>
+                            <Button type="button" variant="outline" className="h-10 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintAllMesa?.()}>
                                 <Printer className="mr-1.5 h-4 w-4" /> Reimprimir comanda entera
                             </Button>
                         </div>
-                    ) : tipo === 'mesa' ? (
-                        <div className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                            {submitting ? 'Guardando…' : cart.length === 0 ? 'Agregá un producto para abrir la mesa' : hasChanges ? 'Guardado pendiente…' : 'Guardado automáticamente'}
-                        </div>
-                    ) : (
-                        <Button
-                            onClick={() => void handleSubmit()}
-                            disabled={submitting || cart.length === 0}
-                            className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
-                        >
-                            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
-                        </Button>
-                    )}
-                    {modoEdicion && tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
-                        <button
-                            type="button"
-                            onClick={() => void onDispatchMesa()}
-                            disabled={cart.length === 0 || submitting}
-                            aria-label="Despachar pedido de la mesa"
-                            title="Despachar"
-                            className="h-12 w-12 shrink-0 rounded-xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
-                        >
-                            <Truck className="h-5 w-5" />
-                        </button>
                     )}
                 </div>
             </div>
