@@ -9,6 +9,7 @@ import {
   Rocket,
   Settings2,
   Sparkles,
+  TrendingUp,
   Loader2,
   MessageCircle,
   Wrench,
@@ -59,6 +60,7 @@ const ICONOS: Record<string, typeof Blocks> = {
   multisucursal: Blocks,
   avisos_automaticos_whatsapp: BellRing,
   motor_recompra: Sparkles,
+  crecimiento: TrendingUp,
   cierre_turno_manual: Clock3,
 }
 
@@ -85,8 +87,8 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   facturacion_arca: '/dashboard/ajustes/monetizacion?config=arca',
   impresion_comandas: '/dashboard/ajustes/impresion?config=impresion',
   multisucursal: '/dashboard/ajustes/entregas?config=sucursales',
-  avisos_automaticos_whatsapp: '/dashboard/ajustes/retencion?config=avisos',
-  crecimiento: '/dashboard/ajustes/adquisicion?config=gtm',
+  avisos_automaticos_whatsapp: '/dashboard/ajustes/whatsapp?config=avisos',
+  crecimiento: '/dashboard/clientes?tab=campanas',
 }
 
 /**

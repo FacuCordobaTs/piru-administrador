@@ -212,6 +212,10 @@ const router = createBrowserRouter([
 
 function PerfilRedirect() {
   const { search } = useLocation()
+  const params = new URLSearchParams(search)
+  if (params.get('state') === 'whatsapp') {
+    return <Navigate to={`/dashboard/ajustes/whatsapp${search}`} replace />
+  }
   return <Navigate to={`/dashboard/ajustes/monetizacion${search}`} replace />
 }
 

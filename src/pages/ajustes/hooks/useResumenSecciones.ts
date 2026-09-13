@@ -140,8 +140,16 @@ export function useResumenSecciones(refreshKey?: string): {
       : 'Revisá tus medios de cobro'
     const pagosFaltan: string[] = []
     if (!cobroOnline) pagosFaltan.push('Sumá pagos online')
-    if (waVencido) pagosFaltan.push('Reconectá tu WhatsApp')
-    else if (!waConectado) pagosFaltan.push('Conectá tu WhatsApp')
+
+    // ── WhatsApp ──
+    const whatsappResumen = waVencido
+      ? 'Token vencido · Requiere reconectar'
+      : waConectado
+      ? 'WhatsApp Business conectado'
+      : 'Sin conectar'
+    const whatsappFaltan: string[] = []
+    if (waVencido) whatsappFaltan.push('Reconectá tu WhatsApp')
+    else if (!waConectado) whatsappFaltan.push('Conectá tu WhatsApp')
 
     // ── Horarios ──
     const horariosResumen = horarios ? resumirHorarios(horarios) : loading ? 'Consultando horarios…' : 'No pudimos consultar los horarios'
@@ -198,6 +206,7 @@ export function useResumenSecciones(refreshKey?: string): {
         faltan: generalFaltan,
       },
       pagos: { resumen: pagosResumen, faltan: pagosFaltan },
+      whatsapp: { resumen: whatsappResumen, faltan: whatsappFaltan },
       horarios: { resumen: horariosResumen, faltan: horariosFaltan },
       entregas: { resumen: entregasResumen, faltan: entregasFaltan },
       experiencia: { resumen: experienciaResumen, faltan: [] },

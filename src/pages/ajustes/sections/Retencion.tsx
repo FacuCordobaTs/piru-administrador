@@ -1,38 +1,72 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { restauranteApi, puntosApi, type ConfiguracionPuntosData } from '@/lib/api'
+import {
+  Users,
+  Sparkles,
+  ArrowRight,
+  Loader2,
+  MessageCircle,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { puntosApi, type ConfiguracionPuntosData, type Modulo } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useAuthStore } from '@/store/authStore'
-import { useModuloActivo } from '@/store/modulosStore'
-import { useRestauranteStore } from '@/store/restauranteStore'
-import { AjusteRow } from '../components/AjusteRow'
+import { useModulosStore } from '@/store/modulosStore'
+import { cn } from '@/lib/utils'
 import { AjusteEditor } from '../components/AjusteEditor'
-import { ToggleConExplicacion } from './AvisosAutomaticos'
 import { PuntosConfigEditor } from './PuntosConfigEditor'
 
 export default function Retencion() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const restaurante = useRestauranteStore((s) => s.restaurante)
   const token = useAuthStore((s) => s.token)
 
-  const motorActivo = useModuloActivo('motor_recompra')
-  const avisosActivos = useModuloActivo('avisos_automaticos_whatsapp')
-  const moduloPuntosActivo = useModuloActivo('puntos_clientes')
-  const puntosActivo = moduloPuntosActivo || !!restaurante?.sistemaPuntos
+  const {
+    categorias,
+    cargar,
+    desactivar,
+    checkoutModulo,
+    enviarPagoLinkModulo,
+    reactivar,
+  } = useModulosStore()
 
-  const avisosOn = restaurante?.notificarClientesWhatsapp !== false
   const [puntosEditor, setPuntosEditor] = useState(false)
-  const [avisosEditor, setAvisosEditor] = useState(false)
   const [puntosConfig, setPuntosConfig] = useState<ConfiguracionPuntosData | null>(null)
+  const [procesandoCodigo, setProcesandoCodigo] = useState<string | null>(null)
+  const [modalPago, setModalPago] = useState(false)
+  const [modalBaja, setModalBaja] = useState<{ codigo: string; nombre: string } | null>(null)
+
+  useEffect(() => {
+    void cargar().catch(() => {})
+  }, [cargar])
+
+  // Resolución del módulo unificado de retención
+  const buscarModulo = (codigo: string): Modulo | undefined => {
+    return categorias.flatMap((c) => c.modulos).find((m) => m.codigo === codigo)
+  }
+
+  const moduloRetencion = buscarModulo('motor_recompra')
+  const retencionActiva = moduloRetencion?.activoAhora ?? false
+  const estadoModulo = moduloRetencion?.estado ?? 'inactivo'
+
+  // El módulo incluye Club de Puntos y la lógica de clientes/micro-campañas
+  const puntosHabilitados = retencionActiva
 
   useEffect(() => {
     const config = searchParams.get('config')
-    if (config === 'puntos' && puntosActivo) setPuntosEditor(true)
-    if (config === 'avisos' && avisosActivos) setAvisosEditor(true)
-  }, [searchParams, puntosActivo, avisosActivos])
+    if (config === 'puntos' && puntosHabilitados) setPuntosEditor(true)
+  }, [searchParams, puntosHabilitados])
 
   useEffect(() => {
-    if (puntosActivo && token) {
+    if (puntosHabilitados && token) {
       puntosApi
         .getConfig(token)
         .then((res) => {
@@ -40,7 +74,7 @@ export default function Retencion() {
         })
         .catch(() => {})
     }
-  }, [puntosActivo, token])
+  }, [puntosHabilitados, token])
 
   const describirPuntos = () => {
     if (!puntosConfig) return 'Configurado · Acumulación y canjes activos'
@@ -49,118 +83,304 @@ export default function Retencion() {
     if (puntosConfig.permiteCanjeEnvioGratis) canjes.push('envío gratis')
     if (puntosConfig.permiteCanjeDescuento) canjes.push('descuentos')
     canjes.push('productos')
-    return `Sumá 1 pt cada $${puntosConfig.pesosPorPunto} · Canjes: ${canjes.join(', ')}`
+    return `1 pt cada $${puntosConfig.pesosPorPunto} · Canjes: ${canjes.join(', ')}`
+  }
+
+  // Inicio de checkout para Herramientas de retención (+$20.000/mes)
+  const handleIniciarCheckout = async () => {
+    setProcesandoCodigo('checkout')
+    try {
+      const res = await checkoutModulo('motor_recompra')
+      if (res?.url_pago) {
+        window.location.assign(res.url_pago)
+      }
+    } catch (error) {
+      toast.error('No se pudo iniciar el checkout', {
+        description: error instanceof Error ? error.message : 'Intentá de nuevo.',
+      })
+      setProcesandoCodigo(null)
+    }
+  }
+
+  // Enviar link de pago por WhatsApp
+  const handleEnviarLinkPago = async () => {
+    setProcesandoCodigo('link')
+    try {
+      const res = await enviarPagoLinkModulo('motor_recompra')
+      setModalPago(false)
+      toast.success(`Te enviamos el link de pago a WhatsApp (${res.telefono})`)
+    } catch (error) {
+      toast.error('No pudimos enviar el link de Herramientas de retención', {
+        description: error instanceof Error ? error.message : 'Intentá de nuevo.',
+      })
+    } finally {
+      setProcesandoCodigo(null)
+    }
+  }
+
+  // Confirmar baja programada
+  const handleProgramarBaja = async () => {
+    if (!modalBaja) return
+    setProcesandoCodigo('baja')
+    try {
+      await desactivar(modalBaja.codigo)
+      setModalBaja(null)
+      toast.success(`La baja de ${modalBaja.nombre} quedó programada`, {
+        description: 'Va a seguir disponible hasta el final del período ya pagado.',
+      })
+    } catch (error) {
+      toast.error(`No pudimos programar la baja de ${modalBaja.nombre}`, {
+        description: error instanceof Error ? error.message : 'Intentá de nuevo.',
+      })
+    } finally {
+      setProcesandoCodigo(null)
+    }
+  }
+
+  // Reactivar módulo con baja programada
+  const handleReactivar = async () => {
+    setProcesandoCodigo('reactivar')
+    try {
+      const res = await reactivar('motor_recompra')
+      if (res && 'url_pago' in res && res.url_pago) {
+        window.location.assign(res.url_pago)
+        return
+      }
+      toast.success('Herramientas de retención sigue activo y no se dará de baja')
+    } catch (error) {
+      toast.error('No pudimos reactivar el módulo', {
+        description: error instanceof Error ? error.message : 'Intentá de nuevo.',
+      })
+    } finally {
+      setProcesandoCodigo(null)
+    }
+  }
+
+  // Verificar pago pendiente
+  const handleVerificarPago = async () => {
+    setProcesandoCodigo('verificar')
+    try {
+      await cargar(true)
+      toast.info('Verificando estado del pago…')
+    } catch {
+      toast.error('No se pudo verificar el pago')
+    } finally {
+      setProcesandoCodigo(null)
+    }
+  }
+
+  let estadoBadgeText = 'Sin activar'
+  let estadoBadgeClass = 'bg-muted text-muted-foreground'
+
+  if (retencionActiva) {
+    estadoBadgeText = 'Activo'
+    estadoBadgeClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+  } else if (estadoModulo === 'pendiente_pago') {
+    estadoBadgeText = 'Pago pendiente'
+    estadoBadgeClass = 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+  } else if (estadoModulo === 'cancelacion_programada') {
+    estadoBadgeText = 'Baja programada'
+    estadoBadgeClass = 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
   }
 
   return (
-    <section className="space-y-8">
-      <header className="space-y-3">
-        <h2 className="text-xl font-medium tracking-tight text-foreground">
-          Retención
-        </h2>
-        <div className="space-y-2 text-sm text-muted-foreground leading-relaxed max-w-2xl">
-          <p>
-            Sistemas automatizados para incentivar la recompra recurrente mediante el análisis de la cadencia individual de cada comensal y toques de WhatsApp con carrito precargado antes de que se enfríe la relación.
-          </p>
-          <p>
-            Configurá los avisos automáticos de estado para mantener informado al cliente durante la preparación y entrega, y administrá el programa de puntos para fidelizar con premios y beneficios.
-          </p>
-        </div>
+    <section className="space-y-6">
+      <header className="space-y-1">
+        <h2 className="text-lg font-medium text-foreground">Retención</h2>
+        <p className="text-sm font-normal text-muted-foreground">
+          Fidelización y recompra recurrente para tus clientes.
+        </p>
       </header>
 
-      {/* Ajustes y herramientas del pilar */}
-      <div className="space-y-1">
-        {motorActivo ? (
-          <AjusteRow
-            titulo="Motor de Recompra (Piloto automático)"
-            oracion="Piloto automático activo · Goteo individual de mensajes de recupero con grupo de control y atribución."
-            estado="configurado"
-            accionLabel="Ver campaña"
-            onAccion={() => navigate('/dashboard/ajustes/recompra')}
-          />
-        ) : (
-          <AjusteRow
-            titulo="Motor de Recompra (Piloto automático)"
-            oracion="Activá el módulo para recuperar automáticamente clientes dormidos según su ritmo de compra personal."
-            estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => {
-              document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
-            }}
-          />
-        )}
+      {/* Control principal del Módulo: Flotante, sin caja ni bordes gruesos */}
+      <div className="border-b border-border/50 pb-5 pt-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-medium text-foreground">
+                Herramientas de retención
+              </h3>
+              <span
+                className={cn(
+                  'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium shrink-0',
+                  estadoBadgeClass
+                )}
+              >
+                {estadoBadgeText}
+              </span>
+            </div>
+            <p className="text-[13px] text-muted-foreground">
+              +$20.000/mes · Activa la inteligencia de clientes y el club de puntos
+            </p>
+          </div>
 
-        {avisosActivos ? (
-          <AjusteRow
-            titulo="Avisos automáticos por WhatsApp"
-            oracion={
-              avisosOn
-                ? 'Notificaciones activas · El cliente recibe avisos automáticos de pedido confirmado y pedido en camino'
-                : 'Notificaciones pausadas'
-            }
-            estado={avisosOn ? 'configurado' : 'sin-configurar'}
-            accionLabel="Configurar"
-            onAccion={() => setAvisosEditor(true)}
-          />
-        ) : (
-          <AjusteRow
-            titulo="Avisos automáticos por WhatsApp"
-            oracion="Activá el módulo para notificar a tus comensales en tiempo real y eliminar preguntas en caja."
-            estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => {
-              document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
-            }}
-          />
-        )}
+          <div className="flex items-center gap-2 shrink-0">
+            {retencionActiva && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={Boolean(procesandoCodigo)}
+                onClick={() =>
+                  setModalBaja({
+                    codigo: 'motor_recompra',
+                    nombre: 'Herramientas de retención',
+                  })
+                }
+                className="text-xs text-muted-foreground hover:text-destructive h-9"
+              >
+                Programar baja
+              </Button>
+            )}
 
-        {puntosActivo ? (
-          <AjusteRow
-            titulo="Club de Puntos"
-            oracion={describirPuntos()}
-            estado={puntosConfig?.activo ? 'configurado' : 'sin-configurar'}
-            accionLabel="Configurar reglas"
-            onAccion={() => setPuntosEditor(true)}
-          />
-        ) : (
-          <AjusteRow
-            titulo="Club de Puntos"
-            oracion="Activá el módulo desde Módulos para fidelizar a tus clientes con acumulación y canje de puntos."
-            estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => {
-              document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
-            }}
-          />
-        )}
+            {!retencionActiva && estadoModulo === 'cancelacion_programada' && (
+              <Button
+                onClick={handleReactivar}
+                size="sm"
+                disabled={Boolean(procesandoCodigo)}
+                className="font-medium h-9"
+              >
+                {procesandoCodigo === 'reactivar' ? 'Guardando…' : 'Reactivar módulo'}
+              </Button>
+            )}
+
+            {!retencionActiva && estadoModulo === 'pendiente_pago' && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={Boolean(procesandoCodigo)}
+                  onClick={handleVerificarPago}
+                  className="font-medium h-9"
+                >
+                  Ya pagué, verificar
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={Boolean(procesandoCodigo)}
+                  onClick={() => setModalPago(true)}
+                  className="font-medium h-9"
+                >
+                  Volver al pago
+                </Button>
+              </div>
+            )}
+
+            {!retencionActiva &&
+              estadoModulo !== 'cancelacion_programada' &&
+              estadoModulo !== 'pendiente_pago' && (
+                <Button
+                  onClick={() => setModalPago(true)}
+                  size="sm"
+                  disabled={Boolean(procesandoCodigo)}
+                  className="font-medium h-9"
+                >
+                  Activar por $20.000/mes
+                </Button>
+              )}
+          </div>
+        </div>
       </div>
 
-      {/* Editor de Avisos Automáticos */}
-      <AjusteEditor
-        open={avisosEditor && avisosActivos}
-        onOpenChange={setAvisosEditor}
-        titulo="Avisos automáticos por WhatsApp"
-        descripcion="Mantené a tus comensales informados minuto a minuto durante la preparación y entrega."
-      >
-        <div className="space-y-2">
-          <ToggleConExplicacion
-            campo="notificarClientesWhatsapp"
-            apiFn={restauranteApi.toggleNotificarClientesWhatsapp}
-            titulo="Avisar por WhatsApp"
-            explicacion="El cliente recibe un mensaje oficial de WhatsApp cuando confirmás su pedido y cuando sale en camino."
-            defaultOn
-          />
-          {avisosOn && (
-            <ToggleConExplicacion
-              campo="modoConfirmacionManual"
-              apiFn={restauranteApi.toggleModoConfirmacionManual}
-              titulo="Confirmación manual con demora"
-              explicacion="En lugar de enviar el aviso genérico automático, ingresás la demora en minutos desde el panel al aceptar el pedido."
-              defaultOn={false}
-            />
-          )}
+      {/* Capacidades explicadas en formato lineal conciso */}
+      <div className="space-y-6">
+        {/* Capacidad 1: Motor de Recompra e Inteligencia de Clientes */}
+        <div className="border-b border-border/50 pb-6 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-base font-medium text-foreground">
+                Motor de Recompra e Inteligencia de Clientes
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Inteligencia sobre tu base de clientes (sin bots externos) en la sección Clientes
+              </p>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/dashboard/clientes')}
+              className="shrink-0 h-9 font-medium gap-1.5"
+            >
+              <Users className="size-4" />
+              Ver clientes
+              <ArrowRight className="size-3.5 opacity-60" />
+            </Button>
+          </div>
+
+          <ul className="space-y-1.5 text-[13px] text-muted-foreground max-w-2xl">
+            <li className="flex items-start gap-2">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span>
+                <strong className="font-medium text-foreground">Cadencia y segmentación:</strong>{' '}
+                Calcula la frecuencia de compra de cada comensal y clasifica en tiempo real (Nuevos, Activos, En riesgo, Dormidos, VIP).
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span>
+                <strong className="font-medium text-foreground">Micro-campañas por WhatsApp:</strong>{' '}
+                Genera enlaces directos con sus platos favoritos ya precargados en el carrito para pedir en un toque.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span>
+                <strong className="font-medium text-foreground">Escalera de incentivos:</strong>{' '}
+                Sugerencias de reactivación progresiva (recordatorio, 10% o 20% OFF) según el tiempo de inactividad.
+              </span>
+            </li>
+          </ul>
         </div>
-      </AjusteEditor>
+
+        {/* Capacidad 2: Club de Puntos para Clientes */}
+        <div className="border-b border-border/50 pb-6 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-base font-medium text-foreground">
+                Club de Puntos para Clientes
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                {retencionActiva ? describirPuntos() : 'Fidelización automática por pedidos en la tienda web'}
+              </p>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!retencionActiva}
+              onClick={() => setPuntosEditor(true)}
+              className="shrink-0 h-9 font-medium gap-1.5"
+            >
+              <Sparkles className="size-4 text-amber-500" />
+              Configurar puntos
+            </Button>
+          </div>
+
+          <ul className="space-y-1.5 text-[13px] text-muted-foreground max-w-2xl">
+            <li className="flex items-start gap-2">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+              <span>
+                <strong className="font-medium text-foreground">Acumulación configurable:</strong>{' '}
+                Definí cuántos pesos equivalen a 1 punto y montos mínimos de compra.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+              <span>
+                <strong className="font-medium text-foreground">Canjes a medida:</strong>{' '}
+                Recompensas en productos específicos de la carta, cupones de descuento o envío gratis.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+              <span>
+                <strong className="font-medium text-foreground">Autoservicio y gestión:</strong>{' '}
+                El cliente canjea sus puntos directamente en la tienda y podés ajustar saldos desde el panel.
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
 
       {/* Editor de Club de Puntos */}
       <AjusteEditor
@@ -183,6 +403,88 @@ export default function Retencion() {
           }}
         />
       </AjusteEditor>
+
+      {/* Dialog para activar Herramientas de retención */}
+      <Dialog
+        open={modalPago}
+        onOpenChange={(open) => !procesandoCodigo && setModalPago(open)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Activar Herramientas de retención</DialogTitle>
+            <DialogDescription>
+              Se cobra sólo el período restante hasta tu próxima renovación. Después se suma a tu factura mensual (+ $20.000/mes).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-xl bg-muted/60 p-4 text-sm space-y-2">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Módulo</span>
+              <span className="font-medium">+ $20.000/mes</span>
+            </div>
+            <p className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+              Incluye Inteligencia de Recompra (segmentación y cadencia en Clientes) y Club de Puntos en tu tienda.
+            </p>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              disabled={Boolean(procesandoCodigo)}
+              onClick={handleEnviarLinkPago}
+              className="gap-2 w-full sm:w-auto"
+            >
+              {procesandoCodigo === 'link' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <MessageCircle className="size-4" />
+              )}
+              Enviar link a WhatsApp
+            </Button>
+            <Button
+              disabled={Boolean(procesandoCodigo)}
+              onClick={handleIniciarCheckout}
+              className="gap-2 w-full sm:w-auto"
+            >
+              {procesandoCodigo === 'checkout' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : null}
+              Pagar ahora
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para confirmar baja programada */}
+      <Dialog
+        open={Boolean(modalBaja)}
+        onOpenChange={(open) => !open && !procesandoCodigo && setModalBaja(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Programar baja de Herramientas de retención</DialogTitle>
+            <DialogDescription>
+              El módulo va a seguir activo hasta el final de tu período actual. No se emitirán nuevos cobros por este módulo en tu próxima factura.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              disabled={Boolean(procesandoCodigo)}
+              onClick={() => setModalBaja(null)}
+              className="w-full sm:w-auto"
+            >
+              Mantener activo
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={Boolean(procesandoCodigo)}
+              onClick={handleProgramarBaja}
+              className="w-full sm:w-auto"
+            >
+              {procesandoCodigo === 'baja' ? 'Programando…' : 'Confirmar baja'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

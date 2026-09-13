@@ -162,7 +162,7 @@ export function useTareasPendientes(): TareasResumen {
       oracion: waOk ? 'WhatsApp conectado' : 'Sin conectar — recibí y avisá pedidos por WhatsApp',
       hecha: waOk,
       cta: 'Conectar WhatsApp',
-      to: '/dashboard/ajustes/monetizacion',
+      to: '/dashboard/ajustes/whatsapp',
     })
 
     return list

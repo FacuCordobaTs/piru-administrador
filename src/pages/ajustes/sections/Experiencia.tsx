@@ -19,8 +19,7 @@ export default function Experiencia() {
   const [editor, setEditor] = useState<EditorId>(null)
   const [puntosConfig, setPuntosConfig] = useState<ConfiguracionPuntosData | null>(null)
 
-  const moduloPuntosActivo = useModuloActivo('puntos_clientes')
-  const puntosActivo = moduloPuntosActivo || !!restaurante?.sistemaPuntos
+  const puntosActivo = useModuloActivo('motor_recompra')
   const amigosOn = restaurante?.orderGroupEnabled !== false
 
   useEffect(() => {
@@ -76,10 +75,10 @@ export default function Experiencia() {
         ) : (
           <AjusteRow
             titulo="Club de Puntos"
-            oracion="Activá el módulo desde Módulos para fidelizar a tus clientes con acumulación y canje de puntos."
+            oracion="Activá el módulo desde Retención para fidelizar a tus clientes con acumulación y canje de puntos."
             estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => navigate('/dashboard/ajustes/modulos')}
+            accionLabel="Ver retención"
+            onAccion={() => navigate('/dashboard/ajustes/retencion')}
           />
         )}
       </div>

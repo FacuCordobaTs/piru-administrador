@@ -213,17 +213,23 @@ export const useModulosStore = create<ModulosState>((set, get) => ({
   reset: () => set({ categorias: [], suscripcion: null, cargando: false, error: null, actualizadoEn: null, tokenActual: null }),
 }))
 
+const ALIASES_FRONTEND: Record<string, string> = {
+  puntos_clientes: 'motor_recompra',
+}
+
 /** Único helper de capacidades del frontend; no deriva acceso desde planes. */
 export function moduloActivo(codigo: string): boolean {
+  const codigoEfectivo = ALIASES_FRONTEND[codigo] ?? codigo
   return todosLosModulos(useModulosStore.getState().categorias)
-    .some((modulo) => modulo.codigo === codigo && modulo.activoAhora)
+    .some((modulo) => modulo.codigo === codigoEfectivo && modulo.activoAhora)
 }
 
 /** Versión reactiva del helper de capacidades para pantallas de configuración.
  * No deduce acceso desde planes: siempre refleja los entitlements del backend. */
 export function useModuloActivo(codigo: string): boolean {
+  const codigoEfectivo = ALIASES_FRONTEND[codigo] ?? codigo
   const activo = useModulosStore((state) => todosLosModulos(state.categorias)
-    .some((modulo) => modulo.codigo === codigo && modulo.activoAhora))
+    .some((modulo) => modulo.codigo === codigoEfectivo && modulo.activoAhora))
   const cargar = useModulosStore((state) => state.cargar)
 
   useEffect(() => {

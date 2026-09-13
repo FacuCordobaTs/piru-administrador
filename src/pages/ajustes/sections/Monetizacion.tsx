@@ -9,14 +9,12 @@ import FacturacionAfipSection from '@/components/FacturacionAfipSection'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { useMetodosPago } from '../hooks/useMetodosPago'
-import { useWhatsApp } from '../hooks/useWhatsApp'
 import { describirMetodos, hayAlgunMetodo } from './pagos/describir'
 import { MetodosEditor } from './pagos/MetodosEditor'
 import {
   MercadoPagoEditor,
   CucuruEditor,
   TaloEditor,
-  WhatsAppEditor,
 } from './pagos/IntegracionEditors'
 import type { PagosEditorId } from './pagos/types'
 
@@ -30,7 +28,6 @@ export default function Monetizacion() {
   const [arcaHabilitada, setArcaHabilitada] = useState<boolean | null>(null)
   const [searchParams] = useSearchParams()
   const metodos = useMetodosPago()
-  const wa = useWhatsApp()
 
   const mercadoPagoActivo = useModuloActivo('mercadopago')
   const taloActivo = useModuloActivo('talo')
@@ -76,8 +73,6 @@ export default function Monetizacion() {
   const cucuruOk = !!restaurante?.cucuruConfigurado
   const taloOk = !!(restaurante?.taloClientId && restaurante?.taloClientSecret && restaurante?.taloUserId)
   const mpOk = !!restaurante?.mpConnected
-  const waConectado = !!wa.status?.conectado
-  const waVencido = waConectado && !!wa.status?.tokenVencido
 
   // Deep links directos desde Módulos o enlaces previos
   useEffect(() => {
@@ -98,7 +93,7 @@ export default function Monetizacion() {
             Configurá los medios de cobro habilitados para tu tienda web: pagos online con tarjetas y saldo mediante Mercado Pago, o transferencias directas cuenta a cuenta 3.0 a través de Talo con verificación automática por webhook.
           </p>
           <p>
-            También podés ofrecer cobro en efectivo al entregar o retirar, vincular tu número de WhatsApp para atención y activar la emisión de facturación electrónica automática autorizada por AFIP/ARCA.
+            También podés ofrecer cobro en efectivo al entregar o retirar y activar la emisión de facturación electrónica automática autorizada por AFIP/ARCA.
           </p>
         </div>
       </header>
@@ -195,20 +190,6 @@ export default function Monetizacion() {
             }}
           />
         )}
-
-        <AjusteRow
-          titulo="WhatsApp Business"
-          oracion={
-            waVencido
-              ? 'Token vencido · Reconectá tu número oficial de WhatsApp'
-              : waConectado
-              ? `Conectado · ${wa.status?.phoneNumber ?? ''}`
-              : 'Sin conectar · Conectá tu número oficial para recepción de pedidos'
-          }
-          estado={waVencido ? 'atencion' : waConectado ? 'configurado' : 'sin-configurar'}
-          accionLabel={waVencido ? 'Reconectar' : waConectado ? 'Cambiar' : 'Conectar'}
-          onAccion={() => (waConectado ? setEditor('whatsapp') : wa.conectar())}
-        />
       </div>
 
       {/* Editores modales */}
@@ -267,15 +248,6 @@ export default function Monetizacion() {
         descripcion="Conectá tu CUIT y clave fiscal de ARCA para emitir comprobantes legales."
       >
         <FacturacionAfipSection />
-      </AjusteEditor>
-
-      <AjusteEditor
-        open={editor === 'whatsapp'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="WhatsApp Business"
-        descripcion="Conexión de número oficial de WhatsApp para recepción de pedidos."
-      >
-        <WhatsAppEditor wa={wa} />
       </AjusteEditor>
     </section>
   )

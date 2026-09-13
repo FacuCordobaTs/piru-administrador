@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Globe,
   ChevronRight,
+  MessageCircle,
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -39,7 +40,7 @@ const SECTIONS: SectionDef[] = [
   {
     id: 'adquisicion',
     label: 'Adquisición',
-    descripcion: 'Campañas con atribución, códigos de descuento, QR del local y medición con GTM / Pixel.',
+    descripcion: 'Campañas de adquisición, códigos de descuento y medición con GTM / Pixel.',
     Icon: TrendingUp,
     Component: lazy(() => import('./sections/Adquisicion')),
   },
@@ -53,7 +54,7 @@ const SECTIONS: SectionDef[] = [
   {
     id: 'retencion',
     label: 'Retención',
-    descripcion: 'Fidelizá y hacé que vuelvan: Motor de Recompra, Avisos por WhatsApp y Club de Puntos.',
+    descripcion: 'Herramientas de retención: segmentación inteligente, micro-campañas y Club de Puntos.',
     Icon: Repeat,
     Component: lazy(() => import('./sections/Retencion')),
   },
@@ -66,6 +67,13 @@ const SECTIONS: SectionDef[] = [
   },
 
   // --- Operación del Restaurante ---
+  {
+    id: 'whatsapp',
+    label: 'WhatsApp',
+    descripcion: 'WhatsApp Business oficial y avisos automáticos de estado de pedidos.',
+    Icon: MessageCircle,
+    Component: lazy(() => import('./sections/WhatsApp')),
+  },
   {
     id: 'entregas',
     label: 'Entregas y zonas',
@@ -151,10 +159,10 @@ const SECTIONS: SectionDef[] = [
   },
   {
     id: 'avisos',
-    label: 'Retención',
-    descripcion: 'Redirigido a Retención.',
-    Icon: Repeat,
-    Component: lazy(() => import('./sections/Retencion')),
+    label: 'WhatsApp',
+    descripcion: 'Redirigido a WhatsApp.',
+    Icon: MessageCircle,
+    Component: lazy(() => import('./sections/WhatsApp')),
     visibleInNav: false,
   },
   {
@@ -179,7 +187,7 @@ const ALIASES_SECCION: Record<string, string> = {
   crecimiento: 'adquisicion',
   experiencia: 'activacion',
   pagos: 'monetizacion',
-  avisos: 'retencion',
+  avisos: 'whatsapp',
   facturacion: 'monetizacion',
 }
 
@@ -191,7 +199,7 @@ const REQUISITOS: Record<string, string[]> = {
 
 const GROUPS = [
   { label: 'Crecimiento', ids: ['adquisicion', 'activacion', 'retencion', 'monetizacion'] },
-  { label: 'Operación', ids: ['entregas', 'horarios', 'ventas'] },
+  { label: 'Operación', ids: ['whatsapp', 'entregas', 'horarios', 'ventas'] },
   { label: 'Tu negocio', ids: ['general', 'modulos', 'suscripcion', 'cuenta'] },
 ]
 
@@ -208,10 +216,10 @@ const MODULOS_SECCION: Record<string, string> = {
 
   // Retención
   motor_recompra: 'retencion',
-  avisos_automaticos_whatsapp: 'retencion',
   puntos_clientes: 'retencion',
 
   // Operación
+  avisos_automaticos_whatsapp: 'whatsapp',
   pos: 'ventas',
   mesas: 'ventas',
   gestion_stock: 'ventas',
@@ -297,7 +305,7 @@ export default function AjustesPage() {
             : active.tauriOnly && !isTauri ? <div className="space-y-4"><SectionHeading title="Impresión" description="Abrí la app de escritorio de Piru para configurar tu impresora." /><DescargarAppBanner /></div>
             : <Suspense key={seccion} fallback={<SectionSkeleton />}>{ActiveSection && <ActiveSection />}</Suspense>
           : <div className="space-y-4"><SectionHeading title="Sección no encontrada" description="Elegí una sección del menú para continuar." /><Button asChild variant="outline"><Link to="/dashboard/ajustes/general">Ir a General</Link></Button></div>}
-        {active && asociados.length > 0 && <section id="modulos-seccion" className="mt-10 border-t border-border/50 pt-7" aria-label="Módulos de esta sección"><header className="mb-4"><h3 className="text-sm font-medium">Herramientas disponibles</h3><p className="mt-1 text-xs text-muted-foreground">Activá o configurá las herramientas que necesitás.</p></header><Modulos key={seccion} embedded codigos={asociados} /></section>}
+        {active && asociados.length > 0 && seccion !== 'adquisicion' && seccion !== 'retencion' && <section id="modulos-seccion" className="mt-10 border-t border-border/50 pt-7" aria-label="Módulos de esta sección"><header className="mb-4"><h3 className="text-sm font-medium">Herramientas disponibles</h3><p className="mt-1 text-xs text-muted-foreground">Activá o configurá las herramientas que necesitás.</p></header><Modulos key={seccion} embedded codigos={asociados} /></section>}
       </div>
     </div>
   </main>

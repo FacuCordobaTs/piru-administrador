@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,8 +7,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
+import { cn } from '@/lib/utils'
 import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
-import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Lock, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import MicroCampanaModal from './clientes/MicroCampanaModal'
 import { HistorialPuntosDialog } from './clientes/HistorialPuntosDialog'
@@ -50,10 +51,12 @@ const dateStart = (fecha?: string) => fecha ? new Date(`${fecha}T00:00:00`).getT
 const dateEnd = (fecha?: string) => fecha ? new Date(`${fecha}T23:59:59.999`).getTime() : null
 
 export default function Clientes() {
+  const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
   const username = useAuthStore((state) => state.restaurante?.username)
   const crecimientoActivo = useModuloActivo('crecimiento')
   const cuponesActivos = useModuloActivo('codigos_descuento')
+  const retencionActiva = useModuloActivo('motor_recompra')
   const [searchParams, setSearchParams] = useSearchParams()
   const [clientes, setClientes] = useState<ClienteGrowth[]>([])
   const [campanas, setCampanas] = useState<CampanaCrecimiento[]>([])
@@ -703,6 +706,8 @@ export default function Clientes() {
                 onMicroCampana={() => setMicroCampanaOpen(true)}
                 onDeleteClient={() => void eliminarCliente()}
                 onPuntosActualizados={(nuevos) => actualizarPuntosCliente(cliente.id, nuevos)}
+                retencionActiva={retencionActiva}
+                onActivarRetencion={() => navigate('/dashboard/ajustes/retencion')}
               />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
@@ -895,6 +900,8 @@ function ClienteDetalle({
   onMicroCampana,
   onDeleteClient,
   onPuntosActualizados,
+  retencionActiva = false,
+  onActivarRetencion,
 }: {
   cliente: ClienteGrowth
   token?: string
@@ -903,6 +910,8 @@ function ClienteDetalle({
   onMicroCampana: () => void
   onDeleteClient: () => void
   onPuntosActualizados?: (nuevos: number) => void
+  retencionActiva?: boolean
+  onActivarRetencion?: () => void
 }) {
   const [puntosDialogOpen, setPuntosDialogOpen] = useState(false)
   const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
@@ -1039,30 +1048,63 @@ function ClienteDetalle({
             </div>
 
             {/* Micro-Campaña sugerida */}
-            <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4 transition-all dark:bg-emerald-500/[0.07]">
+            <div className={cn(
+              "relative overflow-hidden rounded-2xl p-4 transition-all",
+              retencionActiva
+                ? "border border-emerald-500/20 bg-emerald-500/[0.04] dark:bg-emerald-500/[0.07]"
+                : "border border-border/70 bg-muted/20"
+            )}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-xs font-semibold tracking-tight text-foreground">
-                      Micro-Campaña sugerida
-                    </span>
-                    <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                      {getMicroCampanaInfo(cliente).badge}
-                    </span>
+                    {retencionActiva ? (
+                      <>
+                        <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-xs font-semibold tracking-tight text-foreground">
+                          Micro-Campaña sugerida
+                        </span>
+                        <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                          {getMicroCampanaInfo(cliente).badge}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="text-xs font-semibold tracking-tight text-foreground">
+                          Micro-Campaña sugerida
+                        </span>
+                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          Requiere Retención (+ $20.000/mes)
+                        </span>
+                      </>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    {getMicroCampanaInfo(cliente).descripcion}
+                    {retencionActiva
+                      ? getMicroCampanaInfo(cliente).descripcion
+                      : 'Activá el módulo Herramientas de retención para generar enlaces inteligentes con carrito precargado.'}
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={onMicroCampana}
-                  className="shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
-                >
-                  <Zap className="mr-1.5 h-3.5 w-3.5" />
-                  Compartir Micro-Campaña
-                </Button>
+                {retencionActiva ? (
+                  <Button
+                    size="sm"
+                    onClick={onMicroCampana}
+                    className="shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+                  >
+                    <Zap className="mr-1.5 h-3.5 w-3.5" />
+                    Compartir Micro-Campaña
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onActivarRetencion}
+                    className="shrink-0 rounded-full border-muted-foreground/30 px-4 text-xs font-medium text-foreground hover:bg-muted/50"
+                  >
+                    <Lock className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                    Activar módulo
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -1341,30 +1383,63 @@ function ClienteDetalle({
               </div>
 
               {/* Micro-Campaña sugerida */}
-              <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-5 transition-all dark:bg-emerald-500/[0.07]">
+              <div className={cn(
+                "relative overflow-hidden rounded-2xl p-5 transition-all",
+                retencionActiva
+                  ? "border border-emerald-500/20 bg-emerald-500/[0.04] dark:bg-emerald-500/[0.07]"
+                  : "border border-border/70 bg-muted/20"
+              )}>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                      <span className="text-sm font-semibold tracking-tight text-foreground">
-                        Micro-Campaña sugerida
-                      </span>
-                      <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                        {getMicroCampanaInfo(cliente).badge}
-                      </span>
+                      {retencionActiva ? (
+                        <>
+                          <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                          <span className="text-sm font-semibold tracking-tight text-foreground">
+                            Micro-Campaña sugerida
+                          </span>
+                          <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                            {getMicroCampanaInfo(cliente).badge}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="text-sm font-semibold tracking-tight text-foreground">
+                            Micro-Campaña sugerida
+                          </span>
+                          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            Requiere Retención (+ $20.000/mes)
+                          </span>
+                        </>
+                      )}
                     </div>
                     <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
-                      {getMicroCampanaInfo(cliente).descripcion}
+                      {retencionActiva
+                        ? getMicroCampanaInfo(cliente).descripcion
+                        : 'Activá el módulo Herramientas de retención (+ $20.000/mes) para generar enlaces personalizados por cliente con su pedido habitual o cupones de reactivación en 1 click.'}
                     </p>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={onMicroCampana}
-                    className="h-9 shrink-0 rounded-full bg-emerald-600 px-5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
-                  >
-                    <Zap className="mr-1.5 h-3.5 w-3.5" />
-                    Compartir Micro-Campaña
-                  </Button>
+                  {retencionActiva ? (
+                    <Button
+                      size="sm"
+                      onClick={onMicroCampana}
+                      className="h-9 shrink-0 rounded-full bg-emerald-600 px-5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+                    >
+                      <Zap className="mr-1.5 h-3.5 w-3.5" />
+                      Compartir Micro-Campaña
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onActivarRetencion}
+                      className="h-9 shrink-0 rounded-full border-muted-foreground/30 px-5 text-xs font-medium text-foreground hover:bg-muted/50"
+                    >
+                      <Lock className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                      Activar módulo
+                    </Button>
+                  )}
                 </div>
               </div>
 

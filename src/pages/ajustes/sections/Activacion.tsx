@@ -59,22 +59,6 @@ export default function Activacion() {
           accionLabel={amigosOn ? 'Cambiar' : 'Activar'}
           onAccion={() => setSalaEditor(true)}
         />
-
-        <AjusteRow
-          titulo="Horarios de apertura y pedidos diferidos"
-          oracion="Gestioná los días y turnos de atención y habilitá pedidos programados para más tarde."
-          estado="configurado"
-          accionLabel="Configurar horarios"
-          onAccion={() => navigate('/dashboard/ajustes/horarios')}
-        />
-
-        <AjusteRow
-          titulo="Entregas y zonas de cobertura"
-          oracion="Tipos de entrega (delivery / takeaway), trazado de zonas con validación automática y sucursales."
-          estado="configurado"
-          accionLabel="Configurar entregas"
-          onAccion={() => navigate('/dashboard/ajustes/entregas')}
-        />
       </div>
 
       {/* Editor de Pedidos en Grupo */}
