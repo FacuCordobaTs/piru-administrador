@@ -17,7 +17,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@/components/ui/settings-dialog'
 import { useAuthStore } from '@/store/authStore'
 import { useModulosStore } from '@/store/modulosStore'
 import { cn } from '@/lib/utils'

@@ -8,7 +8,7 @@ import 'leaflet-draw'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/settings-dialog'
 import { useAuthStore } from '@/store/authStore'
 import { zonasDeliveryApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -450,7 +450,7 @@ export default function ZonasDeliveryMap() {
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
+                    <div className="flex h-[65dvh] min-h-[400px] flex-col sm:flex-row">
                         <div className="relative flex-1 min-w-0 min-h-0 bg-zinc-100 dark:bg-zinc-900">
                         {isMapModalOpen && (
                             <MapContainer

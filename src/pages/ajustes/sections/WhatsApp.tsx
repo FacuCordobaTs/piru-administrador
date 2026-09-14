@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { restauranteApi } from '@/lib/api'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
@@ -15,6 +15,7 @@ export default function WhatsApp() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const [editor, setEditor] = useState<WhatsAppEditorId>(null)
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const wa = useWhatsApp()
 
   const avisosActivos = useModuloActivo('avisos_automaticos_whatsapp')
@@ -81,7 +82,7 @@ export default function WhatsApp() {
             estado="sin-configurar"
             accionLabel="Ver módulos"
             onAccion={() => {
-              document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
+              navigate({ hash: '#modulos-seccion' })
             }}
           />
         )}

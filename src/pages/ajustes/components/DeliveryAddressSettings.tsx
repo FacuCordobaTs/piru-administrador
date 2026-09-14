@@ -7,7 +7,10 @@ import { Switch } from '@/components/ui/switch'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { restauranteApi } from '@/lib/api'
+import { AjusteRow } from './AjusteRow'
+import { AjusteEditor } from './AjusteEditor'
 export function DeliveryAddressSettings() {
+  const [editorOpen, setEditorOpen] = useState(false)
   const token = useAuthStore(s => s.token)
   const direccionSoloTexto = useRestauranteStore(s => s.restaurante?.direccionSoloTexto === true)
   const deliveryFeeActual = useRestauranteStore(s => s.restaurante?.deliveryFee)
@@ -58,7 +61,10 @@ export function DeliveryAddressSettings() {
     }
   }
 
- return <details className="rounded-xl border p-4"><summary className="cursor-pointer text-sm font-medium">Dirección de entrega · {direccionSoloTexto ? "Escrita por el cliente, con tarifa fija" : "Con mapa y zonas de cobertura"} · Cambiar</summary><div className="mt-4">          <section aria-labelledby="direccion-checkout">
+ return <>
+   <AjusteRow titulo="Dirección de entrega" oracion={direccionSoloTexto ? 'Escrita por el cliente, con tarifa fija' : 'Con mapa y zonas de cobertura'} onAccion={() => setEditorOpen(true)} />
+   <AjusteEditor open={editorOpen} onOpenChange={setEditorOpen} titulo="Dirección de entrega">
+          <section aria-labelledby="direccion-checkout">
             <div>
               <h2 id="direccion-checkout" className="text-lg font-semibold tracking-tight text-foreground">Checkout delivery</h2>
               <p className="mt-1 text-sm text-muted-foreground">Elegí cómo tus clientes cargan la dirección de entrega.</p>
@@ -109,5 +115,7 @@ export function DeliveryAddressSettings() {
                 </div>
               )}
             </div>
-          </section></div></details>
+          </section>
+   </AjusteEditor>
+ </>
 }

@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export type AjusteEstado = 'configurado' | 'sin-configurar' | 'atencion'
@@ -28,12 +27,13 @@ export function AjusteRow({
 }: AjusteRowProps) {
   const sinConfigurar = estado === 'sin-configurar'
   const label = accionLabel ?? (sinConfigurar ? 'Configurar' : 'Cambiar')
+  const Row = onAccion ? 'button' : 'div'
 
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-border/50 py-3.5">
-      <div className="min-w-0 space-y-0.5">
-        <p className="text-sm font-medium text-foreground">{titulo}</p>
-        <p
+    <Row type={onAccion ? 'button' : undefined} onClick={onAccion} className={cn('flex w-full items-center justify-between gap-4 border-b border-border/50 py-3.5 text-left', onAccion && 'cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand')}>
+      <span className="block min-w-0 space-y-0.5">
+        <span className="block text-sm font-medium text-foreground">{titulo}</span>
+        <span
           className={cn(
             'flex items-center gap-1.5 text-[13px] font-normal',
             sinConfigurar ? 'text-muted-foreground/60' : 'text-muted-foreground'
@@ -46,18 +46,14 @@ export function AjusteRow({
             />
           )}
           <span className="min-w-0 truncate">{oracion}</span>
-        </p>
-      </div>
+        </span>
+      </span>
 
       {onAccion && (
-        <Button
-          variant="outline"
-          onClick={onAccion}
-          className="h-11 min-h-[44px] shrink-0 font-medium"
-        >
+        <span className="inline-flex h-11 min-h-[44px] shrink-0 items-center rounded-md border bg-background px-4 text-sm font-medium">
           {label}
-        </Button>
+        </span>
       )}
-    </div>
+    </Row>
   )
 }

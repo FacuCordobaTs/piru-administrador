@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { facturacionApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -27,6 +27,7 @@ export default function Monetizacion() {
   const [editor, setEditor] = useState<MonetizacionEditorId>(null)
   const [arcaHabilitada, setArcaHabilitada] = useState<boolean | null>(null)
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const metodos = useMetodosPago()
 
   const mercadoPagoActivo = useModuloActivo('mercadopago')
@@ -126,7 +127,7 @@ export default function Monetizacion() {
             estado="sin-configurar"
             accionLabel="Ver módulos"
             onAccion={() => {
-              document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
+              navigate({ hash: '#modulos-seccion' })
             }}
           />
         )}
@@ -150,7 +151,7 @@ export default function Monetizacion() {
             estado="sin-configurar"
             accionLabel="Ver módulos"
             onAccion={() => {
-              document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
+              navigate({ hash: '#modulos-seccion' })
             }}
           />
         )}
@@ -186,7 +187,7 @@ export default function Monetizacion() {
             estado="sin-configurar"
             accionLabel="Ver módulos"
             onAccion={() => {
-              document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
+              navigate({ hash: '#modulos-seccion' })
             }}
           />
         )}
@@ -209,7 +210,7 @@ export default function Monetizacion() {
           taloActivo={taloActivo}
           irA={setEditor}
           irAModulo={() => {
-            document.getElementById('modulos-seccion')?.scrollIntoView({ behavior: 'smooth' })
+            navigate({ hash: '#modulos-seccion' })
           }}
         />
       </AjusteEditor>

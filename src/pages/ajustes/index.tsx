@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, type ComponentType } from 'react'
-import { Link, useLocation, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import {
   Store,
   CreditCard,
@@ -31,6 +31,9 @@ import { SectionSkeleton } from './components/SectionSkeleton'
 import { DescargarAppBanner } from './components/DescargarAppBanner'
 import Modulos from '../Modulos'
 import MiSuscripcion from '../MiSuscripcion'
+import { SettingsNavigation } from '@/components/SettingsNavigation'
+import { resetSettingsScroll } from '@/components/settings-navigation-context'
+import { AjusteEditor } from './components/AjusteEditor'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean; visibleInNav?: boolean }
@@ -234,7 +237,8 @@ const seccionModulo = (codigo: string) => MODULOS_SECCION[codigo] ?? 'ventas'
 export default function AjustesPage() {
   const { seccion: seccionParam } = useParams()
   const seccion = seccionParam ? ALIASES_SECCION[seccionParam] ?? seccionParam : 'general'
-  const { hash, key: locationKey } = useLocation()
+  const { hash, pathname, search, key: locationKey } = useLocation()
+  const navigate = useNavigate()
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const { categorias, suscripcion, cargar, error, cargando } = useModulosStore()
   const contenidoRef = useRef<HTMLDivElement>(null)
@@ -267,21 +271,20 @@ export default function AjustesPage() {
     void cargar().catch(() => {})
   }, [cargar])
   useEffect(() => {
-    if (contenidoRef.current) contenidoRef.current.scrollTop = 0
+    if (contenidoRef.current) resetSettingsScroll(contenidoRef.current)
     contenidoRef.current?.focus({ preventScroll: true })
-    if (hash === '#modulos-seccion') document.getElementById('modulos-seccion')?.scrollIntoView({ block: 'start' })
   }, [seccion, hash, locationKey])
 
-  return <main className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-10 lg:py-16">
+  return <main className="mx-auto min-w-0 w-full max-w-6xl px-5 py-8 sm:px-10 lg:py-16">
     <header className={cn('mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-border/50 pb-7 lg:mb-10', seccionParam ? 'hidden md:flex' : 'flex')}>
       <div><h1 className="text-3xl font-semibold tracking-tight">Ajustes</h1><p className="mt-2 text-sm text-muted-foreground">Tu negocio, tus herramientas y tu cuenta.</p></div>
-      {link && <div className="flex items-center gap-1 rounded-xl bg-muted/60 p-1">
+      {link && <div className="flex max-w-full items-center gap-1 rounded-xl bg-muted/60 p-1">
         <a href={link} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm font-medium"><Globe className="size-4 shrink-0 text-brand" /><span className="max-w-48 truncate">piru.app/{restaurante?.username}</span><ExternalLink className="size-3.5 shrink-0 text-muted-foreground" /></a>
         <Button size="icon" variant="ghost" aria-label="Copiar link de mi tienda" onClick={async () => { try { await navigator.clipboard.writeText(link); toast.success('Link copiado') } catch { toast.error('No se pudo copiar el link') } }}><Copy className="size-4" /></Button>
       </div>}
     </header>
-    <div className="grid items-start gap-8 md:grid-cols-[200px_minmax(0,1fr)] lg:gap-14">
-      <nav aria-label="Secciones de ajustes" className="md:sticky md:top-6 md:max-h-[calc(100dvh-240px)] md:overflow-y-auto">
+    <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-[200px_minmax(0,1fr)] lg:gap-14">
+      <nav aria-label="Secciones de ajustes" className={cn('min-w-0 md:sticky md:top-6 md:max-h-[calc(100dvh-240px)] md:overflow-y-auto', seccionParam && 'hidden md:block')}>
         <MobileSectionList grupos={grupos} atencion={atencion} />
         <div className="hidden space-y-7 md:block">{grupos.map(grupo => <div key={grupo.label}>
           <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">{grupo.label}</p>
@@ -295,6 +298,7 @@ export default function AjustesPage() {
         </div>)}</div>
       </nav>
       <div ref={contenidoRef} tabIndex={-1} className={cn('min-w-0 outline-none md:max-h-[calc(100dvh-240px)] md:overflow-y-auto md:overscroll-contain md:pr-3', !seccionParam && 'hidden md:block')}>
+        <SettingsNavigation key={seccion}>
         <MobileDetailHeader title={seccion === 'modulos' ? 'Mis módulos' : seccion === 'suscripcion' ? 'Suscripción y pagos' : active?.label ?? 'Ajustes'} />
         {error && <div role="alert" className="mb-5 rounded-lg border border-amber-500/30 p-3 text-sm">No pudimos actualizar los datos. <Button variant="link" size="sm" onClick={() => void cargar(true).catch(() => {})}>Reintentar</Button></div>}
         {secundaria && <Link to={`/dashboard/ajustes/${destinoPadre}`} className="mb-6 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />{SECTIONS.find(s => s.id === destinoPadre)?.label}<span>/</span>{active.label}</Link>}
@@ -306,6 +310,10 @@ export default function AjustesPage() {
             : <Suspense key={seccion} fallback={<SectionSkeleton />}>{ActiveSection && <ActiveSection />}</Suspense>
           : <div className="space-y-4"><SectionHeading title="Sección no encontrada" description="Elegí una sección del menú para continuar." /><Button asChild variant="outline"><Link to="/dashboard/ajustes/general">Ir a General</Link></Button></div>}
         {active && asociados.length > 0 && seccion !== 'adquisicion' && seccion !== 'retencion' && <section id="modulos-seccion" className="mt-10 border-t border-border/50 pt-7" aria-label="Módulos de esta sección"><header className="mb-4"><h3 className="text-sm font-medium">Herramientas disponibles</h3><p className="mt-1 text-xs text-muted-foreground">Activá o configurá las herramientas que necesitás.</p></header><Modulos key={seccion} embedded codigos={asociados} /></section>}
+        <AjusteEditor open={hash === '#modulos-seccion'} onOpenChange={open => { if (!open) navigate({ pathname, search, hash: '' }, { replace: true }) }} titulo="Herramientas disponibles" descripcion="Activá o configurá las herramientas que necesitás.">
+          <Modulos embedded codigos={asociados} />
+        </AjusteEditor>
+        </SettingsNavigation>
       </div>
     </div>
   </main>

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { TrendingUp, Sparkles, Loader2, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -10,7 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@/components/ui/settings-dialog'
 import { useModulosStore } from '@/store/modulosStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { cn } from '@/lib/utils'

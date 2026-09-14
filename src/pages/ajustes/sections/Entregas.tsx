@@ -1,7 +1,7 @@
 import { DeliveryAddressSettings } from '../components/DeliveryAddressSettings'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { Plus, Loader2, Edit, Store, ArrowLeft, Truck, Package } from 'lucide-react'
+import { Plus, Loader2, Edit, Store, Truck, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
@@ -119,7 +119,11 @@ export default function Entregas() {
       </AjusteEditor>
 
       {/* Zonas: pantalla propia con el mapa lazy */}
-      {zonasOpen && <ZonasFullScreen onClose={() => setZonasOpen(false)} />}
+      <AjusteEditor open={zonasOpen} onOpenChange={setZonasOpen} titulo="Zonas de delivery">
+        <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+          <ZonasDeliveryMap />
+        </Suspense>
+      </AjusteEditor>
     </section>
   )
 }
@@ -280,35 +284,3 @@ function SucursalesLista({
   )
 }
 
-/** Pantalla propia (full screen) para el mapa de zonas. */
-function ZonasFullScreen({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#FFFBF0] dark:bg-background">
-      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-        <Button variant="ghost" size="icon" className="h-10 w-10" onClick={onClose}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <h2 className="text-base font-medium text-foreground">Zonas de delivery</h2>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <Suspense
-          fallback={
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          }
-        >
-          <ZonasDeliveryMap />
-        </Suspense>
-      </div>
-    </div>
-  )
-}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { AlertTriangle, CreditCard, Loader2, ReceiptText, RotateCcw, XCircle } from 'lucide-react'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/settings-dialog'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { CicloToggle, type Ciclo } from '@/components/CicloToggle'
