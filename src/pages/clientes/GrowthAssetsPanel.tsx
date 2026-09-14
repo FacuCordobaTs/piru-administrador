@@ -301,7 +301,7 @@ export default function GrowthAssetsPanel(props: Props) {
     return {
       nombre: formCampana.nombre.trim(), slug: formCampana.slug, tipo: 'adquisicion', recetaCodigo: null,
       categoria: formCampana.categoria || null,
-      estado: formCampana.estado, destinoTipo: esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'tienda', productoId: esPromocionProducto ? Number(formCampana.productoId) : null,
+      estado: campanaEditando ? formCampana.estado : 'activa', destinoTipo: esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'tienda', productoId: esPromocionProducto ? Number(formCampana.productoId) : null,
       carritoRep: esCarritoPrearmado ? formCampana.carritoRep : null, codigoDescuentoId: null, descuentoProductoPorcentaje: descuento,
       limiteUsos: limite, fechaInicio: formCampana.fechaInicio ? new Date(formCampana.fechaInicio).toISOString() : null,
       fechaFin: formCampana.fechaFin ? new Date(formCampana.fechaFin).toISOString() : null,
@@ -2066,7 +2066,7 @@ function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos,
                 </>
               )}
               {esCarritoPrearmado && <CarritoPrearmadoBuilder productos={productos} value={form.carritoRep} onChange={(valor) => set('carritoRep', valor)} />}
-              <FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[["activa", "Activa"], ["borrador", "Borrador"], ["inactiva", "Inactiva"]]} />
+              {editando && <FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[["activa", "Activa"], ["borrador", "Borrador"], ["inactiva", "Inactiva"]]} />}
               <div className="space-y-1.5">
                 <Label>Disponible desde</Label>
                 <Input type="datetime-local" value={form.fechaInicio} onChange={(e) => set('fechaInicio', e.target.value)} />
