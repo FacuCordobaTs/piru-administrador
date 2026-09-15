@@ -74,7 +74,12 @@ export const useModulosStore = create<ModulosState>((set, get) => ({
             suscripcion: local.suscripcion,
             cargando: false,
             error: null,
-            actualizadoEn: Date.now(),
+            // La copia local sirve s\u00f3lo para evitar un estado vac\u00edo mientras llega
+            // la red. No puede marcarse como reci\u00e9n obtenida: un cambio hecho desde
+            // Interno (por ejemplo activar Retenci\u00f3n) no invalida IndexedDB y, de
+            // otro modo, el admin conserva el entitlement viejo indefinidamente al
+            // reabrir pantallas dentro del TTL.
+            actualizadoEn: null,
             tokenActual: token,
           })
         }

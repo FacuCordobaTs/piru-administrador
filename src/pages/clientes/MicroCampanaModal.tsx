@@ -47,7 +47,6 @@ export default function MicroCampanaModal({
   const [enlace, setEnlace] = useState<EnlaceCrecimiento | null>(null)
   const [tokenCifrado, setTokenCifrado] = useState<string | null>(null)
   const [campanaSlug, setCampanaSlug] = useState<string>('lo-mismo')
-  const [textoSugerido, setTextoSugerido] = useState<string>('')
   const [saldo, setSaldo] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [accion, setAccion] = useState<'copiar' | 'wa_me' | 'piru' | null>(null)
@@ -80,7 +79,6 @@ export default function MicroCampanaModal({
       setEnlace(respuesta.data.enlace)
       setTokenCifrado(respuesta.data.token ?? null)
       setCampanaSlug(respuesta.data.campanaSlug ?? (tipo === 'lo_mismo' ? 'lo-mismo' : 'reactivacion'))
-      setTextoSugerido(respuesta.data.textoSugerido ?? '')
       onPrepared?.()
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 403) {
@@ -117,6 +115,8 @@ export default function MicroCampanaModal({
     setTipoCampana(nuevoTipo)
     setEnlace(null)
     setTokenCifrado(null)
+    setClaves({})
+    setError('')
     void preparar(nuevoTipo, descuento)
   }
 
@@ -124,6 +124,8 @@ export default function MicroCampanaModal({
     setDescuento(nuevoDescuento)
     setEnlace(null)
     setTokenCifrado(null)
+    setClaves({})
+    setError('')
     void preparar('reactivacion', nuevoDescuento)
   }
 
@@ -131,10 +133,7 @@ export default function MicroCampanaModal({
   const urlPublica = useMemo(() => {
     if (!tokenCifrado) return ''
     const u = username ? encodeURIComponent(username) : 'local'
-    const base = window.location.origin.includes('localhost')
-      ? `http://localhost:5173/${u}`
-      : `https://my.piru.app/${u}`
-    return `${base}/c/${campanaSlug}?tk=${tokenCifrado}`
+    return `https://my.piru.app/${u}/c/${encodeURIComponent(campanaSlug)}?tk=${encodeURIComponent(tokenCifrado)}`
   }, [tokenCifrado, username, campanaSlug])
 
   // Compartir por canales
@@ -144,20 +143,30 @@ export default function MicroCampanaModal({
     setError('')
 
     try {
-      const data = { token: tokenCifrado, idempotenciaClave: clave(canal) }
-
       if (canal === 'copiar') {
-        await crecimientoApi.copiarEnlace(token, enlace.id, data).catch(() => {})
+        // Copiar inmediatamente al portapapeles sin bloqueos ni demoras
         await navigator.clipboard.writeText(urlPublica)
         toast.success('Enlace de micro-campaña copiado al portapapeles.')
-      } else if (canal === 'wa_me') {
-        await crecimientoApi.abrirWaMe(token, enlace.id, data).catch(() => {})
-        const telefono = (cliente?.telefono ?? '').replace(/\D/g, '')
-        const mensajeWa = encodeURIComponent(`${textoSugerido}\n${urlPublica}`)
-        const waUrl = telefono
-          ? `https://wa.me/${telefono}?text=${mensajeWa}`
-          : `https://wa.me/?text=${mensajeWa}`
-        window.open(waUrl, '_blank', 'noopener,noreferrer')
+        try {
+          const respuesta = await crecimientoApi.copiarEnlace(token, enlace.id, {
+            token: tokenCifrado,
+            idempotenciaClave: nuevaClave(),
+          })
+          if (respuesta?.data?.url && respuesta.data.url !== urlPublica) {
+            await navigator.clipboard.writeText(respuesta.data.url)
+          }
+        } catch (backendError) {
+          console.warn('Registro de copiado en backend:', backendError)
+        }
+        return
+      }
+
+      const data = { token: tokenCifrado, idempotenciaClave: clave(canal) }
+
+      if (canal === 'wa_me') {
+        const respuesta = await crecimientoApi.abrirWaMe(token, enlace.id, data)
+        if (!respuesta.data.waMeUrl) throw new Error('El cliente no tiene un teléfono válido para WhatsApp.')
+        window.open(respuesta.data.waMeUrl, '_blank', 'noopener,noreferrer')
         toast.success('Abriendo WhatsApp con el mensaje listo.')
       } else {
         const respuesta = await crecimientoApi.enviarConPiru(token, enlace.id, data)
@@ -174,10 +183,10 @@ export default function MicroCampanaModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="w-full max-h-[92vh] overflow-x-hidden overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
               <Zap className="h-4 w-4" />
             </div>
             <div>
@@ -225,27 +234,27 @@ export default function MicroCampanaModal({
           </div>
         ) : (
           <>
-            <div className="space-y-4 pt-1">
+            <div className="min-w-0 max-w-full space-y-4 pt-1">
               {/* Selector de Micro-Campaña */}
-              <div className="grid gap-2.5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 min-w-0">
                 {/* Opción 1: Lo mismo de siempre */}
                 <button
                   type="button"
                   onClick={() => cambiarCampana('lo_mismo')}
                   disabled={loading}
-                  className={`relative rounded-xl border p-4 text-left transition-all ${
+                  className={`relative min-w-0 rounded-xl border p-4 text-left transition-all ${
                     tipoCampana === 'lo_mismo'
                       ? 'border-emerald-500 bg-emerald-50/70 shadow-xs ring-2 ring-emerald-500/15 dark:bg-emerald-950/20'
                       : 'border-border bg-background hover:bg-muted/50'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <ShoppingBag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                      <span className="text-sm font-semibold tracking-tight">¿Lo mismo de siempre?</span>
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ShoppingBag className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-sm font-semibold tracking-tight truncate">¿Lo mismo de siempre?</span>
                     </div>
                     {recomendacionSegmento.tipo === 'lo_mismo' && (
-                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-2 py-0">
+                      <Badge className="shrink-0 bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-2 py-0">
                         <Sparkles className="mr-1 h-2.5 w-2.5" /> Recomendada
                       </Badge>
                     )}
@@ -264,19 +273,19 @@ export default function MicroCampanaModal({
                   type="button"
                   onClick={() => cambiarCampana('reactivacion')}
                   disabled={loading}
-                  className={`relative rounded-xl border p-4 text-left transition-all ${
+                  className={`relative min-w-0 rounded-xl border p-4 text-left transition-all ${
                     tipoCampana === 'reactivacion'
                       ? 'border-emerald-500 bg-emerald-50/70 shadow-xs ring-2 ring-emerald-500/15 dark:bg-emerald-950/20'
                       : 'border-border bg-background hover:bg-muted/50'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Gift className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-                      <span className="text-sm font-semibold tracking-tight">Reactivación</span>
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Gift className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
+                      <span className="text-sm font-semibold tracking-tight truncate">Reactivación</span>
                     </div>
                     {recomendacionSegmento.tipo === 'reactivacion' && (
-                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-2 py-0">
+                      <Badge className="shrink-0 bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-2 py-0">
                         <Sparkles className="mr-1 h-2.5 w-2.5" /> Recomendada
                       </Badge>
                     )}
@@ -293,7 +302,7 @@ export default function MicroCampanaModal({
 
               {/* Selector de descuento si la campaña es Reactivación */}
               {tipoCampana === 'reactivacion' && (
-                <div className="rounded-xl border border-violet-200/70 bg-violet-50/50 p-3.5 dark:border-violet-900/50 dark:bg-violet-950/20">
+                <div className="min-w-0 rounded-xl border border-violet-200/70 bg-violet-50/50 p-3.5 dark:border-violet-900/50 dark:bg-violet-950/20">
                   <span className="text-xs font-semibold text-foreground">Beneficio aplicado:</span>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button
@@ -329,7 +338,7 @@ export default function MicroCampanaModal({
                   Generando micro-campaña cifrada…
                 </div>
               ) : enlace && urlPublica ? (
-                <div className="space-y-3.5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+                <div className="min-w-0 space-y-3.5 overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
                   <div className="flex items-center justify-between gap-2">
                     <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-900 dark:text-emerald-100">
                       <CheckCircle2 className="h-4 w-4 text-emerald-600" />
@@ -340,28 +349,19 @@ export default function MicroCampanaModal({
                     </Badge>
                   </div>
 
-                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200/80 bg-background/80 px-3 py-2 text-xs font-mono text-muted-foreground">
-                    <span className="truncate flex-1">{urlPublica}</span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => void compartir('copiar')}
-                      title="Copiar enlace"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 min-w-0">
                     <Button
                       variant="outline"
                       size="sm"
                       disabled={accion != null}
                       onClick={() => void compartir('copiar')}
-                      className="w-full text-xs"
+                      className="w-full text-xs font-medium bg-background/80 hover:bg-background border-emerald-300/80 dark:border-emerald-800/80"
                     >
-                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      {accion === 'copiar' ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      )}
                       Copiar Enlace
                     </Button>
 
@@ -370,9 +370,13 @@ export default function MicroCampanaModal({
                       size="sm"
                       disabled={accion != null}
                       onClick={() => void compartir('wa_me')}
-                      className="w-full text-xs"
+                      className="w-full text-xs font-medium bg-background/80 hover:bg-background border-emerald-300/80 dark:border-emerald-800/80"
                     >
-                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                      {accion === 'wa_me' ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                      )}
                       Abrir WhatsApp
                     </Button>
 
@@ -380,7 +384,7 @@ export default function MicroCampanaModal({
                       size="sm"
                       disabled={accion != null || saldo === 0}
                       onClick={() => void compartir('piru')}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
                     >
                       {accion === 'piru' ? (
                         <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />

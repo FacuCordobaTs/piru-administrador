@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ApiError, codigosDescuentoApi, crecimientoApi, type CampanaCrecimiento, type CrearCampanaCrecimiento } from '@/lib/api'
-import { ArrowUpDown, ChevronRight, Copy, Globe2, Loader2, Megaphone, Pencil, Plus, Power, PowerOff, Sparkles, Tag, Trash2, TrendingUp, Users, X } from 'lucide-react'
+import { ArrowUpDown, ChevronRight, Copy, Globe2, Link2, Loader2, Megaphone, Package, Pencil, Plus, Power, PowerOff, RefreshCw, ShoppingBag, ShoppingCart, Sparkles, Tag, Trash2, TrendingUp, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   type ClienteGrowth,
@@ -135,14 +135,27 @@ function getCampaignStatus(campana: CampanaCrecimiento | null, organic: boolean)
   return { estado: 'Inactiva', dotColor: 'bg-zinc-400' }
 }
 
-function formatTipoCampana(tipo?: string) {
-  if (!tipo) return ''
-  if (tipo === 'lo_mismo') return 'Lo Mismo de Siempre'
-  if (tipo === 'reactivacion') return 'Reactivación'
-  if (tipo === 'retencion') return 'Retención'
-  if (tipo === 'adquisicion') return 'Adquisición'
-  if (tipo === 'recompra') return 'Recompra'
-  return tipo
+function formatTipoCampana(campana?: Pick<CampanaCrecimiento, 'destinoTipo'> | null) {
+  if (!campana) return ''
+  if (campana.destinoTipo === 'producto') return 'Promo de producto'
+  if (campana.destinoTipo === 'carrito') return 'Carrito prearmado'
+  return 'Seguimiento'
+}
+
+function CampaignTypeIcon({ campana, className = 'h-4 w-4' }: { campana?: CampanaCrecimiento | null; className?: string }) {
+  const Icon = campana?.tipo === 'lo_mismo'
+    ? ShoppingBag
+    : campana?.tipo === 'reactivacion'
+      ? RefreshCw
+      : campana?.destinoTipo === 'producto'
+        ? Package
+        : campana?.destinoTipo === 'carrito'
+          ? ShoppingCart
+          : campana?.destinoTipo === 'tienda'
+            ? Link2
+            : Megaphone
+
+  return <Icon className={className} />
 }
 
 export default function GrowthAssetsPanel(props: Props) {
@@ -450,7 +463,7 @@ export default function GrowthAssetsPanel(props: Props) {
                         key={campana.id}
                         active={campanaSeleccionada === campana.id}
                         onClick={() => props.onSelectCampana(campanaSeleccionada === campana.id ? null : campana.id)}
-                        icon={catMeta ? <span className="text-base leading-none select-none">{catMeta.emoji}</span> : <Megaphone className="h-4 w-4" />}
+                        icon={<CampaignTypeIcon campana={campana} />}
                         title={campana.nombre}
                         subtitle={`${
                           catMeta ? `${catMeta.label} · ` : ''
@@ -982,8 +995,9 @@ function CampaignDetail({
     return (
       <>
         <div className="flex items-start justify-between gap-3 border-b border-border/30 p-4">
-          <div className="min-w-0">
+            <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
+              {!organic && <CampaignTypeIcon campana={campana} className="h-4 w-4 shrink-0 text-[#FF7A00]" />}
               <h2 className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg">
                 {organic ? 'Orgánico · sin campaña' : campana?.nombre}
               </h2>
@@ -1001,7 +1015,7 @@ function CampaignDetail({
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {organic
                 ? 'Visitas directas y compras sin touch de campaña'
-                : `${campana?.tipo === 'adquisicion' ? 'Adquisición' : 'Recompra'} · /c/${campana?.slug}`}
+                : `${formatTipoCampana(campana)} · /c/${campana?.slug}`}
             </p>
           </div>
 
@@ -1176,7 +1190,7 @@ function CampaignDetail({
       <div className="flex items-start justify-between gap-4 p-5 sm:px-8">
         <div className="flex min-w-0 items-center gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-muted/80 text-foreground">
-            {organic ? <Globe2 className="h-7 w-7 text-[#FF7A00]" /> : <Megaphone className="h-7 w-7 text-[#FF7A00]" />}
+            {organic ? <Globe2 className="h-7 w-7 text-[#FF7A00]" /> : <CampaignTypeIcon campana={campana} className="h-7 w-7 text-[#FF7A00]" />}
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
@@ -1189,7 +1203,8 @@ function CampaignDetail({
               </span>
               {!organic && campana && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                  {formatTipoCampana(campana.tipo)}
+                  <CampaignTypeIcon campana={campana} className="h-3.5 w-3.5" />
+                  {formatTipoCampana(campana)}
                 </span>
               )}
               {catMeta && (
@@ -1453,7 +1468,7 @@ function CampaignDetail({
                       <div className="flex items-center justify-between py-2.5 text-xs">
                         <span className="text-muted-foreground">Tipo de campaña</span>
                         <span className="text-right font-medium text-foreground">
-                          {formatTipoCampana(campana.tipo)}
+                          {formatTipoCampana(campana)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between py-2.5 text-xs">
