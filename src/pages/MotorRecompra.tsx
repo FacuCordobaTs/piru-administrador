@@ -14,13 +14,16 @@ import {
     type ColaRecompraItem,
     type HistorialRecompraItem,
     type PaginadoRecompra,
+    type ModoRecompra,
+    type MensajeColaData,
 } from '@/lib/api'
 import { toast } from 'sonner'
 import {
     Rocket, AlertTriangle, Moon, UserX, Users, DollarSign, ShieldCheck,
     Loader2, CheckCircle2, Zap, Crown, Gauge, TrendingUp, Wallet,
     Pause, Play, Pencil, Repeat, Send, FlaskConical, ListOrdered, History,
-    UserRoundCheck, Clock, CircleOff, RefreshCw,
+    UserRoundCheck, Clock, CircleOff, RefreshCw, Copy, Check, ExternalLink,
+    Bot, MessageSquare, Eye, Sparkles,
 } from 'lucide-react'
 
 // =============================================================================
@@ -33,10 +36,11 @@ import {
 //      nunca operador de una tarea diaria.
 // =============================================================================
 
-type Segmento = 'en_riesgo' | 'dormido' | 'perdido'
+type Segmento = 'primer_pedido' | 'en_riesgo' | 'dormido' | 'perdido'
 type EstadoCampana = 'activa' | 'pausada_sin_saldo' | 'pausada_manual' | 'completada'
 
 const SEG_META: Record<Segmento, { label: string; icon: typeof Moon; dot: string; text: string }> = {
+    primer_pedido: { label: 'Primer pedido', icon: Sparkles, dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
     en_riesgo: { label: 'En riesgo', icon: AlertTriangle, dot: 'bg-orange-500', text: 'text-orange-600 dark:text-orange-400' },
     dormido: { label: 'Dormidos', icon: Moon, dot: 'bg-violet-500', text: 'text-violet-600 dark:text-violet-400' },
     perdido: { label: 'Perdidos', icon: UserX, dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400' },
@@ -57,6 +61,7 @@ interface Plan {
 
 interface Dashboard {
     estado: EstadoCampana
+    modo: ModoRecompra
     cupoDiario: number
     enviadosHoy: number
     totalEnviados: number
@@ -149,6 +154,8 @@ export default function MotorRecompra() {
 function Cargando() {
     return (
         <div className="space-y-4">
+
+
             <Skeleton className="h-9 w-64" />
             <Skeleton className="h-5 w-full max-w-lg" />
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
@@ -164,6 +171,7 @@ function Cargando() {
 function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => void }) {
     const token = useAuthStore(state => state.token)
     const [cupo, setCupo] = useState(plan.cupoSugerido)
+    const [modo, setModo] = useState<ModoRecompra>('automatico')
     const [editandoCupo, setEditandoCupo] = useState(false)
     const [confirmOpen, setConfirmOpen] = useState(false)
     const [activando, setActivando] = useState(false)
@@ -178,11 +186,11 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
         if (!token) return
         setActivando(true)
         try {
-            const res = await clientesApi.activarRecompra(token, cupo) as { success: boolean; data?: { vacio?: boolean } }
+            const res = await clientesApi.activarRecompra(token, { cupoDiario: cupo, modo }) as { success: boolean; data?: { vacio?: boolean } }
             if (res.success) {
                 setConfirmOpen(false)
                 if (res.data?.vacio) toast.info('No hay clientes para recuperar ahora mismo')
-                else toast.success('Motor de recompra encendido. Empezó a gotear con tu marca.')
+                else toast.success(modo === 'automatico' ? 'Motor de recompra encendido. Empezó a gotear con tu marca.' : 'Motor de recompra encendido en modo manual.')
                 onActivado()
             }
         } catch (err) {
@@ -221,7 +229,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                 </div>
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight text-foreground">Motor de Recompra</h1>
-                    <p className="text-[13px] text-muted-foreground">Encendelo una vez. El resto es automático.</p>
+                    <p className="text-[13px] text-muted-foreground">Encendelo una vez. El resto es automático o manual con un clic.</p>
                 </div>
             </div>
 
@@ -244,9 +252,9 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                     )}
                     {plan.diasCubiertos > 0 ? (
                         <> Con tus <span className="font-semibold">{plan.saldoMarketing} mensajes</span> cubrimos
-                        los primeros <span className="font-semibold">{plan.diasCubiertos} {plan.diasCubiertos === 1 ? 'día' : 'días'}</span>.</>
+                        los primeros <span className="font-semibold">{plan.diasCubiertos} {plan.diasCubiertos === 1 ? 'día' : 'días'}</span> en modo automático.</>
                     ) : (
-                        <> <span className="font-medium text-orange-600 dark:text-orange-400">No te quedan mensajes de campaña</span>: recargá para que el motor pueda arrancar.</>
+                        <> <span className="font-medium text-orange-600 dark:text-orange-400">No te quedan mensajes de campaña</span>: podés usar el <span className="font-medium">Modo Manual</span> gratis o recargar para el automático.</>
                     )}
                 </p>
 
@@ -269,19 +277,52 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                     )}
                 </div>
 
+                {/* Selector de Modo */}
+                <div className="mt-5 pt-4 border-t border-border/50">
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wider mb-2">Elegí cómo querés enviar</p>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setModo('automatico')}
+                            className={`text-left p-3.5 rounded-xl border transition-all ${modo === 'automatico' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border bg-muted/20 hover:border-border/80'}`}
+                        >
+                            <div className="flex items-center gap-2 font-semibold text-sm text-foreground">
+                                <Bot className="w-4 h-4 text-primary" />
+                                Modo Automático
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                                El motor envía solo vía WhatsApp oficial según el cupo diario. Consume créditos de marketing.
+                            </p>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setModo('manual')}
+                            className={`text-left p-3.5 rounded-xl border transition-all ${modo === 'manual' ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 ring-1 ring-emerald-600' : 'border-border bg-muted/20 hover:border-border/80'}`}
+                        >
+                            <div className="flex items-center gap-2 font-semibold text-sm text-foreground">
+                                <MessageSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                Modo Manual
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                                El motor prepara los textos y cupones. Vos los copiás y enviás desde tu propio WhatsApp. <strong className="text-emerald-700 dark:text-emerald-400">Sin costo de créditos</strong>.
+                            </p>
+                        </button>
+                    </div>
+                </div>
+
                 <Button
                     onClick={() => setConfirmOpen(true)}
                     size="lg"
                     className="mt-5 h-12 px-8 gap-2 text-base w-full sm:w-auto"
                 >
-                    <Zap className="w-5 h-5" /> Activar
+                    <Zap className="w-5 h-5" /> Activar motor {modo === 'manual' ? '(Modo Manual)' : '(Modo Automático)'}
                 </Button>
             </div>
 
             {/* Por qué gotea (feature, no restricción) + grupo de control */}
             <div className="grid sm:grid-cols-2 gap-3 mt-4">
                 <ExplainCard icon={Gauge} title="Gotea, no satura"
-                    text={`Manda de a poco (hasta ${cupo}/día) para cuidar tu número ante WhatsApp y no llenarte la cocina de golpe. Cada día prioriza a quien más conviene.`} />
+                    text={`Manda de a poco (hasta ${cupo}/día) para cuidar tu número y no llenarte la cocina de golpe. Cada día prioriza a quien más conviene.`} />
                 <ExplainCard icon={FlaskConical} title="Mide de verdad"
                     text={`Aparta ${plan.totalControl} clientes sin contactar (grupo de control). Comparando cuántos vuelven con y sin mensaje, vas a ver la plata real que generó — no un número inflado.`} />
             </div>
@@ -291,20 +332,38 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-muted-foreground" /> Encender el motor
+                            <Zap className="w-4 h-4 text-muted-foreground" /> Encender el motor ({modo === 'automatico' ? 'Automático' : 'Manual'})
                         </DialogTitle>
                         <DialogDescription>
-                            A partir de ahora el motor va a ir contactando solo a los {plan.totalContactar} clientes,
-                            hasta {cupo} por día, empezando por los de mejor retorno. Apartamos {plan.totalControl} como
-                            grupo de control. No tenés que hacer nada más: podés pausarlo cuando quieras.
+                            {modo === 'automatico' ? (
+                                <>
+                                    A partir de ahora el motor va a ir contactando solo a los {plan.totalContactar} clientes,
+                                    hasta {cupo} por día, empezando por los de mejor retorno. Apartamos {plan.totalControl} como
+                                    grupo de control. No tenés que hacer nada más: podés pausarlo cuando quieras.
+                                </>
+                            ) : (
+                                <>
+                                    El motor va a organizar y priorizar tu cola diaria de hasta {cupo} clientes.
+                                    Podrás ver los mensajes armados con cupón y carrito listo, copiarlos o abrirlos directamente en WhatsApp
+                                    y marcarlos como enviados para medir el retorno generado.
+                                </>
+                            )}
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="rounded-lg border bg-white dark:bg-muted/40 p-3">
-                        <p className="text-[11px] text-muted-foreground">
-                            Cada mensaje consume 1 crédito de <span className="font-medium">campaña (marketing)</span>. Si se agotan,
-                            el motor se <span className="font-medium">pausa solo</span> (nunca genera deuda) y te avisa una vez con el resultado.
-                        </p>
-                    </div>
+                    {modo === 'automatico' ? (
+                        <div className="rounded-lg border bg-white dark:bg-muted/40 p-3">
+                            <p className="text-[11px] text-muted-foreground">
+                                Cada mensaje consume 1 crédito de <span className="font-medium">campaña (marketing)</span>. Si se agotan,
+                                el motor se <span className="font-medium">pausa solo</span> (nunca genera deuda) y te avisa una vez con el resultado.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="rounded-lg border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-3">
+                            <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                                <span className="font-semibold">Sin costo de créditos:</span> en modo manual vos enviás desde tu WhatsApp y no se descuentan créditos de tu saldo de marketing.
+                            </p>
+                        </div>
+                    )}
                     <DialogFooter className="gap-2 sm:gap-2">
                         <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={activando}>Cancelar</Button>
                         <Button onClick={activar} disabled={activando} className="gap-2">
@@ -328,6 +387,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
 }) {
     const token = useAuthStore(state => state.token)
     const [accion, setAccion] = useState(false)
+    const [cambiandoModo, setCambiandoModo] = useState(false)
     const [editandoCupo, setEditandoCupo] = useState(false)
     const [cupo, setCupo] = useState(campana.cupoDiario)
 
@@ -349,6 +409,22 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
         }
     }
 
+    const alternarModo = async (nuevoModo: ModoRecompra) => {
+        if (!token || cambiandoModo) return
+        setCambiandoModo(true)
+        try {
+            const res = await clientesApi.modoRecompra(token, nuevoModo) as { success: boolean }
+            if (res.success) {
+                toast.success(`Cambiado a Modo ${nuevoModo === 'automatico' ? 'Automático' : 'Manual'}`)
+                onCambio()
+            }
+        } catch {
+            toast.error('No se pudo cambiar el modo del motor')
+        } finally {
+            setCambiandoModo(false)
+        }
+    }
+
     const guardarCupo = async () => {
         if (!token) return
         setAccion(true)
@@ -366,33 +442,69 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
 
     return (
         <div>
-            {/* Encabezado con estado + marcador en una línea (el "hit" diario es de resultados) */}
-            <div className="flex items-start justify-between gap-3 mb-1">
-                <div className="flex items-center gap-2.5">
+            {/* Encabezado con estado + modo + pausa/reanudación */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2.5 flex-wrap">
                     <EstadoBadge estado={campana.estado} />
+                    <div className="inline-flex items-center rounded-lg border border-border/80 bg-white dark:bg-muted/40 p-0.5 text-xs shadow-sm">
+                        <button
+                            type="button"
+                            disabled={cambiandoModo || accion}
+                            onClick={() => campana.modo !== 'automatico' && alternarModo('automatico')}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all ${campana.modo === 'automatico' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <Bot className="w-3.5 h-3.5" /> Automático
+                        </button>
+                        <button
+                            type="button"
+                            disabled={cambiandoModo || accion}
+                            onClick={() => campana.modo !== 'manual' && alternarModo('manual')}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all ${campana.modo === 'manual' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <MessageSquare className="w-3.5 h-3.5" /> Manual
+                        </button>
+                    </div>
                     <h1 className="text-xl font-semibold tracking-tight text-foreground">Motor de Recompra</h1>
                 </div>
-                {activa && (
-                    <Button variant="outline" size="sm" disabled={accion}
-                        onClick={() => doAccion(() => clientesApi.pausarRecompra(token!), 'Motor pausado')}
-                        className="h-8 gap-1.5 text-xs">
-                        <Pause className="w-3.5 h-3.5" /> Pausar
-                    </Button>
-                )}
-                {pausadaManual && (
-                    <Button size="sm" disabled={accion}
-                        onClick={() => doAccion(() => clientesApi.reanudarRecompra(token!), 'Motor reanudado')}
-                        className="h-8 gap-1.5 text-xs">
-                        <Play className="w-3.5 h-3.5" /> Reanudar
-                    </Button>
-                )}
+                <div className="flex items-center gap-2">
+                    {activa && (
+                        <Button variant="outline" size="sm" disabled={accion || cambiandoModo}
+                            onClick={() => doAccion(() => clientesApi.pausarRecompra(token!), 'Motor pausado')}
+                            className="h-8 gap-1.5 text-xs">
+                            <Pause className="w-3.5 h-3.5" /> Pausar
+                        </Button>
+                    )}
+                    {pausadaManual && (
+                        <Button size="sm" disabled={accion || cambiandoModo}
+                            onClick={() => doAccion(() => clientesApi.reanudarRecompra(token!), 'Motor reanudado')}
+                            className="h-8 gap-1.5 text-xs">
+                            <Play className="w-3.5 h-3.5" /> Reanudar
+                        </Button>
+                    )}
+                </div>
             </div>
             <p className="text-[13px] text-muted-foreground mb-5">
                 {campana.contactados} contactados · <span className="text-foreground font-medium">{campana.volvieron} volvieron a pedir</span> · {formatCurrency(campana.plataRecuperada)} recuperados
             </p>
 
-            {/* Aviso de saldo agotado (pausa por saldo): continuación de algo que funciona, con el retorno al lado */}
-            {sinSaldo && (
+            {/* Banner de Modo Manual */}
+            {campana.modo === 'manual' && (
+                <div className="mb-5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/80 dark:bg-emerald-950/30 p-4">
+                    <div className="flex items-start gap-3">
+                        <MessageSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">Modo Manual activo: vos enviás con un clic</p>
+                            <p className="text-xs text-emerald-800/90 dark:text-emerald-300/90 mt-0.5 leading-relaxed">
+                                El motor arma y prioriza la cola de clientes a recuperar pero <span className="font-semibold">no envía mensajes automáticamente ni consume créditos de marketing</span>.
+                                En la pestaña <span className="font-semibold">Próximos</span> podés copiar el mensaje prearmado con cupón y carrito listo, abrirlo en WhatsApp y marcarlo como enviado.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Aviso de saldo agotado (solo relevante en modo automático) */}
+            {sinSaldo && campana.modo === 'automatico' && (
                 <div className="mb-5 rounded-xl border border-orange-200 dark:border-orange-900 bg-orange-50/70 dark:bg-orange-950/30 p-4">
                     <div className="flex items-start gap-3">
                         <Wallet className="w-5 h-5 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
@@ -400,11 +512,16 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                             <p className="text-sm font-semibold text-orange-900 dark:text-orange-200">Pausado: se terminaron tus mensajes de campaña</p>
                             <p className="text-xs text-orange-800/80 dark:text-orange-300/80 mt-0.5 leading-relaxed">
                                 Los que enviaste generaron <span className="font-semibold">{campana.volvieron} {campana.volvieron === 1 ? 'pedido' : 'pedidos'} por {formatCurrency(campana.plataRecuperada)}</span>.
-                                {campana.enCola > 0 && <> Quedan <span className="font-semibold">{campana.enCola} clientes en cola</span>.</>} Recargá y sigue solo desde donde quedó.
+                                {campana.enCola > 0 && <> Quedan <span className="font-semibold">{campana.enCola} clientes en cola</span>.</>} Recargá mensajes o cambiá a <span className="font-semibold">Modo Manual</span> para continuar enviando por tu cuenta sin costo.
                             </p>
-                            <Button size="sm" onClick={onRecargar} className="mt-3 h-8 gap-1.5 text-xs bg-orange-600 hover:bg-orange-700 text-white">
-                                <Wallet className="w-3.5 h-3.5" /> Recargar mensajes
-                            </Button>
+                            <div className="flex items-center gap-2 mt-3">
+                                <Button size="sm" onClick={onRecargar} className="h-8 gap-1.5 text-xs bg-orange-600 hover:bg-orange-700 text-white">
+                                    <Wallet className="w-3.5 h-3.5" /> Recargar mensajes
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => alternarModo('manual')} className="h-8 gap-1.5 text-xs">
+                                    <MessageSquare className="w-3.5 h-3.5" /> Cambiar a Modo Manual
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -423,14 +540,14 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
             {/* Marcador: consumo SIEMPRE junto a retorno */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <StatCard label="Contactados" value={campana.contactados.toString()}
-                    hint={`${campana.totalEnviados} mensajes usados`} icon={<Send className="w-4 h-4" />} />
+                    hint={campana.modo === 'manual' ? 'enviados manualmente' : `${campana.totalEnviados} mensajes usados`} icon={<Send className="w-4 h-4" />} />
                 <StatCard label="Volvieron a pedir" value={campana.volvieron.toString()}
                     hint={campana.contactados > 0 ? `${pct(campana.tasaContactados)} de los contactados` : 'todavía sin datos'}
                     icon={<Repeat className="w-4 h-4" />} />
                 <StatCard label="Recuperado" value={formatCurrency(campana.plataRecuperada)}
                     hint="facturación de los que volvieron" icon={<DollarSign className="w-4 h-4" />} />
                 <StatCard label="En cola" value={campana.enCola.toString()}
-                    hint={activa ? `goteando ${campana.enviadosHoy} hoy` : 'en espera'} icon={<Users className="w-4 h-4" />} />
+                    hint={activa ? `hasta ${campana.cupoDiario} por día` : 'en espera'} icon={<Users className="w-4 h-4" />} />
             </div>
 
             {/* Atribución honesta: contactados vs control */}
@@ -458,7 +575,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                     <Gauge className="w-4 h-4 text-muted-foreground shrink-0" />
                     {editandoCupo ? (
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-muted-foreground">Enviando hasta</span>
+                            <span className="text-muted-foreground">Procesando hasta</span>
                             <StepperCupo value={cupo} onChange={setCupo} />
                             <span className="text-muted-foreground">por día</span>
                             <Button size="sm" disabled={accion} onClick={guardarCupo} className="h-7 px-3 text-xs">
@@ -468,7 +585,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                         </div>
                     ) : (
                         <span className="text-muted-foreground">
-                            Enviando hasta <span className="font-medium text-foreground">{campana.cupoDiario}/día</span> (máx. {CUPO_MAX} por seguridad del número)
+                            {campana.modo === 'automatico' ? 'Enviando' : 'Procesando'} hasta <span className="font-medium text-foreground">{campana.cupoDiario}/día</span> (máx. {CUPO_MAX} por seguridad)
                             {' · '}
                             <button onClick={() => setEditandoCupo(true)} className="text-foreground hover:underline font-medium inline-flex items-center gap-1">
                                 <Pencil className="w-3 h-3" /> Cambiar
@@ -476,12 +593,18 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                         </span>
                     )}
                 </div>
-                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                     <Wallet className="w-3.5 h-3.5 shrink-0" />
-                    Saldo de campaña: <span className={`font-medium ${campana.saldoMarketing <= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-foreground'}`}>{campana.saldoMarketing} mensajes</span>
-                    <span>· {diasCubiertos} {diasCubiertos === 1 ? 'día cubierto' : 'días cubiertos'} al ritmo actual</span>
-                    {campana.saldoMarketing <= 0 && (
-                        <button onClick={onRecargar} className="text-foreground hover:underline font-medium">· Recargar</button>
+                    {campana.modo === 'automatico' ? (
+                        <>
+                            Saldo de campaña: <span className={`font-medium ${campana.saldoMarketing <= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-foreground'}`}>{campana.saldoMarketing} mensajes</span>
+                            <span>· {diasCubiertos} {diasCubiertos === 1 ? 'día cubierto' : 'días cubiertos'} al ritmo actual</span>
+                            {campana.saldoMarketing <= 0 && (
+                                <button onClick={onRecargar} className="text-foreground hover:underline font-medium">· Recargar</button>
+                            )}
+                        </>
+                    ) : (
+                        <span className="text-emerald-700 dark:text-emerald-400 font-medium">Modo Manual: sin costo ni consumo de créditos</span>
                     )}
                 </div>
             </div>
@@ -489,18 +612,18 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
             {campana.estado === 'completada' && (
                 <p className="mt-4 text-xs text-muted-foreground flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    Ya recuperaste todo el backlog. El motor sigue encendido en modo automático: cada vez que un cliente se pase de su ritmo, lo contacta solo.
+                    Ya recuperaste todo el backlog. El motor sigue encendido: cada vez que un cliente se pase de su ritmo, entra a la cola {campana.modo === 'automatico' ? 'para enviarse solo' : 'para que lo envíes con un clic'}.
                 </p>
             )}
 
-            <ObservabilidadMotor />
+            <ObservabilidadMotor modo={campana.modo} onCambio={onCambio} />
         </div>
     )
 }
 
 type ObservabilidadTab = 'cola' | 'historial' | 'clientes'
 
-function ObservabilidadMotor() {
+function ObservabilidadMotor({ modo, onCambio }: { modo: ModoRecompra; onCambio: () => void }) {
     const token = useAuthStore(state => state.token)
     const [tab, setTab] = useState<ObservabilidadTab>('cola')
     const [pagina, setPagina] = useState(1)
@@ -508,6 +631,7 @@ function ObservabilidadMotor() {
     const [poblacion, setPoblacion] = useState('')
     const [estadoCliente, setEstadoCliente] = useState('')
     const [loading, setLoading] = useState(true)
+    const [errorCarga, setErrorCarga] = useState<string | null>(null)
     const [cola, setCola] = useState<PaginadoRecompra<ColaRecompraItem> | null>(null)
     const [historial, setHistorial] = useState<PaginadoRecompra<HistorialRecompraItem> | null>(null)
     const [clientes, setClientes] = useState<PaginadoRecompra<ClienteMotorRecompra> | null>(null)
@@ -526,8 +650,13 @@ function ObservabilidadMotor() {
                 const res = await clientesApi.recompraClientes(token, { pagina, limite: 25, segmento, poblacion, estado: estadoCliente })
                 setClientes(res.data)
             }
-        } catch {
-            toast.error('No se pudo actualizar la observabilidad del motor')
+            setErrorCarga(null)
+        } catch (error) {
+            const mensaje = error instanceof ApiError && typeof error.response?.message === 'string'
+                ? error.response.message
+                : 'No se pudo actualizar la observabilidad del motor'
+            setErrorCarga(mensaje)
+            if (!silencioso) toast.error(mensaje)
         } finally {
             if (!silencioso) setLoading(false)
         }
@@ -562,7 +691,7 @@ function ObservabilidadMotor() {
 
             <div className="mt-3 flex flex-wrap gap-2">
                 <FiltroSelect value={segmento} onChange={(value) => { setSegmento(value); setPagina(1) }} label="Todos los segmentos" options={[
-                    ['en_riesgo', 'En riesgo'], ['dormido', 'Dormidos'], ['perdido', 'Perdidos'],
+                    ['primer_pedido', 'Primer pedido'], ['en_riesgo', 'En riesgo'], ['dormido', 'Dormidos'], ['perdido', 'Perdidos'],
                 ]} />
                 {tab !== 'historial' && <FiltroSelect value={poblacion} onChange={(value) => { setPoblacion(value); setPagina(1) }} label="Flujo y stock" options={[
                     ['flujo', 'Flujo'], ['stock', 'Stock'],
@@ -574,7 +703,12 @@ function ObservabilidadMotor() {
 
             {tab === 'cola' && (
                 <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs leading-relaxed text-blue-900 dark:border-blue-900 dark:bg-blue-950/20 dark:text-blue-200">
-                    <strong>Prioridad transparente:</strong> Flujo siempre sale primero. Después se drena Stock por <code>peso de segmento × 10.000.000 + ticket histórico</code>: en riesgo (3), dormido (2), perdido (1).
+                    <strong>Prioridad transparente:</strong> Flujo siempre sale primero. Después se drena Stock por <code>peso de segmento × 10.000.000 + ticket histórico</code>: primer pedido (4), en riesgo (3), dormido (2), perdido (1). Cada envío respeta el día y horario habitual del comensal (y días valle para clientes perdidos).
+                    {modo === 'manual' && (
+                        <span className="block mt-1 font-semibold text-emerald-800 dark:text-emerald-300">
+                            Modo manual activo: podés copiar el mensaje de cada cliente, abrir WhatsApp y marcarlo como enviado para registrar la métrica.
+                        </span>
+                    )}
                 </div>
             )}
             {tab === 'clientes' && (
@@ -584,8 +718,9 @@ function ObservabilidadMotor() {
             )}
 
             <div className="mt-3 overflow-hidden rounded-xl border bg-white dark:bg-muted/20">
-                {loading && !data ? <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-                    : tab === 'cola' ? <TablaCola items={cola?.items ?? []} />
+                {errorCarga && !data ? <div className="flex flex-col items-center gap-3 p-8 text-center"><AlertTriangle className="h-6 w-6 text-orange-500" /><div><p className="text-sm font-medium text-foreground">No pudimos cargar estos datos</p><p className="mt-1 text-xs text-muted-foreground">{errorCarga}</p></div><Button variant="outline" size="sm" onClick={() => void cargar()}>Reintentar</Button></div>
+                    : loading && !data ? <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+                    : tab === 'cola' ? <TablaCola items={cola?.items ?? []} modo={modo} onActualizar={() => { void cargar(true); onCambio(); }} />
                         : tab === 'historial' ? <TablaHistorial items={historial?.items ?? []} />
                             : <TablaClientesMotor items={clientes?.items ?? []} />}
             </div>
@@ -614,9 +749,254 @@ function SegmentoTexto({ segmento }: { segmento: string }) {
     return <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className={`h-1.5 w-1.5 rounded-full ${meta?.dot ?? 'bg-muted-foreground'}`} />{meta?.label ?? segmento}</span>
 }
 
-function TablaCola({ items }: { items: ColaRecompraItem[] }) {
+function TablaCola({
+    items,
+    modo,
+    onActualizar,
+}: {
+    items: ColaRecompraItem[]
+    modo: ModoRecompra
+    onActualizar: () => void
+}) {
+    const token = useAuthStore(state => state.token)
+    const [modalInfo, setModalInfo] = useState<{ filaId: number; data: MensajeColaData } | null>(null)
+    const [cargandoId, setCargandoId] = useState<number | null>(null)
+    const [marcandoId, setMarcandoId] = useState<number | null>(null)
+    const [copiadoId, setCopiadoId] = useState<number | null>(null)
+
     if (items.length === 0) return <EstadoTablaVacia texto="No hay mensajes pendientes con estos filtros." />
-    return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="px-3 py-2.5">Prioridad</th><th className="px-3 py-2.5">Cliente</th><th className="px-3 py-2.5">Segmento</th><th className="px-3 py-2.5">Población</th><th className="px-3 py-2.5">Programado</th><th className="px-3 py-2.5 text-right">Score</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="px-3 py-3 font-semibold tabular-nums">#{item.posicionPrioridad}</td><td className="px-3 py-3"><p className="font-medium text-foreground">{item.clienteNombre}</p><p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p></td><td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 font-semibold ${item.poblacion === 'flujo' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-muted text-muted-foreground'}`}>{item.poblacion === 'flujo' ? 'Flujo' : 'Stock'}</span></td><td className="px-3 py-3"><p>{formatDay(item.fechaProyectada)}</p><p className="text-[11px] text-muted-foreground">Due: {formatDateTime(item.dueDate)}</p></td><td className="px-3 py-3 text-right font-mono">{item.prioridad.toLocaleString('es-AR')}</td></tr>)}</tbody></table></div>
+
+    const abrirMensaje = async (filaId: number) => {
+        if (!token) return
+        setCargandoId(filaId)
+        try {
+            const res = await clientesApi.mensajeColaRecompra(token, filaId) as { success: boolean; data: MensajeColaData }
+            if (res.success && res.data) {
+                setModalInfo({ filaId, data: res.data })
+            }
+        } catch {
+            toast.error('No se pudo cargar el mensaje del cliente')
+        } finally {
+            setCargandoId(null)
+        }
+    }
+
+    const copiarTexto = async (texto: string, filaId?: number) => {
+        try {
+            await navigator.clipboard.writeText(texto)
+            if (filaId) {
+                setCopiadoId(filaId)
+                setTimeout(() => setCopiadoId(null), 2000)
+            }
+            toast.success('Mensaje copiado al portapapeles')
+        } catch {
+            toast.error('No se pudo copiar al portapapeles')
+        }
+    }
+
+    const copiarDirecto = async (filaId: number) => {
+        if (!token) return
+        setCargandoId(filaId)
+        try {
+            const res = await clientesApi.mensajeColaRecompra(token, filaId) as { success: boolean; data: MensajeColaData }
+            if (res.success && res.data?.texto) {
+                await copiarTexto(res.data.texto, filaId)
+            }
+        } catch {
+            toast.error('No se pudo obtener el mensaje')
+        } finally {
+            setCargandoId(null)
+        }
+    }
+
+    const marcarEnviado = async (filaId: number) => {
+        if (!token || marcandoId) return
+        setMarcandoId(filaId)
+        try {
+            const res = await clientesApi.marcarEnviadoColaRecompra(token, filaId) as { success: boolean }
+            if (res.success) {
+                toast.success('Marcado como enviado exitosamente')
+                if (modalInfo?.filaId === filaId) setModalInfo(null)
+                onActualizar()
+            }
+        } catch {
+            toast.error('No se pudo marcar como enviado')
+        } finally {
+            setMarcandoId(null)
+        }
+    }
+
+    return (
+        <>
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[850px] text-left text-xs">
+                    <thead className="border-b bg-muted/40 text-muted-foreground">
+                        <tr>
+                            <th className="px-3 py-2.5">Prioridad</th>
+                            <th className="px-3 py-2.5">Cliente</th>
+                            <th className="px-3 py-2.5">Segmento</th>
+                            <th className="px-3 py-2.5">Población</th>
+                            <th className="px-3 py-2.5">Programado</th>
+                            <th className="px-3 py-2.5 text-right">Score</th>
+                            <th className="px-3 py-2.5 text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.map((item) => (
+                            <tr key={item.id} className="border-b last:border-0 hover:bg-muted/10 transition-colors">
+                                <td className="px-3 py-3 font-semibold tabular-nums">#{item.posicionPrioridad}</td>
+                                <td className="px-3 py-3">
+                                    <p className="font-medium text-foreground">{item.clienteNombre}</p>
+                                    <p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p>
+                                </td>
+                                <td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td>
+                                <td className="px-3 py-3">
+                                    <span className={`rounded-full px-2 py-1 font-semibold ${item.poblacion === 'flujo' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-muted text-muted-foreground'}`}>
+                                        {item.poblacion === 'flujo' ? 'Flujo' : 'Stock'}
+                                    </span>
+                                </td>
+                                <td className="px-3 py-3">
+                                    <p className="font-medium text-foreground">{item.horarioSugerido ?? formatDay(item.fechaProyectada)}</p>
+                                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                        <Clock className="w-3 h-3 inline" />
+                                        <span>{formatDay(item.fechaProyectada)}</span>
+                                    </p>
+                                </td>
+                                <td className="px-3 py-3 text-right font-mono">{item.prioridad.toLocaleString('es-AR')}</td>
+                                <td className="px-3 py-3 text-right">
+                                    <div className="inline-flex items-center justify-end gap-1">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 px-2 text-xs gap-1"
+                                            disabled={cargandoId === item.id || marcandoId === item.id}
+                                            onClick={() => abrirMensaje(item.id)}
+                                            title="Ver mensaje completo y opciones"
+                                        >
+                                            {cargandoId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
+                                            <span className="hidden sm:inline">Ver</span>
+                                        </Button>
+
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 px-2 text-xs gap-1"
+                                            disabled={cargandoId === item.id || marcandoId === item.id}
+                                            onClick={() => copiarDirecto(item.id)}
+                                            title="Copiar mensaje al portapapeles"
+                                        >
+                                            {copiadoId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                            <span className="hidden sm:inline">{copiadoId === item.id ? 'Copiado' : 'Copiar'}</span>
+                                        </Button>
+
+                                        <Button
+                                            size="sm"
+                                            variant={modo === 'manual' ? 'default' : 'secondary'}
+                                            className="h-7 px-2 text-xs gap-1"
+                                            disabled={marcandoId === item.id}
+                                            onClick={() => marcarEnviado(item.id)}
+                                            title="Marcar como enviado manualmente"
+                                        >
+                                            {marcandoId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                                            <span className="hidden md:inline">Enviado</span>
+                                        </Button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Modal para ver, copiar, abrir en WhatsApp y marcar enviado */}
+            <Dialog open={!!modalInfo} onOpenChange={(open) => !open && setModalInfo(null)}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-primary" /> Mensaje para {modalInfo?.data.clienteNombre}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {modalInfo?.data.telefono ? `WhatsApp: ${modalInfo.data.telefono}` : 'Sin teléfono cargado'} · {modalInfo?.data.incentivo}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {modalInfo && (
+                        <div className="space-y-3 py-2">
+                            {modalInfo.data.horarioSugerido && (
+                                <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/60 dark:border-blue-900/50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-950 dark:text-blue-200">
+                                    <Clock className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                                    <div>
+                                        <span className="font-semibold">Momento recomendado: </span>
+                                        <span>{modalInfo.data.horarioSugerido}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {modalInfo.data.codigoDescuento && (
+                                <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+                                    <div>
+                                        <span className="text-muted-foreground">Cupón generado: </span>
+                                        <span className="font-mono font-semibold text-foreground">{modalInfo.data.codigoDescuento}</span>
+                                        <span className="text-muted-foreground"> ({modalInfo.data.descuento}% OFF)</span>
+                                    </div>
+                                    <span className="text-[11px] text-muted-foreground">Vence en 48hs</span>
+                                </div>
+                            )}
+
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-xs font-semibold text-foreground">Texto del mensaje a enviar:</label>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 text-xs gap-1"
+                                        onClick={() => copiarTexto(modalInfo.data.texto)}
+                                    >
+                                        <Copy className="w-3 h-3" /> Copiar texto
+                                    </Button>
+                                </div>
+                                <div className="rounded-lg border bg-muted/20 p-3 text-xs whitespace-pre-wrap font-sans text-foreground leading-relaxed max-h-48 overflow-y-auto select-all">
+                                    {modalInfo.data.texto}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter className="flex-col sm:flex-row gap-2">
+                        {modalInfo?.data.waMeUrl && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="gap-1.5 text-xs sm:mr-auto"
+                                onClick={() => window.open(modalInfo.data.waMeUrl!, '_blank')}
+                            >
+                                <ExternalLink className="w-3.5 h-3.5" /> Abrir WhatsApp
+                            </Button>
+                        )}
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            className="gap-1.5 text-xs"
+                            onClick={() => modalInfo && copiarTexto(modalInfo.data.texto)}
+                        >
+                            <Copy className="w-3.5 h-3.5" /> Copiar mensaje
+                        </Button>
+                        <Button
+                            type="button"
+                            className="gap-1.5 text-xs"
+                            disabled={marcandoId === modalInfo?.filaId}
+                            onClick={() => {
+                                if (modalInfo) void marcarEnviado(modalInfo.filaId)
+                            }}
+                        >
+                            {marcandoId === modalInfo?.filaId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                            Marcar como enviado
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
+    )
 }
 
 function TablaHistorial({ items }: { items: HistorialRecompraItem[] }) {

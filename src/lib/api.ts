@@ -218,13 +218,31 @@ export const cartaIaApi = {
   },
 }
 
-export type SegmentoRecompra = 'en_riesgo' | 'dormido' | 'perdido'
+export type SegmentoRecompra = 'primer_pedido' | 'en_riesgo' | 'dormido' | 'perdido'
 export type EstadoClienteRecompra = 'pendiente' | 'enviado' | 'control' | 'salido_por_pedido' | 'fallido'
+export type ModoRecompra = 'automatico' | 'manual'
+export interface MensajeColaData {
+  clienteId: number
+  clienteNombre: string
+  telefono: string
+  segmento: SegmentoRecompra
+  tiempoSinPedir: string
+  productoFavorito: string
+  incentivo: string
+  descuento: number
+  codigoDescuento: string | null
+  nivel: number
+  urlTienda: string
+  texto: string
+  waMeUrl: string | null
+  horarioSugerido?: string | null
+}
 export interface PaginadoRecompra<T> { items: T[]; pagina: number; limite: number; total: number; paginas: number }
 export interface ColaRecompraItem {
   id: number; clienteId: number; clienteNombre: string; telefono: string | null
   segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; rol: 'contactado'
   prioridad: number; dueDate: string | null; fechaProyectada: string; posicionPrioridad: number
+  horarioSugerido?: string | null
   totalGastado: number; ultimoPedidoAt: string | null; createdAt: string | null
 }
 export interface HistorialRecompraItem {
@@ -290,12 +308,17 @@ export const clientesApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
-  // Enciende el motor (una vez): detecta el stock, aparta el control y arranca el goteo. cupoDiario opcional.
-  activarRecompra: async (token: string, cupoDiario?: number) => {
+  // Enciende el motor (una vez): detecta el stock, aparta el control y arranca el goteo. cupoDiario y modo opcionales.
+  activarRecompra: async (token: string, config?: number | { cupoDiario?: number; modo?: ModoRecompra }) => {
+    const body = typeof config === 'number'
+      ? { cupoDiario: config }
+      : config != null
+        ? config
+        : {}
     return fetchApi('/clientes/recompra/activar', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(cupoDiario != null ? { cupoDiario } : {}),
+      body: JSON.stringify(body),
     })
   },
   pausarRecompra: async (token: string) => {
@@ -310,11 +333,33 @@ export const clientesApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
-  configRecompra: async (token: string, cupoDiario: number) => {
+  configRecompra: async (token: string, config: number | { cupoDiario?: number; modo?: ModoRecompra }) => {
+    const body = typeof config === 'number'
+      ? { cupoDiario: config }
+      : config
     return fetchApi('/clientes/recompra/config', {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cupoDiario }),
+      body: JSON.stringify(body),
+    })
+  },
+  modoRecompra: async (token: string, modo: ModoRecompra) => {
+    return fetchApi<{ success: boolean; data: { modo: ModoRecompra } }>('/clientes/recompra/modo', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modo }),
+    })
+  },
+  mensajeColaRecompra: async (token: string, filaId: number) => {
+    return fetchApi<{ success: boolean; data: MensajeColaData }>(`/clientes/recompra/cola/${filaId}/mensaje`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  marcarEnviadoColaRecompra: async (token: string, filaId: number) => {
+    return fetchApi<{ success: boolean; message: string }>(`/clientes/recompra/cola/${filaId}/marcar-enviado`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
     })
   },
   recompraCola: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string } = {}) => {
