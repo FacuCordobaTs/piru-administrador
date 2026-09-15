@@ -218,6 +218,36 @@ export const cartaIaApi = {
   },
 }
 
+export type SegmentoRecompra = 'en_riesgo' | 'dormido' | 'perdido'
+export type EstadoClienteRecompra = 'pendiente' | 'enviado' | 'control' | 'salido_por_pedido' | 'fallido'
+export interface PaginadoRecompra<T> { items: T[]; pagina: number; limite: number; total: number; paginas: number }
+export interface ColaRecompraItem {
+  id: number; clienteId: number; clienteNombre: string; telefono: string | null
+  segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; rol: 'contactado'
+  prioridad: number; dueDate: string | null; fechaProyectada: string; posicionPrioridad: number
+  totalGastado: number; ultimoPedidoAt: string | null; createdAt: string | null
+}
+export interface HistorialRecompraItem {
+  id: number; clienteId: number; clienteNombre: string; telefono: string | null
+  segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; origenContacto: 'automatico' | 'manual'
+  estadoDespacho: 'entregado' | 'fallido'; plantillaWhatsapp: string; codigoDescuento: string | null
+  nivel: number | null; fechaHora: string | null; errorEnvio: string | null
+}
+export interface ClienteMotorRecompra {
+  id: number; clienteId: number; clienteNombre: string; telefono: string | null
+  segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; rol: 'contactado' | 'control'
+  estado: EstadoClienteRecompra; prioridad: number; ticketPromedio: number; ultimoPedidoAt: string | null
+  dueDate: string | null; enviadoAt: string | null
+  protecciones: { horarioSilencioActivo: boolean; cooldownHasta: string | null; topeFrecuenciaAlcanzado: boolean; toques30Dias: number; maximoToques30Dias: number; optOut: boolean }
+}
+
+function queryRecompra(params: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) if (value != null && value !== '') query.set(key, String(value))
+  const serialized = query.toString()
+  return serialized ? `?${serialized}` : ''
+}
+
 export const clientesApi = {
   indicePos: (token: string, sucursalId?: number) => fetchApi<{ success: boolean; data: unknown }>(`/clientes/indice-pos${sucursalId ? `?sucursalId=${sucursalId}` : ''}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -249,6 +279,7 @@ export const clientesApi = {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
+        'Idempotency-Key': crypto.randomUUID(),
       },
     })
   },
@@ -284,6 +315,21 @@ export const clientesApi = {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ cupoDiario }),
+    })
+  },
+  recompraCola: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string } = {}) => {
+    return fetchApi<{ success: boolean; data: PaginadoRecompra<ColaRecompraItem> }>(`/clientes/recompra/cola${queryRecompra(params)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  recompraHistorial: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; estado?: string } = {}) => {
+    return fetchApi<{ success: boolean; data: PaginadoRecompra<HistorialRecompraItem> }>(`/clientes/recompra/historial${queryRecompra(params)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  recompraClientes: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string; rol?: string; estado?: string } = {}) => {
+    return fetchApi<{ success: boolean; data: PaginadoRecompra<ClienteMotorRecompra> }>(`/clientes/recompra/clientes${queryRecompra(params)}`, {
+      headers: { Authorization: `Bearer ${token}` },
     })
   },
 }
@@ -2041,7 +2087,7 @@ export interface PlanCatalogo {
   // Descuento porcentual al pagar por año (0-20). Se usa para mostrar el ahorro anual.
   descuentoAnual: number
   mensajesIncluidos: number
-  // Mensajes de marketing (Motor de Recompra) incluidos por ciclo (Avanzado: 100).
+  // Alias legacy de cupo marketing; los cupos vigentes salen de módulos.
   mensajesMarketingIncluidos: number
   // LEGACY: ya ningún plan es ilimitado; se conserva por retrocompat (siempre false).
   mensajesIlimitados: boolean

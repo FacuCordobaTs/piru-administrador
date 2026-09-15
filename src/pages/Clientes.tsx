@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import MicroCampanaModal from './clientes/MicroCampanaModal'
 import { HistorialPuntosDialog } from './clientes/HistorialPuntosDialog'
 import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
+import MotorRecompra from './MotorRecompra'
 import {
   type ClienteGrowth,
   type CodigoDescuentoGrowth,
@@ -39,7 +40,7 @@ import {
 import { FiltrosDialog } from './clientes/FiltrosDialog'
 
 type AssetTab = 'campanas' | 'cupones'
-type WorkspaceTab = 'clientes' | AssetTab
+type WorkspaceTab = 'clientes' | 'retencion' | AssetTab
 type SortKey = SortClienteKey
 type SegmentFilter = ReturnType<typeof getSegmento> | 'todos'
 type MobileView = 'clientes' | 'detalle' | 'pedidos'
@@ -81,6 +82,7 @@ export default function Clientes() {
     const tab = searchParams.get('tab')
     if (tab === 'campanas' || tab === 'crecimiento') return 'campanas'
     if (tab === 'cupones') return 'cupones'
+    if (tab === 'retencion' || tab === 'recompra') return 'retencion'
     if (tab === 'clientes') return 'clientes'
     return null
   })
@@ -105,6 +107,8 @@ export default function Clientes() {
       setWorkspaceTab((prev) => (prev !== 'campanas' ? 'campanas' : prev))
     } else if (tab === 'cupones') {
       setWorkspaceTab((prev) => (prev !== 'cupones' ? 'cupones' : prev))
+    } else if (tab === 'retencion' || tab === 'recompra') {
+      setWorkspaceTab((prev) => (prev !== 'retencion' ? 'retencion' : prev))
     } else if (tab === 'clientes') {
       setWorkspaceTab((prev) => (prev !== 'clientes' ? 'clientes' : prev))
     } else if (!tab) {
@@ -339,7 +343,7 @@ export default function Clientes() {
             Conocé tu base, medí el recorrido de cada promoción y seguí tus cupones.
           </p>
 
-          <div className="mx-auto mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mx-auto mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <button
               type="button"
               onClick={() => cambiarWorkspaceTab('clientes')}
@@ -380,6 +384,25 @@ export default function Clientes() {
 
             <button
               type="button"
+              onClick={() => cambiarWorkspaceTab('retencion')}
+              className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:text-orange-400">
+                <Zap className="h-6 w-6" />
+              </div>
+              <div className="mt-4">
+                <h2 className="text-base font-semibold text-foreground">Retención</h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Motor automático, cola priorizada, historial y retorno incremental.
+                </p>
+              </div>
+              <span className="mt-4 inline-flex items-center text-xs font-semibold text-orange-600 dark:text-orange-400 group-hover:underline">
+                {retencionActiva ? 'Ingresar' : 'Conocer módulo'} <ChevronRight className="ml-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => cambiarWorkspaceTab('cupones')}
               className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
             >
@@ -400,6 +423,20 @@ export default function Clientes() {
         </div>
       </div>
     )
+  }
+
+  if (workspaceTab === 'retencion') {
+    return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
+      <header className="shrink-0 border-b px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 sm:flex-row sm:justify-between">
+          <Button variant="ghost" size="sm" onClick={() => cambiarWorkspaceTab(null)} className="self-start text-xs text-muted-foreground hover:text-foreground sm:self-auto">
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Volver
+          </Button>
+          <WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} />
+        </div>
+      </header>
+      <MotorRecompra />
+    </div>
   }
 
   return <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#FFFBF0] dark:bg-background xl:overflow-hidden">
@@ -840,6 +877,7 @@ function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (va
   const tabs: Array<{ value: WorkspaceTab; label: string; icon: React.ReactNode }> = [
     { value: 'clientes', label: 'Clientes', icon: <Users className="h-4 w-4" /> },
     { value: 'campanas', label: 'Crecimiento', icon: <TrendingUp className="h-4 w-4" /> },
+    { value: 'retencion', label: 'Retención', icon: <Zap className="h-4 w-4" /> },
     { value: 'cupones', label: 'Cupones', icon: <Ticket className="h-4 w-4" /> },
   ]
   return <nav className="flex items-center gap-2" aria-label="Secciones de clientes">{tabs.map((tab) => <button key={tab.value} type="button" onClick={() => onChange(tab.value)} className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${value === tab.value ? 'bg-foreground text-background shadow-sm' : 'bg-muted/70 text-muted-foreground hover:text-foreground'}`}>{tab.icon}{tab.label}</button>)}</nav>

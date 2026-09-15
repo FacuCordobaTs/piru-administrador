@@ -46,6 +46,7 @@ import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, g
 import { PosConfigDialog } from '@/components/PosConfigDialog'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
+import { SuscripcionVencimientoBanner } from '@/components/SuscripcionVencimientoBanner'
 import { sincronizarPendientes } from '@/lib/posOffline'
 import { leerParticion, transaccionPos } from '@/lib/posLocalDb'
 
@@ -1437,6 +1438,7 @@ const Dashboard = () => {
     // durante esta visita, incluso cuando el estado de suscripción/saldo sigue vigente.
     const [showTrialBanner, setShowTrialBanner] = useState(true)
     const [showSaldoBanner, setShowSaldoBanner] = useState(true)
+    const [showSuscripcionBanner, setShowSuscripcionBanner] = useState(true)
     const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
 
     useEffect(() => {
@@ -3016,6 +3018,7 @@ const Dashboard = () => {
 
             {/* Los banners superiores son siempre descartables desde el Dashboard. */}
             {showTrialBanner && <TrialValorBanner onDismiss={() => setShowTrialBanner(false)} />}
+            {showSuscripcionBanner && <SuscripcionVencimientoBanner onDismiss={() => setShowSuscripcionBanner(false)} />}
             {showSaldoBanner && <SaldoAlertaBanner onDismiss={() => setShowSaldoBanner(false)} />}
             {isOffline && (
                 <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs sm:text-sm text-amber-700 dark:text-amber-300 font-medium">

@@ -5,7 +5,6 @@ import {
   CreditCard,
   Clock,
   Truck,
-  Sparkles,
   TrendingUp,
   Zap,
   Repeat,
@@ -176,14 +175,6 @@ const SECTIONS: SectionDef[] = [
     Component: lazy(() => import('./sections/Monetizacion')),
     visibleInNav: false,
   },
-  {
-    id: 'recompra',
-    label: 'Motor de Recompra',
-    descripcion: 'Tu campaña de recupero y sus resultados.',
-    Icon: Sparkles,
-    Component: lazy(() => import('../MotorRecompra')),
-    visibleInNav: false,
-  },
 ]
 
 const ALIASES_SECCION: Record<string, string> = {
@@ -197,7 +188,6 @@ const ALIASES_SECCION: Record<string, string> = {
 const REQUISITOS: Record<string, string[]> = {
   impresion: ['impresion_comandas'],
   mozos: ['pos', 'mesas'],
-  recompra: ['motor_recompra'],
 }
 
 const GROUPS = [

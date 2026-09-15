@@ -298,11 +298,11 @@ export default function Retencion() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate('/dashboard/clientes')}
+              onClick={() => navigate('/dashboard/clientes?tab=retencion')}
               className="shrink-0 h-9 font-medium gap-1.5"
             >
               <Users className="size-4" />
-              Ver clientes
+              Abrir motor
               <ArrowRight className="size-3.5 opacity-60" />
             </Button>
           </div>

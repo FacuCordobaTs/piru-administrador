@@ -7,12 +7,20 @@ import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { useAuthStore } from '@/store/authStore'
-import { clientesApi, ApiError } from '@/lib/api'
+import {
+    clientesApi,
+    ApiError,
+    type ClienteMotorRecompra,
+    type ColaRecompraItem,
+    type HistorialRecompraItem,
+    type PaginadoRecompra,
+} from '@/lib/api'
 import { toast } from 'sonner'
 import {
     Rocket, AlertTriangle, Moon, UserX, Users, DollarSign, ShieldCheck,
     Loader2, CheckCircle2, Zap, Crown, Gauge, TrendingUp, Wallet,
-    Pause, Play, Pencil, Repeat, Send, FlaskConical,
+    Pause, Play, Pencil, Repeat, Send, FlaskConical, ListOrdered, History,
+    UserRoundCheck, Clock, CircleOff, RefreshCw,
 } from 'lucide-react'
 
 // =============================================================================
@@ -79,6 +87,14 @@ const formatCurrency = (value: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value)
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
+
+const formatDateTime = (value: string | null) => value
+    ? new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(value))
+    : '—'
+
+const formatDay = (value: string | null) => value
+    ? new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(`${value}T12:00:00-03:00`))
+    : '—'
 
 export default function MotorRecompra() {
     const token = useAuthStore(state => state.token)
@@ -162,7 +178,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
         if (!token) return
         setActivando(true)
         try {
-            const res = await clientesApi.activarRecompra(token, cupo) as { success: boolean; data: any }
+            const res = await clientesApi.activarRecompra(token, cupo) as { success: boolean; data?: { vacio?: boolean } }
             if (res.success) {
                 setConfirmOpen(false)
                 if (res.data?.vacio) toast.info('No hay clientes para recuperar ahora mismo')
@@ -318,8 +334,9 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
     const sinSaldo = campana.estado === 'pausada_sin_saldo'
     const pausadaManual = campana.estado === 'pausada_manual'
     const activa = campana.estado === 'activa' || campana.estado === 'completada'
+    const diasCubiertos = campana.cupoDiario > 0 ? Math.floor(campana.saldoMarketing / campana.cupoDiario) : 0
 
-    const doAccion = async (fn: () => Promise<any>, okMsg: string) => {
+    const doAccion = async (fn: () => Promise<unknown>, okMsg: string) => {
         if (!token) return
         setAccion(true)
         try {
@@ -462,6 +479,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                 <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                     <Wallet className="w-3.5 h-3.5 shrink-0" />
                     Saldo de campaña: <span className={`font-medium ${campana.saldoMarketing <= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-foreground'}`}>{campana.saldoMarketing} mensajes</span>
+                    <span>· {diasCubiertos} {diasCubiertos === 1 ? 'día cubierto' : 'días cubiertos'} al ritmo actual</span>
                     {campana.saldoMarketing <= 0 && (
                         <button onClick={onRecargar} className="text-foreground hover:underline font-medium">· Recargar</button>
                     )}
@@ -474,8 +492,161 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                     Ya recuperaste todo el backlog. El motor sigue encendido en modo automático: cada vez que un cliente se pase de su ritmo, lo contacta solo.
                 </p>
             )}
+
+            <ObservabilidadMotor />
         </div>
     )
+}
+
+type ObservabilidadTab = 'cola' | 'historial' | 'clientes'
+
+function ObservabilidadMotor() {
+    const token = useAuthStore(state => state.token)
+    const [tab, setTab] = useState<ObservabilidadTab>('cola')
+    const [pagina, setPagina] = useState(1)
+    const [segmento, setSegmento] = useState('')
+    const [poblacion, setPoblacion] = useState('')
+    const [estadoCliente, setEstadoCliente] = useState('')
+    const [loading, setLoading] = useState(true)
+    const [cola, setCola] = useState<PaginadoRecompra<ColaRecompraItem> | null>(null)
+    const [historial, setHistorial] = useState<PaginadoRecompra<HistorialRecompraItem> | null>(null)
+    const [clientes, setClientes] = useState<PaginadoRecompra<ClienteMotorRecompra> | null>(null)
+
+    const cargar = useCallback(async (silencioso = false) => {
+        if (!token) return
+        if (!silencioso) setLoading(true)
+        try {
+            if (tab === 'cola') {
+                const res = await clientesApi.recompraCola(token, { pagina, limite: 25, segmento, poblacion })
+                setCola(res.data)
+            } else if (tab === 'historial') {
+                const res = await clientesApi.recompraHistorial(token, { pagina, limite: 25, segmento })
+                setHistorial(res.data)
+            } else {
+                const res = await clientesApi.recompraClientes(token, { pagina, limite: 25, segmento, poblacion, estado: estadoCliente })
+                setClientes(res.data)
+            }
+        } catch {
+            toast.error('No se pudo actualizar la observabilidad del motor')
+        } finally {
+            if (!silencioso) setLoading(false)
+        }
+    }, [token, tab, pagina, segmento, poblacion, estadoCliente])
+
+    useEffect(() => {
+        void cargar()
+        const interval = window.setInterval(() => void cargar(true), 30_000)
+        return () => window.clearInterval(interval)
+    }, [cargar])
+
+    const cambiarTab = (siguiente: ObservabilidadTab) => { setTab(siguiente); setPagina(1) }
+    const data = tab === 'cola' ? cola : tab === 'historial' ? historial : clientes
+
+    return (
+        <section className="mt-8 border-t border-border/70 pt-6">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                <div>
+                    <h2 className="text-lg font-semibold text-foreground">Control y observabilidad</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">Auditoría del goteo, próximos despachos y estado individual. Se actualiza cada 30 segundos.</p>
+                </div>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 self-start text-xs" onClick={() => void cargar()} disabled={loading}>
+                    <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualizar
+                </Button>
+            </div>
+
+            <div className="mt-4 flex gap-1 overflow-x-auto rounded-xl border bg-white p-1 dark:bg-muted/20">
+                <ObservabilidadTabButton active={tab === 'cola'} onClick={() => cambiarTab('cola')} icon={<ListOrdered className="h-4 w-4" />}>Próximos</ObservabilidadTabButton>
+                <ObservabilidadTabButton active={tab === 'historial'} onClick={() => cambiarTab('historial')} icon={<History className="h-4 w-4" />}>Historial</ObservabilidadTabButton>
+                <ObservabilidadTabButton active={tab === 'clientes'} onClick={() => cambiarTab('clientes')} icon={<UserRoundCheck className="h-4 w-4" />}>Clientes del motor</ObservabilidadTabButton>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+                <FiltroSelect value={segmento} onChange={(value) => { setSegmento(value); setPagina(1) }} label="Todos los segmentos" options={[
+                    ['en_riesgo', 'En riesgo'], ['dormido', 'Dormidos'], ['perdido', 'Perdidos'],
+                ]} />
+                {tab !== 'historial' && <FiltroSelect value={poblacion} onChange={(value) => { setPoblacion(value); setPagina(1) }} label="Flujo y stock" options={[
+                    ['flujo', 'Flujo'], ['stock', 'Stock'],
+                ]} />}
+                {tab === 'clientes' && <FiltroSelect value={estadoCliente} onChange={(value) => { setEstadoCliente(value); setPagina(1) }} label="Todos los estados" options={[
+                    ['pendiente', 'Pendiente'], ['enviado', 'Enviado'], ['control', 'Control'], ['salido_por_pedido', 'Salió por pedido'], ['fallido', 'Fallido'],
+                ]} />}
+            </div>
+
+            {tab === 'cola' && (
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs leading-relaxed text-blue-900 dark:border-blue-900 dark:bg-blue-950/20 dark:text-blue-200">
+                    <strong>Prioridad transparente:</strong> Flujo siempre sale primero. Después se drena Stock por <code>peso de segmento × 10.000.000 + ticket histórico</code>: en riesgo (3), dormido (2), perdido (1).
+                </div>
+            )}
+            {tab === 'clientes' && (
+                <div className="mt-3 rounded-xl border bg-white p-3 text-xs leading-relaxed text-muted-foreground dark:bg-muted/20">
+                    <strong className="text-foreground">Protecciones activas:</strong> silencio de 22:00 a 09:00 ART, cooldown de 48 horas, máximo 4 toques cada 30 días, opt-out y salida inmediata cuando entra un pedido nuevo. El grupo de control nunca es contactable.
+                </div>
+            )}
+
+            <div className="mt-3 overflow-hidden rounded-xl border bg-white dark:bg-muted/20">
+                {loading && !data ? <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+                    : tab === 'cola' ? <TablaCola items={cola?.items ?? []} />
+                        : tab === 'historial' ? <TablaHistorial items={historial?.items ?? []} />
+                            : <TablaClientesMotor items={clientes?.items ?? []} />}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                <span>{data?.total ?? 0} registros · página {data?.pagina ?? pagina} de {Math.max(1, data?.paginas ?? 1)}</span>
+                <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="h-8 text-xs" disabled={pagina <= 1 || loading} onClick={() => setPagina((actual) => actual - 1)}>Anterior</Button>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" disabled={pagina >= (data?.paginas ?? 1) || loading} onClick={() => setPagina((actual) => actual + 1)}>Siguiente</Button>
+                </div>
+            </div>
+        </section>
+    )
+}
+
+function ObservabilidadTabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
+    return <button type="button" onClick={onClick} className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-colors ${active ? 'bg-foreground text-background shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{icon}{children}</button>
+}
+
+function FiltroSelect({ value, onChange, label, options }: { value: string; onChange: (value: string) => void; label: string; options: Array<[string, string]> }) {
+    return <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 rounded-full border border-border bg-background px-3 text-xs text-foreground"><option value="">{label}</option>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select>
+}
+
+function SegmentoTexto({ segmento }: { segmento: string }) {
+    const meta = SEG_META[segmento as Segmento]
+    return <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className={`h-1.5 w-1.5 rounded-full ${meta?.dot ?? 'bg-muted-foreground'}`} />{meta?.label ?? segmento}</span>
+}
+
+function TablaCola({ items }: { items: ColaRecompraItem[] }) {
+    if (items.length === 0) return <EstadoTablaVacia texto="No hay mensajes pendientes con estos filtros." />
+    return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="px-3 py-2.5">Prioridad</th><th className="px-3 py-2.5">Cliente</th><th className="px-3 py-2.5">Segmento</th><th className="px-3 py-2.5">Población</th><th className="px-3 py-2.5">Programado</th><th className="px-3 py-2.5 text-right">Score</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="px-3 py-3 font-semibold tabular-nums">#{item.posicionPrioridad}</td><td className="px-3 py-3"><p className="font-medium text-foreground">{item.clienteNombre}</p><p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p></td><td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 font-semibold ${item.poblacion === 'flujo' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-muted text-muted-foreground'}`}>{item.poblacion === 'flujo' ? 'Flujo' : 'Stock'}</span></td><td className="px-3 py-3"><p>{formatDay(item.fechaProyectada)}</p><p className="text-[11px] text-muted-foreground">Due: {formatDateTime(item.dueDate)}</p></td><td className="px-3 py-3 text-right font-mono">{item.prioridad.toLocaleString('es-AR')}</td></tr>)}</tbody></table></div>
+}
+
+function TablaHistorial({ items }: { items: HistorialRecompraItem[] }) {
+    if (items.length === 0) return <EstadoTablaVacia texto="Todavía no hay despachos para mostrar." />
+    return <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-xs"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="px-3 py-2.5">Fecha y hora</th><th className="px-3 py-2.5">Cliente</th><th className="px-3 py-2.5">Segmento</th><th className="px-3 py-2.5">Cupón</th><th className="px-3 py-2.5">Plantilla</th><th className="px-3 py-2.5">Origen</th><th className="px-3 py-2.5">Estado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="whitespace-nowrap px-3 py-3">{formatDateTime(item.fechaHora)}</td><td className="px-3 py-3"><p className="font-medium">{item.clienteNombre}</p><p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p></td><td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td><td className="px-3 py-3 font-mono">{item.codigoDescuento ?? '—'}</td><td className="px-3 py-3 font-mono text-[11px]">{item.plantillaWhatsapp}</td><td className="px-3 py-3 capitalize">{item.origenContacto}</td><td className="px-3 py-3"><span title={item.errorEnvio ?? undefined} className={`rounded-full px-2 py-1 font-semibold ${item.estadoDespacho === 'entregado' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>{item.estadoDespacho === 'entregado' ? 'Entregado' : 'Fallido'}</span></td></tr>)}</tbody></table></div>
+}
+
+function TablaClientesMotor({ items }: { items: ClienteMotorRecompra[] }) {
+    if (items.length === 0) return <EstadoTablaVacia texto="No hay clientes del motor con estos filtros." />
+    return <div className="overflow-x-auto"><table className="w-full min-w-[940px] text-left text-xs"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="px-3 py-2.5">Cliente</th><th className="px-3 py-2.5">Rol</th><th className="px-3 py-2.5">Segmento</th><th className="px-3 py-2.5 text-right">Ticket promedio</th><th className="px-3 py-2.5">Último pedido</th><th className="px-3 py-2.5">Estado</th><th className="px-3 py-2.5">Protecciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="px-3 py-3"><p className="font-medium">{item.clienteNombre}</p><p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p></td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 font-semibold ${item.rol === 'control' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-muted text-foreground'}`}>{item.rol === 'control' ? 'Control · no contactar' : 'Contactado'}</span></td><td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td><td className="px-3 py-3 text-right font-medium">{formatCurrency(item.ticketPromedio)}</td><td className="whitespace-nowrap px-3 py-3">{formatDateTime(item.ultimoPedidoAt)}</td><td className="px-3 py-3"><EstadoClienteBadge estado={item.estado} /></td><td className="px-3 py-3"><ProteccionesCliente item={item} /></td></tr>)}</tbody></table></div>
+}
+
+function EstadoClienteBadge({ estado }: { estado: ClienteMotorRecompra['estado'] }) {
+    const labels: Record<ClienteMotorRecompra['estado'], string> = { pendiente: 'Pendiente', enviado: 'Enviado', control: 'Control', salido_por_pedido: 'Salió por pedido', fallido: 'Fallido' }
+    return <span className="whitespace-nowrap rounded-full bg-muted px-2 py-1 font-semibold text-foreground">{labels[estado]}</span>
+}
+
+function ProteccionesCliente({ item }: { item: ClienteMotorRecompra }) {
+    const protecciones = item.protecciones
+    const labels = [
+        protecciones.optOut ? 'Opt-out' : null,
+        protecciones.cooldownHasta ? `Cooldown hasta ${formatDateTime(protecciones.cooldownHasta)}` : null,
+        protecciones.topeFrecuenciaAlcanzado ? `Tope ${protecciones.toques30Dias}/${protecciones.maximoToques30Dias}` : null,
+        protecciones.horarioSilencioActivo ? 'Horario de silencio' : null,
+    ].filter(Boolean)
+    return labels.length > 0 ? <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"><CircleOff className="h-3.5 w-3.5" />{labels.join(' · ')}</span> : <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" />Contactable</span>
+}
+
+function EstadoTablaVacia({ texto }: { texto: string }) {
+    return <div className="flex flex-col items-center px-4 py-10 text-center text-muted-foreground"><Clock className="h-6 w-6 opacity-40" /><p className="mt-2 text-xs">{texto}</p></div>
 }
 
 // =============================================================================

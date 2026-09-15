@@ -86,6 +86,8 @@ export default function MiSuscripcion({ embedded = false }: { embedded?: boolean
   const sinSuscripcion = data.sinSuscripcion || !data.suscripcionId
   const cancelacionProgramada = !!data.fechaCancelacion && new Date(data.fechaCancelacion) > new Date()
   const necesitaCheckout = sinSuscripcion || data.estado === 'trial' || data.estado === 'pago_pendiente' || data.estado === 'suspendida' || data.estado === 'cancelada'
+  // La cobertura de una cuota anticipada comienza cuando termina la actual.
+  const puedeRenovarAnticipadamente = data.estado === 'activa' && !sinSuscripcion && !cancelacionProgramada && !!data.fechaProximoCobro
   // `montoTotalMensual` es el snapshot de la última factura. Para una cuenta
   // que todavía no pagó (por ejemplo, una migrada desde el modelo anterior),
   // el importe vigente se arma con los entitlements activos para que el primer
@@ -145,6 +147,7 @@ export default function MiSuscripcion({ embedded = false }: { embedded?: boolean
         totalCiclo={totalCiclo}
         sinSuscripcion={sinSuscripcion}
         necesitaCheckout={necesitaCheckout}
+        puedeRenovarAnticipadamente={puedeRenovarAnticipadamente}
         cancelacionProgramada={cancelacionProgramada}
         procesando={procesando}
         onCiclo={setCiclo}
@@ -173,8 +176,8 @@ function Atencion({ data }: { data: Suscripcion }) {
   return mensaje ? <div className="flex items-start gap-3 border-b border-amber-200 pb-4 text-sm text-foreground dark:border-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />{mensaje}</div> : null
 }
 
-function SuscripcionActual({ data, ciclo, descuento, precioBase, totalCiclo, sinSuscripcion, necesitaCheckout, cancelacionProgramada, procesando, onCiclo, onCheckout, onCancelar, onReactivar, habilitarPack, packs, packId, onPackId, telefonoCuenta, usarOtroTelefono, onUsarOtroTelefono, otroTelefono, onOtroTelefono }: {
-  data: Suscripcion; ciclo: Ciclo; descuento: number; precioBase: number; totalCiclo: number; sinSuscripcion: boolean; necesitaCheckout: boolean; cancelacionProgramada: boolean; procesando: string | null
+function SuscripcionActual({ data, ciclo, descuento, precioBase, totalCiclo, sinSuscripcion, necesitaCheckout, puedeRenovarAnticipadamente, cancelacionProgramada, procesando, onCiclo, onCheckout, onCancelar, onReactivar, habilitarPack, packs, packId, onPackId, telefonoCuenta, usarOtroTelefono, onUsarOtroTelefono, otroTelefono, onOtroTelefono }: {
+  data: Suscripcion; ciclo: Ciclo; descuento: number; precioBase: number; totalCiclo: number; sinSuscripcion: boolean; necesitaCheckout: boolean; puedeRenovarAnticipadamente: boolean; cancelacionProgramada: boolean; procesando: string | null
   onCiclo: (ciclo: Ciclo) => void; onCheckout: () => void; onCancelar: () => void; onReactivar: () => void
   habilitarPack: boolean; packs: PackRecarga[]; packId: number | null; onPackId: (id: number | null) => void
   telefonoCuenta?: string | null; usarOtroTelefono: boolean; onUsarOtroTelefono: (value: boolean) => void
@@ -202,12 +205,14 @@ function SuscripcionActual({ data, ciclo, descuento, precioBase, totalCiclo, sin
       </div>
       <div className="shrink-0 space-y-2">
         {necesitaCheckout && <Button onClick={onCheckout} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'checkout' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}{sinSuscripcion || esTrial ? 'Enviar link para activar' : data.estado === 'pago_pendiente' ? 'Enviar link de renovación' : 'Enviar link para reactivar'}</Button>}
+        {puedeRenovarAnticipadamente && <Button onClick={onCheckout} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'checkout' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}Pagar próxima cuota</Button>}
         {cancelacionProgramada && <Button variant="outline" onClick={onReactivar} disabled={!!procesando} className="w-full sm:w-auto">{procesando === 'reactivar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}Continuar suscripción</Button>}
         {!sinSuscripcion && !cancelacionProgramada && !necesitaCheckout && <details className="text-sm"><summary className="cursor-pointer text-muted-foreground">Administrar continuidad</summary><Button variant="ghost" onClick={onCancelar} disabled={!!procesando} className="mt-2 w-full sm:w-auto">{procesando === 'cancelar' ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Cancelar al final del período</Button></details>}
       </div>
     </div>
     <div className="mt-6"><p className="mb-2 text-xs text-muted-foreground">{necesitaCheckout ? "Elegí el período que querés pagar." : "Compará el costo mensual y anual. Consultar otro período no modifica tu suscripción."}</p><CicloToggle value={ciclo} onChange={onCiclo} descuentoMax={descuento} /></div>
     {necesitaCheckout && <CheckoutSuscripcionOpciones habilitarPack={habilitarPack} packs={packs} packId={packId} onPackId={onPackId} totalSuscripcion={totalCiclo} telefonoCuenta={telefonoCuenta} usarOtroTelefono={usarOtroTelefono} onUsarOtroTelefono={onUsarOtroTelefono} otroTelefono={otroTelefono} onOtroTelefono={onOtroTelefono} />}
+    {puedeRenovarAnticipadamente && <div className="mt-4 rounded-xl bg-muted/45 p-4 text-sm text-muted-foreground"><p>Podés pagar la próxima cuota ahora. Se suma al final de tu cobertura actual, sin perder días.</p><CheckoutSuscripcionOpciones habilitarPack={habilitarPack} packs={packs} packId={packId} onPackId={onPackId} totalSuscripcion={totalCiclo} telefonoCuenta={telefonoCuenta} usarOtroTelefono={usarOtroTelefono} onUsarOtroTelefono={onUsarOtroTelefono} otroTelefono={otroTelefono} onOtroTelefono={onOtroTelefono} /></div>}
   </section>
 }
 
