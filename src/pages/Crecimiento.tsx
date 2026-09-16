@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { BarChart3, CheckCircle2, CircleAlert, Copy, Crown, ExternalLink, Lightbulb, Loader2, Megaphone, Pencil, Plus, RefreshCw, Send, ShieldAlert, Sparkles, Trash2, TrendingUp } from 'lucide-react'
 import { toast } from 'sonner'
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, codigosDescuentoApi, crecimientoApi, mensajesApi, productosApi, sucursalesApi, type CampanaCrecimiento, type CrearCampanaCrecimiento, type EnlaceCrecimiento, type FiltrosCrecimiento, type OportunidadCrecimiento, type RecetaCrecimiento, type ResumenCrecimiento, type SegmentoCrecimiento, type WalletResumen } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { cn } from '@/lib/utils'
 
 type TabCrecimiento = 'resumen' | 'oportunidades' | 'campanas' | 'resultados'
 type EstadoCarga = 'cargando' | 'error' | 'vacio' | 'listo'
@@ -83,6 +84,108 @@ function OportunidadCard({ oportunidad, detalle = false, onAbrir }: { oportunida
   </article>
 }
 
+function ResumenGeneralOportunidades({
+  items,
+  onAbrirFicha,
+  oportunidadSeleccionadaId,
+}: {
+  items: OportunidadCrecimiento[]
+  onAbrirFicha: (item: OportunidadCrecimiento) => void
+  oportunidadSeleccionadaId: number | null
+}) {
+  const total = items.length
+  const altaPrioridad = useMemo(() => items.filter((o) => o.prioridad === 'alta').length, [items])
+  const vips = useMemo(() => items.filter((o) => o.diagnostico.esVip).length, [items])
+  const valorTotal = useMemo(() => items.reduce((acc, o) => acc + (o.diagnostico.totalGastado || 0), 0), [items])
+  const ticketProm = useMemo(
+    () => (total > 0 ? items.reduce((acc, o) => acc + (o.diagnostico.ticketPromedio || 0), 0) / total : 0),
+    [items, total]
+  )
+
+  const destacados = useMemo(() => {
+    return [...items]
+      .sort(
+        (a, b) =>
+          (b.prioridad === 'alta' ? 1 : 0) - (a.prioridad === 'alta' ? 1 : 0) ||
+          (b.diagnostico.totalGastado || 0) - (a.diagnostico.totalGastado || 0)
+      )
+      .slice(0, 6)
+  }, [items])
+
+  return (
+    <div className="space-y-3 mb-5">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          Resumen general de oportunidades
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {total} {total === 1 ? 'oportunidad' : 'oportunidades'}
+        </span>
+      </div>
+
+      {/* Métricas flotantes Apple */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Oportunidades</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{total}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{altaPrioridad} de prioridad alta</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Clientes VIP</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{vips}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">alto valor histórico</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Valor acumulado</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{formatearPesos(valorTotal)}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">ticket prom. {formatearPesos(ticketProm)}</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Acción sugerida</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {altaPrioridad > 0 ? 'Actuar hoy' : 'Al día'}
+          </span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">contacto 1 a 1 por WhatsApp</span>
+        </div>
+      </div>
+
+      {/* Fila de clientes destacados */}
+      {destacados.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">
+            Destacados:
+          </span>
+          {destacados.map((item) => {
+            const isSelected = item.cliente.id === oportunidadSeleccionadaId
+            return (
+              <button
+                key={item.cliente.id}
+                type="button"
+                onClick={() => onAbrirFicha(item)}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all shadow-2xs backdrop-blur-xs',
+                  isSelected
+                    ? 'border-foreground bg-foreground text-background font-medium'
+                    : 'border-border/40 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground'
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-1.5 w-1.5 rounded-full shrink-0',
+                    item.prioridad === 'alta' ? 'bg-amber-500' : 'bg-sky-500'
+                  )}
+                />
+                <span className="font-medium truncate max-w-[110px]">{item.cliente.nombre}</span>
+                <span className="text-[10px] opacity-70">· {formatearPesos(item.diagnostico.totalGastado)}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Oportunidades({ token }: { token: string }) {
   const navigate = useNavigate()
   const [estado, setEstado] = useState<EstadoCarga>('cargando')
@@ -102,7 +205,23 @@ function Oportunidades({ token }: { token: string }) {
       setItems(respuesta.data.oportunidades); setEstado(respuesta.data.total ? 'listo' : 'vacio')
     } catch (cause) { setError(cause instanceof ApiError ? cause.message : 'No se pudieron cargar las oportunidades.'); setEstado('error') }
   }, [token, segmento, receta])
-  useEffect(() => { void cargar() }, [cargar])
+
+  useEffect(() => {
+    let cancelado = false
+    void crecimientoApi.oportunidades(token, {
+      ...(segmento !== 'todos' ? { segmento: segmento as SegmentoCrecimiento } : {}),
+      ...(receta !== 'todas' ? { receta: receta as RecetaCrecimiento } : {}),
+    }).then((respuesta) => {
+      if (cancelado) return
+      setItems(respuesta.data.oportunidades)
+      setEstado(respuesta.data.total ? 'listo' : 'vacio')
+    }).catch((cause) => {
+      if (cancelado) return
+      setError(cause instanceof ApiError ? cause.message : 'No se pudieron cargar las oportunidades.')
+      setEstado('error')
+    })
+    return () => { cancelado = true }
+  }, [token, segmento, receta])
 
   const abrirFicha = async (item: OportunidadCrecimiento) => {
     setSeleccionada(item)
@@ -110,6 +229,13 @@ function Oportunidades({ token }: { token: string }) {
     catch { /* La lista ya trae una recomendación completa y permite trabajar sin esta mejora. */ }
   }
   return <>
+    {items.length > 0 && (
+      <ResumenGeneralOportunidades
+        items={items}
+        onAbrirFicha={(item) => void abrirFicha(item)}
+        oportunidadSeleccionadaId={seleccionada?.cliente.id ?? null}
+      />
+    )}
     <div className="mb-4 flex flex-col gap-3 sm:flex-row"><Select value={segmento} onValueChange={setSegmento}><SelectTrigger className="sm:w-48"><SelectValue placeholder="Todos los segmentos" /></SelectTrigger><SelectContent><SelectItem value="todos">Todos los segmentos</SelectItem>{SEGMENTOS.map(x => <SelectItem key={x.value} value={x.value}>{x.label}</SelectItem>)}</SelectContent></Select>
       <Select value={receta} onValueChange={setReceta}><SelectTrigger className="sm:w-56"><SelectValue placeholder="Todas las recetas" /></SelectTrigger><SelectContent><SelectItem value="todas">Todas las recetas</SelectItem>{RECETAS.map(x => <SelectItem key={x.value} value={x.value}>{x.label}</SelectItem>)}</SelectContent></Select></div>
     {estado === 'cargando' && <div className="space-y-3"><Skeleton className="h-44 w-full" /><Skeleton className="h-44 w-full" /></div>}
@@ -132,7 +258,16 @@ function FichaOportunidad({ oportunidad, token, onClose, onRecargar }: { oportun
   const [error, setError] = useState('')
   const [claves, setClaves] = useState<Record<string, string>>({})
   const reiniciar = () => { setSaldo(null); setConfirmoIncentivo(false); setEnlace(null); setTokenEnlace(null); setAccion(null); setProcesando(false); setError(''); setClaves({}) }
-  useEffect(() => { if (!oportunidad) return; reiniciar(); setCargandoSaldo(true); void mensajesApi.saldo(token).then(r => setSaldo(r.data)).catch(() => setSaldo(null)).finally(() => setCargandoSaldo(false)) }, [oportunidad?.cliente.id, token])
+  useEffect(() => {
+    if (!oportunidad) return
+    reiniciar()
+    setCargandoSaldo(true)
+    void mensajesApi
+      .saldo(token)
+      .then((r) => setSaldo(r.data))
+      .catch(() => setSaldo(null))
+      .finally(() => setCargandoSaldo(false))
+  }, [oportunidad, token])
   const clave = (paso: string) => { const existente = claves[paso]; if (existente) return existente; const nueva = nuevaClave(); setClaves(actual => ({ ...actual, [paso]: nueva })); return nueva }
   const preparar = async () => {
     if (!oportunidad) return
@@ -173,6 +308,55 @@ function estadoCampana(estado: CampanaCrecimiento['estado']) {
   return estado === 'activa' ? <Badge className="bg-emerald-600 hover:bg-emerald-600">Activa</Badge>
     : estado === 'borrador' ? <Badge variant="secondary">Borrador</Badge>
       : <Badge variant="outline">Inactiva</Badge>
+}
+
+function ResumenGeneralCampanasCrecimiento({
+  campanas,
+}: {
+  campanas: CampanaCrecimiento[]
+}) {
+  const total = campanas.length
+  const activas = useMemo(() => campanas.filter((c) => c.estado === 'activa').length, [campanas])
+  const adquisicion = useMemo(() => campanas.filter((c) => c.tipo === 'adquisicion').length, [campanas])
+  const recompra = total - adquisicion
+
+  return (
+    <div className="space-y-3 mb-5">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          Resumen de tus campañas
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {total} {total === 1 ? 'campaña' : 'campañas'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Campañas</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{total}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{activas} activas</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Adquisición</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{adquisicion}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">nuevos clientes</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Recompra</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{recompra}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">retención</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Estado</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {activas > 0 ? 'Activo' : 'Pausado'}
+          </span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{total - activas} pausadas / borrador</span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function Campanas({ token }: { token: string }) {
@@ -235,8 +419,10 @@ function Campanas({ token }: { token: string }) {
     const datos = payload(); if (!datos) return
     setGuardando(true); setError('')
     try {
+      const edicion = { ...datos }
+      delete (edicion as { slug?: string }).slug
       const respuesta = editando
-        ? await crecimientoApi.actualizarCampana(token, editando.id, (({ slug: _slug, ...edicion }) => edicion)(datos))
+        ? await crecimientoApi.actualizarCampana(token, editando.id, edicion)
         : await crecimientoApi.crearCampana(token, datos)
       setCampanas(actual => editando ? actual.map(c => c.id === respuesta.data.id ? respuesta.data : c) : [...actual, respuesta.data])
       setEstado('listo'); setDialogo(false); toast.success(editando ? 'Campaña actualizada.' : 'Campaña creada.')
@@ -262,7 +448,9 @@ function Campanas({ token }: { token: string }) {
       : estado === 'vacio' ? <EstadoVacio titulo="Creá tu primer Smart Link" detalle="Usalo para adquisición o recompra; el enlace permite medir visitas y pedidos sin depender de WhatsApp." accion="Crear campaña" onClick={abrirNueva} />
         : <div className="space-y-3">{campanas.map(campana => <article key={campana.id} className="rounded-xl border bg-white p-4 dark:bg-muted/20"><div className="flex flex-col justify-between gap-3 sm:flex-row"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{campana.nombre}</h3>{estadoCampana(campana.estado)}<Badge variant="outline">{campana.tipo === 'adquisicion' ? 'Adquisición' : campana.tipo === 'lo_mismo' ? '¿Lo mismo?' : campana.tipo === 'reactivacion' ? 'Reactivación' : campana.tipo === 'retencion' ? 'Retención' : 'Recompra'}</Badge>{campana.usaGrupoControl && <Badge variant="secondary">Con control</Badge>}</div><p className="mt-1 font-mono text-xs text-muted-foreground">/c/{campana.slug}</p><p className="mt-2 text-sm text-muted-foreground">{campana.destinoTipo === 'tienda' ? 'Destino: tienda' : campana.destinoTipo === 'producto' ? 'Destino: producto' : `Destino: carrito ${campana.carritoRep}`}{campana.recetaCodigo && ` · ${RECETAS.find(r => r.value === campana.recetaCodigo)?.label ?? campana.recetaCodigo}`}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void copiar(campana)}><Copy className="mr-1.5 h-4 w-4" />Copiar</Button><Button size="sm" variant="outline" onClick={() => navigate(`/dashboard/clientes?tab=crecimiento&vista=resultados&campana=${campana.id}`)}><BarChart3 className="mr-1.5 h-4 w-4" />Resultados</Button><Button size="sm" variant="outline" onClick={() => abrirEdicion(campana)}><Pencil className="mr-1.5 h-4 w-4" />Editar</Button>{campana.estado === 'activa' && <Button size="sm" variant="outline" onClick={() => void desactivar(campana)}>Desactivar</Button>}<Button size="icon" variant="ghost" aria-label={`Eliminar ${campana.nombre}`} onClick={() => void eliminar(campana)}><Trash2 className="h-4 w-4 text-destructive" /></Button></div></div></article>)}</div>
 
-  return <><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Campañas y Smart Links</h2><p className="text-sm text-muted-foreground">Crear o copiar enlaces no consume mensajes ni promete entregas.</p></div><Button onClick={abrirNueva}><Plus className="mr-2 h-4 w-4" />Nueva campaña</Button></div>{cuerpo}
+  return <>
+    {campanas.length > 0 && <ResumenGeneralCampanasCrecimiento campanas={campanas} />}
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Campañas y Smart Links</h2><p className="text-sm text-muted-foreground">Crear o copiar enlaces no consume mensajes ni promete entregas.</p></div><Button onClick={abrirNueva}><Plus className="mr-2 h-4 w-4" />Nueva campaña</Button></div>{cuerpo}
     <Dialog open={dialogo} onOpenChange={setDialogo}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>El slug queda fijo después de crearla. Los IDs de destino y cupón se validan siempre en el servidor.</DialogDescription></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label htmlFor="campana-nombre">Nombre</Label><Input id="campana-nombre" value={form.nombre} onChange={e => actualizarNombre(e.target.value)} /></div><div className="space-y-2"><Label htmlFor="campana-slug">Slug estable</Label><Input id="campana-slug" value={form.slug} disabled={Boolean(editando)} onChange={e => actualizar('slug', slugAutomatico(e.target.value))} /><p className="text-xs text-muted-foreground">my.piru.app/{username ?? 'tu-local'}/c/{form.slug || 'mi-campana'}</p></div><div className="space-y-2"><Label>Estado</Label><Select value={form.estado} onValueChange={v => actualizar('estado', v as FormCampana['estado'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="borrador">Borrador</SelectItem><SelectItem value="activa">Activa</SelectItem><SelectItem value="inactiva">Inactiva</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Tipo</Label><Select value={form.tipo} onValueChange={v => actualizar('tipo', v as FormCampana['tipo'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="adquisicion">Adquisición</SelectItem><SelectItem value="recompra">Recompra</SelectItem><SelectItem value="lo_mismo">Lo Mismo de Siempre</SelectItem><SelectItem value="reactivacion">Reactivación con Descuento</SelectItem><SelectItem value="retencion">Retención</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Receta / audiencia</Label><Select value={form.recetaCodigo || 'ninguna'} onValueChange={v => actualizar('recetaCodigo', v === 'ninguna' ? '' : v)}><SelectTrigger><SelectValue placeholder="Sin receta" /></SelectTrigger><SelectContent><SelectItem value="ninguna">Sin receta (audiencia abierta)</SelectItem>{RECETAS.map(receta => <SelectItem key={receta.value} value={receta.value}>{receta.label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Destino</Label><Select value={form.destinoTipo} onValueChange={v => actualizar('destinoTipo', v as FormCampana['destinoTipo'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tienda">Tienda</SelectItem><SelectItem value="producto">Producto</SelectItem><SelectItem value="carrito">Carrito</SelectItem></SelectContent></Select></div>{form.destinoTipo === 'producto' && <div className="space-y-2"><Label>Producto</Label><Select value={form.productoId || 'ninguno'} onValueChange={v => actualizar('productoId', v === 'ninguno' ? '' : v)}><SelectTrigger><SelectValue placeholder="Elegí un producto" /></SelectTrigger><SelectContent><SelectItem value="ninguno">Elegí un producto</SelectItem>{productos.map(producto => <SelectItem key={producto.id} value={String(producto.id)}>{producto.nombre}</SelectItem>)}</SelectContent></Select></div>}{form.destinoTipo === 'carrito' && <div className="space-y-2 sm:col-span-2"><Label htmlFor="campana-carrito">Carrito canónico</Label><Input id="campana-carrito" placeholder="12x2-15x1" value={form.carritoRep} onChange={e => actualizar('carritoRep', e.target.value)} /><p className="text-xs text-muted-foreground">Usá productoIdxcantidad unidos por guiones. No se aceptan precios desde el navegador.</p></div>}<div className="space-y-2"><Label>Cupón (opcional)</Label><Select value={form.codigoDescuentoId || 'ninguno'} onValueChange={v => actualizar('codigoDescuentoId', v === 'ninguno' ? '' : v)}><SelectTrigger><SelectValue placeholder="Sin cupón" /></SelectTrigger><SelectContent><SelectItem value="ninguno">Sin cupón</SelectItem>{cupones.filter(c => c.activo !== false).map(cupon => <SelectItem key={cupon.id} value={String(cupon.id)}>{cupon.codigo}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="campana-inversion">Inversión manual (ARS)</Label><Input id="campana-inversion" type="number" min="0" step="0.01" value={form.inversionManual} onChange={e => actualizar('inversionManual', e.target.value)} /></div><div className="space-y-2 sm:col-span-2"><Label>UTM</Label><div className="grid gap-2 sm:grid-cols-2"><Input placeholder="utm_source" value={form.utmSource} onChange={e => actualizar('utmSource', e.target.value)} /><Input placeholder="utm_medium" value={form.utmMedium} onChange={e => actualizar('utmMedium', e.target.value)} /><Input placeholder="utm_campaign" value={form.utmCampaign} onChange={e => actualizar('utmCampaign', e.target.value)} /><Input placeholder="utm_content" value={form.utmContent} onChange={e => actualizar('utmContent', e.target.value)} /></div><Input className="mt-2" placeholder="utm_term" value={form.utmTerm} onChange={e => actualizar('utmTerm', e.target.value)} /></div><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm sm:col-span-2"><Checkbox checked={form.usaGrupoControl} onChange={event => actualizar('usaGrupoControl', event.target.checked)} /><span><span className="font-medium">Preservar grupo de control</span><br /><span className="text-muted-foreground">Permite calcular incrementalidad cuando haya población comparable; no convierte toda compra posterior en revenue generado.</span></span></label>{error && <div className="flex gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2"><CircleAlert className="h-4 w-4 shrink-0" />{error}</div>}</div><DialogFooter><Button variant="outline" disabled={guardando} onClick={() => setDialogo(false)}>Cancelar</Button><Button disabled={guardando} onClick={() => void guardar()}>{guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
   </>
 }
@@ -303,9 +491,52 @@ function ResultadosContenido({ resumen, tab }: { resumen: ResumenCrecimiento; ta
 
 function EstadoPanel({ tab, filtros, onFiltrosChange }: { tab: 'resumen' | 'resultados'; filtros: FiltrosCrecimiento; onFiltrosChange: (filtros: FiltrosCrecimiento) => void }) {
   const token = useAuthStore(state => state.token)
-  const [estado, setEstado] = useState<EstadoCarga>('cargando'); const [mensaje, setMensaje] = useState(''); const [resumen, setResumen] = useState<ResumenCrecimiento | null>(null)
-  const cargar = useCallback(async () => { if (!token) return; setEstado('cargando'); setMensaje(''); try { const r = filtros.campaniaId ? await crecimientoApi.resultadosCampana(token, filtros.campaniaId, filtros) : await crecimientoApi.resumen(token, filtros); setResumen(r.data); const hayDatos = r.data.metricas.pedidos > 0 || r.data.metricas.sesiones > 0 || r.data.oportunidades.total > 0 || r.data.campanas.length > 0; setEstado(hayDatos ? 'listo' : 'vacio') } catch (cause) { setMensaje(cause instanceof ApiError ? cause.message : 'No se pudo cargar Crecimiento.'); setEstado('error') } }, [filtros, token])
-  useEffect(() => { void cargar() }, [cargar])
+  const [estado, setEstado] = useState<EstadoCarga>('cargando')
+  const [mensaje, setMensaje] = useState('')
+  const [resumen, setResumen] = useState<ResumenCrecimiento | null>(null)
+
+  const cargar = useCallback(async () => {
+    if (!token) return
+    setEstado('cargando')
+    setMensaje('')
+    try {
+      const r = filtros.campaniaId ? await crecimientoApi.resultadosCampana(token, filtros.campaniaId, filtros) : await crecimientoApi.resumen(token, filtros)
+      setResumen(r.data)
+      const hayDatos = r.data.metricas.pedidos > 0 || r.data.metricas.sesiones > 0 || r.data.oportunidades.total > 0 || r.data.campanas.length > 0
+      setEstado(hayDatos ? 'listo' : 'vacio')
+    } catch (cause) {
+      setMensaje(cause instanceof ApiError ? cause.message : 'No se pudo cargar Crecimiento.')
+      setEstado('error')
+    }
+  }, [filtros, token])
+
+  useEffect(() => {
+    let cancelado = false
+    if (!token) return
+    const promise = filtros.campaniaId
+      ? crecimientoApi.resultadosCampana(token, filtros.campaniaId, filtros)
+      : crecimientoApi.resumen(token, filtros)
+    promise
+      .then((r) => {
+        if (cancelado) return
+        setResumen(r.data)
+        const hayDatos =
+          r.data.metricas.pedidos > 0 ||
+          r.data.metricas.sesiones > 0 ||
+          r.data.oportunidades.total > 0 ||
+          r.data.campanas.length > 0
+        setEstado(hayDatos ? 'listo' : 'vacio')
+      })
+      .catch((cause) => {
+        if (cancelado) return
+        setMensaje(cause instanceof ApiError ? cause.message : 'No se pudo cargar Crecimiento.')
+        setEstado('error')
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [filtros, token])
+
   if (!token) return <EstadoVacio titulo="Sesión no disponible" detalle="Volvé a iniciar sesión para consultar resultados." />
   return <div className="space-y-5"><FiltrosResultados token={token} filtros={filtros} onChange={onFiltrosChange} />{estado === 'cargando' && <div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-48 w-full" /></div>}{estado === 'error' && <EstadoVacio titulo="No pudimos cargar esta sección" detalle={mensaje} accion="Reintentar" onClick={() => void cargar()} />}{estado === 'vacio' && <EstadoVacio titulo={`Todavía no hay ${TAB_META[tab].etiqueta.toLowerCase()}`} detalle="Cuando haya ventas, sesiones u oportunidades dentro de estos filtros, vas a ver los totales y su conciliación acá." />}{estado === 'listo' && resumen && <ResultadosContenido resumen={resumen} tab={tab} />}</div>
 }
@@ -313,18 +544,26 @@ function EstadoPanel({ tab, filtros, onFiltrosChange }: { tab: 'resumen' | 'resu
 export default function Crecimiento() {
   const [searchParams, setSearchParams] = useSearchParams()
   const vista = searchParams.get('vista')
-  const tabInicial: TabCrecimiento = vista === 'oportunidades' || vista === 'campanas' || vista === 'resultados' ? vista : 'resumen'
-  const [tab, setTab] = useState<TabCrecimiento>(tabInicial); const token = useAuthStore(state => state.token); const meta = TAB_META[tab]
+  const tab: TabCrecimiento = vista === 'oportunidades' || vista === 'campanas' || vista === 'resultados' ? vista : 'resumen'
+  const token = useAuthStore(state => state.token)
+  const meta = TAB_META[tab]
   const campaniaParam = Number(searchParams.get('campana'))
-  const [filtros, setFiltros] = useState<FiltrosCrecimiento>(() => ({ campaniaId: Number.isInteger(campaniaParam) && campaniaParam > 0 ? campaniaParam : undefined }))
-  useEffect(() => {
-    const siguiente: TabCrecimiento = vista === 'oportunidades' || vista === 'campanas' || vista === 'resultados' ? vista : 'resumen'
-    if (siguiente !== tab) setTab(siguiente)
-    const campania = Number(searchParams.get('campana'))
-    const campaniaId = Number.isInteger(campania) && campania > 0 ? campania : undefined
-    setFiltros(actual => actual.campaniaId === campaniaId ? actual : { ...actual, campaniaId })
-  }, [searchParams, tab, vista])
-  const cambiarTab = (valor: string) => { const siguiente = valor as TabCrecimiento; setTab(siguiente); const params = new URLSearchParams(searchParams); if (siguiente === 'resumen') params.delete('vista'); else params.set('vista', siguiente); setSearchParams(params, { replace: true }) }
-  const cambiarFiltros = (siguiente: FiltrosCrecimiento) => { setFiltros(siguiente); const params = new URLSearchParams(searchParams); if (siguiente.campaniaId) params.set('campana', String(siguiente.campaniaId)); else params.delete('campana'); setSearchParams(params, { replace: true }) }
+  const campaniaId = Number.isInteger(campaniaParam) && campaniaParam > 0 ? campaniaParam : undefined
+  const [filtros, setFiltros] = useState<FiltrosCrecimiento>(() => ({ campaniaId }))
+
+  const cambiarTab = (valor: string) => {
+    const siguiente = valor as TabCrecimiento
+    const params = new URLSearchParams(searchParams)
+    if (siguiente === 'resumen') params.delete('vista')
+    else params.set('vista', siguiente)
+    setSearchParams(params, { replace: true })
+  }
+  const cambiarFiltros = (siguiente: FiltrosCrecimiento) => {
+    setFiltros(siguiente)
+    const params = new URLSearchParams(searchParams)
+    if (siguiente.campaniaId) params.set('campana', String(siguiente.campaniaId))
+    else params.delete('campana')
+    setSearchParams(params, { replace: true })
+  }
   return <div className="min-h-0 flex-1 overflow-hidden bg-[#FFFBF0] dark:bg-background"><div className="h-full overflow-auto px-4 py-6 sm:px-6 sm:py-10"><div className="mx-auto max-w-4xl"><div className="mb-6"><h1 className="text-2xl font-semibold tracking-tight">Crecimiento</h1><p className="mt-1 text-sm text-muted-foreground">Adquisición, recompra y resultados en un solo lugar.</p></div><Tabs value={tab} onValueChange={cambiarTab}><TabsList className="h-auto w-full justify-start overflow-x-auto sm:w-fit">{(Object.keys(TAB_META) as TabCrecimiento[]).map(clave => <TabsTrigger key={clave} value={clave}>{TAB_META[clave].etiqueta}</TabsTrigger>)}</TabsList><TabsContent value="resumen" className="mt-6"><EstadoPanel tab="resumen" filtros={filtros} onFiltrosChange={cambiarFiltros} /></TabsContent><TabsContent value="oportunidades" className="mt-6">{token ? <Oportunidades token={token} /> : <EstadoVacio titulo="Sesión no disponible" detalle="Volvé a iniciar sesión para ver tus oportunidades." />}</TabsContent><TabsContent value="campanas" className="mt-6">{token ? <Campanas token={token} /> : <EstadoVacio titulo="Sesión no disponible" detalle="Volvé a iniciar sesión para gestionar campañas." />}</TabsContent><TabsContent value="resultados" className="mt-6"><EstadoPanel tab="resultados" filtros={filtros} onFiltrosChange={cambiarFiltros} /></TabsContent></Tabs><p className="mt-5 text-xs text-muted-foreground">{meta.descripcion}</p></div></div></div>
 }

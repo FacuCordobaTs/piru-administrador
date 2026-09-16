@@ -1058,7 +1058,7 @@ const PosComandaPreview = ({
     onRemoveItem?: (key: string) => void
     onUpdate?: (changes: PosDraftUpdate) => void
     onSubmit?: () => void
-    /** Guarda primero la comanda y luego despacha el pedido de la mesa. */
+    /** Guarda primero la comanda y luego despacha la mesa. */
     onDispatchMesa?: () => void | Promise<void>
     onPrintNewMesa?: () => void | Promise<void>
     onPrintAllMesa?: () => void | Promise<void>
@@ -1301,11 +1301,11 @@ const PosComandaPreview = ({
                                         type="button"
                                         onClick={() => void onDispatchMesa()}
                                         disabled={draft.items.length === 0 || draft.submitting}
-                                        aria-label="Despachar pedido de la mesa"
-                                        title="Despachar"
+                                        aria-label="Despachar mesa"
+                                        title="Despachar mesa"
                                         className="h-14 w-14 shrink-0 rounded-2xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
                                     >
-                                        <Truck className="h-5 w-5" />
+                                        <Armchair className="h-5 w-5" />
                                     </button>
                                 )}
                             </div>
@@ -1423,6 +1423,7 @@ const Dashboard = () => {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [pedidoAEliminar, setPedidoAEliminar] = useState<Pick<UnifiedPedido, 'id' | 'tipo'> | null>(null)
     const [showDespacharMesaDialog, setShowDespacharMesaDialog] = useState(false)
+    const [mesaADespacharId, setMesaADespacharId] = useState<number | null>(null)
     const [despachandoMesa, setDespachandoMesa] = useState(false)
     // La lista principal respeta el día/turno elegido, pero la ocupación de una
     // mesa depende de todos los pedidos abiertos, incluso si nacieron ayer.
@@ -1871,6 +1872,23 @@ const Dashboard = () => {
             const pendingManualMesaPrint = pedido.tipo === 'mesa' && mesaOrdersPendingManualPrintRef.current.has(pedido.id)
             const pedidoEditadoSinAutoImpresion = pedidosEditadosSinAutoImpresionRef.current.has(pedido.id)
 
+            // Guardar una mesa, tanto al abrirla como al agregar productos, nunca
+            // manda una comanda por sí solo. Los ítems quedan sin reclamar para
+            // "Imprimir productos nuevos", "Reimprimir comanda entera" o el
+            // despacho explícito con impresión.
+            if (pedido.tipo === 'mesa') {
+                posOrdersPendingPrintRef.current.delete(pedido.id)
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                mesaOrdersPendingManualPrintRef.current.delete(pedido.id)
+                pedidosEditadosSinAutoImpresionRef.current.delete(pedido.id)
+                processedOrdersRef.current.set(pedidoKey, {
+                    status: pedido.estado,
+                    itemIds: new Set(pedido.items.map((item) => item.id)),
+                    pagado: currentPagado,
+                })
+                return
+            }
+
             if (pedidoEditadoSinAutoImpresion) {
                 posOrdersPendingPrintRef.current.delete(pedido.id)
                 realtimeOrdersPendingPrintRef.current.delete(pedido.id)
@@ -1941,11 +1959,9 @@ const Dashboard = () => {
                 // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
                 if (deferUntilPaid && currentPagado && !prevData?.pagado) {
                     shouldPrint = true
-                } else if (prevData && pedido.impreso === false && pedido.tipo !== 'mesa') {
-                    // Las mesas se autoguardan después de cada cambio. Sus
-                    // deltas quedan pendientes para que cocina reciba juntos
-                    // todos los productos al pulsar "Imprimir nuevos productos",
-                    // en vez de una comanda por cada producto agregado.
+                } else if (prevData && pedido.impreso === false) {
+                    // Las mesas ya salieron de este circuito arriba; los demás
+                    // pedidos sí reintentan automáticamente cuando quedan sin imprimir.
                     shouldPrint = true
                 }
             }
@@ -2029,8 +2045,8 @@ const Dashboard = () => {
         }
     }, [unifiedPedidos, pedidosMesaAbiertos, selectedPrinter, allProductos, restaurante, printComanda, token, restauranteStore, comandaGrandeMayusculas, transferenciaAlias, prefsReady, tieneEventos])
 
-    const reimprimirComanda = async (pedido: UnifiedPedido) => {
-        if (printingManualOrderId !== null) return
+    const reimprimirComanda = async (pedido: UnifiedPedido): Promise<boolean> => {
+        if (printingManualOrderId !== null) return false
         setPrintingManualOrderId(pedido.id)
         try {
             const itemsToPrint = pedido.items.map((item) => {
@@ -2078,12 +2094,18 @@ const Dashboard = () => {
                     console.error('La comanda se imprimió, pero no se pudo confirmar el estado:', claimError)
                 }
             }
-            toast.success(`Pedido #${pedido.id} enviado a imprimir`)
+            toast.success(pedido.tipo === 'mesa'
+                ? `${pedidoTitulo(pedido)} enviada a imprimir`
+                : `Pedido #${pedido.id} enviado a imprimir`)
+            return true
         } catch (error) {
             console.error('Error reimprimiendo comanda:', error)
-            toast.error(`No se pudo imprimir el pedido #${pedido.id}`, {
+            toast.error(pedido.tipo === 'mesa'
+                ? `No se pudo imprimir ${pedidoTitulo(pedido).toLowerCase()}`
+                : `No se pudo imprimir el pedido #${pedido.id}`, {
                 description: error instanceof Error ? error.message : String(error),
             })
+            return false
         } finally {
             setPrintingManualOrderId(null)
         }
@@ -2100,7 +2122,7 @@ const Dashboard = () => {
             if (nuevoEstado === 'archived') {
                 setSelectedUnifiedPedido(null)
                 setMobileView('orders')
-                toast.success('Pedido despachado')
+                toast.success(tipo === 'mesa' ? 'Mesa despachada' : 'Pedido despachado')
             }
             return true
         } catch (error) {
@@ -2134,6 +2156,11 @@ const Dashboard = () => {
     }, [token, gestionCadetesActiva, loadRepartidores])
 
     const handleDespachar = async (tipo: PedidoTipo, id: number) => {
+        if (tipo === 'mesa') {
+            setMesaADespacharId(id)
+            setShowDespacharMesaDialog(true)
+            return false
+        }
         // Sin Gestión de Cadetes el pedido se despacha directamente. Con el
         // módulo activo se ofrece asignación cuando hay equipo para elegir.
         if (gestionCadetesActiva && tipo === 'delivery') {
@@ -2411,7 +2438,7 @@ const Dashboard = () => {
         // El POS es un flujo de carga continua: después de anotar un pedido el
         // componente ya limpió su borrador. Marcamos el id antes de sincronizar
         // para que siempre se imprima aunque el WebSocket haya llegado primero.
-        posOrdersPendingPrintRef.current.add(pedidoId)
+        if (pedido?.tipo !== 'mesa') posOrdersPendingPrintRef.current.add(pedidoId)
         if (pedido?.tipo === 'mesa') {
             // La primera modificación de una mesa libre crea el pedido. Desde
             // ese momento el mismo POS continúa editándolo y los próximos
@@ -2624,7 +2651,7 @@ const Dashboard = () => {
     }
 
     const confirmarDespachoMesa = async (imprimir: boolean) => {
-        if (despachandoMesa || !draftPos || draftPos.tipo !== 'mesa' || !pedidoPosEditando) return
+        if (despachandoMesa || mesaADespacharId == null) return
         if (imprimir && !selectedPrinter) {
             toast.error('Configurá una impresora para despachar e imprimir')
             return
@@ -2632,22 +2659,39 @@ const Dashboard = () => {
 
         setDespachandoMesa(true)
         try {
-            const snapshotCompleto = draftPos
-            const pedidoId = await posRef.current?.submitDraft()
-            if (!pedidoId) return
+            const editandoEstaMesa = pedidoPosEditando?.id === mesaADespacharId && draftPos?.tipo === 'mesa'
+            let pedidoId = mesaADespacharId
 
-            if (imprimir) await imprimirPedidoMesaCompleto(pedidoId, snapshotCompleto)
-            const despachado = await handleDespachar('mesa', pedidoId)
+            if (editandoEstaMesa) {
+                const snapshotCompleto = draftPos!
+                const pedidoGuardadoId = await posRef.current?.submitDraft()
+                if (!pedidoGuardadoId) return
+                pedidoId = pedidoGuardadoId
+
+                if (imprimir) await imprimirPedidoMesaCompleto(pedidoId, snapshotCompleto)
+            } else if (imprimir) {
+                const mesa = pedidosMesaAbiertos.find((pedido) => pedido.id === pedidoId)
+                    ?? unifiedPedidos.find((pedido) => pedido.tipo === 'mesa' && pedido.id === pedidoId)
+                if (!mesa) throw new Error('No se encontró la mesa para imprimir')
+                if (!await reimprimirComanda(mesa)) return
+            }
+
+            const despachado = await handleEstadoChange('mesa', pedidoId, 'archived')
             if (!despachado) return
             setShowDespacharMesaDialog(false)
-            setPedidoPosEditando(null)
-            setMesaPosAsignada(null)
-            setDraftPos(null)
-            setPosContext('borrador')
+            setMesaADespacharId(null)
+            if (editandoEstaMesa) {
+                setPedidoPosEditando(null)
+                setMesaPosAsignada(null)
+                setDraftPos(null)
+                setPosContext('borrador')
+            }
             fetchPedidosMesaAbiertos()
-        } catch {
-            toast.error(imprimir ? 'No se pudo imprimir el ticket' : 'No se pudo despachar la mesa', {
-                description: 'El pedido quedó guardado y no fue despachado. Podés volver a intentarlo.',
+        } catch (error) {
+            toast.error(imprimir ? 'No se pudo imprimir la mesa' : 'No se pudo despachar la mesa', {
+                description: error instanceof Error
+                    ? error.message
+                    : 'La mesa quedó guardada y no fue despachada. Podés volver a intentarlo.',
             })
         } finally {
             setDespachandoMesa(false)
@@ -3377,7 +3421,7 @@ const Dashboard = () => {
                                     onUpdated={handlePedidoManualActualizado}
                                     onExistingMesaProductsAdded={reservarProductosNuevosMesaParaImpresionManual}
                                     onExistingPedidoUpdated={reservarPedidoEditadoSinAutoImpresion}
-                                    onDispatchMesa={() => setShowDespacharMesaDialog(true)}
+                                    onDispatchMesa={() => { if (pedidoPosEditando) void handleDespachar('mesa', pedidoPosEditando.id) }}
                                     onPrintNewMesa={() => imprimirPedidoEditado(true)}
                                     onPrintAllMesa={() => imprimirPedidoEditado(false)}
                                     sucursalActivaId={sucursalActivaId}
@@ -3409,7 +3453,7 @@ const Dashboard = () => {
                                         onRemoveItem={(key) => posRef.current?.removeItem(key)}
                                         onUpdate={(changes) => posRef.current?.updateDraft(changes)}
                                         onSubmit={() => posRef.current?.submitDraft()}
-                                        onDispatchMesa={() => setShowDespacharMesaDialog(true)}
+                                        onDispatchMesa={() => { if (pedidoPosEditando) void handleDespachar('mesa', pedidoPosEditando.id) }}
                                         onPrintNewMesa={() => imprimirPedidoEditado(true)}
                                         onPrintAllMesa={() => imprimirPedidoEditado(false)}
                                         onClear={() => posRef.current?.clearDraft()}
@@ -3828,7 +3872,7 @@ const Dashboard = () => {
                                                                 className="flex-1 h-14 rounded-2xl text-white font-bold text-lg transition-all active:scale-[0.98] bg-[#FF7A00] hover:bg-[#E66E00]"
                                                                 onClick={() => void handleDespachar(selectedUnifiedPedido.tipo, selectedUnifiedPedido.id)}
                                                             >
-                                                                Despachar Pedido
+                                                                {selectedUnifiedPedido.tipo === 'mesa' ? 'Despachar mesa' : 'Despachar pedido'}
                                                             </Button>
                                                         </>
                                                     )}
@@ -3867,7 +3911,7 @@ const Dashboard = () => {
                                         onUpdated={handlePedidoManualActualizado}
                                         onExistingMesaProductsAdded={reservarProductosNuevosMesaParaImpresionManual}
                                         onExistingPedidoUpdated={reservarPedidoEditadoSinAutoImpresion}
-                                        onDispatchMesa={() => setShowDespacharMesaDialog(true)}
+                                        onDispatchMesa={() => { if (pedidoPosEditando) void handleDespachar('mesa', pedidoPosEditando.id) }}
                                         onPrintNewMesa={() => imprimirPedidoEditado(true)}
                                         onPrintAllMesa={() => imprimirPedidoEditado(false)}
                                         sucursalActivaId={sucursalActivaId}
@@ -4081,34 +4125,33 @@ const Dashboard = () => {
 
             {/* ── DIÁLOGO DESPACHAR MESA ── */}
             <Dialog open={showDespacharMesaDialog} onOpenChange={(open) => {
-                if (!despachandoMesa) setShowDespacharMesaDialog(open)
+                if (!despachandoMesa) {
+                    setShowDespacharMesaDialog(open)
+                    if (!open) setMesaADespacharId(null)
+                }
             }}>
                 <DialogContent className="max-w-sm rounded-[32px] p-6 sm:p-8 border border-border bg-background text-center">
                     <div className="h-16 w-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Truck className="h-8 w-8 text-[#FF7A00]" />
+                        <Armchair className="h-8 w-8 text-[#FF7A00]" />
                     </div>
-                    <DialogTitle className="text-2xl font-bold mb-2 text-center">DESPACHAR PEDIDO</DialogTitle>
+                    <DialogTitle className="text-2xl font-bold mb-2 text-center">DESPACHAR MESA</DialogTitle>
                     <DialogDescription className="text-base text-center mb-8">
-                        {selectedPrinter
-                            ? 'Se guardarán los cambios. Elegí si también querés imprimir nuevamente el pedido completo de la mesa.'
-                            : 'Se guardarán los cambios y se despachará el pedido de la mesa.'}
+                        Elegí si querés solamente despachar la mesa o también imprimir su comanda completa.
                     </DialogDescription>
                     <div className="flex flex-col gap-3">
-                        <div className={selectedPrinter ? 'grid grid-cols-2 gap-3' : ''}>
-                            <Button variant={selectedPrinter ? 'outline' : 'default'} className={selectedPrinter ? 'h-12 rounded-xl font-bold border-border' : 'w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold'} disabled={despachandoMesa} onClick={() => void confirmarDespachoMesa(false)}>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Button variant="outline" className="h-12 rounded-xl font-bold border-border" disabled={despachandoMesa} onClick={() => void confirmarDespachoMesa(false)}>
                                 {despachandoMesa ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Solo despachar'}
                             </Button>
-                            {selectedPrinter && (
-                                <Button className="h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold" disabled={despachandoMesa} onClick={() => void confirmarDespachoMesa(true)}>
-                                    {despachandoMesa ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Despachar e imprimir'}
-                                </Button>
-                            )}
+                            <Button className="h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold" disabled={despachandoMesa || !selectedPrinter} onClick={() => void confirmarDespachoMesa(true)}>
+                                {despachandoMesa ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Despachar e imprimir'}
+                            </Button>
                         </div>
-                        <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-border" disabled={despachandoMesa} onClick={() => setShowDespacharMesaDialog(false)}>
+                        <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-border" disabled={despachandoMesa} onClick={() => { setShowDespacharMesaDialog(false); setMesaADespacharId(null) }}>
                             Cancelar
                         </Button>
                     </div>
-                    {!selectedPrinter && <p className="mt-3 text-sm text-muted-foreground">No hay una impresora configurada; el pedido se despachará sin imprimir.</p>}
+                    {!selectedPrinter && <p className="mt-3 text-sm text-muted-foreground">Configurá una impresora para habilitar “Despachar e imprimir”.</p>}
                 </DialogContent>
             </Dialog>
 

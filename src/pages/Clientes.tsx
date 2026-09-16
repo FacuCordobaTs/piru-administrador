@@ -427,12 +427,24 @@ export default function Clientes() {
 
   if (workspaceTab === 'retencion') {
     return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
-      <header className="shrink-0 border-b px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 sm:flex-row sm:justify-between">
-          <Button variant="ghost" size="sm" onClick={() => cambiarWorkspaceTab(null)} className="self-start text-xs text-muted-foreground hover:text-foreground sm:self-auto">
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Volver
-          </Button>
-          <WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} />
+      <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
+        <div className="mx-auto max-w-[1680px]">
+          <div className="relative mb-4 flex flex-col items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => cambiarWorkspaceTab(null)}
+              className="self-start text-xs text-muted-foreground hover:text-foreground sm:absolute sm:left-0 sm:top-1/2 sm:-translate-y-1/2"
+            >
+              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+              Volver
+            </Button>
+            <div className="text-center">
+              <h1 className="text-2xl font-bold tracking-tight">Motor de Recompra</h1>
+              <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Recuperá clientes enfriados en piloto automático o de forma manual.</p>
+            </div>
+            <WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} />
+          </div>
         </div>
       </header>
       <MotorRecompra />
@@ -734,29 +746,39 @@ export default function Clientes() {
           </section>
 
           <section className={`${mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[640px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
-            {cliente ? (
-              <ClienteDetalle
-                cliente={cliente}
-                token={token ?? undefined}
-                mostrarPedidos={mostrarPedidos}
-                onTogglePedidos={togglePedidos}
-                onMicroCampana={() => setMicroCampanaOpen(true)}
-                onDeleteClient={() => void eliminarCliente()}
-                onPuntosActualizados={(nuevos) => actualizarPuntosCliente(cliente.id, nuevos)}
-                retencionActiva={retencionActiva}
-                onActivarRetencion={() => navigate('/dashboard/ajustes/retencion')}
+            <div className="shrink-0 p-4 sm:px-6 border-b border-border/30 bg-background/50 backdrop-blur-xs">
+              <ResumenBaseClientes
+                clientes={clientes}
+                conteoSegmentos={conteoSegmentos}
+                onSelectCliente={(id) => seleccionarCliente(id)}
+                clienteSeleccionadoId={clienteSeleccionado}
               />
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
-                  <User className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {cliente ? (
+                <ClienteDetalle
+                  cliente={cliente}
+                  token={token ?? undefined}
+                  mostrarPedidos={mostrarPedidos}
+                  onTogglePedidos={togglePedidos}
+                  onMicroCampana={() => setMicroCampanaOpen(true)}
+                  onDeleteClient={() => void eliminarCliente()}
+                  onPuntosActualizados={(nuevos) => actualizarPuntosCliente(cliente.id, nuevos)}
+                  retencionActiva={retencionActiva}
+                  onActivarRetencion={() => navigate('/dashboard/ajustes/retencion')}
+                />
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <h2 className="mt-3.5 text-sm font-semibold tracking-tight text-foreground">Seleccioná un cliente</h2>
+                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                    Vas a ver su ciclo de vida, campañas, cupones y la micro-campaña sugerida.
+                  </p>
                 </div>
-                <h2 className="mt-3.5 text-sm font-semibold tracking-tight text-foreground">Seleccioná un cliente</h2>
-                <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                  Vas a ver su ciclo de vida, campañas, cupones y la micro-campaña sugerida.
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </section>
 
           <section
@@ -883,6 +905,100 @@ function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (va
   return <nav className="flex items-center gap-2" aria-label="Secciones de clientes">{tabs.map((tab) => <button key={tab.value} type="button" onClick={() => onChange(tab.value)} className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${value === tab.value ? 'bg-foreground text-background shadow-sm' : 'bg-muted/70 text-muted-foreground hover:text-foreground'}`}>{tab.icon}{tab.label}</button>)}</nav>
 }
 
+
+function ResumenBaseClientes({
+  clientes,
+  conteoSegmentos,
+  onSelectCliente,
+  clienteSeleccionadoId,
+}: {
+  clientes: ClienteGrowth[]
+  conteoSegmentos: Record<string, number>
+  onSelectCliente: (id: number) => void
+  clienteSeleccionadoId: number | null
+}) {
+  const totalClientes = clientes.length
+  const totalFacturado = useMemo(() => clientes.reduce((acc, c) => acc + (c.totalGastado || 0), 0), [clientes])
+  const totalPedidos = useMemo(() => clientes.reduce((acc, c) => acc + (c.cantidadPedidos || 0), 0), [clientes])
+  const ticketPromedio = totalPedidos > 0 ? totalFacturado / totalPedidos : 0
+
+  const ultimosClientes = useMemo(() => {
+    return [...clientes]
+      .filter((c) => c.ultimoPedidoAt)
+      .sort((a, b) => new Date(b.ultimoPedidoAt!).getTime() - new Date(a.ultimoPedidoAt!).getTime())
+      .slice(0, 5)
+  }, [clientes])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          Resumen general de tu base
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {totalClientes} {totalClientes === 1 ? 'cliente' : 'clientes'}
+        </span>
+      </div>
+
+      {/* Métricas flotantes Apple */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Clientes</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalClientes}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{(conteoSegmentos.activo ?? 0) + (conteoSegmentos.nuevo ?? 0)} activos / nuevos</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">VIP</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{conteoSegmentos.vip ?? 0}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">máxima recurrencia</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">A recuperar</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
+            {(conteoSegmentos.en_riesgo ?? 0) + (conteoSegmentos.dormido ?? 0) + (conteoSegmentos.perdido ?? 0)}
+          </span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">en riesgo o dormidos</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Facturación</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{formatCurrency(totalFacturado)}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">ticket prom. {formatCurrency(ticketPromedio)}</span>
+        </div>
+      </div>
+
+      {/* Fila de últimos pedidos */}
+      {ultimosClientes.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">
+            Últimos pedidos:
+          </span>
+          {ultimosClientes.map((c) => {
+            const isSelected = c.id === clienteSeleccionadoId
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSelectCliente(c.id)}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all shadow-2xs backdrop-blur-xs",
+                  isSelected
+                    ? "border-foreground bg-foreground text-background font-medium"
+                    : "border-border/40 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground"
+                )}
+              >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-bold text-foreground">
+                  {iniciales(c.nombre)}
+                </span>
+                <span className="truncate max-w-[100px] font-medium">{c.nombre}</span>
+                <span className="text-[10px] opacity-70">· {formatCurrency(c.totalGastado)}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ClientRow({ cliente, selected, onClick }: { cliente: ClienteGrowth; selected: boolean; onClick: () => void }) {
   const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!

@@ -165,7 +165,7 @@ const GlobalAutoPrinter = () => {
         ) {
             return
         }
-        if (!isDashboardRoute && lastUpdate.shouldPrint && lastUpdate.pedidoId) {
+        if (!isDashboardRoute && lastUpdate.type !== 'mesa' && lastUpdate.shouldPrint && lastUpdate.pedidoId) {
             realtimeOrdersPendingPrintRef.current.add(lastUpdate.pedidoId)
         }
         fetchPedidos()
@@ -187,6 +187,14 @@ const GlobalAutoPrinter = () => {
             // Mientras estamos en el Dashboard, el Dashboard imprime. Acá solo registramos
             // para no reimprimir el backlog cuando el usuario cambie de pantalla.
             if (isDashboardRoute) {
+                processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
+                return
+            }
+
+            // Las mesas se guardan automáticamente, pero su impresión siempre
+            // requiere una acción explícita desde el Dashboard.
+            if (pedido.tipo === 'mesa') {
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }

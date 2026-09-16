@@ -26,7 +26,7 @@ import { PosConfigDialog } from '@/components/PosConfigDialog'
 import {
     X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2,
     Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, MapPin, ChevronRight,
-    WifiOff, Printer, CheckCircle, MoreHorizontal,
+    WifiOff, Printer, CheckCircle, MoreHorizontal, Armchair,
 } from 'lucide-react'
 
 type Producto = ReturnType<typeof useRestauranteStore.getState>['productos'][number]
@@ -164,7 +164,7 @@ interface PuntoDeVentaProps {
     onExistingMesaProductsAdded?: (pedidoId: number) => void
     /** Una edición nunca debe disparar la autoimpresión del Dashboard. */
     onExistingPedidoUpdated?: (pedidoId: number) => void
-    /** Abre la confirmación para despachar el pedido de una mesa. */
+    /** Abre la confirmación para despachar la mesa. */
     onDispatchMesa?: () => void | Promise<void>
     /** Guarda el borrador y manda en una sola comanda el delta aún no impreso. */
     onPrintNewMesa?: () => void | Promise<void>
@@ -446,6 +446,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // separa por sucursal para no cruzar comandas entre locales del mismo negocio.
     useEffect(() => {
         if (initialPedido) {
+            // Cada versión recibida del servidor es una nueva base de edición.
+            // Una firma intentada sobre la versión anterior no debe bloquear el
+            // siguiente autoguardado.
+            lastAutoSaveAttemptRef.current = null
             const parseAgregados = (value: unknown): CartItem['agregados'] => {
                 if (typeof value === 'string') {
                     try { return parseAgregados(JSON.parse(value)) } catch { return [] }
@@ -1076,6 +1080,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     if (res.data) onUpdated?.(res.data)
                     return res.data?.id ?? initialPedido.id
                 } else {
+                    lastAutoSaveAttemptRef.current = null
                     toast.error(res.message || 'No se pudo actualizar el pedido')
                     return null
                 }
@@ -1161,19 +1166,19 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     // Las mesas nuevas y cualquier pedido abierto en el editor se guardan
-    // automáticamente. En edición esperamos 8 s sin cambios para que
-    // "Cancelar edición" pueda realmente descartar una corrección reciente.
-    // Este guardado nunca imprime: la impresión siempre es manual.
+    // automáticamente apenas termina una ráfaga de cambios. Este guardado nunca
+    // imprime: la impresión siempre es manual.
     autoSaveRef.current = handleSubmit
     useEffect(() => {
         const debeAutoguardar = modoEdicion || (tipo === 'mesa' && !!mesaAsignada)
         if (!online || !debeAutoguardar || cart.length === 0 || !hasChanges || submitting) return
         if (lastAutoSaveAttemptRef.current === currentSignature) return
-        const demoraAutoguardado = modoEdicion ? 8_000 : 4_000
         const timeout = window.setTimeout(() => {
-            lastAutoSaveAttemptRef.current = currentSignature
+            // handleSubmit registra la firma sólo después de confirmar que no
+            // hay otro envío en curso. Así un timer que coincide con otra acción
+            // no deja el borrador bloqueado hasta pulsar Imprimir/Reimprimir.
             void autoSaveRef.current(true)
-        }, demoraAutoguardado)
+        }, 800)
         return () => window.clearTimeout(timeout)
     }, [online, modoEdicion, tipo, mesaAsignada?.id, cart.length, hasChanges, submitting, currentSignature])
 
@@ -1388,11 +1393,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                 type="button"
                                 onClick={() => void onDispatchMesa()}
                                 disabled={cart.length === 0 || submitting}
-                                aria-label="Despachar pedido de la mesa"
-                                title="Despachar"
+                                aria-label="Despachar mesa"
+                                title="Despachar mesa"
                                 className="h-12 w-12 shrink-0 rounded-xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
                             >
-                                <Truck className="h-5 w-5" />
+                                <Armchair className="h-5 w-5" />
                             </button>
                         )}
                     </div>

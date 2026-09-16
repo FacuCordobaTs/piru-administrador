@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -508,38 +509,68 @@ export default function GrowthAssetsPanel(props: Props) {
           props.mobileView === 'detalle' ? 'flex' : 'hidden'
         } min-h-[620px] flex-col overflow-hidden xl:flex xl:min-h-0`}
       >
-        {loadingDetalle ? (
-          <LoadingDetail />
-        ) : tab === 'campanas' && campanaSeleccionada != null && resultadoCampana ? (
-          <CampaignDetail
-            organic={campanaSeleccionada === 'organico'}
-            campana={campanaActual}
-            producto={props.productos.find((item) => item.id === campanaActual?.productoId) ?? null}
-            productos={props.productos}
-            resultado={resultadoCampana}
-            onCopy={() => campanaActual && void copiarCampana(campanaActual)}
-            onEdit={() => campanaActual && abrirCampana(campanaActual)}
-            onToggle={() => campanaActual && void toggleCampana(campanaActual)}
-            onDelete={() => campanaActual && void borrarCampana(campanaActual)}
-            mostrarAsociaciones={mostrarAsociaciones}
-            onToggleAsociaciones={toggleAsociaciones}
-            actividadCount={actividadCount}
-            username={props.username}
-          />
-        ) : tab === 'cupones' && cuponActual && resultadoCupon ? (
-          <CouponDetail
-            cupon={cuponActual}
-            resultado={resultadoCupon}
-            onCopy={() => cuponActual && void copiarCupon(cuponActual)}
-            onEdit={() => abrirCupon(cuponActual)}
-            onToggle={() => void toggleCupon(cuponActual)}
-            onDelete={() => void borrarCupon(cuponActual)}
-            mostrarAsociaciones={mostrarAsociaciones}
-            onToggleAsociaciones={toggleAsociaciones}
-            actividadCount={actividadCount}
-          />
+        {tab === 'campanas' ? (
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="shrink-0 p-4 sm:px-6 border-b border-border/30 bg-background/50 backdrop-blur-xs">
+              <ResumenGeneralCampanas
+                campanas={props.campanas}
+                campanaSeleccionadaId={campanaSeleccionada}
+                onSelectCampana={(id) => props.onSelectCampana(id)}
+              />
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {loadingDetalle ? (
+                <LoadingDetail />
+              ) : campanaSeleccionada != null && resultadoCampana ? (
+                <CampaignDetail
+                  organic={campanaSeleccionada === 'organico'}
+                  campana={campanaActual}
+                  producto={props.productos.find((item) => item.id === campanaActual?.productoId) ?? null}
+                  productos={props.productos}
+                  resultado={resultadoCampana}
+                  onCopy={() => campanaActual && void copiarCampana(campanaActual)}
+                  onEdit={() => campanaActual && abrirCampana(campanaActual)}
+                  onToggle={() => campanaActual && void toggleCampana(campanaActual)}
+                  onDelete={() => campanaActual && void borrarCampana(campanaActual)}
+                  mostrarAsociaciones={mostrarAsociaciones}
+                  onToggleAsociaciones={toggleAsociaciones}
+                  actividadCount={actividadCount}
+                  username={props.username}
+                />
+              ) : (
+                <EmptySelection tab="campanas" />
+              )}
+            </div>
+          </div>
         ) : (
-          <EmptySelection tab={tab} />
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="shrink-0 p-4 sm:px-6 border-b border-border/30 bg-background/50 backdrop-blur-xs">
+              <ResumenGeneralCupones
+                cupones={props.cupones}
+                cuponSeleccionadoId={cuponSeleccionado}
+                onSelectCupon={(id) => props.onSelectCupon(id)}
+              />
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {loadingDetalle ? (
+                <LoadingDetail />
+              ) : cuponActual && resultadoCupon ? (
+                <CouponDetail
+                  cupon={cuponActual}
+                  resultado={resultadoCupon}
+                  onCopy={() => cuponActual && void copiarCupon(cuponActual)}
+                  onEdit={() => abrirCupon(cuponActual)}
+                  onToggle={() => void toggleCupon(cuponActual)}
+                  onDelete={() => void borrarCupon(cuponActual)}
+                  mostrarAsociaciones={mostrarAsociaciones}
+                  onToggleAsociaciones={toggleAsociaciones}
+                  actividadCount={actividadCount}
+                />
+              ) : (
+                <EmptySelection tab="cupones" />
+              )}
+            </div>
+          </div>
         )}
       </section>
 
@@ -596,6 +627,209 @@ function LoadingDetail() {
     <div className="flex flex-1 items-center justify-center py-16 text-xs text-muted-foreground">
       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
       Calculando resultados…
+    </div>
+  )
+}
+
+function ResumenGeneralCupones({
+  cupones,
+  cuponSeleccionadoId,
+  onSelectCupon,
+}: {
+  cupones: CodigoDescuentoGrowth[]
+  cuponSeleccionadoId: number | null
+  onSelectCupon: (id: number | null) => void
+}) {
+  const totalCupones = cupones.length
+  const { vigentes, totalUsos, agotados, topCupon } = useMemo(() => {
+    let v = 0
+    let u = 0
+    let a = 0
+    let top: CodigoDescuentoGrowth | null = null
+    for (const c of cupones) {
+      const status = getCouponStatus(c)
+      if (status.vigente) v++
+      if (status.estado === 'Agotado' || status.estado === 'Vencido') a++
+      u += (c.usosActuales || 0)
+      if (!top || (c.usosActuales || 0) > (top.usosActuales || 0)) {
+        top = c
+      }
+    }
+    return { vigentes: v, totalUsos: u, agotados: a, topCupon: top }
+  }, [cupones])
+
+  const cuponesDestacados = useMemo(() => {
+    return [...cupones]
+      .sort((a, b) => (b.usosActuales || 0) - (a.usosActuales || 0))
+      .slice(0, 5)
+  }, [cupones])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          Resumen general de cupones
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {totalCupones} {totalCupones === 1 ? 'cupón' : 'cupones'}
+        </span>
+      </div>
+
+      {/* Métricas flotantes Apple */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Cupones</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalCupones}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{vigentes} vigentes</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Usos totales</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalUsos}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">canjeados en tienda</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Finalizados</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{agotados}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">agotados o vencidos</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Más utilizado</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight uppercase truncate text-foreground sm:text-2xl">
+            {topCupon && topCupon.usosActuales > 0 ? topCupon.codigo : '—'}
+          </span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">
+            {topCupon && topCupon.usosActuales > 0 ? `${topCupon.usosActuales} usos` : 'sin usos todavía'}
+          </span>
+        </div>
+      </div>
+
+      {/* Fila de cupones destacados */}
+      {cuponesDestacados.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">
+            Destacados:
+          </span>
+          {cuponesDestacados.map((c) => {
+            const isSelected = c.id === cuponSeleccionadoId
+            const { dotColor } = getCouponStatus(c)
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSelectCupon(isSelected ? null : c.id)}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all shadow-2xs backdrop-blur-xs',
+                  isSelected
+                    ? 'border-foreground bg-foreground text-background font-medium'
+                    : 'border-border/40 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground'
+                )}
+              >
+                <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotColor)} />
+                <span className="font-mono font-semibold uppercase">{c.codigo}</span>
+                <span className="text-[10px] opacity-70">
+                  · {c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : formatCurrency(c.valor)} · {c.usosActuales} {c.usosActuales === 1 ? 'uso' : 'usos'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ResumenGeneralCampanas({
+  campanas,
+  campanaSeleccionadaId,
+  onSelectCampana,
+}: {
+  campanas: CampanaCrecimiento[]
+  campanaSeleccionadaId: FiltroCampana
+  onSelectCampana: (id: FiltroCampana) => void
+}) {
+  const totalCampanas = campanas.length
+  const { activas, adquisicionCount, recompraCount } = useMemo(() => {
+    let act = 0
+    let adq = 0
+    let rec = 0
+    for (const c of campanas) {
+      if (c.estado === 'activa') act++
+      if (c.tipo === 'adquisicion') adq++
+      else rec++
+    }
+    return { activas: act, adquisicionCount: adq, recompraCount: rec }
+  }, [campanas])
+
+  const campanasDestacadas = useMemo(() => {
+    return [...campanas].slice(0, 5)
+  }, [campanas])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          Resumen de campañas y smart links
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {totalCampanas} {totalCampanas === 1 ? 'campaña' : 'campañas'}
+        </span>
+      </div>
+
+      {/* Métricas flotantes Apple */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Campañas</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalCampanas}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{activas} activas</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Adquisición</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{adquisicionCount}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">captación de clientes</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Recompra</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{recompraCount}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">retención e incentivos</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Estado</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight truncate text-foreground sm:text-2xl">
+            {activas > 0 ? 'Activo' : 'En pausa'}
+          </span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{campanas.length - activas} inactivas / borrador</span>
+        </div>
+      </div>
+
+      {/* Fila de campañas destacadas */}
+      {campanasDestacadas.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">
+            Campañas:
+          </span>
+          {campanasDestacadas.map((c) => {
+            const isSelected = c.id === campanaSeleccionadaId
+            const { dotColor } = getCampaignStatus(c, false)
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSelectCampana(isSelected ? null : c.id)}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all shadow-2xs backdrop-blur-xs',
+                  isSelected
+                    ? 'border-foreground bg-foreground text-background font-medium'
+                    : 'border-border/40 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground'
+                )}
+              >
+                <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotColor)} />
+                <span className="font-medium truncate max-w-[120px]">{c.nombre}</span>
+                <span className="text-[10px] opacity-70">· /c/{c.slug}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

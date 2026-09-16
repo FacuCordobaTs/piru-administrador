@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -16,34 +17,35 @@ import {
     type PaginadoRecompra,
     type ModoRecompra,
     type MensajeColaData,
+    type SegmentoRecompra,
 } from '@/lib/api'
 import { toast } from 'sonner'
 import {
-    Rocket, AlertTriangle, Moon, UserX, Users, DollarSign, ShieldCheck,
-    Loader2, CheckCircle2, Zap, Crown, Gauge, TrendingUp, Wallet,
-    Pause, Play, Pencil, Repeat, Send, FlaskConical, ListOrdered, History,
-    UserRoundCheck, Clock, CircleOff, RefreshCw, Copy, Check, ExternalLink,
-    Bot, MessageSquare, Eye, Sparkles,
+    Users, Loader2, CheckCircle2, Zap, Crown, Gauge, Wallet,
+    Pause, Play, ListOrdered, History, UserRoundCheck, Clock,
+    RefreshCw, Copy, Check, ExternalLink, Bot, MessageSquare,
+    Search, X, ArrowLeft, User, Ticket, CheckCheck, ChevronRight as ChevronRightIcon,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 // =============================================================================
 // MOTOR DE RECOMPRA · GOTEO (piloto automático)
 //
-// El motor NO manda campañas masivas ni pide acciones diarias. Tres piezas:
-//   1) DECISIÓN — humana, una vez: el dueño enciende (pantalla de PLAN, no formulario).
-//   2) EJECUCIÓN — automática, goteada: el backend drena la cola al ritmo del cupo diario.
-//   3) RENDICIÓN — visible siempre: el dueño es espectador de un marcador (consumo + retorno),
-//      nunca operador de una tarea diaria.
+// Estilo Apple minimalista, componentes flotantes sobre fondo cálido,
+// métricas numéricas grandes sin cajas duras ni neon, listado a la izquierda
+// y motor + detalle del cliente a la derecha.
 // =============================================================================
 
-type Segmento = 'primer_pedido' | 'en_riesgo' | 'dormido' | 'perdido'
+type Segmento = SegmentoRecompra
 type EstadoCampana = 'activa' | 'pausada_sin_saldo' | 'pausada_manual' | 'completada'
+type ObservabilidadTab = 'cola' | 'historial' | 'clientes'
+type MobileView = 'lista' | 'detalle'
 
-const SEG_META: Record<Segmento, { label: string; icon: typeof Moon; dot: string; text: string }> = {
-    primer_pedido: { label: 'Primer pedido', icon: Sparkles, dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
-    en_riesgo: { label: 'En riesgo', icon: AlertTriangle, dot: 'bg-orange-500', text: 'text-orange-600 dark:text-orange-400' },
-    dormido: { label: 'Dormidos', icon: Moon, dot: 'bg-violet-500', text: 'text-violet-600 dark:text-violet-400' },
-    perdido: { label: 'Perdidos', icon: UserX, dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400' },
+const SEG_META: Record<Segmento, { label: string; dot: string }> = {
+    primer_pedido: { label: 'Primer pedido', dot: 'bg-emerald-500' },
+    en_riesgo: { label: 'En riesgo', dot: 'bg-orange-500' },
+    dormido: { label: 'Dormidos', dot: 'bg-violet-500' },
+    perdido: { label: 'Perdidos', dot: 'bg-rose-500' },
 }
 
 interface PlanSegmento { segmento: Segmento; detectados: number; facturacionEnJuego: number }
@@ -101,6 +103,9 @@ const formatDay = (value: string | null) => value
     ? new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(`${value}T12:00:00-03:00`))
     : '—'
 
+const iniciales = (nombre: string) =>
+    nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
+
 export default function MotorRecompra() {
     const token = useAuthStore(state => state.token)
     const navigate = useNavigate()
@@ -128,45 +133,1151 @@ export default function MotorRecompra() {
 
     useEffect(() => { cargar() }, [cargar])
 
-    return (
-        <div className="flex-1 min-h-0 overflow-hidden bg-[#FFFBF0] dark:bg-background">
+    if (loading) {
+        return (
+            <div className="mx-auto max-w-[1680px] w-full px-4 sm:px-6 py-6">
+                <Cargando />
+            </div>
+        )
+    }
+
+    if (bloqueadoPlan) {
+        return (
+            <div className="mx-auto max-w-[1680px] w-full px-4 sm:px-6 py-6">
+                <PlanBloqueado />
+            </div>
+        )
+    }
+
+    if (estado?.activa && estado.campana) {
+        return (
+            <PantallaEncendido
+                campana={estado.campana}
+                onCambio={cargar}
+                onRecargar={() => navigate('/dashboard/mensajes')}
+            />
+        )
+    }
+
+    if (estado?.plan) {
+        return (
             <ScrollArea className="h-full">
-                <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
-                    {loading ? (
-                        <Cargando />
-                    ) : bloqueadoPlan ? (
-                        <PlanBloqueado />
-                    ) : estado?.activa && estado.campana ? (
-                        <PantallaEncendido
-                            campana={estado.campana}
-                            onCambio={cargar}
-                            onRecargar={() => navigate('/dashboard/mensajes')}
-                        />
-                    ) : estado?.plan ? (
-                        <PantallaApagado plan={estado.plan} onActivado={cargar} />
-                    ) : null}
+                <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8">
+                    <PantallaApagado plan={estado.plan} onActivado={cargar} />
                 </div>
             </ScrollArea>
-        </div>
-    )
+        )
+    }
+
+    return null
 }
 
 function Cargando() {
     return (
-        <div className="space-y-4">
-
-
-            <Skeleton className="h-9 w-64" />
-            <Skeleton className="h-5 w-full max-w-lg" />
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        <div className="space-y-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-4 border-y border-border/30">
+                {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="space-y-2">
+                        <Skeleton className="h-3 w-16" />
+                        <Skeleton className="h-8 w-24" />
+                    </div>
+                ))}
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6">
+                <div className="space-y-3">
+                    {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+                </div>
+                <Skeleton className="h-80 rounded-2xl" />
             </div>
         </div>
     )
 }
 
 // =============================================================================
-// APAGADO — el PLAN (la decisión humana, una vez). No un formulario: una propuesta.
+// ENCENDIDO — SPLIT PANE CON ESTILO APPLE (LISTA + DETALLE FLOTANTE)
+// =============================================================================
+function PantallaEncendido({ campana, onCambio, onRecargar }: {
+    campana: Dashboard
+    onCambio: () => void
+    onRecargar: () => void
+}) {
+    const token = useAuthStore(state => state.token)
+
+    // Navegación responsive
+    const [mobileView, setMobileView] = useState<MobileView>('lista')
+    const [tab, setTab] = useState<ObservabilidadTab>('cola')
+    const [pagina, setPagina] = useState(1)
+    const [segmento, setSegmento] = useState<string>('todos')
+    const [query, setQuery] = useState('')
+
+    // Observabilidad
+    const [loadingObservabilidad, setLoadingObservabilidad] = useState(true)
+    const [cola, setCola] = useState<PaginadoRecompra<ColaRecompraItem> | null>(null)
+    const [historial, setHistorial] = useState<PaginadoRecompra<HistorialRecompraItem> | null>(null)
+    const [clientes, setClientes] = useState<PaginadoRecompra<ClienteMotorRecompra> | null>(null)
+
+    // Selección
+    const [selectedColaId, setSelectedColaId] = useState<number | null>(null)
+    const [selectedHistorialId, setSelectedHistorialId] = useState<number | null>(null)
+    const [selectedClienteId, setSelectedClienteId] = useState<number | null>(null)
+
+    // Mensajes para la cola
+    const [mensajeCache, setMensajeCache] = useState<Record<number, MensajeColaData>>({})
+    const [cargandoMensajeId, setCargandoMensajeId] = useState<number | null>(null)
+    const [marcandoId, setMarcandoId] = useState<number | null>(null)
+    const [copiadoId, setCopiadoId] = useState<number | null>(null)
+
+    // Control del motor
+    const [accionMotor, setAccionMotor] = useState(false)
+    const [cambiandoModo, setCambiandoModo] = useState(false)
+    const [editandoCupo, setEditandoCupo] = useState(false)
+    const [cupo, setCupo] = useState(campana.cupoDiario)
+
+    const doAccion = async (fn: () => Promise<unknown>, okMsg: string) => {
+        if (!token) return
+        setAccionMotor(true)
+        try {
+            const res = await fn() as { success: boolean }
+            if (res.success) { toast.success(okMsg); onCambio() }
+        } catch {
+            toast.error('No se pudo completar la acción')
+        } finally {
+            setAccionMotor(false)
+        }
+    }
+
+    const alternarModo = async (nuevoModo: ModoRecompra) => {
+        if (!token || cambiandoModo) return
+        setCambiandoModo(true)
+        try {
+            const res = await clientesApi.modoRecompra(token, nuevoModo) as { success: boolean }
+            if (res.success) {
+                toast.success(`Modo ${nuevoModo === 'automatico' ? 'Automático' : 'Manual'} activado`)
+                onCambio()
+            }
+        } catch {
+            toast.error('No se pudo cambiar el modo')
+        } finally {
+            setCambiandoModo(false)
+        }
+    }
+
+    const guardarCupo = async () => {
+        if (!token) return
+        setAccionMotor(true)
+        try {
+            const res = await clientesApi.configRecompra(token, cupo) as { success: boolean }
+            if (res.success) { toast.success('Cupo diario actualizado'); setEditandoCupo(false); onCambio() }
+        } catch {
+            toast.error('No se pudo actualizar el cupo')
+        } finally {
+            setAccionMotor(false)
+        }
+    }
+
+    // Carga de datos
+    const cargarObservabilidad = useCallback(async (silencioso = false) => {
+        if (!token) return
+        if (!silencioso) setLoadingObservabilidad(true)
+        try {
+            const segParam = segmento !== 'todos' ? segmento : undefined
+            if (tab === 'cola') {
+                const res = await clientesApi.recompraCola(token, { pagina, limite: 25, segmento: segParam })
+                setCola(res.data)
+                if (res.data.items.length > 0) {
+                    setSelectedColaId(prev => (prev && res.data.items.some(i => i.id === prev) ? prev : res.data.items[0].id))
+                } else {
+                    setSelectedColaId(null)
+                }
+            } else if (tab === 'historial') {
+                const res = await clientesApi.recompraHistorial(token, { pagina, limite: 25, segmento: segParam })
+                setHistorial(res.data)
+                if (res.data.items.length > 0) {
+                    setSelectedHistorialId(prev => (prev && res.data.items.some(i => i.id === prev) ? prev : res.data.items[0].id))
+                } else {
+                    setSelectedHistorialId(null)
+                }
+            } else {
+                const res = await clientesApi.recompraClientes(token, { pagina, limite: 25, segmento: segParam })
+                setClientes(res.data)
+                if (res.data.items.length > 0) {
+                    setSelectedClienteId(prev => (prev && res.data.items.some(i => i.id === prev) ? prev : res.data.items[0].id))
+                } else {
+                    setSelectedClienteId(null)
+                }
+            }
+        } catch {
+            if (!silencioso) toast.error('No se pudo actualizar la lista')
+        } finally {
+            if (!silencioso) setLoadingObservabilidad(false)
+        }
+    }, [token, tab, pagina, segmento])
+
+    useEffect(() => {
+        void cargarObservabilidad()
+        const timer = window.setInterval(() => void cargarObservabilidad(true), 30_000)
+        return () => window.clearInterval(timer)
+    }, [cargarObservabilidad])
+
+    // Cargar mensaje para cliente de cola seleccionado
+    useEffect(() => {
+        if (!token || tab !== 'cola' || !selectedColaId) return
+        if (mensajeCache[selectedColaId]) return
+
+        let mounted = true
+        setCargandoMensajeId(selectedColaId)
+        clientesApi.mensajeColaRecompra(token, selectedColaId)
+            .then(res => {
+                if (mounted && res.success && res.data) {
+                    setMensajeCache(prev => ({ ...prev, [selectedColaId]: res.data }))
+                }
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (mounted) setCargandoMensajeId(null)
+            })
+
+        return () => { mounted = false }
+    }, [token, tab, selectedColaId, mensajeCache])
+
+    const cambiarTab = (siguiente: ObservabilidadTab) => {
+        setTab(siguiente)
+        setPagina(1)
+        setQuery('')
+    }
+
+    // Filtrado por query local
+    const colaFiltrada = useMemo(() => {
+        const items = cola?.items ?? []
+        if (!query.trim()) return items
+        const q = query.toLowerCase().trim()
+        return items.filter(i => i.clienteNombre.toLowerCase().includes(q) || (i.telefono && i.telefono.includes(q)))
+    }, [cola, query])
+
+    const historialFiltrado = useMemo(() => {
+        const items = historial?.items ?? []
+        if (!query.trim()) return items
+        const q = query.toLowerCase().trim()
+        return items.filter(i => i.clienteNombre.toLowerCase().includes(q) || (i.telefono && i.telefono.includes(q)))
+    }, [historial, query])
+
+    const clientesFiltrados = useMemo(() => {
+        const items = clientes?.items ?? []
+        if (!query.trim()) return items
+        const q = query.toLowerCase().trim()
+        return items.filter(i => i.clienteNombre.toLowerCase().includes(q) || (i.telefono && i.telefono.includes(q)))
+    }, [clientes, query])
+
+    const totalRegistros = tab === 'cola' ? (cola?.total ?? 0) : tab === 'historial' ? (historial?.total ?? 0) : (clientes?.total ?? 0)
+    const paginasTotal = tab === 'cola' ? (cola?.paginas ?? 1) : tab === 'historial' ? (historial?.paginas ?? 1) : (clientes?.paginas ?? 1)
+
+    // Acciones de contacto
+    const copiarTexto = async (texto: string, id?: number) => {
+        try {
+            await navigator.clipboard.writeText(texto)
+            if (id) {
+                setCopiadoId(id)
+                setTimeout(() => setCopiadoId(null), 2000)
+            }
+            toast.success('Mensaje copiado al portapapeles')
+        } catch {
+            toast.error('No se pudo copiar al portapapeles')
+        }
+    }
+
+    const marcarEnviado = async (filaId: number) => {
+        if (!token || marcandoId) return
+        setMarcandoId(filaId)
+        try {
+            const res = await clientesApi.marcarEnviadoColaRecompra(token, filaId) as { success: boolean }
+            if (res.success) {
+                toast.success('Registrado como enviado')
+                void cargarObservabilidad(true)
+                onCambio()
+            }
+        } catch {
+            toast.error('No se pudo marcar como enviado')
+        } finally {
+            setMarcandoId(null)
+        }
+    }
+
+    const itemCola = useMemo(() => cola?.items.find(i => i.id === selectedColaId) ?? null, [cola, selectedColaId])
+    const itemHistorial = useMemo(() => historial?.items.find(i => i.id === selectedHistorialId) ?? null, [historial, selectedHistorialId])
+    const itemCliente = useMemo(() => clientes?.items.find(i => i.id === selectedClienteId) ?? null, [clientes, selectedClienteId])
+
+    return (
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {/* Navegación móvil estilo Apple */}
+            <div className="xl:hidden shrink-0 border-b border-border/30 bg-background/80 px-4 py-2 backdrop-blur-xs">
+                <div className="mx-auto flex max-w-xs items-center justify-center gap-1 rounded-full bg-muted/70 p-1">
+                    <button
+                        type="button"
+                        onClick={() => setMobileView('lista')}
+                        className={cn(
+                            "flex-1 rounded-full px-3 py-1 text-xs font-medium transition-all",
+                            mobileView === 'lista' ? "bg-background text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                        )}
+                    >
+                        Listado ({totalRegistros})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setMobileView('detalle')}
+                        className={cn(
+                            "flex-1 rounded-full px-3 py-1 text-xs font-medium transition-all",
+                            mobileView === 'detalle' ? "bg-background text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                        )}
+                    >
+                        Motor y Detalle
+                    </button>
+                </div>
+            </div>
+
+            {/* Layout principal a 2 columnas */}
+            <main className="flex-1 min-h-0 px-4 pb-4 sm:px-6 overflow-hidden">
+                <div className="mx-auto grid h-full max-w-[1680px] gap-6 xl:grid-cols-[minmax(320px,380px)_1fr]">
+                    {/* ===================================================================== */}
+                    {/* COLUMNA IZQUIERDA: LISTADO FLOTANTE DE CLIENTES                      */}
+                    {/* ===================================================================== */}
+                    <section className={cn(
+                        "flex-col overflow-hidden min-h-0",
+                        mobileView === 'lista' ? "flex" : "hidden xl:flex"
+                    )}>
+                        {/* Selector de pestañas + Búsqueda + Filtros rápidos */}
+                        <div className="space-y-3 pb-3">
+                            {/* Pestañas estilo Apple */}
+                            <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+                                <TabPill active={tab === 'cola'} onClick={() => cambiarTab('cola')} icon={<ListOrdered className="h-3.5 w-3.5" />}>
+                                    Próximos
+                                </TabPill>
+                                <TabPill active={tab === 'historial'} onClick={() => cambiarTab('historial')} icon={<History className="h-3.5 w-3.5" />}>
+                                    Historial
+                                </TabPill>
+                                <TabPill active={tab === 'clientes'} onClick={() => cambiarTab('clientes')} icon={<UserRoundCheck className="h-3.5 w-3.5" />}>
+                                    Base
+                                </TabPill>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => void cargarObservabilidad()}
+                                    className="ml-auto h-8 w-8 rounded-full text-muted-foreground/60 hover:text-foreground"
+                                    title="Actualizar"
+                                >
+                                    <RefreshCw className={cn("h-3.5 w-3.5", loadingObservabilidad && "animate-spin")} />
+                                </Button>
+                            </div>
+
+                            {/* Buscador redondeado Apple */}
+                            <div className="relative">
+                                <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+                                <Input
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    placeholder="Buscar por nombre o teléfono…"
+                                    className="h-9 rounded-full border-border/40 bg-background/80 pl-9 pr-8 text-xs shadow-2xs backdrop-blur-xs transition-all placeholder:text-muted-foreground/50 focus-visible:ring-1"
+                                />
+                                {query && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setQuery('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+                                    >
+                                        <X className="h-3 w-3" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Filtros de segmento en píldoras */}
+                            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+                                <button
+                                    type="button"
+                                    onClick={() => setSegmento('todos')}
+                                    className={cn(
+                                        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all shadow-2xs",
+                                        segmento === 'todos'
+                                            ? "bg-foreground text-background"
+                                            : "border border-border/40 bg-background/80 text-muted-foreground hover:text-foreground backdrop-blur-xs"
+                                    )}
+                                >
+                                    Todos
+                                </button>
+                                {(Object.keys(SEG_META) as Segmento[]).map((seg) => {
+                                    const active = segmento === seg
+                                    const meta = SEG_META[seg]
+                                    return (
+                                        <button
+                                            key={seg}
+                                            type="button"
+                                            onClick={() => setSegmento(seg)}
+                                            className={cn(
+                                                "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all shadow-2xs",
+                                                active
+                                                    ? "bg-foreground text-background"
+                                                    : "border border-border/40 bg-background/80 text-muted-foreground hover:text-foreground backdrop-blur-xs"
+                                            )}
+                                        >
+                                            <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                                            <span>{meta.label}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Lista de filas flotantes */}
+                        <ScrollArea className="flex-1 min-h-0">
+                            <div className="space-y-1.5 pr-2">
+                                {loadingObservabilidad && !cola && !historial && !clientes ? (
+                                    <div className="space-y-2 p-1">
+                                        {Array.from({ length: 6 }).map((_, i) => (
+                                            <Skeleton key={i} className="h-16 rounded-xl" />
+                                        ))}
+                                    </div>
+                                ) : tab === 'cola' ? (
+                                    colaFiltrada.length === 0 ? (
+                                        <EmptyList texto="No hay clientes en cola" subtexto="Cuando alguno se enfríe, el motor lo incorporará." />
+                                    ) : (
+                                        colaFiltrada.map((item) => (
+                                            <RowCola
+                                                key={item.id}
+                                                item={item}
+                                                selected={item.id === selectedColaId}
+                                                onClick={() => {
+                                                    setSelectedColaId(item.id)
+                                                    setMobileView('detalle')
+                                                }}
+                                            />
+                                        ))
+                                    )
+                                ) : tab === 'historial' ? (
+                                    historialFiltrado.length === 0 ? (
+                                        <EmptyList texto="Sin despachos registrados" subtexto="Los mensajes enviados quedarán registrados acá." />
+                                    ) : (
+                                        historialFiltrado.map((item) => (
+                                            <RowHistorial
+                                                key={item.id}
+                                                item={item}
+                                                selected={item.id === selectedHistorialId}
+                                                onClick={() => {
+                                                    setSelectedHistorialId(item.id)
+                                                    setMobileView('detalle')
+                                                }}
+                                            />
+                                        ))
+                                    )
+                                ) : (
+                                    clientesFiltrados.length === 0 ? (
+                                        <EmptyList texto="No hay clientes con estos filtros" subtexto="Probá con otros segmentos." />
+                                    ) : (
+                                        clientesFiltrados.map((item) => (
+                                            <RowCliente
+                                                key={item.id}
+                                                item={item}
+                                                selected={item.id === selectedClienteId}
+                                                onClick={() => {
+                                                    setSelectedClienteId(item.id)
+                                                    setMobileView('detalle')
+                                                }}
+                                            />
+                                        ))
+                                    )
+                                )}
+                            </div>
+                        </ScrollArea>
+
+                        {/* Paginación minimalista */}
+                        <div className="shrink-0 pt-3 flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="text-[11px] tabular-nums">
+                                {totalRegistros} total · Pág. {pagina} de {Math.max(1, paginasTotal)}
+                            </span>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={pagina <= 1 || loadingObservabilidad}
+                                    onClick={() => setPagina(p => Math.max(1, p - 1))}
+                                    className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground"
+                                >
+                                    Anterior
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={pagina >= paginasTotal || loadingObservabilidad}
+                                    onClick={() => setPagina(p => p + 1)}
+                                    className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground"
+                                >
+                                    Siguiente
+                                </Button>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* ===================================================================== */}
+                    {/* COLUMNA DERECHA: MOTOR ARRIBA + DETALLE DEL CLIENTE ABAJO           */}
+                    {/* ===================================================================== */}
+                    <section className={cn(
+                        "flex-col overflow-hidden min-h-0",
+                        mobileView === 'detalle' ? "flex" : "hidden xl:flex"
+                    )}>
+                        {/* Botón para volver en vista móvil */}
+                        <div className="xl:hidden pb-3">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setMobileView('lista')}
+                                className="h-8 -ml-2 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                            >
+                                <ArrowLeft className="h-3.5 w-3.5" />
+                                Volver al listado
+                            </Button>
+                        </div>
+
+                        <ScrollArea className="h-full">
+                            <div className="space-y-6 pb-12 pr-4">
+                                {/* SECCIÓN 1: ESTADO, MÉTRICAS FLOTANTES Y CONFIGURACIÓN DEL MOTOR */}
+                                <div className="space-y-4">
+                                    {/* Fila superior de controles */}
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <EstadoBadge estado={campana.estado} />
+
+                                            {/* Selector de modo flotante */}
+                                            <div className="inline-flex items-center rounded-full border border-border/40 bg-background/80 p-0.5 text-xs shadow-2xs backdrop-blur-xs">
+                                                <button
+                                                    type="button"
+                                                    disabled={cambiandoModo || accionMotor}
+                                                    onClick={() => campana.modo !== 'automatico' && alternarModo('automatico')}
+                                                    className={cn(
+                                                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
+                                                        campana.modo === 'automatico'
+                                                            ? "bg-foreground text-background shadow-2xs font-semibold"
+                                                            : "text-muted-foreground hover:text-foreground"
+                                                    )}
+                                                >
+                                                    <Bot className="h-3.5 w-3.5" /> Automático
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={cambiandoModo || accionMotor}
+                                                    onClick={() => campana.modo !== 'manual' && alternarModo('manual')}
+                                                    className={cn(
+                                                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
+                                                        campana.modo === 'manual'
+                                                            ? "bg-foreground text-background shadow-2xs font-semibold"
+                                                            : "text-muted-foreground hover:text-foreground"
+                                                    )}
+                                                >
+                                                    <MessageSquare className="h-3.5 w-3.5" /> Manual
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            {campana.estado === 'activa' || campana.estado === 'completada' ? (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={accionMotor || cambiandoModo}
+                                                    onClick={() => doAccion(() => clientesApi.pausarRecompra(token!), 'Motor pausado')}
+                                                    className="h-8 gap-1.5 rounded-full border-border/60 bg-background/80 px-3.5 text-xs font-medium shadow-2xs hover:bg-muted/50"
+                                                >
+                                                    <Pause className="h-3 w-3" /> Pausar
+                                                </Button>
+                                            ) : campana.estado === 'pausada_manual' ? (
+                                                <Button
+                                                    size="sm"
+                                                    disabled={accionMotor || cambiandoModo}
+                                                    onClick={() => doAccion(() => clientesApi.reanudarRecompra(token!), 'Motor reanudado')}
+                                                    className="h-8 gap-1.5 rounded-full px-3.5 text-xs font-medium shadow-2xs"
+                                                >
+                                                    <Play className="h-3 w-3" /> Reanudar
+                                                </Button>
+                                            ) : null}
+                                        </div>
+                                    </div>
+
+                                    {/* Métricas flotantes Apple (sin cajas ni bordes pesados) */}
+                                    <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-border/30 py-5 sm:grid-cols-4">
+                                        <FloatingMetric
+                                            label="Contactados"
+                                            value={campana.contactados}
+                                            sublabel={campana.modo === 'manual' ? 'enviados a mano' : `${campana.totalEnviados} mensajes usados`}
+                                        />
+                                        <FloatingMetric
+                                            label="Volvieron"
+                                            value={campana.volvieron}
+                                            sublabel={campana.contactados > 0 ? `${pct(campana.tasaContactados)} de retorno` : 'aún sin datos'}
+                                        />
+                                        <FloatingMetric
+                                            label="Recuperado"
+                                            value={formatCurrency(campana.plataRecuperada)}
+                                            sublabel="facturación atribuida"
+                                        />
+                                        <FloatingMetric
+                                            label="En cola"
+                                            value={campana.enCola}
+                                            sublabel={`hasta ${campana.cupoDiario}/día`}
+                                        />
+                                    </div>
+
+                                    {/* Ajuste de cupo y saldo flotante */}
+                                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground pt-0.5">
+                                        <div className="flex items-center gap-2">
+                                            <Gauge className="h-3.5 w-3.5 text-muted-foreground/70" />
+                                            {editandoCupo ? (
+                                                <div className="flex items-center gap-2">
+                                                    <span>Hasta</span>
+                                                    <StepperCupo value={cupo} onChange={setCupo} />
+                                                    <span>por día</span>
+                                                    <Button size="sm" disabled={accionMotor} onClick={guardarCupo} className="h-6 px-2.5 rounded-full text-xs">
+                                                        {accionMotor ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Listo'}
+                                                    </Button>
+                                                    <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => { setEditandoCupo(false); setCupo(campana.cupoDiario) }}>
+                                                        Cancelar
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <span>
+                                                    Ritmo: <strong className="text-foreground font-medium">{campana.cupoDiario} clientes/día</strong>
+                                                    {' · '}
+                                                    <button onClick={() => setEditandoCupo(true)} className="text-foreground hover:underline font-medium">
+                                                        Cambiar
+                                                    </button>
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            <Wallet className="h-3.5 w-3.5 text-muted-foreground/70" />
+                                            {campana.modo === 'automatico' ? (
+                                                <span>
+                                                    Saldo: <strong className={campana.saldoMarketing <= 0 ? 'text-orange-600' : 'text-foreground font-medium'}>{campana.saldoMarketing} mensajes</strong>
+                                                    {campana.saldoMarketing <= 0 && (
+                                                        <button onClick={onRecargar} className="text-foreground hover:underline ml-1 font-semibold">· Recargar</button>
+                                                    )}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted-foreground">Modo Manual · Sin costo de créditos</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Avisos contextuales sutiles */}
+                                    {campana.modo === 'manual' && (
+                                        <div className="rounded-xl border border-border/40 bg-background/80 p-3.5 text-xs text-muted-foreground shadow-2xs backdrop-blur-xs">
+                                            <span className="font-semibold text-foreground">Modo Manual: </span>
+                                            <span>El motor prepara los textos con cupón listo para cada cliente. Vos los copiás y enviás directamente desde WhatsApp sin costo de créditos.</span>
+                                        </div>
+                                    )}
+
+                                    {campana.estado === 'pausada_sin_saldo' && campana.modo === 'automatico' && (
+                                        <div className="rounded-xl border border-orange-200/50 bg-orange-50/50 dark:border-orange-950 dark:bg-orange-950/20 p-3.5 text-xs text-orange-900 dark:text-orange-200">
+                                            <span className="font-semibold">Créditos de marketing agotados: </span>
+                                            <span>Los que enviaste generaron {campana.volvieron} pedidos por {formatCurrency(campana.plataRecuperada)}. Recargá mensajes o cambiá a Modo Manual para seguir sin costo.</span>
+                                        </div>
+                                    )}
+
+                                    {campana.control > 0 && (
+                                        <div className="rounded-xl border border-border/30 bg-muted/20 p-3 text-xs text-muted-foreground">
+                                            <span className="font-semibold text-foreground">Atribución honesta: </span>
+                                            <span>Contactados al {pct(campana.tasaContactados)} vs Grupo de control al {pct(campana.tasaControl)} ({campana.control} comensales sin contactar). Recompra real generada por el motor.</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* SECCIÓN 2: DETALLE DEL CLIENTE SELECCIONADO */}
+                                <div className="border-t border-border/30 pt-6 space-y-4">
+                                    {tab === 'cola' ? (
+                                        itemCola ? (
+                                            <DetalleColaCliente
+                                                item={itemCola}
+                                                mensaje={mensajeCache[itemCola.id] ?? null}
+                                                cargandoMensaje={cargandoMensajeId === itemCola.id}
+                                                marcandoId={marcandoId}
+                                                copiadoId={copiadoId}
+                                                onCopiar={(txt) => void copiarTexto(txt, itemCola.id)}
+                                                onMarcarEnviado={() => void marcarEnviado(itemCola.id)}
+                                            />
+                                        ) : (
+                                            <EmptyDetail texto="Seleccioná un cliente de la lista para ver su mensaje listo." />
+                                        )
+                                    ) : tab === 'historial' ? (
+                                        itemHistorial ? (
+                                            <DetalleHistorialCliente item={itemHistorial} />
+                                        ) : (
+                                            <EmptyDetail texto="Seleccioná un despacho para consultar su estado y entrega." />
+                                        )
+                                    ) : (
+                                        itemCliente ? (
+                                            <DetalleClienteMotor item={itemCliente} />
+                                        ) : (
+                                            <EmptyDetail texto="Seleccioná un cliente para consultar sus protecciones y métricas." />
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        </ScrollArea>
+                    </section>
+                </div>
+            </main>
+        </div>
+    )
+}
+
+// =============================================================================
+// SUB-COMPONENTES DEL DETALLE FLOTANTE (ESTILO APPLE)
+// =============================================================================
+
+function DetalleColaCliente({
+    item,
+    mensaje,
+    cargandoMensaje,
+    marcandoId,
+    copiadoId,
+    onCopiar,
+    onMarcarEnviado,
+}: {
+    item: ColaRecompraItem
+    mensaje: MensajeColaData | null
+    cargandoMensaje: boolean
+    marcandoId: number | null
+    copiadoId: number | null
+    onCopiar: (txt: string) => void
+    onMarcarEnviado: () => void
+}) {
+    const meta = SEG_META[item.segmento]
+
+    return (
+        <div className="space-y-5">
+            {/* Cabecera del cliente */}
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3.5">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted/80 text-sm font-semibold tracking-tight text-foreground">
+                        {iniciales(item.clienteNombre || 'Cliente')}
+                    </div>
+                    <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                                {item.clienteNombre}
+                            </h2>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-2.5 py-0.5 text-xs font-medium text-foreground backdrop-blur-xs">
+                                <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                                {meta.label}
+                            </span>
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                                {item.poblacion === 'flujo' ? 'Flujo nuevo' : 'Stock'}
+                            </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground/80">
+                            {item.telefono ? `${item.telefono} · ` : ''}Prioridad #{item.posicionPrioridad} en cola
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Metadatos de recomendación */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+                {(mensaje?.horarioSugerido ?? item.horarioSugerido) && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-xs">
+                        <Clock className="h-3 w-3 text-muted-foreground/70" />
+                        <span>Recomendado: {mensaje?.horarioSugerido ?? item.horarioSugerido}</span>
+                    </span>
+                )}
+                {mensaje?.codigoDescuento && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-xs">
+                        <Ticket className="h-3 w-3 text-muted-foreground/70" />
+                        <span className="font-mono text-foreground font-semibold">{mensaje.codigoDescuento}</span>
+                        <span>({mensaje.descuento}% OFF)</span>
+                    </span>
+                )}
+            </div>
+
+            {/* Mensaje preparado para enviar */}
+            <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                        Mensaje sugerido para WhatsApp
+                    </span>
+                    {mensaje?.texto && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onCopiar(mensaje.texto)}
+                            className="h-6 px-2 rounded-full text-xs text-muted-foreground hover:text-foreground gap-1"
+                        >
+                            {copiadoId === item.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                            <span>{copiadoId === item.id ? 'Copiado' : 'Copiar'}</span>
+                        </Button>
+                    )}
+                </div>
+
+                {cargandoMensaje ? (
+                    <div className="space-y-2 p-4 rounded-2xl bg-white/60 dark:bg-muted/20">
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-1/2" />
+                    </div>
+                ) : mensaje?.texto ? (
+                    <div className="rounded-2xl border border-border/30 bg-white dark:bg-muted/30 p-4 text-xs font-sans leading-relaxed text-foreground whitespace-pre-wrap select-all shadow-2xs">
+                        {mensaje.texto}
+                    </div>
+                ) : (
+                    <div className="p-4 text-xs text-muted-foreground">
+                        No se pudo previsualizar el mensaje.
+                    </div>
+                )}
+            </div>
+
+            {/* Acciones operativas estilo Apple */}
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+                {mensaje?.waMeUrl && (
+                    <Button
+                        type="button"
+                        onClick={() => window.open(mensaje.waMeUrl!, '_blank')}
+                        className="h-9 rounded-full px-5 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 shadow-2xs gap-1.5"
+                    >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Abrir en WhatsApp
+                    </Button>
+                )}
+
+                {mensaje?.texto && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => onCopiar(mensaje.texto)}
+                        className="h-9 rounded-full px-4 text-xs font-medium border-border/60 bg-background/80 hover:bg-muted/50 shadow-2xs gap-1.5"
+                    >
+                        {copiadoId === item.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiadoId === item.id ? 'Copiado' : 'Copiar mensaje'}
+                    </Button>
+                )}
+
+                <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={marcandoId === item.id}
+                    onClick={onMarcarEnviado}
+                    className="h-9 rounded-full px-4 text-xs font-medium shadow-2xs gap-1.5 ml-auto"
+                >
+                    {marcandoId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+                    Marcar como enviado
+                </Button>
+            </div>
+        </div>
+    )
+}
+
+function DetalleHistorialCliente({ item }: { item: HistorialRecompraItem }) {
+    const meta = SEG_META[item.segmento]
+
+    return (
+        <div className="space-y-5">
+            <div className="flex items-center gap-3.5">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted/80 text-sm font-semibold tracking-tight text-foreground">
+                    {iniciales(item.clienteNombre || 'Cliente')}
+                </div>
+                <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                            {item.clienteNombre}
+                        </h2>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-2.5 py-0.5 text-xs font-medium text-foreground backdrop-blur-xs">
+                            <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                            {meta.label}
+                        </span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">
+                            {item.estadoDespacho === 'entregado' ? 'Entregado' : 'Fallido'}
+                        </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground/80">
+                        {item.telefono ? `${item.telefono} · ` : ''}Enviado el {formatDateTime(item.fechaHora)}
+                    </p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 border-y border-border/30 py-4 sm:grid-cols-4">
+                <FloatingMetric label="Origen" value={item.origenContacto === 'automatico' ? 'Goteo' : 'Manual'} />
+                <FloatingMetric label="Cupón" value={item.codigoDescuento ?? 'Sin cupón'} />
+                <FloatingMetric label="Población" value={item.poblacion === 'flujo' ? 'Flujo' : 'Stock'} />
+                <FloatingMetric label="Estado" value={item.estadoDespacho === 'entregado' ? 'Entregado' : 'Falló'} />
+            </div>
+
+            {item.errorEnvio && (
+                <div className="rounded-xl border border-rose-200/50 bg-rose-50/50 dark:bg-rose-950/20 p-3.5 text-xs text-rose-800 dark:text-rose-300">
+                    <span className="font-semibold">Detalle de error: </span>
+                    <span>{item.errorEnvio}</span>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function DetalleClienteMotor({ item }: { item: ClienteMotorRecompra }) {
+    const meta = SEG_META[item.segmento]
+
+    return (
+        <div className="space-y-5">
+            <div className="flex items-center gap-3.5">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted/80 text-sm font-semibold tracking-tight text-foreground">
+                    {iniciales(item.clienteNombre || 'Cliente')}
+                </div>
+                <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                            {item.clienteNombre}
+                        </h2>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-2.5 py-0.5 text-xs font-medium text-foreground backdrop-blur-xs">
+                            <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                            {meta.label}
+                        </span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">
+                            {item.rol === 'control' ? 'Control' : 'Contactable'}
+                        </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground/80">
+                        {item.telefono ? `${item.telefono} · ` : ''}Estado: {item.estado}
+                    </p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 border-y border-border/30 py-4 sm:grid-cols-3">
+                <FloatingMetric label="Ticket promedio" value={formatCurrency(item.ticketPromedio)} />
+                <FloatingMetric label="Último pedido" value={formatDateTime(item.ultimoPedidoAt)} />
+                <FloatingMetric label="Score prioridad" value={item.prioridad.toLocaleString('es-AR')} />
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    Protecciones activas
+                </span>
+                <div className="flex flex-wrap gap-2 pt-1">
+                    {item.protecciones.optOut && (
+                        <span className="rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-medium text-rose-600 dark:text-rose-400">
+                            Opt-out
+                        </span>
+                    )}
+                    {item.protecciones.cooldownHasta && (
+                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            Cooldown activo
+                        </span>
+                    )}
+                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        {item.protecciones.toques30Dias}/{item.protecciones.maximoToques30Dias} toques en 30 días
+                    </span>
+                    {!item.protecciones.optOut && !item.protecciones.cooldownHasta && (
+                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                            Disponible para contactar
+                        </span>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// =============================================================================
+// SUB-COMPONENTES DE FILAS FLOTANTES (ESTILO CLIENTROW EN CLIENTES.TSX)
+// =============================================================================
+
+function RowCola({ item, selected, onClick }: { item: ColaRecompraItem; selected: boolean; onClick: () => void }) {
+    const meta = SEG_META[item.segmento]
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                "flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors",
+                selected
+                    ? "border-l-[3px] border-l-primary bg-muted/40 shadow-2xs"
+                    : "bg-white hover:bg-muted/40 dark:bg-muted/20 shadow-2xs"
+            )}
+        >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-foreground">
+                {iniciales(item.clienteNombre || 'Cliente')}
+            </div>
+
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{item.clienteNombre}</p>
+                    <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0">#{item.posicionPrioridad}</span>
+                </div>
+
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                    <span>{meta.label}</span>
+                    <span>·</span>
+                    <span>{item.horarioSugerido ?? formatDay(item.fechaProyectada)}</span>
+                </div>
+            </div>
+
+            <ChevronRightIcon className={cn("h-4 w-4 shrink-0", selected ? "text-primary" : "text-muted-foreground/30")} />
+        </button>
+    )
+}
+
+function RowHistorial({ item, selected, onClick }: { item: HistorialRecompraItem; selected: boolean; onClick: () => void }) {
+    const meta = SEG_META[item.segmento]
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                "flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors",
+                selected
+                    ? "border-l-[3px] border-l-primary bg-muted/40 shadow-2xs"
+                    : "bg-white hover:bg-muted/40 dark:bg-muted/20 shadow-2xs"
+            )}
+        >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-foreground">
+                {iniciales(item.clienteNombre || 'Cliente')}
+            </div>
+
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{item.clienteNombre}</p>
+                    <span className="text-[10px] text-muted-foreground/70 shrink-0">
+                        {item.estadoDespacho === 'entregado' ? 'Entregado' : 'Falló'}
+                    </span>
+                </div>
+
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                    <span>{meta.label}</span>
+                    <span>·</span>
+                    <span>{formatDateTime(item.fechaHora)}</span>
+                </div>
+            </div>
+
+            <ChevronRightIcon className={cn("h-4 w-4 shrink-0", selected ? "text-primary" : "text-muted-foreground/30")} />
+        </button>
+    )
+}
+
+function RowCliente({ item, selected, onClick }: { item: ClienteMotorRecompra; selected: boolean; onClick: () => void }) {
+    const meta = SEG_META[item.segmento]
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                "flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors",
+                selected
+                    ? "border-l-[3px] border-l-primary bg-muted/40 shadow-2xs"
+                    : "bg-white hover:bg-muted/40 dark:bg-muted/20 shadow-2xs"
+            )}
+        >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-foreground">
+                {iniciales(item.clienteNombre || 'Cliente')}
+            </div>
+
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{item.clienteNombre}</p>
+                    <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                        {item.rol === 'control' ? 'Control' : 'Contactable'}
+                    </span>
+                </div>
+
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                    <span>{meta.label}</span>
+                    <span>·</span>
+                    <span>Ticket {formatCurrency(item.ticketPromedio)}</span>
+                </div>
+            </div>
+
+            <ChevronRightIcon className={cn("h-4 w-4 shrink-0", selected ? "text-primary" : "text-muted-foreground/30")} />
+        </button>
+    )
+}
+
+// =============================================================================
+// SUB-COMPONENTES AUXILIARES
+// =============================================================================
+
+function TabPill({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium transition-colors shrink-0",
+                active
+                    ? "bg-foreground text-background shadow-2xs"
+                    : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+        >
+            {icon}
+            <span>{children}</span>
+        </button>
+    )
+}
+
+function FloatingMetric({ label, value, sublabel }: { label: string; value: string | number; sublabel?: string }) {
+    return (
+        <div className="flex flex-col">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">{label}</span>
+            <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">{value}</span>
+            {sublabel && <span className="mt-0.5 text-[11px] text-muted-foreground">{sublabel}</span>}
+        </div>
+    )
+}
+
+function EstadoBadge({ estado }: { estado: EstadoCampana }) {
+    const map: Record<EstadoCampana, { label: string; dot: string }> = {
+        activa: { label: 'Activo', dot: 'bg-emerald-500' },
+        completada: { label: 'Automático', dot: 'bg-emerald-500' },
+        pausada_manual: { label: 'Pausado', dot: 'bg-muted-foreground' },
+        pausada_sin_saldo: { label: 'Pausado sin saldo', dot: 'bg-orange-500' },
+    }
+    const m = map[estado]
+    return (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-2.5 py-1 text-xs font-medium text-foreground backdrop-blur-xs">
+            <span className={cn("h-1.5 w-1.5 rounded-full", m.dot, estado === 'activa' && "animate-pulse")} />
+            {m.label}
+        </span>
+    )
+}
+
+function StepperCupo({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+    const clamp = (v: number) => Math.max(CUPO_MIN, Math.min(CUPO_MAX, v))
+    return (
+        <div className="inline-flex items-center rounded-full border border-border/60 bg-background shadow-2xs">
+            <button className="w-6 h-6 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={value <= CUPO_MIN} onClick={() => onChange(clamp(value - 5))}>−</button>
+            <span className="w-7 text-center text-xs font-semibold text-foreground tabular-nums">{value}</span>
+            <button className="w-6 h-6 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={value >= CUPO_MAX} onClick={() => onChange(clamp(value + 5))}>+</button>
+        </div>
+    )
+}
+
+function EmptyList({ texto, subtexto }: { texto: string; subtexto: string }) {
+    return (
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+            <Users className="h-8 w-8 text-muted-foreground/30 mb-2.5" />
+            <p className="text-sm font-medium text-foreground">{texto}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{subtexto}</p>
+        </div>
+    )
+}
+
+function EmptyDetail({ texto }: { texto: string }) {
+    return (
+        <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+            <User className="h-8 w-8 text-muted-foreground/30 mb-2.5" />
+            <p className="text-sm font-medium text-foreground">Ningún cliente seleccionado</p>
+            <p className="text-xs text-muted-foreground mt-0.5 max-w-xs">{texto}</p>
+        </div>
+    )
+}
+
+// =============================================================================
+// APAGADO — EL PLAN DE ENCENDIDO (ESTILO APPLE)
 // =============================================================================
 function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => void }) {
     const token = useAuthStore(state => state.token)
@@ -189,8 +1300,8 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
             const res = await clientesApi.activarRecompra(token, { cupoDiario: cupo, modo }) as { success: boolean; data?: { vacio?: boolean } }
             if (res.success) {
                 setConfirmOpen(false)
-                if (res.data?.vacio) toast.info('No hay clientes para recuperar ahora mismo')
-                else toast.success(modo === 'automatico' ? 'Motor de recompra encendido. Empezó a gotear con tu marca.' : 'Motor de recompra encendido en modo manual.')
+                if (res.data?.vacio) toast.info('No hay clientes para recuperar en este momento')
+                else toast.success(modo === 'automatico' ? 'Motor de recompra encendido en automático.' : 'Motor encendido en modo manual.')
                 onActivado()
             }
         } catch (err) {
@@ -207,36 +1318,24 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
 
     if (vacio) {
         return (
-            <div className="text-center py-16">
-                <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+            <div className="text-center py-20">
+                <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="w-7 h-7 text-foreground" />
                 </div>
-                <h1 className="text-xl font-semibold text-foreground">Tu base está al día</h1>
-                <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto">
-                    No hay clientes enfriados para recuperar en este momento. Cuando alguno se pase de su ritmo,
-                    el motor lo va a detectar solo. Volvé más adelante.
+                <h2 className="text-xl font-bold tracking-tight text-foreground">Tu base está al día</h2>
+                <p className="text-sm text-muted-foreground mt-1.5 max-w-sm mx-auto">
+                    No hay clientes enfriados para recuperar en este momento. Cuando alguno baje su ritmo habitual,
+                    el motor lo detectará solo.
                 </p>
             </div>
         )
     }
 
     return (
-        <div>
-            {/* Hero */}
-            <div className="flex items-center gap-3 mb-5">
-                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-muted flex items-center justify-center text-foreground shrink-0">
-                    <Rocket className="w-6 h-6" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight text-foreground">Motor de Recompra</h1>
-                    <p className="text-[13px] text-muted-foreground">Encendelo una vez. El resto es automático o manual con un clic.</p>
-                </div>
-            </div>
-
-            {/* El PLAN en prosa (no un formulario) */}
-            <div className="rounded-2xl border border-border/60 bg-white dark:bg-muted/30 p-5 sm:p-6">
-                <p className="text-[15px] leading-relaxed text-foreground">
-                    Encontré <span className="font-semibold">{plan.totalDetectados} clientes</span> que se enfriaron
+        <div className="space-y-6">
+            <div className="rounded-2xl border border-border/40 bg-white/80 dark:bg-muted/30 p-6 shadow-2xs backdrop-blur-xs">
+                <p className="text-base leading-relaxed text-foreground">
+                    Encontré <strong className="font-semibold">{plan.totalDetectados} clientes</strong> que se enfriaron
                     {plan.porSegmento.length > 0 && (
                         <>: {plan.porSegmento.map((s, i) => (
                             <span key={s.segmento}>
@@ -246,65 +1345,68 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                         ))}</>
                     )}.
                     {primer && (
-                        <> Propongo <span className="font-semibold">arrancar por los {primerCount} {primer.label.toLowerCase()}</span> —
-                        los más fáciles de recuperar — a un ritmo de <span className="font-semibold">hasta {cupo} por día</span>,
-                        priorizando los de mayor ticket.</>
-                    )}
-                    {plan.diasCubiertos > 0 ? (
-                        <> Con tus <span className="font-semibold">{plan.saldoMarketing} mensajes</span> cubrimos
-                        los primeros <span className="font-semibold">{plan.diasCubiertos} {plan.diasCubiertos === 1 ? 'día' : 'días'}</span> en modo automático.</>
-                    ) : (
-                        <> <span className="font-medium text-orange-600 dark:text-orange-400">No te quedan mensajes de campaña</span>: podés usar el <span className="font-medium">Modo Manual</span> gratis o recargar para el automático.</>
+                        <> Propongo arrancar por los <strong className="font-semibold">{primerCount} {primer.label.toLowerCase()}</strong> a un ritmo de <strong className="font-semibold">hasta {cupo} por día</strong>, priorizando mayor ticket histórico.</>
                     )}
                 </p>
 
-                {/* Config en modo lectura (una oración + Cambiar), no un panel de ajustes */}
+                {/* Ajuste de ritmo */}
                 <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                    <Gauge className="w-4 h-4 shrink-0" />
+                    <Gauge className="w-4 h-4 text-muted-foreground/70" />
                     {editandoCupo ? (
                         <div className="flex items-center gap-2">
-                            <span>Enviando hasta</span>
+                            <span>Hasta</span>
                             <StepperCupo value={cupo} onChange={setCupo} />
                             <span>por día</span>
-                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditandoCupo(false)}>Listo</Button>
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setEditandoCupo(false)}>Listo</Button>
                         </div>
                     ) : (
                         <span>
-                            Enviando hasta <span className="font-medium text-foreground">{cupo}/día</span>, primero {primer?.label.toLowerCase() ?? 'los más fáciles'}
+                            Enviando hasta <span className="font-medium text-foreground">{cupo}/día</span>
                             {' · '}
                             <button onClick={() => setEditandoCupo(true)} className="text-foreground hover:underline font-medium">Cambiar</button>
                         </span>
                     )}
                 </div>
 
-                {/* Selector de Modo */}
-                <div className="mt-5 pt-4 border-t border-border/50">
-                    <p className="text-xs font-semibold text-foreground uppercase tracking-wider mb-2">Elegí cómo querés enviar</p>
+                {/* Selector de modo */}
+                <div className="mt-6 pt-5 border-t border-border/30">
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Modalidad de envío</p>
                     <div className="grid sm:grid-cols-2 gap-3">
                         <button
                             type="button"
                             onClick={() => setModo('automatico')}
-                            className={`text-left p-3.5 rounded-xl border transition-all ${modo === 'automatico' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border bg-muted/20 hover:border-border/80'}`}
+                            className={cn(
+                                "text-left p-4 rounded-xl border transition-all",
+                                modo === 'automatico'
+                                    ? "border-foreground bg-foreground/5 ring-1 ring-foreground"
+                                    : "border-border/60 bg-muted/20 hover:border-border"
+                            )}
                         >
                             <div className="flex items-center gap-2 font-semibold text-sm text-foreground">
-                                <Bot className="w-4 h-4 text-primary" />
+                                <Bot className="w-4 h-4" />
                                 Modo Automático
                             </div>
                             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                El motor envía solo vía WhatsApp oficial según el cupo diario. Consume créditos de marketing.
+                                El motor envía los mensajes solo según el cupo diario. Consume créditos de marketing.
                             </p>
                         </button>
+
                         <button
                             type="button"
                             onClick={() => setModo('manual')}
-                            className={`text-left p-3.5 rounded-xl border transition-all ${modo === 'manual' ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 ring-1 ring-emerald-600' : 'border-border bg-muted/20 hover:border-border/80'}`}
+                            className={cn(
+                                "text-left p-4 rounded-xl border transition-all",
+                                modo === 'manual'
+                                    ? "border-foreground bg-foreground/5 ring-1 ring-foreground"
+                                    : "border-border/60 bg-muted/20 hover:border-border"
+                            )}
                         >
                             <div className="flex items-center gap-2 font-semibold text-sm text-foreground">
-                                <MessageSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <MessageSquare className="w-4 h-4" />
                                 Modo Manual
                             </div>
                             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                El motor prepara los textos y cupones. Vos los copiás y enviás desde tu propio WhatsApp. <strong className="text-emerald-700 dark:text-emerald-400">Sin costo de créditos</strong>.
+                                El motor arma los mensajes con cupón. Vos los enviás por WhatsApp sin costo de créditos.
                             </p>
                         </button>
                     </div>
@@ -313,793 +1415,47 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
                 <Button
                     onClick={() => setConfirmOpen(true)}
                     size="lg"
-                    className="mt-5 h-12 px-8 gap-2 text-base w-full sm:w-auto"
+                    className="mt-6 h-11 px-6 rounded-full text-sm font-medium shadow-2xs gap-2"
                 >
-                    <Zap className="w-5 h-5" /> Activar motor {modo === 'manual' ? '(Modo Manual)' : '(Modo Automático)'}
+                    <Zap className="w-4 h-4" /> Activar motor {modo === 'manual' ? '(Manual)' : '(Automático)'}
                 </Button>
             </div>
 
-            {/* Por qué gotea (feature, no restricción) + grupo de control */}
-            <div className="grid sm:grid-cols-2 gap-3 mt-4">
-                <ExplainCard icon={Gauge} title="Gotea, no satura"
-                    text={`Manda de a poco (hasta ${cupo}/día) para cuidar tu número y no llenarte la cocina de golpe. Cada día prioriza a quien más conviene.`} />
-                <ExplainCard icon={FlaskConical} title="Mide de verdad"
-                    text={`Aparta ${plan.totalControl} clientes sin contactar (grupo de control). Comparando cuántos vuelven con y sin mensaje, vas a ver la plata real que generó — no un número inflado.`} />
-            </div>
-
-            {/* Confirmación */}
+            {/* Diálogo de confirmación */}
             <Dialog open={confirmOpen} onOpenChange={(o) => !activando && setConfirmOpen(o)}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-muted-foreground" /> Encender el motor ({modo === 'automatico' ? 'Automático' : 'Manual'})
-                        </DialogTitle>
+                        <DialogTitle>Encender el motor de recompra</DialogTitle>
                         <DialogDescription>
-                            {modo === 'automatico' ? (
-                                <>
-                                    A partir de ahora el motor va a ir contactando solo a los {plan.totalContactar} clientes,
-                                    hasta {cupo} por día, empezando por los de mejor retorno. Apartamos {plan.totalControl} como
-                                    grupo de control. No tenés que hacer nada más: podés pausarlo cuando quieras.
-                                </>
-                            ) : (
-                                <>
-                                    El motor va a organizar y priorizar tu cola diaria de hasta {cupo} clientes.
-                                    Podrás ver los mensajes armados con cupón y carrito listo, copiarlos o abrirlos directamente en WhatsApp
-                                    y marcarlos como enviados para medir el retorno generado.
-                                </>
-                            )}
+                            {modo === 'automatico'
+                                ? `El motor contactará hasta ${cupo} clientes por día de forma automática. Podés pausarlo cuando quieras.`
+                                : `El motor preparará la cola de hasta ${cupo} clientes diarios para que los envíes manualmente.`}
                         </DialogDescription>
                     </DialogHeader>
-                    {modo === 'automatico' ? (
-                        <div className="rounded-lg border bg-white dark:bg-muted/40 p-3">
-                            <p className="text-[11px] text-muted-foreground">
-                                Cada mensaje consume 1 crédito de <span className="font-medium">campaña (marketing)</span>. Si se agotan,
-                                el motor se <span className="font-medium">pausa solo</span> (nunca genera deuda) y te avisa una vez con el resultado.
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="rounded-lg border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-3">
-                            <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
-                                <span className="font-semibold">Sin costo de créditos:</span> en modo manual vos enviás desde tu WhatsApp y no se descuentan créditos de tu saldo de marketing.
-                            </p>
-                        </div>
-                    )}
-                    <DialogFooter className="gap-2 sm:gap-2">
-                        <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={activando}>Cancelar</Button>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={activando}>Cancelar</Button>
                         <Button onClick={activar} disabled={activando} className="gap-2">
                             {activando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                            {activando ? 'Encendiendo…' : 'Activar motor'}
+                            Confirmar activación
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
-    )
-}
-
-// =============================================================================
-// ENCENDIDO — el DASHBOARD (marcador diario). El dueño mira, no opera.
-// =============================================================================
-function PantallaEncendido({ campana, onCambio, onRecargar }: {
-    campana: Dashboard
-    onCambio: () => void
-    onRecargar: () => void
-}) {
-    const token = useAuthStore(state => state.token)
-    const [accion, setAccion] = useState(false)
-    const [cambiandoModo, setCambiandoModo] = useState(false)
-    const [editandoCupo, setEditandoCupo] = useState(false)
-    const [cupo, setCupo] = useState(campana.cupoDiario)
-
-    const sinSaldo = campana.estado === 'pausada_sin_saldo'
-    const pausadaManual = campana.estado === 'pausada_manual'
-    const activa = campana.estado === 'activa' || campana.estado === 'completada'
-    const diasCubiertos = campana.cupoDiario > 0 ? Math.floor(campana.saldoMarketing / campana.cupoDiario) : 0
-
-    const doAccion = async (fn: () => Promise<unknown>, okMsg: string) => {
-        if (!token) return
-        setAccion(true)
-        try {
-            const res = await fn() as { success: boolean }
-            if (res.success) { toast.success(okMsg); onCambio() }
-        } catch {
-            toast.error('No se pudo completar la acción')
-        } finally {
-            setAccion(false)
-        }
-    }
-
-    const alternarModo = async (nuevoModo: ModoRecompra) => {
-        if (!token || cambiandoModo) return
-        setCambiandoModo(true)
-        try {
-            const res = await clientesApi.modoRecompra(token, nuevoModo) as { success: boolean }
-            if (res.success) {
-                toast.success(`Cambiado a Modo ${nuevoModo === 'automatico' ? 'Automático' : 'Manual'}`)
-                onCambio()
-            }
-        } catch {
-            toast.error('No se pudo cambiar el modo del motor')
-        } finally {
-            setCambiandoModo(false)
-        }
-    }
-
-    const guardarCupo = async () => {
-        if (!token) return
-        setAccion(true)
-        try {
-            const res = await clientesApi.configRecompra(token, cupo) as { success: boolean; data?: { cupoDiario: number } }
-            if (res.success) { toast.success('Cupo actualizado'); setEditandoCupo(false); onCambio() }
-        } catch {
-            toast.error('No se pudo actualizar el cupo')
-        } finally {
-            setAccion(false)
-        }
-    }
-
-    const uplift = campana.tasaContactados - campana.tasaControl
-
-    return (
-        <div>
-            {/* Encabezado con estado + modo + pausa/reanudación */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                    <EstadoBadge estado={campana.estado} />
-                    <div className="inline-flex items-center rounded-lg border border-border/80 bg-white dark:bg-muted/40 p-0.5 text-xs shadow-sm">
-                        <button
-                            type="button"
-                            disabled={cambiandoModo || accion}
-                            onClick={() => campana.modo !== 'automatico' && alternarModo('automatico')}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all ${campana.modo === 'automatico' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                            <Bot className="w-3.5 h-3.5" /> Automático
-                        </button>
-                        <button
-                            type="button"
-                            disabled={cambiandoModo || accion}
-                            onClick={() => campana.modo !== 'manual' && alternarModo('manual')}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all ${campana.modo === 'manual' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                            <MessageSquare className="w-3.5 h-3.5" /> Manual
-                        </button>
-                    </div>
-                    <h1 className="text-xl font-semibold tracking-tight text-foreground">Motor de Recompra</h1>
-                </div>
-                <div className="flex items-center gap-2">
-                    {activa && (
-                        <Button variant="outline" size="sm" disabled={accion || cambiandoModo}
-                            onClick={() => doAccion(() => clientesApi.pausarRecompra(token!), 'Motor pausado')}
-                            className="h-8 gap-1.5 text-xs">
-                            <Pause className="w-3.5 h-3.5" /> Pausar
-                        </Button>
-                    )}
-                    {pausadaManual && (
-                        <Button size="sm" disabled={accion || cambiandoModo}
-                            onClick={() => doAccion(() => clientesApi.reanudarRecompra(token!), 'Motor reanudado')}
-                            className="h-8 gap-1.5 text-xs">
-                            <Play className="w-3.5 h-3.5" /> Reanudar
-                        </Button>
-                    )}
-                </div>
-            </div>
-            <p className="text-[13px] text-muted-foreground mb-5">
-                {campana.contactados} contactados · <span className="text-foreground font-medium">{campana.volvieron} volvieron a pedir</span> · {formatCurrency(campana.plataRecuperada)} recuperados
-            </p>
-
-            {/* Banner de Modo Manual */}
-            {campana.modo === 'manual' && (
-                <div className="mb-5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/80 dark:bg-emerald-950/30 p-4">
-                    <div className="flex items-start gap-3">
-                        <MessageSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">Modo Manual activo: vos enviás con un clic</p>
-                            <p className="text-xs text-emerald-800/90 dark:text-emerald-300/90 mt-0.5 leading-relaxed">
-                                El motor arma y prioriza la cola de clientes a recuperar pero <span className="font-semibold">no envía mensajes automáticamente ni consume créditos de marketing</span>.
-                                En la pestaña <span className="font-semibold">Próximos</span> podés copiar el mensaje prearmado con cupón y carrito listo, abrirlo en WhatsApp y marcarlo como enviado.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Aviso de saldo agotado (solo relevante en modo automático) */}
-            {sinSaldo && campana.modo === 'automatico' && (
-                <div className="mb-5 rounded-xl border border-orange-200 dark:border-orange-900 bg-orange-50/70 dark:bg-orange-950/30 p-4">
-                    <div className="flex items-start gap-3">
-                        <Wallet className="w-5 h-5 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-orange-900 dark:text-orange-200">Pausado: se terminaron tus mensajes de campaña</p>
-                            <p className="text-xs text-orange-800/80 dark:text-orange-300/80 mt-0.5 leading-relaxed">
-                                Los que enviaste generaron <span className="font-semibold">{campana.volvieron} {campana.volvieron === 1 ? 'pedido' : 'pedidos'} por {formatCurrency(campana.plataRecuperada)}</span>.
-                                {campana.enCola > 0 && <> Quedan <span className="font-semibold">{campana.enCola} clientes en cola</span>.</>} Recargá mensajes o cambiá a <span className="font-semibold">Modo Manual</span> para continuar enviando por tu cuenta sin costo.
-                            </p>
-                            <div className="flex items-center gap-2 mt-3">
-                                <Button size="sm" onClick={onRecargar} className="h-8 gap-1.5 text-xs bg-orange-600 hover:bg-orange-700 text-white">
-                                    <Wallet className="w-3.5 h-3.5" /> Recargar mensajes
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => alternarModo('manual')} className="h-8 gap-1.5 text-xs">
-                                    <MessageSquare className="w-3.5 h-3.5" /> Cambiar a Modo Manual
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {pausadaManual && (
-                <div className="mb-5 rounded-xl border border-border bg-white dark:bg-muted/40 p-4 flex items-start gap-3">
-                    <Pause className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                        El motor está pausado. No se pierde nada: los {campana.enCola} clientes en cola te esperan.
-                        Cuando reanudes, sigue goteando desde donde quedó.
-                    </p>
-                </div>
-            )}
-
-            {/* Marcador: consumo SIEMPRE junto a retorno */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <StatCard label="Contactados" value={campana.contactados.toString()}
-                    hint={campana.modo === 'manual' ? 'enviados manualmente' : `${campana.totalEnviados} mensajes usados`} icon={<Send className="w-4 h-4" />} />
-                <StatCard label="Volvieron a pedir" value={campana.volvieron.toString()}
-                    hint={campana.contactados > 0 ? `${pct(campana.tasaContactados)} de los contactados` : 'todavía sin datos'}
-                    icon={<Repeat className="w-4 h-4" />} />
-                <StatCard label="Recuperado" value={formatCurrency(campana.plataRecuperada)}
-                    hint="facturación de los que volvieron" icon={<DollarSign className="w-4 h-4" />} />
-                <StatCard label="En cola" value={campana.enCola.toString()}
-                    hint={activa ? `hasta ${campana.cupoDiario} por día` : 'en espera'} icon={<Users className="w-4 h-4" />} />
-            </div>
-
-            {/* Atribución honesta: contactados vs control */}
-            {campana.control > 0 && (
-                <div className="mt-4 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/30 p-4">
-                    <div className="flex items-start gap-3">
-                        <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                            <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">Atribución honesta</p>
-                            <p className="text-xs text-blue-800/80 dark:text-blue-300/80 mt-0.5 leading-relaxed">
-                                Los contactados vuelven al <span className="font-semibold">{pct(campana.tasaContactados)}</span>;
-                                el grupo de control ({campana.control} sin contactar), al <span className="font-semibold">{pct(campana.tasaControl)}</span>.
-                                {uplift > 0
-                                    ? <> El motor sumó <span className="font-semibold">+{pct(uplift)}</span> de recompra por encima de lo que pasaba solo.</>
-                                    : <> Todavía es pronto para leer el impacto: la recompra se mide en semanas.</>}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Config en modo lectura: "Enviando hasta N/día · Cambiar" */}
-            <div className="mt-5 rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background p-4">
-                <div className="flex items-center gap-2 text-sm">
-                    <Gauge className="w-4 h-4 text-muted-foreground shrink-0" />
-                    {editandoCupo ? (
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-muted-foreground">Procesando hasta</span>
-                            <StepperCupo value={cupo} onChange={setCupo} />
-                            <span className="text-muted-foreground">por día</span>
-                            <Button size="sm" disabled={accion} onClick={guardarCupo} className="h-7 px-3 text-xs">
-                                {accion ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Guardar'}
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditandoCupo(false); setCupo(campana.cupoDiario) }}>Cancelar</Button>
-                        </div>
-                    ) : (
-                        <span className="text-muted-foreground">
-                            {campana.modo === 'automatico' ? 'Enviando' : 'Procesando'} hasta <span className="font-medium text-foreground">{campana.cupoDiario}/día</span> (máx. {CUPO_MAX} por seguridad)
-                            {' · '}
-                            <button onClick={() => setEditandoCupo(true)} className="text-foreground hover:underline font-medium inline-flex items-center gap-1">
-                                <Pencil className="w-3 h-3" /> Cambiar
-                            </button>
-                        </span>
-                    )}
-                </div>
-                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                    <Wallet className="w-3.5 h-3.5 shrink-0" />
-                    {campana.modo === 'automatico' ? (
-                        <>
-                            Saldo de campaña: <span className={`font-medium ${campana.saldoMarketing <= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-foreground'}`}>{campana.saldoMarketing} mensajes</span>
-                            <span>· {diasCubiertos} {diasCubiertos === 1 ? 'día cubierto' : 'días cubiertos'} al ritmo actual</span>
-                            {campana.saldoMarketing <= 0 && (
-                                <button onClick={onRecargar} className="text-foreground hover:underline font-medium">· Recargar</button>
-                            )}
-                        </>
-                    ) : (
-                        <span className="text-emerald-700 dark:text-emerald-400 font-medium">Modo Manual: sin costo ni consumo de créditos</span>
-                    )}
-                </div>
-            </div>
-
-            {campana.estado === 'completada' && (
-                <p className="mt-4 text-xs text-muted-foreground flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    Ya recuperaste todo el backlog. El motor sigue encendido: cada vez que un cliente se pase de su ritmo, entra a la cola {campana.modo === 'automatico' ? 'para enviarse solo' : 'para que lo envíes con un clic'}.
-                </p>
-            )}
-
-            <ObservabilidadMotor modo={campana.modo} onCambio={onCambio} />
-        </div>
-    )
-}
-
-type ObservabilidadTab = 'cola' | 'historial' | 'clientes'
-
-function ObservabilidadMotor({ modo, onCambio }: { modo: ModoRecompra; onCambio: () => void }) {
-    const token = useAuthStore(state => state.token)
-    const [tab, setTab] = useState<ObservabilidadTab>('cola')
-    const [pagina, setPagina] = useState(1)
-    const [segmento, setSegmento] = useState('')
-    const [poblacion, setPoblacion] = useState('')
-    const [estadoCliente, setEstadoCliente] = useState('')
-    const [loading, setLoading] = useState(true)
-    const [errorCarga, setErrorCarga] = useState<string | null>(null)
-    const [cola, setCola] = useState<PaginadoRecompra<ColaRecompraItem> | null>(null)
-    const [historial, setHistorial] = useState<PaginadoRecompra<HistorialRecompraItem> | null>(null)
-    const [clientes, setClientes] = useState<PaginadoRecompra<ClienteMotorRecompra> | null>(null)
-
-    const cargar = useCallback(async (silencioso = false) => {
-        if (!token) return
-        if (!silencioso) setLoading(true)
-        try {
-            if (tab === 'cola') {
-                const res = await clientesApi.recompraCola(token, { pagina, limite: 25, segmento, poblacion })
-                setCola(res.data)
-            } else if (tab === 'historial') {
-                const res = await clientesApi.recompraHistorial(token, { pagina, limite: 25, segmento })
-                setHistorial(res.data)
-            } else {
-                const res = await clientesApi.recompraClientes(token, { pagina, limite: 25, segmento, poblacion, estado: estadoCliente })
-                setClientes(res.data)
-            }
-            setErrorCarga(null)
-        } catch (error) {
-            const mensaje = error instanceof ApiError && typeof error.response?.message === 'string'
-                ? error.response.message
-                : 'No se pudo actualizar la observabilidad del motor'
-            setErrorCarga(mensaje)
-            if (!silencioso) toast.error(mensaje)
-        } finally {
-            if (!silencioso) setLoading(false)
-        }
-    }, [token, tab, pagina, segmento, poblacion, estadoCliente])
-
-    useEffect(() => {
-        void cargar()
-        const interval = window.setInterval(() => void cargar(true), 30_000)
-        return () => window.clearInterval(interval)
-    }, [cargar])
-
-    const cambiarTab = (siguiente: ObservabilidadTab) => { setTab(siguiente); setPagina(1) }
-    const data = tab === 'cola' ? cola : tab === 'historial' ? historial : clientes
-
-    return (
-        <section className="mt-8 border-t border-border/70 pt-6">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                <div>
-                    <h2 className="text-lg font-semibold text-foreground">Control y observabilidad</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">Auditoría del goteo, próximos despachos y estado individual. Se actualiza cada 30 segundos.</p>
-                </div>
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 self-start text-xs" onClick={() => void cargar()} disabled={loading}>
-                    <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualizar
-                </Button>
-            </div>
-
-            <div className="mt-4 flex gap-1 overflow-x-auto rounded-xl border bg-white p-1 dark:bg-muted/20">
-                <ObservabilidadTabButton active={tab === 'cola'} onClick={() => cambiarTab('cola')} icon={<ListOrdered className="h-4 w-4" />}>Próximos</ObservabilidadTabButton>
-                <ObservabilidadTabButton active={tab === 'historial'} onClick={() => cambiarTab('historial')} icon={<History className="h-4 w-4" />}>Historial</ObservabilidadTabButton>
-                <ObservabilidadTabButton active={tab === 'clientes'} onClick={() => cambiarTab('clientes')} icon={<UserRoundCheck className="h-4 w-4" />}>Clientes del motor</ObservabilidadTabButton>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-                <FiltroSelect value={segmento} onChange={(value) => { setSegmento(value); setPagina(1) }} label="Todos los segmentos" options={[
-                    ['primer_pedido', 'Primer pedido'], ['en_riesgo', 'En riesgo'], ['dormido', 'Dormidos'], ['perdido', 'Perdidos'],
-                ]} />
-                {tab !== 'historial' && <FiltroSelect value={poblacion} onChange={(value) => { setPoblacion(value); setPagina(1) }} label="Flujo y stock" options={[
-                    ['flujo', 'Flujo'], ['stock', 'Stock'],
-                ]} />}
-                {tab === 'clientes' && <FiltroSelect value={estadoCliente} onChange={(value) => { setEstadoCliente(value); setPagina(1) }} label="Todos los estados" options={[
-                    ['pendiente', 'Pendiente'], ['enviado', 'Enviado'], ['control', 'Control'], ['salido_por_pedido', 'Salió por pedido'], ['fallido', 'Fallido'],
-                ]} />}
-            </div>
-
-            {tab === 'cola' && (
-                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs leading-relaxed text-blue-900 dark:border-blue-900 dark:bg-blue-950/20 dark:text-blue-200">
-                    <strong>Prioridad transparente:</strong> Flujo siempre sale primero. Después se drena Stock por <code>peso de segmento × 10.000.000 + ticket histórico</code>: primer pedido (4), en riesgo (3), dormido (2), perdido (1). Cada envío respeta el día y horario habitual del comensal (y días valle para clientes perdidos).
-                    {modo === 'manual' && (
-                        <span className="block mt-1 font-semibold text-emerald-800 dark:text-emerald-300">
-                            Modo manual activo: podés copiar el mensaje de cada cliente, abrir WhatsApp y marcarlo como enviado para registrar la métrica.
-                        </span>
-                    )}
-                </div>
-            )}
-            {tab === 'clientes' && (
-                <div className="mt-3 rounded-xl border bg-white p-3 text-xs leading-relaxed text-muted-foreground dark:bg-muted/20">
-                    <strong className="text-foreground">Protecciones activas:</strong> silencio de 22:00 a 09:00 ART, cooldown de 48 horas, máximo 4 toques cada 30 días, opt-out y salida inmediata cuando entra un pedido nuevo. El grupo de control nunca es contactable.
-                </div>
-            )}
-
-            <div className="mt-3 overflow-hidden rounded-xl border bg-white dark:bg-muted/20">
-                {errorCarga && !data ? <div className="flex flex-col items-center gap-3 p-8 text-center"><AlertTriangle className="h-6 w-6 text-orange-500" /><div><p className="text-sm font-medium text-foreground">No pudimos cargar estos datos</p><p className="mt-1 text-xs text-muted-foreground">{errorCarga}</p></div><Button variant="outline" size="sm" onClick={() => void cargar()}>Reintentar</Button></div>
-                    : loading && !data ? <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-                    : tab === 'cola' ? <TablaCola items={cola?.items ?? []} modo={modo} onActualizar={() => { void cargar(true); onCambio(); }} />
-                        : tab === 'historial' ? <TablaHistorial items={historial?.items ?? []} />
-                            : <TablaClientesMotor items={clientes?.items ?? []} />}
-            </div>
-
-            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{data?.total ?? 0} registros · página {data?.pagina ?? pagina} de {Math.max(1, data?.paginas ?? 1)}</span>
-                <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="h-8 text-xs" disabled={pagina <= 1 || loading} onClick={() => setPagina((actual) => actual - 1)}>Anterior</Button>
-                    <Button variant="outline" size="sm" className="h-8 text-xs" disabled={pagina >= (data?.paginas ?? 1) || loading} onClick={() => setPagina((actual) => actual + 1)}>Siguiente</Button>
-                </div>
-            </div>
-        </section>
-    )
-}
-
-function ObservabilidadTabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
-    return <button type="button" onClick={onClick} className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-colors ${active ? 'bg-foreground text-background shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{icon}{children}</button>
-}
-
-function FiltroSelect({ value, onChange, label, options }: { value: string; onChange: (value: string) => void; label: string; options: Array<[string, string]> }) {
-    return <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 rounded-full border border-border bg-background px-3 text-xs text-foreground"><option value="">{label}</option>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select>
-}
-
-function SegmentoTexto({ segmento }: { segmento: string }) {
-    const meta = SEG_META[segmento as Segmento]
-    return <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className={`h-1.5 w-1.5 rounded-full ${meta?.dot ?? 'bg-muted-foreground'}`} />{meta?.label ?? segmento}</span>
-}
-
-function TablaCola({
-    items,
-    modo,
-    onActualizar,
-}: {
-    items: ColaRecompraItem[]
-    modo: ModoRecompra
-    onActualizar: () => void
-}) {
-    const token = useAuthStore(state => state.token)
-    const [modalInfo, setModalInfo] = useState<{ filaId: number; data: MensajeColaData } | null>(null)
-    const [cargandoId, setCargandoId] = useState<number | null>(null)
-    const [marcandoId, setMarcandoId] = useState<number | null>(null)
-    const [copiadoId, setCopiadoId] = useState<number | null>(null)
-
-    if (items.length === 0) return <EstadoTablaVacia texto="No hay mensajes pendientes con estos filtros." />
-
-    const abrirMensaje = async (filaId: number) => {
-        if (!token) return
-        setCargandoId(filaId)
-        try {
-            const res = await clientesApi.mensajeColaRecompra(token, filaId) as { success: boolean; data: MensajeColaData }
-            if (res.success && res.data) {
-                setModalInfo({ filaId, data: res.data })
-            }
-        } catch {
-            toast.error('No se pudo cargar el mensaje del cliente')
-        } finally {
-            setCargandoId(null)
-        }
-    }
-
-    const copiarTexto = async (texto: string, filaId?: number) => {
-        try {
-            await navigator.clipboard.writeText(texto)
-            if (filaId) {
-                setCopiadoId(filaId)
-                setTimeout(() => setCopiadoId(null), 2000)
-            }
-            toast.success('Mensaje copiado al portapapeles')
-        } catch {
-            toast.error('No se pudo copiar al portapapeles')
-        }
-    }
-
-    const copiarDirecto = async (filaId: number) => {
-        if (!token) return
-        setCargandoId(filaId)
-        try {
-            const res = await clientesApi.mensajeColaRecompra(token, filaId) as { success: boolean; data: MensajeColaData }
-            if (res.success && res.data?.texto) {
-                await copiarTexto(res.data.texto, filaId)
-            }
-        } catch {
-            toast.error('No se pudo obtener el mensaje')
-        } finally {
-            setCargandoId(null)
-        }
-    }
-
-    const marcarEnviado = async (filaId: number) => {
-        if (!token || marcandoId) return
-        setMarcandoId(filaId)
-        try {
-            const res = await clientesApi.marcarEnviadoColaRecompra(token, filaId) as { success: boolean }
-            if (res.success) {
-                toast.success('Marcado como enviado exitosamente')
-                if (modalInfo?.filaId === filaId) setModalInfo(null)
-                onActualizar()
-            }
-        } catch {
-            toast.error('No se pudo marcar como enviado')
-        } finally {
-            setMarcandoId(null)
-        }
-    }
-
-    return (
-        <>
-            <div className="overflow-x-auto">
-                <table className="w-full min-w-[850px] text-left text-xs">
-                    <thead className="border-b bg-muted/40 text-muted-foreground">
-                        <tr>
-                            <th className="px-3 py-2.5">Prioridad</th>
-                            <th className="px-3 py-2.5">Cliente</th>
-                            <th className="px-3 py-2.5">Segmento</th>
-                            <th className="px-3 py-2.5">Población</th>
-                            <th className="px-3 py-2.5">Programado</th>
-                            <th className="px-3 py-2.5 text-right">Score</th>
-                            <th className="px-3 py-2.5 text-right">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {items.map((item) => (
-                            <tr key={item.id} className="border-b last:border-0 hover:bg-muted/10 transition-colors">
-                                <td className="px-3 py-3 font-semibold tabular-nums">#{item.posicionPrioridad}</td>
-                                <td className="px-3 py-3">
-                                    <p className="font-medium text-foreground">{item.clienteNombre}</p>
-                                    <p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p>
-                                </td>
-                                <td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td>
-                                <td className="px-3 py-3">
-                                    <span className={`rounded-full px-2 py-1 font-semibold ${item.poblacion === 'flujo' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-muted text-muted-foreground'}`}>
-                                        {item.poblacion === 'flujo' ? 'Flujo' : 'Stock'}
-                                    </span>
-                                </td>
-                                <td className="px-3 py-3">
-                                    <p className="font-medium text-foreground">{item.horarioSugerido ?? formatDay(item.fechaProyectada)}</p>
-                                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                                        <Clock className="w-3 h-3 inline" />
-                                        <span>{formatDay(item.fechaProyectada)}</span>
-                                    </p>
-                                </td>
-                                <td className="px-3 py-3 text-right font-mono">{item.prioridad.toLocaleString('es-AR')}</td>
-                                <td className="px-3 py-3 text-right">
-                                    <div className="inline-flex items-center justify-end gap-1">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-7 px-2 text-xs gap-1"
-                                            disabled={cargandoId === item.id || marcandoId === item.id}
-                                            onClick={() => abrirMensaje(item.id)}
-                                            title="Ver mensaje completo y opciones"
-                                        >
-                                            {cargandoId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
-                                            <span className="hidden sm:inline">Ver</span>
-                                        </Button>
-
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-7 px-2 text-xs gap-1"
-                                            disabled={cargandoId === item.id || marcandoId === item.id}
-                                            onClick={() => copiarDirecto(item.id)}
-                                            title="Copiar mensaje al portapapeles"
-                                        >
-                                            {copiadoId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                                            <span className="hidden sm:inline">{copiadoId === item.id ? 'Copiado' : 'Copiar'}</span>
-                                        </Button>
-
-                                        <Button
-                                            size="sm"
-                                            variant={modo === 'manual' ? 'default' : 'secondary'}
-                                            className="h-7 px-2 text-xs gap-1"
-                                            disabled={marcandoId === item.id}
-                                            onClick={() => marcarEnviado(item.id)}
-                                            title="Marcar como enviado manualmente"
-                                        >
-                                            {marcandoId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                                            <span className="hidden md:inline">Enviado</span>
-                                        </Button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Modal para ver, copiar, abrir en WhatsApp y marcar enviado */}
-            <Dialog open={!!modalInfo} onOpenChange={(open) => !open && setModalInfo(null)}>
-                <DialogContent className="sm:max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <MessageSquare className="w-4 h-4 text-primary" /> Mensaje para {modalInfo?.data.clienteNombre}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {modalInfo?.data.telefono ? `WhatsApp: ${modalInfo.data.telefono}` : 'Sin teléfono cargado'} · {modalInfo?.data.incentivo}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    {modalInfo && (
-                        <div className="space-y-3 py-2">
-                            {modalInfo.data.horarioSugerido && (
-                                <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/60 dark:border-blue-900/50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-950 dark:text-blue-200">
-                                    <Clock className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
-                                    <div>
-                                        <span className="font-semibold">Momento recomendado: </span>
-                                        <span>{modalInfo.data.horarioSugerido}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {modalInfo.data.codigoDescuento && (
-                                <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-                                    <div>
-                                        <span className="text-muted-foreground">Cupón generado: </span>
-                                        <span className="font-mono font-semibold text-foreground">{modalInfo.data.codigoDescuento}</span>
-                                        <span className="text-muted-foreground"> ({modalInfo.data.descuento}% OFF)</span>
-                                    </div>
-                                    <span className="text-[11px] text-muted-foreground">Vence en 48hs</span>
-                                </div>
-                            )}
-
-                            <div>
-                                <div className="flex items-center justify-between mb-1.5">
-                                    <label className="text-xs font-semibold text-foreground">Texto del mensaje a enviar:</label>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 px-2 text-xs gap-1"
-                                        onClick={() => copiarTexto(modalInfo.data.texto)}
-                                    >
-                                        <Copy className="w-3 h-3" /> Copiar texto
-                                    </Button>
-                                </div>
-                                <div className="rounded-lg border bg-muted/20 p-3 text-xs whitespace-pre-wrap font-sans text-foreground leading-relaxed max-h-48 overflow-y-auto select-all">
-                                    {modalInfo.data.texto}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <DialogFooter className="flex-col sm:flex-row gap-2">
-                        {modalInfo?.data.waMeUrl && (
-                            <Button
-                                type="button"
-                                variant="outline"
-                                className="gap-1.5 text-xs sm:mr-auto"
-                                onClick={() => window.open(modalInfo.data.waMeUrl!, '_blank')}
-                            >
-                                <ExternalLink className="w-3.5 h-3.5" /> Abrir WhatsApp
-                            </Button>
-                        )}
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            className="gap-1.5 text-xs"
-                            onClick={() => modalInfo && copiarTexto(modalInfo.data.texto)}
-                        >
-                            <Copy className="w-3.5 h-3.5" /> Copiar mensaje
-                        </Button>
-                        <Button
-                            type="button"
-                            className="gap-1.5 text-xs"
-                            disabled={marcandoId === modalInfo?.filaId}
-                            onClick={() => {
-                                if (modalInfo) void marcarEnviado(modalInfo.filaId)
-                            }}
-                        >
-                            {marcandoId === modalInfo?.filaId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                            Marcar como enviado
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </>
-    )
-}
-
-function TablaHistorial({ items }: { items: HistorialRecompraItem[] }) {
-    if (items.length === 0) return <EstadoTablaVacia texto="Todavía no hay despachos para mostrar." />
-    return <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-xs"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="px-3 py-2.5">Fecha y hora</th><th className="px-3 py-2.5">Cliente</th><th className="px-3 py-2.5">Segmento</th><th className="px-3 py-2.5">Cupón</th><th className="px-3 py-2.5">Plantilla</th><th className="px-3 py-2.5">Origen</th><th className="px-3 py-2.5">Estado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="whitespace-nowrap px-3 py-3">{formatDateTime(item.fechaHora)}</td><td className="px-3 py-3"><p className="font-medium">{item.clienteNombre}</p><p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p></td><td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td><td className="px-3 py-3 font-mono">{item.codigoDescuento ?? '—'}</td><td className="px-3 py-3 font-mono text-[11px]">{item.plantillaWhatsapp}</td><td className="px-3 py-3 capitalize">{item.origenContacto}</td><td className="px-3 py-3"><span title={item.errorEnvio ?? undefined} className={`rounded-full px-2 py-1 font-semibold ${item.estadoDespacho === 'entregado' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>{item.estadoDespacho === 'entregado' ? 'Entregado' : 'Fallido'}</span></td></tr>)}</tbody></table></div>
-}
-
-function TablaClientesMotor({ items }: { items: ClienteMotorRecompra[] }) {
-    if (items.length === 0) return <EstadoTablaVacia texto="No hay clientes del motor con estos filtros." />
-    return <div className="overflow-x-auto"><table className="w-full min-w-[940px] text-left text-xs"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="px-3 py-2.5">Cliente</th><th className="px-3 py-2.5">Rol</th><th className="px-3 py-2.5">Segmento</th><th className="px-3 py-2.5 text-right">Ticket promedio</th><th className="px-3 py-2.5">Último pedido</th><th className="px-3 py-2.5">Estado</th><th className="px-3 py-2.5">Protecciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="px-3 py-3"><p className="font-medium">{item.clienteNombre}</p><p className="text-[11px] text-muted-foreground">{item.telefono ?? 'Sin teléfono'}</p></td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 font-semibold ${item.rol === 'control' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-muted text-foreground'}`}>{item.rol === 'control' ? 'Control · no contactar' : 'Contactado'}</span></td><td className="px-3 py-3"><SegmentoTexto segmento={item.segmento} /></td><td className="px-3 py-3 text-right font-medium">{formatCurrency(item.ticketPromedio)}</td><td className="whitespace-nowrap px-3 py-3">{formatDateTime(item.ultimoPedidoAt)}</td><td className="px-3 py-3"><EstadoClienteBadge estado={item.estado} /></td><td className="px-3 py-3"><ProteccionesCliente item={item} /></td></tr>)}</tbody></table></div>
-}
-
-function EstadoClienteBadge({ estado }: { estado: ClienteMotorRecompra['estado'] }) {
-    const labels: Record<ClienteMotorRecompra['estado'], string> = { pendiente: 'Pendiente', enviado: 'Enviado', control: 'Control', salido_por_pedido: 'Salió por pedido', fallido: 'Fallido' }
-    return <span className="whitespace-nowrap rounded-full bg-muted px-2 py-1 font-semibold text-foreground">{labels[estado]}</span>
-}
-
-function ProteccionesCliente({ item }: { item: ClienteMotorRecompra }) {
-    const protecciones = item.protecciones
-    const labels = [
-        protecciones.optOut ? 'Opt-out' : null,
-        protecciones.cooldownHasta ? `Cooldown hasta ${formatDateTime(protecciones.cooldownHasta)}` : null,
-        protecciones.topeFrecuenciaAlcanzado ? `Tope ${protecciones.toques30Dias}/${protecciones.maximoToques30Dias}` : null,
-        protecciones.horarioSilencioActivo ? 'Horario de silencio' : null,
-    ].filter(Boolean)
-    return labels.length > 0 ? <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"><CircleOff className="h-3.5 w-3.5" />{labels.join(' · ')}</span> : <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" />Contactable</span>
-}
-
-function EstadoTablaVacia({ texto }: { texto: string }) {
-    return <div className="flex flex-col items-center px-4 py-10 text-center text-muted-foreground"><Clock className="h-6 w-6 opacity-40" /><p className="mt-2 text-xs">{texto}</p></div>
-}
-
-// =============================================================================
-// Sub-componentes
-// =============================================================================
-function EstadoBadge({ estado }: { estado: EstadoCampana }) {
-    const map: Record<EstadoCampana, { label: string; dot: string; cls: string }> = {
-        activa: { label: 'Activa', dot: 'bg-emerald-500', cls: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800' },
-        completada: { label: 'Automático', dot: 'bg-emerald-500', cls: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800' },
-        pausada_manual: { label: 'Pausado', dot: 'bg-muted-foreground', cls: 'text-muted-foreground bg-white dark:bg-muted border-border' },
-        pausada_sin_saldo: { label: 'Pausado · sin saldo', dot: 'bg-orange-500', cls: 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/50 border-orange-200 dark:border-orange-800' },
-    }
-    const m = map[estado]
-    return (
-        <span className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold border ${m.cls}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${m.dot} ${estado === 'activa' ? 'animate-pulse' : ''}`} />
-            {m.label}
-        </span>
-    )
-}
-
-function StepperCupo({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-    const clamp = (v: number) => Math.max(CUPO_MIN, Math.min(CUPO_MAX, v))
-    return (
-        <div className="inline-flex items-center rounded-lg border border-input bg-background">
-            <button className="w-7 h-8 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={value <= CUPO_MIN} onClick={() => onChange(clamp(value - 5))}>−</button>
-            <span className="w-9 text-center text-sm font-semibold text-foreground tabular-nums">{value}</span>
-            <button className="w-7 h-8 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={value >= CUPO_MAX} onClick={() => onChange(clamp(value + 5))}>+</button>
-        </div>
-    )
-}
-
-function StatCard({ label, value, hint, icon }: {
-    label: string; value: string; hint?: string; icon: React.ReactNode
-}) {
-    return (
-        <div className="bg-[#FFFBF0] dark:bg-background border border-border/50 rounded-xl p-4">
-            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white dark:bg-muted text-muted-foreground mb-2">{icon}</div>
-            <p className="text-lg font-bold text-foreground tabular-nums leading-tight">{value}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{label}</p>
-            {hint && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{hint}</p>}
-        </div>
-    )
-}
-
-function ExplainCard({ icon: Icon, title, text }: { icon: typeof Users; title: string; text: string }) {
-    return (
-        <div className="rounded-xl border border-border/60 bg-[#FFFBF0] dark:bg-background p-4">
-            <div className="w-9 h-9 rounded-lg bg-white dark:bg-muted flex items-center justify-center text-muted-foreground mb-3">
-                <Icon className="w-4.5 h-4.5" />
-            </div>
-            <p className="text-sm font-semibold text-foreground">{title}</p>
-            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{text}</p>
         </div>
     )
 }
 
 function PlanBloqueado() {
     return (
-        <div className="text-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-muted flex items-center justify-center mx-auto mb-5 text-foreground">
-                <Crown className="w-8 h-8" />
+        <div className="text-center py-20">
+            <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                <Crown className="w-7 h-7 text-foreground" />
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Activ? el Motor de Recompra</h1>
-            <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
-                Convertí tu base de clientes en recompra automática: detección de quién se está por perder, mensajes con
-                tu marca goteados a su ritmo y atribución honesta con grupo de control. Activá el módulo para encenderlo.
+            <h2 className="text-xl font-bold tracking-tight text-foreground">Activá el Motor de Recompra</h2>
+            <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto leading-relaxed">
+                Convertí tu base de clientes en recompra automática: detección de ritmo habitual, mensajes personalizados
+                goteados y atribución con grupo de control.
             </p>
-            <div className="grid sm:grid-cols-3 gap-3 mt-8 text-left max-w-2xl mx-auto">
-                <ExplainCard icon={TrendingUp} title="Detecta solo" text="Encuentra a los que se están por perder según la cadencia de cada uno." />
-                <ExplainCard icon={Gauge} title="Gotea a su ritmo" text="Manda de a poco, en el día justo de cada cliente. Cero campañas masivas." />
-                <ExplainCard icon={FlaskConical} title="Mide de verdad" text="Grupo de control para saber la plata real que generó, sin inflar." />
-            </div>
         </div>
     )
 }
