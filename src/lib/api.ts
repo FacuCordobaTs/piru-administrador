@@ -1933,8 +1933,12 @@ export const mesasLocalesApi = {
 
 // Códigos de Descuento API
 export const codigosDescuentoApi = {
-  getAll: async (token: string) => {
-    return fetchApi('/codigo-descuento', {
+  // Devuelve sólo los cupones creados a mano. Los que el sistema emite solo
+  // (Smart Links, micro-campañas, Motor de Recompra) quedan fuera del payload
+  // salvo que se pida `incluirAutomaticos`.
+  getAll: async (token: string, opciones?: { incluirAutomaticos?: boolean }) => {
+    const query = opciones?.incluirAutomaticos ? '?incluirAutomaticos=1' : ''
+    return fetchApi(`/codigo-descuento${query}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -2010,7 +2014,7 @@ export const codigosDescuentoApi = {
       codigo: {
         id: number; restauranteId: number; codigo: string; tipo: 'porcentaje' | 'monto_fijo'; valor: string
         limiteUsos: number | null; usosActuales: number; montoMinimo: string; fechaInicio: string | null
-        fechaFin: string | null; activo: boolean; createdAt: string
+        fechaFin: string | null; activo: boolean; generadoAutomaticamente: boolean; createdAt: string
       }
       filtros: { from: string | null; to: string | null; sucursalId: number | null }
       metricas: { usos: number; clientes: number; facturacionCobrada: number; ventasAntesDescuento: number; montoDescontado: number; ticketPromedio: number }

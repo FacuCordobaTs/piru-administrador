@@ -88,6 +88,9 @@ export interface CodigoDescuentoGrowth {
   fechaInicio: string | null
   fechaFin: string | null
   activo: boolean
+  /** El sistema lo emitió solo (Smart Link, micro-campaña o recompra). La lista
+   *  no los pide, así que en la práctica los visibles valen `false`. */
+  generadoAutomaticamente: boolean
   createdAt: string
 }
 

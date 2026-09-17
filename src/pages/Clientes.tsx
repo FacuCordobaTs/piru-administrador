@@ -135,6 +135,9 @@ export default function Clientes() {
       const [clientesRespuesta, campanasRespuesta, cuponesRespuesta, sucursalesRespuesta, productosRespuesta] = await Promise.all([
         clientesApi.getAll(token, { soloDespachados: true }),
         crecimientoActivo ? crecimientoApi.listarCampanas(token).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        // Sin `incluirAutomaticos`: el backend deja fuera los cupones que emite
+        // el sistema (Smart Links, micro-campañas, Motor de Recompra). Esta
+        // pantalla administra sólo los que el dueño creó a propósito.
         cuponesActivos ? codigosDescuentoApi.getAll(token).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
         sucursalesApi.list(token).catch(() => ({ data: [] })),
         crecimientoActivo ? productosApi.getAll(token).catch(() => ({ productos: [] })) : Promise.resolve({ productos: [] }),
