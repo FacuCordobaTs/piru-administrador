@@ -21,6 +21,7 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import type {
+  FiltrosTab,
   SucursalGrowth,
   SortClienteKey,
   SortCampanaKey,
@@ -34,7 +35,8 @@ import type {
 export interface FiltrosDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  tab: 'clientes' | 'campanas' | 'cupones'
+  /** Familia de filtros activa: dentro de Adquisición es la mitad elegida. */
+  tab: FiltrosTab
   totalResultados: number
 
   // Clientes

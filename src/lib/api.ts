@@ -2694,6 +2694,90 @@ export interface TransaccionPuntosData {
   createdAt: string
 }
 
+/** Tipos del ledger de puntos (`transaccion_puntos.tipo` en el backend). */
+export type TipoTransaccionPuntos =
+  | 'suma_compra'
+  | 'canje_producto'
+  | 'canje_envio'
+  | 'canje_descuento'
+  | 'bonus_bienvenida'
+  | 'ajuste_manual'
+  | 'devolucion_cancelacion'
+  | 'expiracion'
+
+/** `canje` no existe en la base: agrupa los tres canjes. `todos` es la ausencia de filtro. */
+export type FiltroTipoMovimientoPuntos = TipoTransaccionPuntos | 'canje' | 'todos'
+
+export interface ResumenPuntosData {
+  clientesConPuntos: number
+  clientesConHistorial: number
+  puntosEnCirculacion: number
+  puntosOtorgados: number
+  puntosCanjeados: number
+  canjes: number
+  movimientos: number
+  canjesProducto: number
+  canjesEnvio: number
+  canjesDescuento: number
+  puntosOtorgados30Dias: number
+  canjes30Dias: number
+  ultimoMovimientoAt: string | null
+}
+
+export interface ClienteConPuntosData {
+  id: number
+  nombre: string
+  telefono: string
+  telefonoNormalizado: string | null
+  puntos: number
+  puntosOtorgados: number
+  puntosCanjeados: number
+  canjes: number
+  movimientos: number
+  ultimoMovimientoAt: string | null
+}
+
+export interface MovimientoPuntosData {
+  id: number
+  clienteId: number
+  clienteNombre: string
+  telefono: string | null
+  pedidoUnificadoId: number | null
+  tipo: TipoTransaccionPuntos
+  puntos: number
+  saldoResultante: number
+  motivo: string
+  createdAt: string | null
+}
+
+export interface PaginadoPuntos<T> { items: T[]; pagina: number; limite: number; total: number; paginas: number }
+
+export interface FiltrosClientesPuntos {
+  busqueda?: string
+  /** `saldo` = sólo con puntos disponibles; `historial` = con saldo o con movimientos. */
+  alcance?: 'saldo' | 'historial'
+  orden?: 'puntos' | 'reciente' | 'nombre'
+  pagina?: number
+  limite?: number
+}
+
+export interface FiltrosMovimientosPuntos {
+  clienteId?: number
+  tipo?: FiltroTipoMovimientoPuntos
+  busqueda?: string
+  pagina?: number
+  limite?: number
+}
+
+function queryPuntos(params: Record<string, string | number | undefined | null>) {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null && value !== '' && value !== 'todos') query.set(key, String(value))
+  }
+  const serialized = query.toString()
+  return serialized ? `?${serialized}` : ''
+}
+
 export const puntosApi = {
   getConfig: (token: string) =>
     fetchApi<{ success: boolean; data: ConfiguracionPuntosData }>(
@@ -2711,6 +2795,36 @@ export const puntosApi = {
       }
     ),
 
+  getResumen: (token: string) =>
+    fetchApi<{ success: boolean; data: ResumenPuntosData }>(
+      '/puntos/resumen',
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
+  getClientes: (token: string, filtros: FiltrosClientesPuntos = {}) =>
+    fetchApi<{ success: boolean; data: PaginadoPuntos<ClienteConPuntosData> }>(
+      `/puntos/clientes${queryPuntos({
+        busqueda: filtros.busqueda,
+        alcance: filtros.alcance,
+        orden: filtros.orden,
+        pagina: filtros.pagina,
+        limite: filtros.limite,
+      })}`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
+  getMovimientos: (token: string, filtros: FiltrosMovimientosPuntos = {}) =>
+    fetchApi<{ success: boolean; data: PaginadoPuntos<MovimientoPuntosData> }>(
+      `/puntos/movimientos${queryPuntos({
+        clienteId: filtros.clienteId,
+        tipo: filtros.tipo,
+        busqueda: filtros.busqueda,
+        pagina: filtros.pagina,
+        limite: filtros.limite,
+      })}`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
   getHistorialCliente: (token: string, clienteId: number) =>
     fetchApi<{
       success: boolean
@@ -2724,7 +2838,11 @@ export const puntosApi = {
     ),
 
   ajusteManual: (token: string, clienteId: number, data: { puntos: number; motivo: string }) =>
-    fetchApi<{ success: boolean; message: string; data: { clienteId: number; puntosActuales: number; transaccion: any } }>(
+    fetchApi<{
+      success: boolean
+      message: string
+      data: { clienteId: number; puntosActuales: number; saldoResultante: number; transaccionId: number }
+    }>(
       `/puntos/cliente/${clienteId}/ajuste`,
       {
         method: 'POST',

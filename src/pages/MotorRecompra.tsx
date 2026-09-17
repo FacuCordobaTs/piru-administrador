@@ -1306,7 +1306,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
             }
         } catch (err) {
             if (err instanceof ApiError && err.status === 403 && err.response?.upgradeRequired) {
-                toast.error('Activá el módulo Motor de Recompra para usarlo')
+                toast.error('Activá el módulo Retención para usarlo')
             } else {
                 toast.error('No se pudo encender el motor')
             }
@@ -1451,7 +1451,7 @@ function PlanBloqueado() {
             <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
                 <Crown className="w-7 h-7 text-foreground" />
             </div>
-            <h2 className="text-xl font-bold tracking-tight text-foreground">Activá el Motor de Recompra</h2>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">Activá Retención</h2>
             <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto leading-relaxed">
                 Convertí tu base de clientes en recompra automática: detección de ritmo habitual, mensajes personalizados
                 goteados y atribución con grupo de control.

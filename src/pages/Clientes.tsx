@@ -13,13 +13,15 @@ import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Package, ReceiptText, Sear
 import { toast } from 'sonner'
 import { HistorialPuntosDialog } from './clientes/HistorialPuntosDialog'
 import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
-import MotorRecompra from './MotorRecompra'
+import { RetencionPanel } from './clientes/RetencionPanel'
 import {
+  type AssetTab,
   type ClienteGrowth,
   type CodigoDescuentoGrowth,
   type FiltroCampana,
   type PedidoCliente,
   type ProductoGrowth,
+  type RetencionTab,
   type SucursalGrowth,
   type SortClienteKey,
   type SortCampanaKey,
@@ -28,6 +30,8 @@ import {
   type TipoCampanaFilter,
   type EstadoCuponFilter,
   type TipoCuponFilter,
+  type WorkspaceTab,
+  SEGMENTO_META,
   SORT_CLIENTE_LABELS,
   SORT_CAMPANA_LABELS,
   SORT_CUPON_LABELS,
@@ -36,11 +40,18 @@ import {
 } from './clientes/types'
 import { FiltrosDialog } from './clientes/FiltrosDialog'
 
-type AssetTab = 'campanas' | 'cupones'
-type WorkspaceTab = 'clientes' | 'retencion' | AssetTab
 type SortKey = SortClienteKey
 type MobileView = 'clientes' | 'detalle' | 'pedidos'
 type AssetMobileView = 'lista' | 'detalle' | 'clientes'
+
+const ASSET_TABS: AssetTab[] = ['campanas', 'cupones']
+const normalizarAssetTab = (valor: string | null): AssetTab | null =>
+  ASSET_TABS.find((tab) => tab === valor) ?? null
+
+const RETENCION_TABS: RetencionTab[] = ['puntos', 'motor']
+/** `recompra` es el nombre viejo del deep link: entra por el motor. */
+const normalizarRetencionTab = (valor: string | null): RetencionTab | null =>
+  valor === 'recompra' ? 'motor' : RETENCION_TABS.find((tab) => tab === valor) ?? null
 
 const iniciales = (nombre: string) => nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
 const dateStart = (fecha?: string) => fecha ? new Date(`${fecha}T00:00:00`).getTime() : null
@@ -73,12 +84,22 @@ export default function Clientes() {
   const [tipoCupon, setTipoCupon] = useState<TipoCuponFilter>('todos')
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab | null>(() => {
     const tab = searchParams.get('tab')
-    if (tab === 'campanas' || tab === 'crecimiento') return 'campanas'
-    if (tab === 'cupones') return 'cupones'
+    if (tab === 'adquisicion' || tab === 'campanas' || tab === 'crecimiento' || tab === 'cupones') return 'adquisicion'
     if (tab === 'retencion' || tab === 'recompra') return 'retencion'
     if (tab === 'clientes') return 'clientes'
     return null
   })
+  // Sub-tab de Adquisición. Los deep links viejos (`?tab=campanas`, `?tab=cupones`)
+  // siguen entrando por acá y el efecto de abajo los normaliza a la URL canónica.
+  const [assetTab, setAssetTab] = useState<AssetTab>(() =>
+    normalizarAssetTab(searchParams.get('vista'))
+      ?? (searchParams.get('tab') === 'cupones' ? 'cupones' : 'campanas'),
+  )
+  // Sub-tab de Retención: puntos y motor son dos capacidades del mismo módulo.
+  const [retencionTab, setRetencionTab] = useState<RetencionTab>(() =>
+    normalizarRetencionTab(searchParams.get('vista'))
+      ?? (searchParams.get('tab') === 'retencion' ? 'puntos' : 'motor'),
+  )
   const [clienteSeleccionado, setClienteSeleccionado] = useState<number | null>(null)
   const [mobileView, setMobileView] = useState<MobileView>('clientes')
   const [mostrarPedidos, setMostrarPedidos] = useState(false)
@@ -95,12 +116,17 @@ export default function Clientes() {
 
   useEffect(() => {
     const tab = searchParams.get('tab')
-    if (tab === 'campanas' || tab === 'crecimiento') {
-      setWorkspaceTab((prev) => (prev !== 'campanas' ? 'campanas' : prev))
-    } else if (tab === 'cupones') {
-      setWorkspaceTab((prev) => (prev !== 'cupones' ? 'cupones' : prev))
+    if (tab === 'adquisicion' || tab === 'campanas' || tab === 'crecimiento' || tab === 'cupones') {
+      setWorkspaceTab((prev) => (prev !== 'adquisicion' ? 'adquisicion' : prev))
+      // `vista` manda; si no está, el `tab` viejo dice cuál de las dos mitades abrir.
+      const destino = normalizarAssetTab(searchParams.get('vista'))
+        ?? (tab === 'cupones' ? 'cupones' : tab === 'adquisicion' ? null : 'campanas')
+      if (destino) setAssetTab((prev) => (prev !== destino ? destino : prev))
     } else if (tab === 'retencion' || tab === 'recompra') {
       setWorkspaceTab((prev) => (prev !== 'retencion' ? 'retencion' : prev))
+      // `recompra` es el deep link viejo del motor; sin `vista` no se cambia la mitad.
+      const destino = normalizarRetencionTab(searchParams.get('vista')) ?? (tab === 'recompra' ? 'motor' : null)
+      if (destino) setRetencionTab((prev) => (prev !== destino ? destino : prev))
     } else if (tab === 'clientes') {
       setWorkspaceTab((prev) => (prev !== 'clientes' ? 'clientes' : prev))
     } else if (!tab) {
@@ -115,10 +141,14 @@ export default function Clientes() {
     } else {
       siguiente.delete('tab')
     }
-    siguiente.delete('vista'); siguiente.delete('seccion')
+    // `vista` sólo significa algo dentro de una tab con mitades.
+    if (workspaceTab === 'adquisicion') siguiente.set('vista', assetTab)
+    else if (workspaceTab === 'retencion') siguiente.set('vista', retencionTab)
+    else siguiente.delete('vista')
+    siguiente.delete('seccion')
     if (siguiente.toString() === searchParams.toString()) return
     setSearchParams(siguiente, { replace: true })
-  }, [workspaceTab, searchParams, setSearchParams])
+  }, [workspaceTab, assetTab, retencionTab, searchParams, setSearchParams])
 
   const cargar = useCallback(async () => {
     if (!token) return
@@ -208,7 +238,12 @@ export default function Clientes() {
       cambiarMobileView('detalle')
     }
   }
-  const cambiarWorkspaceTab = (tab: WorkspaceTab | null) => { setWorkspaceTab(tab); setMobileView('clientes'); setAssetMobileView('lista'); if (tab === 'campanas') setCuponSeleccionado(null); if (tab === 'cupones') setCampanaSeleccionada(null) }
+  const cambiarWorkspaceTab = (tab: WorkspaceTab | null) => { setWorkspaceTab(tab); setMobileView('clientes'); setAssetMobileView('lista') }
+  // Cambiar de mitad no toca la selección: cada una guarda la suya, así que ir y
+  // volver reencuentra lo que estabas mirando.
+  const cambiarAssetTab = (tab: AssetTab) => { setAssetTab(tab); setAssetMobileView('lista') }
+  // Retención tiene el mismo contrato: el switch de mitad no toca las selecciones.
+  const cambiarRetencionTab = (tab: RetencionTab) => { setRetencionTab(tab) }
   const abrirClienteAsociado = (id: number) => { setWorkspaceTab('clientes'); seleccionarCliente(id) }
   const seleccionarCampanaMobile = (id: FiltroCampana) => { seleccionarCampana(id); if (id != null) { setAssetMobileView('detalle'); requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })) } }
   const seleccionarCuponMobile = (id: number | null) => { seleccionarCupon(id); if (id != null) { setAssetMobileView('detalle'); requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })) } }
@@ -220,14 +255,14 @@ export default function Clientes() {
       setTo(undefined)
       setCampanaSeleccionada(null)
       setCuponSeleccionado(null)
-    } else if (workspaceTab === 'campanas') {
+    } else if (assetTab === 'campanas') {
       setSortCampana('recent')
       setEstadoCampana('todas')
       setTipoCampana('todos')
       setSucursalId(undefined)
       setFrom(undefined)
       setTo(undefined)
-    } else if (workspaceTab === 'cupones') {
+    } else if (assetTab === 'cupones') {
       setSortCupon('recent')
       setEstadoCupon('todos')
       setTipoCupon('todos')
@@ -269,7 +304,7 @@ export default function Clientes() {
   const filtrosActivosCount =
     workspaceTab === 'clientes'
       ? filtrosActivosClientesCount
-      : workspaceTab === 'campanas'
+      : assetTab === 'campanas'
         ? filtrosActivosCampanasCount
         : filtrosActivosCuponesCount
 
@@ -277,7 +312,7 @@ export default function Clientes() {
 
   const totalResultados = useMemo(() => {
     if (workspaceTab === 'clientes') return filtrados.length
-    if (workspaceTab === 'campanas') {
+    if (assetTab === 'campanas') {
       const q = query.trim().toLowerCase()
       return campanas.filter((item) => {
         if (q && !`${item.nombre} ${item.slug}`.toLowerCase().includes(q)) return false
@@ -287,7 +322,7 @@ export default function Clientes() {
         return true
       }).length
     }
-    if (workspaceTab === 'cupones') {
+    if (assetTab === 'cupones') {
       const q = query.trim().toLowerCase()
       const now = new Date()
       return cupones.filter((item) => {
@@ -309,7 +344,7 @@ export default function Clientes() {
       }).length
     }
     return 0
-  }, [workspaceTab, filtrados.length, campanas, cupones, query, estadoCampana, tipoCampana, estadoCupon, tipoCupon])
+  }, [workspaceTab, assetTab, filtrados.length, campanas, cupones, query, estadoCampana, tipoCampana, estadoCupon, tipoCupon])
 
   const eliminarPedido = async (pedidoId: number) => {
     if (!token || !cliente || !window.confirm(`¿Eliminar el pedido #${pedidoId} del historial de ${cliente.nombre}?`)) return
@@ -333,7 +368,7 @@ export default function Clientes() {
             Conocé tu base, medí el recorrido de cada promoción y seguí tus cupones.
           </p>
 
-          <div className="mx-auto mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mx-auto mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <button
               type="button"
               onClick={() => cambiarWorkspaceTab('clientes')}
@@ -355,19 +390,28 @@ export default function Clientes() {
 
             <button
               type="button"
-              onClick={() => cambiarWorkspaceTab('campanas')}
+              onClick={() => cambiarWorkspaceTab('adquisicion')}
               className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 transition-colors group-hover:bg-emerald-600 group-hover:text-white dark:text-emerald-400">
-                <TrendingUp className="h-6 w-6" />
+              <h2 className="text-base font-semibold text-foreground">Adquisición</h2>
+              {/* Campañas y cupones son dos mitades de la misma tab: cada icono
+                  conserva el color de la suya y se nombra debajo, así la tarjeta
+                  dice qué hay adentro sin una línea de descripción. */}
+              <div className="mt-4 flex items-start justify-center gap-5">
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 transition-colors group-hover:bg-emerald-600 group-hover:text-white dark:text-emerald-400">
+                    <TrendingUp className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-medium text-muted-foreground">Campañas</span>
+                </div>
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-600 transition-colors group-hover:bg-purple-600 group-hover:text-white dark:text-purple-400">
+                    <Ticket className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-medium text-muted-foreground">Cupones</span>
+                </div>
               </div>
-              <div className="mt-4">
-                <h2 className="text-base font-semibold text-foreground">Crecimiento</h2>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Campañas de adquisición, smart links y atribución de ventas generadas.
-                </p>
-              </div>
-              <span className="mt-4 inline-flex items-center text-xs font-semibold text-emerald-600 dark:text-emerald-400 group-hover:underline">
+              <span className="mt-4 inline-flex items-center text-xs font-semibold text-muted-foreground group-hover:text-foreground group-hover:underline">
                 Ingresar <ChevronRight className="ml-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </span>
             </button>
@@ -377,36 +421,25 @@ export default function Clientes() {
               onClick={() => cambiarWorkspaceTab('retencion')}
               className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:text-orange-400">
-                <Zap className="h-6 w-6" />
-              </div>
-              <div className="mt-4">
-                <h2 className="text-base font-semibold text-foreground">Retención</h2>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Motor automático, cola priorizada, historial y retorno incremental.
-                </p>
+              <h2 className="text-base font-semibold text-foreground">Retención</h2>
+              {/* Puntos y motor de recompra son dos mitades del mismo módulo:
+                  cada icono se nombra debajo, igual que en Adquisición. */}
+              <div className="mt-4 flex items-start justify-center gap-5">
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 transition-colors group-hover:bg-amber-500 group-hover:text-white dark:text-amber-400">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-medium text-muted-foreground">Puntos</span>
+                </div>
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:text-orange-400">
+                    <Zap className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-medium text-muted-foreground">Motor</span>
+                </div>
               </div>
               <span className="mt-4 inline-flex items-center text-xs font-semibold text-orange-600 dark:text-orange-400 group-hover:underline">
                 {retencionActiva ? 'Ingresar' : 'Conocer módulo'} <ChevronRight className="ml-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => cambiarWorkspaceTab('cupones')}
-              className="group flex flex-col items-center justify-between rounded-2xl border border-border/80 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:bg-card cursor-pointer"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-600 transition-colors group-hover:bg-purple-600 group-hover:text-white dark:text-purple-400">
-                <Ticket className="h-6 w-6" />
-              </div>
-              <div className="mt-4">
-                <h2 className="text-base font-semibold text-foreground">Cupones</h2>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Códigos de descuento para tus clientes, condiciones y límites de uso.
-                </p>
-              </div>
-              <span className="mt-4 inline-flex items-center text-xs font-semibold text-purple-600 dark:text-purple-400 group-hover:underline">
-                Ingresar <ChevronRight className="ml-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </span>
             </button>
           </div>
@@ -430,14 +463,14 @@ export default function Clientes() {
               Volver
             </Button>
             <div className="text-center">
-              <h1 className="text-2xl font-bold tracking-tight">Motor de Recompra</h1>
-              <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Recuperá clientes enfriados en piloto automático o de forma manual.</p>
+              <h1 className="text-2xl font-bold tracking-tight">Retención</h1>
+              <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Puntos y recompra en un solo lugar: fidelizá a tus clientes y recuperá a los que se enfriaron.</p>
             </div>
             <WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} />
           </div>
         </div>
       </header>
-      <MotorRecompra />
+      <RetencionPanel vista={retencionTab} onCambiarVista={cambiarRetencionTab} />
     </div>
   }
 
@@ -471,7 +504,7 @@ export default function Clientes() {
               placeholder={
                 workspaceTab === 'clientes'
                   ? 'Buscar clientes, teléfonos, campañas o cupones…'
-                  : workspaceTab === 'campanas'
+                  : assetTab === 'campanas'
                     ? 'Buscar campañas por nombre o slug…'
                     : 'Buscar cupones por código…'
               }
@@ -531,7 +564,7 @@ export default function Clientes() {
             )}
 
             {/* Campañas: Estado */}
-            {workspaceTab === 'campanas' && estadoCampana !== 'todas' && (
+            {assetTab === 'campanas' && estadoCampana !== 'todas' && (
               <ActiveFilterBadge
                 label={`Estado: ${estadoCampana === 'activa' ? 'Solo activas' : 'Pausadas / Inactivas'}`}
                 onRemove={() => setEstadoCampana('todas')}
@@ -539,7 +572,7 @@ export default function Clientes() {
             )}
 
             {/* Campañas: Modalidad */}
-            {workspaceTab === 'campanas' && tipoCampana !== 'todos' && (
+            {assetTab === 'campanas' && tipoCampana !== 'todos' && (
               <ActiveFilterBadge
                 label={`Modalidad: ${
                   tipoCampana === 'producto' ? 'Producto' : tipoCampana === 'carrito' ? 'Carrito' : 'Link'
@@ -549,7 +582,7 @@ export default function Clientes() {
             )}
 
             {/* Campañas: Orden */}
-            {workspaceTab === 'campanas' && sortCampana !== 'recent' && (
+            {assetTab === 'campanas' && sortCampana !== 'recent' && (
               <ActiveFilterBadge
                 label={`Orden: ${SORT_CAMPANA_LABELS[sortCampana]}`}
                 onRemove={() => setSortCampana('recent')}
@@ -557,7 +590,7 @@ export default function Clientes() {
             )}
 
             {/* Cupones: Estado */}
-            {workspaceTab === 'cupones' && estadoCupon !== 'todos' && (
+            {assetTab === 'cupones' && estadoCupon !== 'todos' && (
               <ActiveFilterBadge
                 label={`Estado: ${
                   estadoCupon === 'vigentes'
@@ -573,7 +606,7 @@ export default function Clientes() {
             )}
 
             {/* Cupones: Tipo */}
-            {workspaceTab === 'cupones' && tipoCupon !== 'todos' && (
+            {assetTab === 'cupones' && tipoCupon !== 'todos' && (
               <ActiveFilterBadge
                 label={`Tipo: ${tipoCupon === 'porcentaje' ? '% OFF' : '$ OFF'}`}
                 onRemove={() => setTipoCupon('todos')}
@@ -581,7 +614,7 @@ export default function Clientes() {
             )}
 
             {/* Cupones: Orden */}
-            {workspaceTab === 'cupones' && sortCupon !== 'recent' && (
+            {assetTab === 'cupones' && sortCupon !== 'recent' && (
               <ActiveFilterBadge
                 label={`Orden: ${SORT_CUPON_LABELS[sortCupon]}`}
                 onRemove={() => setSortCupon('recent')}
@@ -618,13 +651,16 @@ export default function Clientes() {
     </header>
 
     <nav ref={mobileNavRef} className="sticky top-0 z-20 shrink-0 border-y bg-[#FFFBF0]/95 px-4 py-2 backdrop-blur dark:bg-background/95 sm:px-6 xl:hidden" aria-label={workspaceTab === 'clientes' ? 'Columnas de clientes' : `Columnas de ${workspaceTab}`}>
-      <div className="mx-auto grid max-w-[1680px] grid-cols-3 rounded-xl bg-muted/60 p-1">
+      <div className={`mx-auto grid max-w-[1680px] rounded-xl bg-muted/60 p-1 ${workspaceTab === 'clientes' ? 'grid-cols-3' : 'grid-cols-4'}`}>
         {workspaceTab === 'clientes' ? <>
           <MobileTab active={mobileView === 'clientes'} onClick={() => cambiarMobileView('clientes')}>Clientes</MobileTab>
           <MobileTab active={mobileView === 'detalle'} onClick={() => cambiarMobileView('detalle')}>Detalle{cliente ? <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-[#FF7A00]" /> : null}</MobileTab>
           <MobileTab active={mobileView === 'pedidos'} onClick={() => cambiarMobileView('pedidos')}>Pedidos</MobileTab>
         </> : <>
-          <MobileTab active={assetMobileView === 'lista'} onClick={() => setAssetMobileView('lista')}>{workspaceTab === 'campanas' ? 'Campañas' : 'Cupones'}</MobileTab>
+          {/* Los dos primeros slots son el switch de mitad; el resto, las vistas.
+              `cambiarAssetTab` ya devuelve la vista a la lista. */}
+          <MobileTab active={assetMobileView === 'lista' && assetTab === 'campanas'} onClick={() => cambiarAssetTab('campanas')}>Campañas</MobileTab>
+          <MobileTab active={assetMobileView === 'lista' && assetTab === 'cupones'} onClick={() => cambiarAssetTab('cupones')}>Cupones</MobileTab>
           <MobileTab active={assetMobileView === 'detalle'} onClick={() => setAssetMobileView('detalle')}>Resultados</MobileTab>
           <MobileTab active={assetMobileView === 'clientes'} onClick={() => setAssetMobileView('clientes')}>Clientes</MobileTab>
         </>}
@@ -733,7 +769,8 @@ export default function Clientes() {
           <GrowthAssetsPanel
             token={token}
             username={username}
-            tab={workspaceTab}
+            tab={assetTab}
+            onChangeTab={cambiarAssetTab}
             campanas={campanas}
             cupones={cupones}
             clientes={clientes}
@@ -767,7 +804,7 @@ export default function Clientes() {
       <FiltrosDialog
         open={filtrosDialogOpen}
         onOpenChange={setFiltrosDialogOpen}
-        tab={workspaceTab}
+        tab={workspaceTab === 'adquisicion' ? assetTab : 'clientes'}
         totalResultados={totalResultados}
         sortCliente={sort}
         onSortClienteChange={setSort}
@@ -819,9 +856,9 @@ function MobileTab({ active, onClick, children }: { active: boolean; onClick: ()
 function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (value: WorkspaceTab) => void }) {
   const tabs: Array<{ value: WorkspaceTab; label: string; icon: React.ReactNode }> = [
     { value: 'clientes', label: 'Clientes', icon: <Users className="h-4 w-4" /> },
-    { value: 'campanas', label: 'Crecimiento', icon: <TrendingUp className="h-4 w-4" /> },
-    { value: 'retencion', label: 'Retención', icon: <Zap className="h-4 w-4" /> },
-    { value: 'cupones', label: 'Cupones', icon: <Ticket className="h-4 w-4" /> },
+    // Adquisición y Retención muestran dos iconos: sus mitades viven adentro.
+    { value: 'adquisicion', label: 'Adquisición', icon: <span className="flex items-center gap-1"><TrendingUp className="h-4 w-4" /><Ticket className="h-4 w-4" /></span> },
+    { value: 'retencion', label: 'Retención', icon: <span className="flex items-center gap-1"><Sparkles className="h-4 w-4" /><Zap className="h-4 w-4" /></span> },
   ]
   return <nav className="flex items-center gap-2" aria-label="Secciones de clientes">{tabs.map((tab) => <button key={tab.value} type="button" onClick={() => onChange(tab.value)} className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${value === tab.value ? 'bg-foreground text-background shadow-sm' : 'bg-muted/70 text-muted-foreground hover:text-foreground'}`}>{tab.icon}{tab.label}</button>)}</nav>
 }
@@ -926,6 +963,30 @@ function EmptyClients() {
   )
 }
 
+function SegmentoClienteBadge({ cliente }: { cliente: ClienteGrowth }) {
+  const segmento = cliente.segmento
+  // `vip` ya lo comunica la corona VIP de al lado: repetirlo confunde. El badge
+  // de segmento sólo aparece cuando agrega algo (riesgo, dormido, perdido…).
+  if (!segmento || segmento === 'vip') return null
+  const meta = SEGMENTO_META[segmento]
+  if (!meta) return null
+  // El segmento surge de comparar la recencia con la cadencia propia del cliente,
+  // así que el tooltip explica el "por qué" sin ocupar lugar en el panel.
+  const detalle = [
+    cliente.resumenCadencia,
+    cliente.diasDesdeUltimo != null ? `Último pedido hace ${cliente.diasDesdeUltimo} días` : null,
+  ].filter(Boolean).join(' · ')
+  return (
+    <span
+      title={detalle || undefined}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.clase}`}
+    >
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </span>
+  )
+}
+
 function ClienteDetalle({
   cliente,
   token,
@@ -967,6 +1028,7 @@ function ClienteDetalle({
                     VIP
                   </span>
                 )}
+                <SegmentoClienteBadge cliente={cliente} />
               </div>
               <p className="mt-1 text-xs text-muted-foreground/80">
                 Cliente desde {formatDate(cliente.primerPedidoAt ?? cliente.createdAt)}
@@ -1209,6 +1271,7 @@ function ClienteDetalle({
                   VIP
                 </span>
               )}
+              <SegmentoClienteBadge cliente={cliente} />
             </div>
             <p className="mt-1 text-xs text-muted-foreground/80">
               Cliente desde {formatDate(cliente.primerPedidoAt ?? cliente.createdAt)}

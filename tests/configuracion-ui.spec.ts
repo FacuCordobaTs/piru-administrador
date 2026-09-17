@@ -10,7 +10,7 @@ for (const width of [1440, 390]) {
   await page.route('**/api/**', async route => {
    const url = route.request().url()
    if (url.includes('/modulos/mercadopago/activar')) { activated = true; return route.fulfill({ json: { success: true } }) }
-   if (url.includes('/modulos/mis-modulos')) return route.fulfill({ json: { success: true, data: [{ id: 1, codigo: 'operacion', nombre: 'Tu operación', descripcion: 'Herramientas incluidas en tu suscripción.', modulos: [module('mercadopago', 'Mercado Pago', activated), module('facturacion_arca', 'Facturación ARCA', false), module('avisos_automaticos_whatsapp', 'Avisos por WhatsApp', true, 'pago'), { ...module('motor_recompra', 'Motor de Recompra', false, 'pago'), estado: 'pendiente_pago' }] }] } })
+   if (url.includes('/modulos/mis-modulos')) return route.fulfill({ json: { success: true, data: [{ id: 1, codigo: 'operacion', nombre: 'Tu operación', descripcion: 'Herramientas incluidas en tu suscripción.', modulos: [module('mercadopago', 'Mercado Pago', activated), module('facturacion_arca', 'Facturación ARCA', false), module('avisos_automaticos_whatsapp', 'Avisos por WhatsApp', true, 'pago'), { ...module('motor_recompra', 'Retención', false, 'pago'), estado: 'pendiente_pago' }] }] } })
    if (url.includes('/suscripcion/mi-suscripcion')) return route.fulfill({ json: { success: true, data: { estado: 'activa', suscripcionId: 1, ciclo: 'mensual', fechaProximoCobro: '2026-10-07', suscripcionBase: { nombre: 'Piru', precioMensual: '40000', descuentoAnual: 20 }, cotizacionProximaFactura: { montoBaseMensual: 40000, montoTotalMensual: 70000 }, wallet: {} } } })
    if (url.includes('horarios')) return route.fulfill({ json: { success: true, horarios: [] } })
    return route.fulfill({ json: { success: true, data: [], conectado: false } })
@@ -29,7 +29,7 @@ for (const width of [1440, 390]) {
   await page.keyboard.press('Escape')
   await search.fill('')
   await page.getByRole('button', { name: 'Cerrar', exact: true }).click()
-  await page.getByRole('button', { name: /Motor de Recompra.*Pago pendiente/ }).click()
+  await page.getByRole('button', { name: /Retención.*Pago pendiente/ }).click()
   await expect(page.getByRole('dialog').getByRole('button', { name: 'Ya pagué, verificar' })).toBeVisible()
   await expect(page.getByRole('dialog').getByRole('button', { name: 'Volver al pago' })).toBeVisible()
   await page.keyboard.press('Escape')

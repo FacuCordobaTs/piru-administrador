@@ -1,4 +1,4 @@
-import type { CampanaCrecimiento, CategoriaCampana, OportunidadCrecimiento, RecetaCrecimiento, ResumenCrecimiento, SegmentoCrecimiento } from '@/lib/api'
+import type { CampanaCrecimiento, CategoriaCampana, OportunidadCrecimiento, RecetaCrecimiento, ResumenCrecimiento, SegmentoCrecimiento, TipoTransaccionPuntos } from '@/lib/api'
 
 export type { CategoriaCampana }
 
@@ -112,6 +112,24 @@ export interface ProductoGrowth {
 
 export type FiltroCampana = number | 'organico' | null
 
+/**
+ * Las dos mitades de Adquisición. Campañas y Cupones se administran desde la
+ * misma tab del workspace, pero siguen siendo módulos comerciales distintos
+ * (`crecimiento` y `codigos_descuento`), cada uno con su propio gate.
+ */
+export type AssetTab = 'campanas' | 'cupones'
+export type WorkspaceTab = 'clientes' | 'retencion' | 'adquisicion'
+/** Lo que consume `FiltrosDialog`: la familia de filtros activa, no la tab contenedora. */
+export type FiltrosTab = 'clientes' | AssetTab
+
+/**
+ * Las dos mitades de Retención: el Club de Puntos y el motor de recompra.
+ * No son módulos distintos — ambas son capacidades de `motor_recompra` y
+ * comparten un único gate, por eso viajan juntas en la misma tab.
+ */
+export type RetencionTab = 'puntos' | 'motor'
+export const RETENCION_TABS: RetencionTab[] = ['puntos', 'motor']
+
 export interface ResultadoCupon {
   codigo: CodigoDescuentoGrowth
   filtros: { from: string | null; to: string | null; sucursalId: number | null }
@@ -139,9 +157,53 @@ export const RECETAS: Array<{
   { codigo: 'ultimo_intento', nombre: 'Último intento', descripcion: 'Una propuesta fuerte y limitada para intentar recuperarlo.', segmento: 'perdido', descuentoPorcentaje: 20, expiraHoras: 48 },
 ]
 
+// Vocabulario RFM de `clientes-rfm.ts`, el mismo que viaja en
+// `ClienteGrowth.segmento`. Los colores retoman el lenguaje del Motor de
+// Recompra (naranja = en riesgo, violeta = dormido, rosa = perdido) para que un
+// mismo estado se lea igual en todo el workspace. `activo` es el estado sano
+// por defecto, así que va neutro en lugar de competir por atención.
+export const SEGMENTO_META: Record<SegmentoCrecimiento, { label: string; clase: string; dot: string }> = {
+  nuevo: { label: 'Nuevo', clase: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', dot: 'bg-emerald-500' },
+  activo: { label: 'Activo', clase: 'border-border/60 bg-muted/60 text-muted-foreground', dot: 'bg-muted-foreground/50' },
+  vip: { label: 'VIP', clase: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400', dot: 'bg-amber-500' },
+  en_riesgo: { label: 'En riesgo', clase: 'border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400', dot: 'bg-orange-500' },
+  dormido: { label: 'Dormido', clase: 'border-violet-500/20 bg-violet-500/10 text-violet-600 dark:text-violet-400', dot: 'bg-violet-500' },
+  perdido: { label: 'Perdido', clase: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400', dot: 'bg-rose-500' },
+}
+
 export const ARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })
 export const formatCurrency = (value: number | string | null | undefined) => ARS.format(Number(value ?? 0))
+const NUMERO_PUNTOS = new Intl.NumberFormat('es-AR')
+export const formatPuntos = (value: number | string | null | undefined) => NUMERO_PUNTOS.format(Number(value ?? 0))
+export const formatFechaHora = (value: string | null | undefined) => value
+  ? new Date(value).toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  : 'Sin movimientos'
 export const formatDate = (value: string | null | undefined) => value ? new Date(value).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sin datos'
+
+/**
+ * Vocabulario del ledger de puntos. Las claves son exactamente los valores de
+ * `transaccion_puntos.tipo` en el backend (`lib/puntos.ts`); un tipo nuevo sin
+ * entrada acá se muestra con su nombre crudo, no se oculta.
+ * `signo` describe la naturaleza del movimiento, no su dirección: un ajuste
+ * manual puede sumar o restar.
+ */
+export const MOVIMIENTO_PUNTOS_META: Record<TipoTransaccionPuntos, { label: string; clase: string; signo: 'suma' | 'canje' | 'ajuste' }> = {
+  suma_compra: { label: 'Suma por compra', clase: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', signo: 'suma' },
+  bonus_bienvenida: { label: 'Bono de bienvenida', clase: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', signo: 'suma' },
+  canje_producto: { label: 'Canje de producto', clase: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400', signo: 'canje' },
+  canje_envio: { label: 'Canje de envío gratis', clase: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400', signo: 'canje' },
+  canje_descuento: { label: 'Canje de cupón', clase: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400', signo: 'canje' },
+  ajuste_manual: { label: 'Ajuste manual', clase: 'border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-400', signo: 'ajuste' },
+  devolucion_cancelacion: { label: 'Reversión por cancelación', clase: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400', signo: 'ajuste' },
+  expiracion: { label: 'Expiración de puntos', clase: 'border-border/60 bg-muted/60 text-muted-foreground', signo: 'ajuste' },
+}
+
+export const metaMovimientoPuntos = (tipo: string | null | undefined) =>
+  MOVIMIENTO_PUNTOS_META[tipo as TipoTransaccionPuntos] ?? {
+    label: tipo || 'Movimiento',
+    clase: 'border-border/60 bg-muted/60 text-muted-foreground',
+    signo: 'ajuste' as const,
+  }
 export const recetaNombre = (codigo: string | null | undefined) => RECETAS.find((receta) => receta.codigo === codigo)?.nombre ?? codigo ?? 'Sin receta'
 
 export const nuevaClave = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`

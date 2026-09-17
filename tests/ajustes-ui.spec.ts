@@ -117,8 +117,10 @@ for (const width of [1440, 390]) {
       await expect(page.getByRole('heading', { name: 'Pedidos entre amigos (Sala grupal)', exact: true })).toBeVisible()
       await back(page).click()
       await section(page, 'Retención')
-      await page.getByRole('button', { name: /^Activar por/ }).click()
-      await expect(page.getByRole('heading', { name: 'Activar Herramientas de retención', exact: true })).toBeVisible()
+      // El mock de `/modulos/mis-modulos` devuelve `data: []`, así que el precio
+      // del catálogo no está disponible y el botón cae al label sin monto.
+      await page.getByRole('button', { name: /^Activar/ }).click()
+      await expect(page.getByRole('heading', { name: 'Activar Retención', exact: true })).toBeVisible()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await back(page).click()
       await section(page, 'WhatsApp')

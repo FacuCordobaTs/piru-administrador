@@ -56,7 +56,7 @@ const SECTIONS: SectionDef[] = [
   {
     id: 'retencion',
     label: 'Retención',
-    descripcion: 'Herramientas de retención: segmentación inteligente, micro-campañas y Club de Puntos.',
+    descripcion: 'Retención: motor de recompra, segmentación inteligente, micro-campañas y Club de Puntos.',
     Icon: Repeat,
     Component: lazy(() => import('./sections/Retencion')),
   },

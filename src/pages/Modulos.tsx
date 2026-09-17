@@ -79,7 +79,7 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mesas: '/dashboard/mesas',
   motor_recompra: '/dashboard/ajustes/retencion',
   puntos_clientes: '/dashboard/ajustes/retencion?config=puntos',
-  codigos_descuento: '/dashboard/clientes?tab=cupones',
+  codigos_descuento: '/dashboard/clientes?tab=adquisicion&vista=cupones',
   mercadopago: '/dashboard/ajustes/monetizacion?config=mercadopago',
   talo: '/dashboard/ajustes/monetizacion?config=talo',
   rapiboy: '/dashboard/ajustes/entregas?config=rapiboy',
@@ -88,7 +88,7 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   impresion_comandas: '/dashboard/ajustes/impresion?config=impresion',
   multisucursal: '/dashboard/ajustes/entregas?config=sucursales',
   avisos_automaticos_whatsapp: '/dashboard/ajustes/whatsapp?config=avisos',
-  crecimiento: '/dashboard/clientes?tab=campanas',
+  crecimiento: '/dashboard/clientes?tab=adquisicion&vista=campanas',
 }
 
 /**

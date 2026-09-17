@@ -381,7 +381,7 @@ export default function Adquisicion() {
           tipo="pago"
           precioTexto="+$20.000/mes"
           accionLabel="Ver campañas"
-          onAccion={() => navigate('/dashboard/clientes?tab=campanas')}
+          onAccion={() => navigate('/dashboard/clientes?tab=adquisicion&vista=campanas')}
           onActivarPago={() => setModalPago(true)}
           onDesactivar={() =>
             setModalBaja({ codigo: 'crecimiento', nombre: 'Campañas de adquisición' })
@@ -399,7 +399,7 @@ export default function Adquisicion() {
           tipo="incluido"
           precioTexto="Incluido · sin costo extra"
           accionLabel="Gestionar cupones"
-          onAccion={() => navigate('/dashboard/clientes?tab=cupones')}
+          onAccion={() => navigate('/dashboard/clientes?tab=adquisicion&vista=cupones')}
           onActivarGratis={() =>
             handleActivarGratis('codigos_descuento', 'Códigos de descuento')
           }

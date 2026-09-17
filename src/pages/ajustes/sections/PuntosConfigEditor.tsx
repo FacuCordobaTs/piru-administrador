@@ -354,9 +354,10 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
           <span>Canje de productos de tu carta</span>
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Podés asignar el costo en puntos de cualquier producto para canje directo desde{' '}
-          <strong className="text-foreground">Menú &gt; Productos</strong>, editando el producto y completando el campo{' '}
-          <strong className="text-foreground">Costo en puntos</strong> en la sección Sistema de Puntos.
+          Podés asignar cuántos puntos otorga y cuánto cuesta canjear cada producto desde la pestaña{' '}
+          <strong className="text-foreground">Productos</strong> de esta misma configuración (o desde{' '}
+          <strong className="text-foreground">Menú &gt; Productos</strong>, editando el producto y completando{' '}
+          <strong className="text-foreground">Costo en puntos</strong> en la sección Sistema de Puntos).
         </p>
       </div>
 

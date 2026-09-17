@@ -24,6 +24,11 @@ import { cn } from '@/lib/utils'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { PuntosConfigEditor } from './PuntosConfigEditor'
 
+const fmtARS = (n: number | string) =>
+  new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(
+    typeof n === 'string' ? parseFloat(n) : n
+  )
+
 export default function Retencion() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -60,6 +65,12 @@ export default function Retencion() {
   // El módulo incluye Club de Puntos y la lógica de clientes/micro-campañas
   const puntosHabilitados = retencionActiva
 
+  // El monto sale del catálogo de módulos (`modulo.precio_mensual`), nunca de un
+  // literal en la UI. Si el local ya tiene el módulo activo, mostramos el precio
+  // congelado de su suscripción: es lo que realmente va a seguir pagando.
+  const precioRetencion = moduloRetencion?.precioMensualCongelado ?? moduloRetencion?.precioMensual ?? null
+  const precioTexto = precioRetencion ? fmtARS(precioRetencion) : null
+
   useEffect(() => {
     const config = searchParams.get('config')
     if (config === 'puntos' && puntosHabilitados) setPuntosEditor(true)
@@ -86,7 +97,7 @@ export default function Retencion() {
     return `1 pt cada $${puntosConfig.pesosPorPunto} · Canjes: ${canjes.join(', ')}`
   }
 
-  // Inicio de checkout para Herramientas de retención (+$20.000/mes)
+  // Inicio de checkout para el módulo Retención
   const handleIniciarCheckout = async () => {
     setProcesandoCodigo('checkout')
     try {
@@ -110,7 +121,7 @@ export default function Retencion() {
       setModalPago(false)
       toast.success(`Te enviamos el link de pago a WhatsApp (${res.telefono})`)
     } catch (error) {
-      toast.error('No pudimos enviar el link de Herramientas de retención', {
+      toast.error('No pudimos enviar el link de Retención', {
         description: error instanceof Error ? error.message : 'Intentá de nuevo.',
       })
     } finally {
@@ -146,7 +157,7 @@ export default function Retencion() {
         window.location.assign(res.url_pago)
         return
       }
-      toast.success('Herramientas de retención sigue activo y no se dará de baja')
+      toast.success('Retención sigue activo y no se dará de baja')
     } catch (error) {
       toast.error('No pudimos reactivar el módulo', {
         description: error instanceof Error ? error.message : 'Intentá de nuevo.',
@@ -198,7 +209,7 @@ export default function Retencion() {
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <h3 className="text-base font-medium text-foreground">
-                Herramientas de retención
+                Retención
               </h3>
               <span
                 className={cn(
@@ -210,7 +221,7 @@ export default function Retencion() {
               </span>
             </div>
             <p className="text-[13px] text-muted-foreground">
-              +$20.000/mes · Activa la inteligencia de clientes y el club de puntos
+              {precioTexto ? `+${precioTexto}/mes · ` : ''}Activa la inteligencia de clientes y el club de puntos
             </p>
           </div>
 
@@ -223,7 +234,7 @@ export default function Retencion() {
                 onClick={() =>
                   setModalBaja({
                     codigo: 'motor_recompra',
-                    nombre: 'Herramientas de retención',
+                    nombre: 'Retención',
                   })
                 }
                 className="text-xs text-muted-foreground hover:text-destructive h-9"
@@ -274,7 +285,7 @@ export default function Retencion() {
                   disabled={Boolean(procesandoCodigo)}
                   className="font-medium h-9"
                 >
-                  Activar por $20.000/mes
+                  {precioTexto ? `Activar por ${precioTexto}/mes` : 'Activar módulo'}
                 </Button>
               )}
           </div>
@@ -298,7 +309,7 @@ export default function Retencion() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate('/dashboard/clientes?tab=retencion')}
+              onClick={() => navigate('/dashboard/clientes?tab=retencion&vista=motor')}
               className="shrink-0 h-9 font-medium gap-1.5"
             >
               <Users className="size-4" />
@@ -344,16 +355,28 @@ export default function Retencion() {
               </p>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!retencionActiva}
-              onClick={() => setPuntosEditor(true)}
-              className="shrink-0 h-9 font-medium gap-1.5"
-            >
-              <Sparkles className="size-4 text-amber-500" />
-              Configurar puntos
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!retencionActiva}
+                onClick={() => setPuntosEditor(true)}
+                className="h-9 font-medium gap-1.5"
+              >
+                <Sparkles className="size-4 text-amber-500" />
+                Configurar puntos
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/dashboard/clientes?tab=retencion&vista=puntos')}
+                className="h-9 font-medium gap-1.5"
+              >
+                Abrir puntos
+                <ArrowRight className="size-3.5 opacity-60" />
+              </Button>
+            </div>
           </div>
 
           <ul className="space-y-1.5 text-[13px] text-muted-foreground max-w-2xl">
@@ -404,22 +427,22 @@ export default function Retencion() {
         />
       </AjusteEditor>
 
-      {/* Dialog para activar Herramientas de retención */}
+      {/* Dialog para activar Retención */}
       <Dialog
         open={modalPago}
         onOpenChange={(open) => !procesandoCodigo && setModalPago(open)}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Activar Herramientas de retención</DialogTitle>
+            <DialogTitle>Activar Retención</DialogTitle>
             <DialogDescription>
-              Se cobra sólo el período restante hasta tu próxima renovación. Después se suma a tu factura mensual (+ $20.000/mes).
+              Se cobra sólo el período restante hasta tu próxima renovación. Después se suma a tu factura mensual{precioTexto ? ` (${precioTexto}/mes)` : ''}.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-xl bg-muted/60 p-4 text-sm space-y-2">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Módulo</span>
-              <span className="font-medium">+ $20.000/mes</span>
+              <span className="text-muted-foreground">Retención</span>
+              <span className="font-medium">{precioTexto ? `+ ${precioTexto}/mes` : '—'}</span>
             </div>
             <p className="text-xs text-muted-foreground pt-1 border-t border-border/50">
               Incluye Inteligencia de Recompra (segmentación y cadencia en Clientes) y Club de Puntos en tu tienda.
@@ -460,7 +483,7 @@ export default function Retencion() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Programar baja de Herramientas de retención</DialogTitle>
+            <DialogTitle>Programar baja de Retención</DialogTitle>
             <DialogDescription>
               El módulo va a seguir activo hasta el final de tu período actual. No se emitirán nuevos cobros por este módulo en tu próxima factura.
             </DialogDescription>

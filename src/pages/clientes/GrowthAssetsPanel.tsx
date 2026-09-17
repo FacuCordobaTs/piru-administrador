@@ -10,6 +10,7 @@ import { ApiError, codigosDescuentoApi, crecimientoApi, type CampanaCrecimiento,
 import { ArrowUpDown, ChevronRight, Copy, Globe2, Link2, Loader2, Megaphone, Package, Pencil, Plus, Power, PowerOff, RefreshCw, ShoppingBag, ShoppingCart, Sparkles, Tag, Trash2, TrendingUp, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  type AssetTab,
   type ClienteGrowth,
   type CodigoDescuentoGrowth,
   type FiltroCampana,
@@ -33,7 +34,6 @@ import {
   normalizarHasta,
 } from './types'
 
-type AssetTab = 'campanas' | 'cupones'
 type Filtros = { from?: string; to?: string; sucursalId?: number }
 type MobileView = 'lista' | 'detalle' | 'clientes'
 
@@ -41,6 +41,7 @@ interface Props {
   token: string
   username?: string | null
   tab: AssetTab
+  onChangeTab: (tab: AssetTab) => void
   campanas: CampanaCrecimiento[]
   cupones: CodigoDescuentoGrowth[]
   clientes: ClienteGrowth[]
@@ -403,48 +404,54 @@ export default function GrowthAssetsPanel(props: Props) {
           props.mobileView === 'lista' ? 'flex' : 'hidden'
         } min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}
       >
-        <div className="flex items-center justify-between gap-3 p-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {tab === 'campanas' ? 'Campañas' : 'Cupones'}
-            </p>
+        <div className="space-y-2 p-3">
+          {/* En desktop la mitad se elige acá; en mobile lo hace la barra de 4 slots. */}
+          <div className="hidden rounded-xl bg-muted/60 p-1 xl:flex">
+            <AssetSwitchTab active={tab === 'campanas'} onClick={() => props.onChangeTab('campanas')}>
+              Campañas
+            </AssetSwitchTab>
+            <AssetSwitchTab active={tab === 'cupones'} onClick={() => props.onChangeTab('cupones')}>
+              Cupones
+            </AssetSwitchTab>
+          </div>
+          <div className="flex items-center justify-between gap-3">
             <p className="text-[11px] text-muted-foreground">
               {tab === 'campanas' ? campanasFiltradas.length + 1 : cuponesFiltrados.length} resultados
             </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {props.onOpenFiltros && (
+            <div className="flex items-center gap-1.5">
+              {props.onOpenFiltros && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={props.onOpenFiltros}
+                  className="h-8 gap-1.5 rounded-full border border-border/40 px-3 text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  title="Filtrar y ordenar"
+                >
+                  <ArrowUpDown className="h-3 w-3" />
+                  <span className="hidden sm:inline">
+                    {tab === 'campanas'
+                      ? SORT_CAMPANA_LABELS[props.sortCampana ?? 'recent']
+                      : SORT_CUPON_LABELS[props.sortCupon ?? 'recent']}
+                  </span>
+                </Button>
+              )}
               <Button
-                variant="ghost"
                 size="sm"
-                onClick={props.onOpenFiltros}
-                className="h-8 gap-1.5 rounded-full border border-border/40 px-3 text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                title="Filtrar y ordenar"
+                disabled={tab === 'campanas' ? !props.crecimientoActivo : !props.cuponesActivos}
+                onClick={() => (tab === 'campanas' ? abrirCampana() : abrirCupon())}
+                className="h-8 rounded-full px-3 text-xs"
               >
-                <ArrowUpDown className="h-3 w-3" />
-                <span className="hidden sm:inline">
-                  {tab === 'campanas'
-                    ? SORT_CAMPANA_LABELS[props.sortCampana ?? 'recent']
-                    : SORT_CUPON_LABELS[props.sortCupon ?? 'recent']}
-                </span>
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Nuevo
               </Button>
-            )}
-            <Button
-              size="sm"
-              disabled={tab === 'campanas' ? !props.crecimientoActivo : !props.cuponesActivos}
-              onClick={() => (tab === 'campanas' ? abrirCampana() : abrirCupon())}
-              className="h-8 rounded-full px-3 text-xs"
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Nuevo
-            </Button>
+            </div>
           </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-2 p-2">
             {tab === 'campanas' ? (
               <>
-                {!props.crecimientoActivo && <Disabled label="Crecimiento está desactivado" />}
+                {!props.crecimientoActivo && <Disabled label="Las campañas están desactivadas" />}
                 {props.crecimientoActivo &&
                   (!query.trim() || 'orgánico sin campaña directo'.includes(query.trim().toLowerCase())) && (
                     <AssetButton
@@ -968,6 +975,11 @@ function Disabled({ label }: { label: string }) {
       <p className="mt-1 text-[11px] text-muted-foreground">Podés activarlo desde Módulos.</p>
     </div>
   )
+}
+
+/** Switch Campañas | Cupones de la columna lista, en desktop. */
+function AssetSwitchTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} className={`flex h-8 flex-1 items-center justify-center rounded-lg px-2 text-xs font-semibold transition-colors ${active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{children}</button>
 }
 
 const inicialesAsociacion = (nombre: string) =>
