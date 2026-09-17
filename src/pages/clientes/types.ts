@@ -123,15 +123,6 @@ export interface ResultadoCupon {
 export type ResultadoCampana = ResumenCrecimiento
 export type CampanaEditable = CampanaCrecimiento
 
-export const SEGMENTOS: Array<{ value: SegmentoCrecimiento; label: string; dot: string; description: string }> = [
-  { value: 'en_riesgo', label: 'En riesgo', dot: 'bg-orange-500', description: 'Se está pasando de su ritmo habitual.' },
-  { value: 'dormido', label: 'Dormido', dot: 'bg-violet-500', description: 'Hace rato que no pide para su cadencia.' },
-  { value: 'vip', label: 'VIP', dot: 'bg-amber-500', description: 'Cliente de alto valor para cuidar.' },
-  { value: 'activo', label: 'Activo', dot: 'bg-sky-500', description: 'Pide dentro de su ritmo habitual.' },
-  { value: 'nuevo', label: 'Primer pedido', dot: 'bg-emerald-500', description: 'Hizo una sola compra; el próximo paso es ayudarlo a repetir.' },
-  { value: 'perdido', label: 'Perdido', dot: 'bg-rose-500', description: 'Muy pasado de su ritmo habitual.' },
-]
-
 export const RECETAS: Array<{
   codigo: RecetaCrecimiento
   nombre: string
@@ -151,15 +142,14 @@ export const RECETAS: Array<{
 export const ARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })
 export const formatCurrency = (value: number | string | null | undefined) => ARS.format(Number(value ?? 0))
 export const formatDate = (value: string | null | undefined) => value ? new Date(value).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sin datos'
-export const getSegmento = (cliente: ClienteGrowth): SegmentoCrecimiento => cliente.segmento ?? (cliente.cantidadPedidos > 3 ? 'activo' : 'nuevo')
 export const recetaNombre = (codigo: string | null | undefined) => RECETAS.find((receta) => receta.codigo === codigo)?.nombre ?? codigo ?? 'Sin receta'
+
 export const nuevaClave = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export const normalizarHasta = (fecha?: string) => fecha ? `${fecha}T23:59:59.999` : undefined
 
 // Tipos para Filtrado y Ordenamiento
-export type SortClienteKey = 'attention' | 'recent' | 'orders' | 'spend' | 'alphabetical'
-export type SegmentFilter = 'todos' | SegmentoCrecimiento
+export type SortClienteKey = 'recent' | 'orders' | 'spend' | 'alphabetical'
 
 export type SortCampanaKey = 'recent' | 'conversions' | 'visits' | 'alphabetical'
 export type EstadoCampanaFilter = 'todas' | 'activa' | 'inactiva'
@@ -170,7 +160,6 @@ export type EstadoCuponFilter = 'todos' | 'vigentes' | 'inactivos' | 'agotados' 
 export type TipoCuponFilter = 'todos' | 'porcentaje' | 'monto_fijo'
 
 export const SORT_CLIENTE_LABELS: Record<SortClienteKey, string> = {
-  attention: 'Necesitan atención',
   recent: 'Más recientes',
   orders: 'Mayor volumen de pedidos',
   spend: 'Mayor gasto',

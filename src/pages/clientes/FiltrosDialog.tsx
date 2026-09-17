@@ -176,12 +176,6 @@ export function FiltrosDialog({
               {tab === 'clientes' && (
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                   <SortPill
-                    active={sortCliente === 'attention'}
-                    onClick={() => onSortClienteChange('attention')}
-                    label="Necesitan atención"
-                    desc="Prioriza clientes en riesgo o dormidos"
-                  />
-                  <SortPill
                     active={sortCliente === 'recent'}
                     onClick={() => onSortClienteChange('recent')}
                     label="Más recientes"

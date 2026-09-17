@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,9 +9,8 @@ import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { cn } from '@/lib/utils'
 import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
-import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Lock, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
-import MicroCampanaModal from './clientes/MicroCampanaModal'
 import { HistorialPuntosDialog } from './clientes/HistorialPuntosDialog'
 import GrowthAssetsPanel from './clientes/GrowthAssetsPanel'
 import MotorRecompra from './MotorRecompra'
@@ -21,7 +20,6 @@ import {
   type FiltroCampana,
   type PedidoCliente,
   type ProductoGrowth,
-  SEGMENTOS,
   type SucursalGrowth,
   type SortClienteKey,
   type SortCampanaKey,
@@ -35,24 +33,20 @@ import {
   SORT_CUPON_LABELS,
   formatCurrency,
   formatDate,
-  getSegmento,
 } from './clientes/types'
 import { FiltrosDialog } from './clientes/FiltrosDialog'
 
 type AssetTab = 'campanas' | 'cupones'
 type WorkspaceTab = 'clientes' | 'retencion' | AssetTab
 type SortKey = SortClienteKey
-type SegmentFilter = ReturnType<typeof getSegmento> | 'todos'
 type MobileView = 'clientes' | 'detalle' | 'pedidos'
 type AssetMobileView = 'lista' | 'detalle' | 'clientes'
 
-const prioridad: Record<ReturnType<typeof getSegmento>, number> = { en_riesgo: 6, dormido: 5, perdido: 4, vip: 3, nuevo: 2, activo: 1 }
 const iniciales = (nombre: string) => nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
 const dateStart = (fecha?: string) => fecha ? new Date(`${fecha}T00:00:00`).getTime() : null
 const dateEnd = (fecha?: string) => fecha ? new Date(`${fecha}T23:59:59.999`).getTime() : null
 
 export default function Clientes() {
-  const navigate = useNavigate()
   const token = useAuthStore((state) => state.token)
   const username = useAuthStore((state) => state.restaurante?.username)
   const crecimientoActivo = useModuloActivo('crecimiento')
@@ -66,11 +60,10 @@ export default function Clientes() {
   const [productos, setProductos] = useState<ProductoGrowth[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
-  const [segmento, setSegmento] = useState<SegmentFilter>('todos')
   const [sucursalId, setSucursalId] = useState<number | undefined>()
   const [from, setFrom] = useState<string>()
   const [to, setTo] = useState<string>()
-  const [sort, setSort] = useState<SortKey>('attention')
+  const [sort, setSort] = useState<SortKey>('recent')
   const [filtrosDialogOpen, setFiltrosDialogOpen] = useState(false)
   const [sortCampana, setSortCampana] = useState<SortCampanaKey>('recent')
   const [estadoCampana, setEstadoCampana] = useState<EstadoCampanaFilter>('todas')
@@ -92,7 +85,6 @@ export default function Clientes() {
   const [assetMobileView, setAssetMobileView] = useState<AssetMobileView>('lista')
   const [campanaSeleccionada, setCampanaSeleccionada] = useState<FiltroCampana>(null)
   const [cuponSeleccionado, setCuponSeleccionado] = useState<number | null>(null)
-  const [microCampanaOpen, setMicroCampanaOpen] = useState(false)
   const mobileNavRef = useRef<HTMLElement>(null)
 
   const actualizarPuntosCliente = (clienteId: number, nuevosPuntos: number) => {
@@ -154,8 +146,6 @@ export default function Clientes() {
   }, [token, crecimientoActivo, cuponesActivos])
   useEffect(() => { void cargar() }, [cargar])
 
-  const conteoSegmentos = useMemo(() => Object.fromEntries(SEGMENTOS.map((item) => [item.value, clientes.filter((cliente) => getSegmento(cliente) === item.value).length])) as Record<ReturnType<typeof getSegmento>, number>, [clientes])
-
   const pedidosEnPeriodo = useCallback((cliente: ClienteGrowth) => {
     const desde = dateStart(from); const hasta = dateEnd(to)
     return cliente.pedidos.filter((pedido) => {
@@ -168,7 +158,6 @@ export default function Clientes() {
     const q = query.trim().toLowerCase()
     const hayFiltroPedido = Boolean(from || to || sucursalId || campanaSeleccionada != null || cuponSeleccionado != null)
     const resultado = clientes.filter((cliente) => {
-      if (segmento !== 'todos' && getSegmento(cliente) !== segmento) return false
       if (q && !`${cliente.nombre} ${cliente.telefono} ${cliente.direccion ?? ''} ${(cliente.campanasParticipadas ?? []).map((c) => c.nombre).join(' ')} ${(cliente.cuponesUsados ?? []).map((c) => c.codigo).join(' ')}`.toLowerCase().includes(q)) return false
       const pedidos = pedidosEnPeriodo(cliente)
       if (hayFiltroPedido && pedidos.length === 0) return false
@@ -178,14 +167,13 @@ export default function Clientes() {
       return true
     })
     resultado.sort((a, b) => {
-      if (sort === 'attention') return (prioridad[getSegmento(b)] * (1 + b.totalGastado / 20000)) - (prioridad[getSegmento(a)] * (1 + a.totalGastado / 20000))
       if (sort === 'recent') return new Date(b.ultimoPedidoAt ?? 0).getTime() - new Date(a.ultimoPedidoAt ?? 0).getTime()
       if (sort === 'orders') return b.cantidadPedidos - a.cantidadPedidos
       if (sort === 'spend') return b.totalGastado - a.totalGastado
       return a.nombre.localeCompare(b.nombre)
     })
     return resultado
-  }, [clientes, query, segmento, pedidosEnPeriodo, from, to, sucursalId, campanaSeleccionada, cuponSeleccionado, sort])
+  }, [clientes, query, pedidosEnPeriodo, from, to, sucursalId, campanaSeleccionada, cuponSeleccionado, sort])
 
   useEffect(() => {
     if (clienteSeleccionado != null && !filtrados.some((cliente) => cliente.id === clienteSeleccionado)) setClienteSeleccionado(null)
@@ -226,8 +214,7 @@ export default function Clientes() {
   const seleccionarCuponMobile = (id: number | null) => { seleccionarCupon(id); if (id != null) { setAssetMobileView('detalle'); requestAnimationFrame(() => mobileNavRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })) } }
   const limpiarFiltros = () => {
     if (workspaceTab === 'clientes') {
-      setSegmento('todos')
-      setSort('attention')
+      setSort('recent')
       setSucursalId(undefined)
       setFrom(undefined)
       setTo(undefined)
@@ -255,7 +242,7 @@ export default function Clientes() {
     if (sucursalId != null) count++
     if (from || to) count++
     if (campanaSeleccionada != null || cuponSeleccionado != null) count++
-    if (sort !== 'attention') count++
+    if (sort !== 'recent') count++
     return count
   }, [sucursalId, from, to, campanaSeleccionada, cuponSeleccionado, sort])
 
@@ -358,7 +345,7 @@ export default function Clientes() {
               <div className="mt-4">
                 <h2 className="text-base font-semibold text-foreground">Clientes</h2>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Base de clientes, historial de pedidos, cadencia y diagnóstico de recompras.
+                  Base de clientes, historial de pedidos, cadencia y puntos.
                 </p>
               </div>
               <span className="mt-4 inline-flex items-center text-xs font-semibold text-muted-foreground group-hover:text-foreground group-hover:underline">
@@ -522,70 +509,16 @@ export default function Clientes() {
           </Button>
         </div>
 
-        {/* Segmentos de clientes debajo del buscador */}
-        {workspaceTab === 'clientes' && (
-          <div className="mt-3 flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap">
-            <button
-              type="button"
-              onClick={() => setSegmento('todos')}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
-                segmento === 'todos'
-                  ? 'bg-foreground text-background shadow-2xs'
-                  : 'border border-border/50 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground shadow-2xs backdrop-blur-xs'
-              }`}
-            >
-              <span>Todos</span>
-              <span
-                className={`ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums ${
-                  segmento === 'todos'
-                    ? 'bg-background/20 text-background'
-                    : 'bg-muted text-foreground'
-                }`}
-              >
-                {clientes.length}
-              </span>
-            </button>
-            {SEGMENTOS.map((item) => {
-              const active = segmento === item.value
-              const count = conteoSegmentos[item.value] ?? 0
-              return (
-                <button
-                  key={item.value}
-                  type="button"
-                  onClick={() => setSegmento(item.value)}
-                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
-                    active
-                      ? 'bg-foreground text-background shadow-2xs'
-                      : 'border border-border/50 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground shadow-2xs backdrop-blur-xs'
-                  }`}
-                >
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${item.dot}`} />
-                  <span>{item.label}</span>
-                  <span
-                    className={`ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums ${
-                      active
-                        ? 'bg-background/20 text-background'
-                        : 'bg-muted text-foreground'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-
         {/* Tiras de Filtros Activos (solo si hay filtros aplicados) */}
         {hasActiveFilters && (
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pt-0.5">
             <span className="text-[11px] font-medium text-muted-foreground/70 mr-1">Filtros aplicados:</span>
 
             {/* Clientes: Orden no por defecto */}
-            {workspaceTab === 'clientes' && sort !== 'attention' && (
+            {workspaceTab === 'clientes' && sort !== 'recent' && (
               <ActiveFilterBadge
                 label={`Orden: ${SORT_CLIENTE_LABELS[sort]}`}
-                onRemove={() => setSort('attention')}
+                onRemove={() => setSort('recent')}
               />
             )}
 
@@ -752,7 +685,6 @@ export default function Clientes() {
             <div className="shrink-0 p-4 sm:px-6 border-b border-border/30 bg-background/50 backdrop-blur-xs">
               <ResumenBaseClientes
                 clientes={clientes}
-                conteoSegmentos={conteoSegmentos}
                 onSelectCliente={(id) => seleccionarCliente(id)}
                 clienteSeleccionadoId={clienteSeleccionado}
               />
@@ -764,11 +696,8 @@ export default function Clientes() {
                   token={token ?? undefined}
                   mostrarPedidos={mostrarPedidos}
                   onTogglePedidos={togglePedidos}
-                  onMicroCampana={() => setMicroCampanaOpen(true)}
                   onDeleteClient={() => void eliminarCliente()}
                   onPuntosActualizados={(nuevos) => actualizarPuntosCliente(cliente.id, nuevos)}
-                  retencionActiva={retencionActiva}
-                  onActivarRetencion={() => navigate('/dashboard/ajustes/retencion')}
                 />
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
@@ -777,7 +706,7 @@ export default function Clientes() {
                   </div>
                   <h2 className="mt-3.5 text-sm font-semibold tracking-tight text-foreground">Seleccioná un cliente</h2>
                   <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                    Vas a ver su ciclo de vida, campañas, cupones y la micro-campaña sugerida.
+                    Vas a ver su historial de pedidos, campañas, cupones y puntos.
                   </p>
                 </div>
               )}
@@ -833,17 +762,6 @@ export default function Clientes() {
         </div>
       ) : null}
     </main>
-
-    {token && (
-      <MicroCampanaModal
-        open={microCampanaOpen}
-        onOpenChange={setMicroCampanaOpen}
-        token={token}
-        cliente={cliente}
-        username={username ?? undefined}
-        onPrepared={cargar}
-      />
-    )}
 
     {workspaceTab && (
       <FiltrosDialog
@@ -911,18 +829,17 @@ function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (va
 
 function ResumenBaseClientes({
   clientes,
-  conteoSegmentos,
   onSelectCliente,
   clienteSeleccionadoId,
 }: {
   clientes: ClienteGrowth[]
-  conteoSegmentos: Record<string, number>
   onSelectCliente: (id: number) => void
   clienteSeleccionadoId: number | null
 }) {
   const totalClientes = clientes.length
   const totalFacturado = useMemo(() => clientes.reduce((acc, c) => acc + (c.totalGastado || 0), 0), [clientes])
   const totalPedidos = useMemo(() => clientes.reduce((acc, c) => acc + (c.cantidadPedidos || 0), 0), [clientes])
+  const totalVip = useMemo(() => clientes.filter((c) => c.esVip).length, [clientes])
   const ticketPromedio = totalPedidos > 0 ? totalFacturado / totalPedidos : 0
 
   const ultimosClientes = useMemo(() => {
@@ -944,23 +861,16 @@ function ResumenBaseClientes({
       </div>
 
       {/* Métricas flotantes Apple */}
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-3">
         <div className="flex flex-col">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Clientes</span>
           <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalClientes}</span>
-          <span className="mt-0.5 text-[10px] text-muted-foreground">{(conteoSegmentos.activo ?? 0) + (conteoSegmentos.nuevo ?? 0)} activos / nuevos</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">{totalPedidos} pedidos en total</span>
         </div>
         <div className="flex flex-col">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">VIP</span>
-          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{conteoSegmentos.vip ?? 0}</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalVip}</span>
           <span className="mt-0.5 text-[10px] text-muted-foreground">máxima recurrencia</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">A recuperar</span>
-          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
-            {(conteoSegmentos.en_riesgo ?? 0) + (conteoSegmentos.dormido ?? 0) + (conteoSegmentos.perdido ?? 0)}
-          </span>
-          <span className="mt-0.5 text-[10px] text-muted-foreground">en riesgo o dormidos</span>
         </div>
         <div className="flex flex-col">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Facturación</span>
@@ -1004,8 +914,7 @@ function ResumenBaseClientes({
 }
 
 function ClientRow({ cliente, selected, onClick }: { cliente: ClienteGrowth; selected: boolean; onClick: () => void }) {
-  const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
-  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{cliente.nombre}</p>{cliente.esVip && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} /><span>{segmento.label}</span><span>·</span><span>{cliente.cantidadPedidos} pedidos</span>{(cliente.puntos ?? 0) > 0 && (<><span>·</span><span className="font-semibold text-amber-600 dark:text-amber-400">{cliente.puntos} pts</span></>)}</div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
+  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{cliente.nombre}</p>{cliente.esVip && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span>{cliente.cantidadPedidos} pedidos</span>{(cliente.puntos ?? 0) > 0 && (<><span>·</span><span className="font-semibold text-amber-600 dark:text-amber-400">{cliente.puntos} pts</span></>)}</div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
 }
 function EmptyClients() {
   return (
@@ -1017,61 +926,22 @@ function EmptyClients() {
   )
 }
 
-function getMicroCampanaInfo(cliente: ClienteGrowth) {
-  const seg = cliente.segmento ?? 'nuevo'
-  if (seg === 'nuevo') {
-    return {
-      badge: '¿Lo mismo de siempre? (Primer Pedido)',
-      descripcion: 'Prepara un enlace con su primer pedido cargado en el drawer para repetir en 1 toque.',
-    }
-  }
-  if (seg === 'en_riesgo') {
-    return {
-      badge: '¿Lo mismo de siempre? (En Riesgo)',
-      descripcion: 'Prepara su pedido habitual para rescatar su ritmo de compra antes de que se enfríe.',
-    }
-  }
-  if (seg === 'dormido') {
-    return {
-      badge: 'Reactivación (10% OFF)',
-      descripcion: 'Ofrecele un 10% de descuento automático en su pedido para reactivar el hábito.',
-    }
-  }
-  if (seg === 'perdido') {
-    return {
-      badge: 'Reactivación urgente (20% OFF · 48hs)',
-      descripcion: 'Una propuesta fuerte con 20% OFF por 48 horas como última oportunidad para recuperarlo.',
-    }
-  }
-  return {
-    badge: '¿Lo mismo de siempre? (Habitual)',
-    descripcion: 'Facilitale su compra recurrente con un link directo a su pedido de siempre en 1 click.',
-  }
-}
-
 function ClienteDetalle({
   cliente,
   token,
   mostrarPedidos = false,
   onTogglePedidos,
-  onMicroCampana,
   onDeleteClient,
   onPuntosActualizados,
-  retencionActiva = false,
-  onActivarRetencion,
 }: {
   cliente: ClienteGrowth
   token?: string
   mostrarPedidos?: boolean
   onTogglePedidos?: () => void
-  onMicroCampana: () => void
   onDeleteClient: () => void
   onPuntosActualizados?: (nuevos: number) => void
-  retencionActiva?: boolean
-  onActivarRetencion?: () => void
 }) {
   const [puntosDialogOpen, setPuntosDialogOpen] = useState(false)
-  const segmento = SEGMENTOS.find((item) => item.value === getSegmento(cliente))!
   const fuente =
     cliente.fuenteAdquisicion === 'organico'
       ? 'Orgánico · sin campaña'
@@ -1091,10 +961,6 @@ function ClienteDetalle({
                 <h2 className="truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                   {cliente.nombre}
                 </h2>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-2.5 py-0.5 text-xs font-medium text-foreground backdrop-blur-xs">
-                  <span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} />
-                  {segmento.label}
-                </span>
                 {cliente.esVip && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                     <Crown className="h-3 w-3" />
@@ -1132,27 +998,6 @@ function ClienteDetalle({
 
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-6 px-4 pb-8 sm:px-6">
-            {/* Diagnóstico de ciclo de vida */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center gap-2">
-                <span className={`h-2 w-2 rounded-full ${segmento.dot}`} />
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                  Diagnóstico de ciclo de vida
-                </span>
-                {cliente.esVip && getSegmento(cliente) !== 'vip' && (
-                  <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                    VIP {segmento.label.toLowerCase()}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm font-normal leading-relaxed text-foreground/90">
-                {segmento.description}{' '}
-                {cliente.resumenCadencia && (
-                  <span className="text-muted-foreground">{cliente.resumenCadencia}</span>
-                )}
-              </p>
-            </div>
-
             {/* Métricas flotantes */}
             <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-border/30 py-4 sm:grid-cols-5">
               <div className="flex flex-col">
@@ -1202,67 +1047,6 @@ function ClienteDetalle({
                   {cliente.puntos ?? 0}
                 </span>
               </button>
-            </div>
-
-            {/* Micro-Campaña sugerida */}
-            <div className={cn(
-              "relative overflow-hidden rounded-2xl p-4 transition-all",
-              retencionActiva
-                ? "border border-emerald-500/20 bg-emerald-500/[0.04] dark:bg-emerald-500/[0.07]"
-                : "border border-border/70 bg-muted/20"
-            )}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {retencionActiva ? (
-                      <>
-                        <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                        <span className="text-xs font-semibold tracking-tight text-foreground">
-                          Micro-Campaña sugerida
-                        </span>
-                        <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                          {getMicroCampanaInfo(cliente).badge}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="text-xs font-semibold tracking-tight text-foreground">
-                          Micro-Campaña sugerida
-                        </span>
-                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          Requiere Retención (+ $20.000/mes)
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {retencionActiva
-                      ? getMicroCampanaInfo(cliente).descripcion
-                      : 'Activá el módulo Herramientas de retención para generar enlaces inteligentes con carrito precargado.'}
-                  </p>
-                </div>
-                {retencionActiva ? (
-                  <Button
-                    size="sm"
-                    onClick={onMicroCampana}
-                    className="shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
-                  >
-                    <Zap className="mr-1.5 h-3.5 w-3.5" />
-                    Compartir Micro-Campaña
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={onActivarRetencion}
-                    className="shrink-0 rounded-full border-muted-foreground/30 px-4 text-xs font-medium text-foreground hover:bg-muted/50"
-                  >
-                    <Lock className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                    Activar módulo
-                  </Button>
-                )}
-              </div>
             </div>
 
             {/* Lo que más pide */}
@@ -1419,10 +1203,6 @@ function ClienteDetalle({
               <h2 className="truncate text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
                 {cliente.nombre}
               </h2>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-3 py-0.5 text-xs font-medium text-foreground backdrop-blur-xs">
-                <span className={`h-1.5 w-1.5 rounded-full ${segmento.dot}`} />
-                {segmento.label}
-              </span>
               {cliente.esVip && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                   <Crown className="h-3.5 w-3.5" />
@@ -1518,88 +1298,6 @@ function ClienteDetalle({
           <div className="grid grid-cols-1 gap-8 items-start lg:grid-cols-12 lg:gap-12">
             {/* Columna Principal / Recompra */}
             <div className="space-y-8 lg:col-span-7">
-              {/* Diagnóstico de ciclo de vida */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${segmento.dot}`} />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
-                    Diagnóstico de ciclo de vida · {segmento.label}
-                  </span>
-                  {cliente.esVip && getSegmento(cliente) !== 'vip' && (
-                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                      VIP {segmento.label.toLowerCase()}
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm font-normal leading-relaxed text-foreground/90">
-                  {segmento.description}{' '}
-                  {cliente.resumenCadencia && (
-                    <span className="text-muted-foreground">{cliente.resumenCadencia}</span>
-                  )}
-                </p>
-              </div>
-
-              {/* Micro-Campaña sugerida */}
-              <div className={cn(
-                "relative overflow-hidden rounded-2xl p-5 transition-all",
-                retencionActiva
-                  ? "border border-emerald-500/20 bg-emerald-500/[0.04] dark:bg-emerald-500/[0.07]"
-                  : "border border-border/70 bg-muted/20"
-              )}>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {retencionActiva ? (
-                        <>
-                          <Zap className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                          <span className="text-sm font-semibold tracking-tight text-foreground">
-                            Micro-Campaña sugerida
-                          </span>
-                          <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                            {getMicroCampanaInfo(cliente).badge}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="text-sm font-semibold tracking-tight text-foreground">
-                            Micro-Campaña sugerida
-                          </span>
-                          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                            Requiere Retención (+ $20.000/mes)
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
-                      {retencionActiva
-                        ? getMicroCampanaInfo(cliente).descripcion
-                        : 'Activá el módulo Herramientas de retención (+ $20.000/mes) para generar enlaces personalizados por cliente con su pedido habitual o cupones de reactivación en 1 click.'}
-                    </p>
-                  </div>
-                  {retencionActiva ? (
-                    <Button
-                      size="sm"
-                      onClick={onMicroCampana}
-                      className="h-9 shrink-0 rounded-full bg-emerald-600 px-5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
-                    >
-                      <Zap className="mr-1.5 h-3.5 w-3.5" />
-                      Compartir Micro-Campaña
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={onActivarRetencion}
-                      className="h-9 shrink-0 rounded-full border-muted-foreground/30 px-5 text-xs font-medium text-foreground hover:bg-muted/50"
-                    >
-                      <Lock className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                      Activar módulo
-                    </Button>
-                  )}
-                </div>
-              </div>
-
               {/* Lo que más pide */}
               {cliente.productosTop && cliente.productosTop.length > 0 && (
                 <div className="space-y-3">
