@@ -920,7 +920,7 @@ function DetalleColaCliente({
                         <Skeleton className="h-4 w-1/2" />
                     </div>
                 ) : mensaje?.texto ? (
-                    <div className="rounded-2xl border border-border/30 bg-white dark:bg-muted/30 p-4 text-xs font-sans leading-relaxed text-foreground whitespace-pre-wrap select-all shadow-2xs">
+                    <div className="rounded-2xl border border-border/30 bg-white dark:bg-muted/30 p-4 text-xs font-sans leading-relaxed text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-all shadow-2xs">
                         {mensaje.texto}
                     </div>
                 ) : (
