@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { commandsToBytes, formatComanda, prepararCopiasComanda } from '../src/utils/printerUtils'
+import { commandsToBytes, formatComanda, itemsParaComanda, prepararCopiasComanda } from '../src/utils/printerUtils'
 
 describe('impresión ESC/POS', () => {
   test('dos copias conservan contenido, inicialización y corte de cada ticket sin modificar el original', () => {
@@ -42,5 +42,61 @@ describe('impresión ESC/POS', () => {
     const bytes = commandsToBytes(commands)
     expect(bytes.length).toBeGreaterThan(0)
     expect(bytes.every((byte) => byte >= 0 && byte <= 255)).toBe(true)
+  })
+})
+
+describe('delta de comanda (claim de impresión)', () => {
+  const pedido = {
+    tipo: 'mesa' as const,
+    items: [
+      { id: 1, cantidad: 3, nombreProducto: 'Milanesa' },
+      { id: 2, cantidad: 1, nombreProducto: 'Coca' },
+    ],
+  }
+
+  test('una mesa imprime sólo los pendientes, con la cantidad reclamada', () => {
+    const items = itemsParaComanda(pedido, { claimed: true, printFull: false, pendingItems: [{ id: 1, cantidad: 1 }] })
+
+    // La mesa ya tenía 3 milanesas: lo que sale ahora es la cantidad nueva (1).
+    expect(items).toEqual([{ id: 1, cantidad: 1, nombreProducto: 'Milanesa' }])
+  })
+
+  test('una mesa sin pendientes no imprime nada (null), aunque printFull venga en true', () => {
+    expect(itemsParaComanda(pedido, { claimed: true, printFull: true, pendingItems: [] })).toBeNull()
+    expect(itemsParaComanda(pedido, { claimed: true, printFull: true, pendingItems: [{ id: 99, cantidad: 1 }] })).toBeNull()
+  })
+
+  test('printFull reimprime la comanda entera sólo en delivery/takeaway', () => {
+    const delivery = { tipo: 'delivery' as const, items: pedido.items }
+    const claim = { claimed: true, printFull: true, pendingItems: [{ id: 2, cantidad: 1 }] }
+
+    expect(itemsParaComanda(delivery, claim)).toEqual(delivery.items)
+  })
+
+  test('sin pendingItems (backend viejo) se imprime la comanda completa', () => {
+    expect(itemsParaComanda(pedido, { claimed: true, printFull: false })).toEqual(pedido.items)
+  })
+
+  test('descarta pendientes inválidos en lugar de imprimirlos', () => {
+    const items = itemsParaComanda(pedido, {
+      claimed: true,
+      printFull: false,
+      pendingItems: [
+        { id: 1, cantidad: 0 },
+        { id: 2.5, cantidad: 1 },
+        { id: 2, cantidad: 1 },
+      ],
+    })
+
+    expect(items).toEqual([{ id: 2, cantidad: 1, nombreProducto: 'Coca' }])
+  })
+
+  test('el delta de delivery/takeaway sin coincidencias devuelve lista vacía, no null', () => {
+    // El llamador decide ahí: lista vacía es un pedido sin productos imprimibles
+    // (libera el claim y avisa), `null` es una mesa sin nada nuevo.
+    expect(itemsParaComanda(
+      { tipo: 'takeaway', items: pedido.items },
+      { claimed: true, printFull: false, pendingItems: [{ id: 99, cantidad: 1 }] },
+    )).toEqual([])
   })
 })

@@ -89,6 +89,11 @@ export interface AdminUpdateEvent {
   reason?: string
   /** El backend ya resolvió que este evento debe llegar a cocina. */
   shouldPrint?: boolean
+  /**
+   * El cambio lo originó la app de mozos. Ese cliente no imprime, así que el
+   * delta de una mesa también se imprime solo cuando el evento lo marca.
+   */
+  origenMozo?: boolean
 }
 
 export interface UseAdminWebSocketReturn {
@@ -350,6 +355,7 @@ export const useAdminWebSocket = (): UseAdminWebSocketReturn => {
                     ? data.payload.reason
                     : undefined,
                   shouldPrint: data.payload?.shouldPrint === true,
+                  origenMozo: data.payload?.origenMozo === true,
                 })
                 break
 

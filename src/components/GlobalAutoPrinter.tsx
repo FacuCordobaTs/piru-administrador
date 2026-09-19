@@ -6,7 +6,7 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { pedidoUnificadoApi, sucursalesApi } from '@/lib/api'
 import { useAdminContext } from '@/context/AdminContext'
 import { usePrinter } from '@/context/PrinterContext'
-import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
+import { formatComanda, commandsToBytes, itemsParaComanda } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 
 // ─────────────────────────────────────────────
@@ -94,6 +94,9 @@ const GlobalAutoPrinter = () => {
 
     const [unifiedPedidos, setUnifiedPedidos] = useState<UnifiedPedido[]>([])
     const processedOrdersRef = useRef<Map<string, { status: string, itemIds: Set<number>, pagado?: boolean }>>(new Map())
+    // El delta que manda la app de mozos a una mesa se imprime solo: ese
+    // teléfono no tiene impresora y la comanda tiene que salir en este equipo.
+    const mesaOrdersPendingAutoPrintRef = useRef<Set<number>>(new Set())
     const initialLoadDoneRef = useRef(false)
     const fetchedSucursalRef = useRef<number | null | undefined>(undefined)
     // El evento del backend distingue un alta nueva de una carga inicial. Sin
@@ -165,8 +168,13 @@ const GlobalAutoPrinter = () => {
         ) {
             return
         }
-        if (!isDashboardRoute && lastUpdate.type !== 'mesa' && lastUpdate.shouldPrint && lastUpdate.pedidoId) {
-            realtimeOrdersPendingPrintRef.current.add(lastUpdate.pedidoId)
+        if (!isDashboardRoute && lastUpdate.shouldPrint && lastUpdate.pedidoId) {
+            // En esa ruta el Dashboard imprime; acá sólo registramos el evento.
+            if (lastUpdate.type === 'mesa') {
+                if (lastUpdate.origenMozo) mesaOrdersPendingAutoPrintRef.current.add(lastUpdate.pedidoId)
+            } else {
+                realtimeOrdersPendingPrintRef.current.add(lastUpdate.pedidoId)
+            }
         }
         fetchPedidos()
     }, [lastUpdate, fetchPedidos, isDashboardRoute])
@@ -192,8 +200,10 @@ const GlobalAutoPrinter = () => {
             }
 
             // Las mesas se guardan automáticamente, pero su impresión siempre
-            // requiere una acción explícita desde el Dashboard.
-            if (pedido.tipo === 'mesa') {
+            // requiere una acción explícita desde el Dashboard. La excepción es
+            // el delta que manda la app de mozos: ese ya no tiene otro
+            // dispositivo que lo imprima (ver el efecto de `lastUpdate`).
+            if (pedido.tipo === 'mesa' && !mesaOrdersPendingAutoPrintRef.current.has(pedido.id)) {
                 realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
@@ -203,6 +213,7 @@ const GlobalAutoPrinter = () => {
 
             // Archivado → registrar y nunca imprimir
             if (pedido.estado === 'archived') {
+                mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
@@ -210,6 +221,7 @@ const GlobalAutoPrinter = () => {
             // Ya impreso en la DB → registrar y saltar
             if (pedido.impreso) {
                 realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
@@ -245,6 +257,7 @@ const GlobalAutoPrinter = () => {
                     .then(async (res: any) => {
                         if (!res?.claimed) {
                             realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                            mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                             return
                         }
 
@@ -255,13 +268,16 @@ const GlobalAutoPrinter = () => {
                                 return Number.isInteger(candidate.id) && Number(candidate.cantidad) > 0
                             })
                             : []
-                        const pendientes = Array.isArray(res?.pendingItems)
-                            ? new Map<number, number>(claimedItems.map((item) => [item.id, item.cantidad]))
-                            : null
                         try {
-                            const baseItems = pendientes && !res?.printFull
-                                ? pedido.items.filter((item) => pendientes.has(item.id)).map((item) => ({ ...item, cantidad: pendientes.get(item.id)! }))
-                                : pedido.items
+                            // En una mesa el delta es la única fuente de verdad:
+                            // sin pendientes no hay nada nuevo que mandar a cocina.
+                            const baseItems = itemsParaComanda(pedido, res)
+                            if (!baseItems) {
+                                // El mozo borró lo que había agregado antes de que
+                                // saliera la comanda: no se imprime nada.
+                                mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
+                                return
+                            }
                             const itemsToPrint = baseItems.map(item => {
                                 const producto = allProductos.find(p => p.id === item.productoId)
                                 return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
@@ -297,6 +313,7 @@ const GlobalAutoPrinter = () => {
                         }
 
                         realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                        mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                         setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
                     })
                     .catch((err) => {

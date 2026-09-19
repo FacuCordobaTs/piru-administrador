@@ -306,7 +306,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // Producto destacado del resultado: es el que Enter agrega al pedido y el
     // que las flechitas recorren durante la búsqueda (indicado con el marquito).
     const [indiceSeleccionado, setIndiceSeleccionado] = useState(0)
-    const navegacionTecladoRef = useRef(false)
 
     // Datos del cliente
     const [tipo, setTipo] = useState<'delivery' | 'takeaway' | 'mesa'>('takeaway')
@@ -642,7 +641,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // El producto destacado se mantiene a la vista aunque el listado haya hecho scroll.
     // No usamos scrollIntoView: el catálogo puede estar renderizado por portal
     // y también mover el panel/página. Ajustamos únicamente su propio scroll.
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!mostrarListado) return
         const listado = scrollRef.current
         const card = listado?.querySelector<HTMLElement>(`[data-flat-index="${indiceSeleccionado}"]`)
@@ -650,19 +649,13 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
         const listadoRect = listado.getBoundingClientRect()
         const cardRect = card.getBoundingClientRect()
-        if (navegacionTecladoRef.current) {
-            navegacionTecladoRef.current = false
-            // Al navegar con flechas, subimos el resultado activo hasta el borde
-            // superior para mantenerlo claramente visible.
-            listado.scrollTop += cardRect.top - listadoRect.top - 8
-            return
+        const margen = 8
+        if (cardRect.top < listadoRect.top + margen) {
+            listado.scrollTop += cardRect.top - listadoRect.top - margen
+        } else if (cardRect.bottom > listadoRect.bottom - margen) {
+            listado.scrollTop += cardRect.bottom - listadoRect.bottom + margen
         }
-        if (cardRect.top < listadoRect.top) {
-            listado.scrollTop -= listadoRect.top - cardRect.top
-        } else if (cardRect.bottom > listadoRect.bottom) {
-            listado.scrollTop += cardRect.bottom - listadoRect.bottom
-        }
-    }, [indiceSeleccionado, mostrarListado])
+    }, [catalogoTarget, indiceSeleccionado, mostrarListado, productosOrdenados])
 
     // Columnas reales del grid de resultados: las flechitas verticales saltan
     // de fila en fila y las horizontales de producto en producto.
@@ -1420,7 +1413,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         return (
             <>
                 {catalogoTarget && createPortal(
-                    <div className={cn('flex flex-col overflow-hidden', catalogoEnColumna && 'h-full min-h-0')}>
+                    <div className={cn('flex flex-col overflow-hidden', catalogoEnColumna ? 'h-full min-h-0' : 'relative z-[1000]')}>
                         <div className={cn('shrink-0', catalogoEnColumna ? 'border-b border-border/70 p-3' : mostrarListado && 'border-b border-border/70 pb-2.5')}>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
@@ -1431,7 +1424,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     onKeyDown={(event) => {
                                         if (mostrarListado && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || (catalogoEnColumna && (event.key === 'ArrowLeft' || event.key === 'ArrowRight'))) && productosOrdenados.length > 0) {
                                             event.preventDefault()
-                                            navegacionTecladoRef.current = true
                                             setIndiceSeleccionado((current) => {
                                                 const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
                                                 const columnas = horizontal ? 1 : calcularColumnas()
@@ -1451,7 +1443,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                 />
                             </div>
                         </div>
-                        {mostrarListado && <div ref={scrollRef} className={cn('overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', catalogoEnColumna ? 'min-h-0 flex-1 p-3' : 'mt-2 max-h-[min(45vh,400px)] rounded-xl border border-border bg-background p-2 shadow-sm')}>
+                        {mostrarListado && <div ref={scrollRef} className={cn('overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', catalogoEnColumna ? 'min-h-0 flex-1 p-3' : 'relative z-[1000] mt-2 max-h-[min(45vh,400px)] rounded-xl border border-border bg-background p-2 shadow-2xl')}>
                             {productosFiltrados.length === 0 ? (
                                 <p className="py-10 text-center text-sm text-muted-foreground">No se encontraron productos.</p>
                             ) : (
@@ -1469,7 +1461,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                                             type="button"
                                                             tabIndex={-1}
                                                             data-flat-index={flatIndex}
-                                                            onMouseEnter={() => flatIndex != null && setIndiceSeleccionado(flatIndex)}
                                                             onClick={(event) => handleProductClick(producto, event.currentTarget.getBoundingClientRect())}
                                                             className={cn(
                                                                 catalogoEnColumna
@@ -1681,7 +1672,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                                     if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                                         if (!mostrarListado || productosOrdenados.length === 0) return
                                         e.preventDefault()
-                                        navegacionTecladoRef.current = true
                                         setIndiceSeleccionado((prev) => {
                                             const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
                                             const columnas = horizontal ? 1 : calcularColumnas()

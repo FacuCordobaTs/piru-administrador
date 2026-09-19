@@ -22,3 +22,20 @@ export function precioAnual(precioMensual: number, descuentoAnual: number | null
   const pct = descuentoAnualEfectivo(descuentoAnual)
   return Math.round(precioMensual * 12 * (1 - pct / 100))
 }
+
+// ── Montos ───────────────────────────────────────────────────────────────────
+const ARS = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  maximumFractionDigits: 0,
+})
+
+/**
+ * Formato monetario del admin. Devuelve `null` cuando no hay monto, para que la
+ * UI pueda distinguir "todavía no cargó el catálogo" de "$0".
+ */
+export function fmtARS(monto: string | number | null | undefined): string | null {
+  if (monto === null || monto === undefined || monto === '') return null
+  const valor = typeof monto === 'string' ? Number.parseFloat(monto) : monto
+  return Number.isFinite(valor) ? ARS.format(valor) : null
+}

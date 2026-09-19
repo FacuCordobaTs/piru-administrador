@@ -30,6 +30,7 @@ import {
     Repeat2, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ModuloComercial } from '@/components/ModuloComercial'
 
 // =============================================================================
 // MOTOR DE RECOMPRA · GOTEO (piloto automático)
@@ -170,7 +171,7 @@ export default function MotorRecompra() {
     if (bloqueadoPlan) {
         return (
             <div className="mx-auto max-w-[1680px] w-full px-4 sm:px-6 py-6">
-                <PlanBloqueado />
+                <PlanBloqueado onCambioEstado={cargar} />
             </div>
         )
     }
@@ -1975,7 +1976,7 @@ function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => v
     )
 }
 
-function PlanBloqueado() {
+function PlanBloqueado({ onCambioEstado }: { onCambioEstado: () => void }) {
     return (
         <div className="text-center py-20">
             <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
@@ -1986,6 +1987,18 @@ function PlanBloqueado() {
                 Convertí tu base de clientes en recompra automática: detección de ritmo habitual, mensajes personalizados
                 goteados y atribución con grupo de control.
             </p>
+            <div className="mx-auto mt-6 max-w-sm text-left">
+                <ModuloComercial
+                    codigo="motor_recompra"
+                    variante="tarjeta"
+                    tipo="pago"
+                    titulo="Retención"
+                    nombreComercial="Retención"
+                    descripcion="Motor de recompra, club de puntos y campañas de recuperación sobre tu propia base de clientes."
+                    icono={Crown}
+                    onCambioEstado={onCambioEstado}
+                />
+            </div>
         </div>
     )
 }

@@ -5,6 +5,7 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { AjusteInput } from '../components/AjusteInput'
+import { ToggleConExplicacion } from '../components/ToggleConExplicacion'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import { useAjuste } from '../hooks/useAjuste'
 import { usePrinter } from '@/context/PrinterContext'
@@ -16,7 +17,15 @@ import {
   CostoEnvioField,
 } from './general/campos'
 
-type EditorId = 'negocio' | 'tienda' | 'envio' | 'logos' | 'avisos' | null
+type EditorId = 'negocio' | 'tienda' | 'gtm' | 'envio' | 'logos' | 'avisos' | null
+
+const formatoGtm = (value: string) => value.trim().toUpperCase()
+const validarGtm = (value: string) => {
+  if (value === '') return null
+  return /^GTM-[A-Z0-9]{4,32}$/.test(value)
+    ? null
+    : 'Usá el ID del contenedor, por ejemplo GTM-ABC123.'
+}
 
 export default function General() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
@@ -31,6 +40,7 @@ export default function General() {
   const telefono = restaurante?.telefono?.trim()
   const colorUnico = restaurante?.usarColorUnico === true
   const costoEnvioNum = parseFloat(restaurante?.deliveryFee ?? '') || 0
+  const gtmContainerId = restaurante?.gtmContainerId?.trim() || ''
 
   return (
     <section className="space-y-6">
@@ -63,6 +73,17 @@ export default function General() {
           onAccion={() => setEditor('tienda')}
         />
         <AjusteRow
+          titulo="Google Tag Manager (GTM) y Meta Pixel"
+          oracion={
+            gtmContainerId
+              ? `Contenedor ${gtmContainerId} conectado · Medición de visitas y conversiones activa`
+              : 'Sin contenedor configurado — conectá tu ID de GTM para medir pauta digital'
+          }
+          estado={gtmContainerId ? 'configurado' : 'sin-configurar'}
+          accionLabel={gtmContainerId ? 'Editar' : 'Configurar'}
+          onAccion={() => setEditor('gtm')}
+        />
+        <AjusteRow
           titulo="Costo de envío"
           oracion={
             costoEnvioNum > 0
@@ -89,6 +110,13 @@ export default function General() {
           oracion={tieneLogo ? 'Logo cargado' : 'Sin logo para el link público'}
           estado={tieneLogo ? 'configurado' : 'atencion'}
           onAccion={() => setEditor('logos')}
+        />
+        <ToggleConExplicacion
+          campo="orderGroupEnabled"
+          apiFn={restauranteApi.toggleOrderGroupEnabled}
+          titulo="Permitir pedidos en grupo"
+          explicacion="Habilita un botón en la tienda para que un cliente inicie una sala compartida y envíe el link a otros comensales."
+          className="border-b border-border py-4"
         />
         <div className="flex items-center justify-between gap-4 border-b border-border py-4">
           <div className="min-w-0">
@@ -145,6 +173,27 @@ export default function General() {
               <ColorField campo="colorSecundario" label="Color secundario (fondos)" fallback="#FFFFFF" />
             </div>
           )}
+        </div>
+      </AjusteEditor>
+
+      <AjusteEditor
+        open={editor === 'gtm'}
+        onOpenChange={(o) => !o && setEditor(null)}
+        titulo="Google Tag Manager"
+        descripcion="Pegá el ID de tu contenedor para medir visitas y conversiones de tu tienda."
+      >
+        <div className="space-y-3">
+          <AjusteInput
+            campo="gtmContainerId"
+            label="ID del contenedor"
+            placeholder="GTM-ABC123"
+            mono
+            transform={formatoGtm}
+            validate={validarGtm}
+          />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Piru no inyecta scripts pesados por defecto para que la tienda cargue en milisegundos. Si utilizás Meta Pixel, Google Analytics 4 o TikTok Pixel, administralos de forma transparente dentro de tu contenedor GTM.
+          </p>
         </div>
       </AjusteEditor>
 

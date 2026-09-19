@@ -28,6 +28,29 @@ for (const width of [1440, 390]) {
       if (width < 768) await expect(page.getByRole('navigation', { name: 'Secciones de ajustes' })).toBeHidden()
     }
 
+    test('las URLs viejas de Crecimiento redirigen en vez de morir', async ({ page }) => {
+      // `null` = destino dentro de Ajustes: ahí no hay sonda de ruta, así que se
+      // verifica la pantalla que se renderiza (General es la única con fila de GTM).
+      const casos: [string, string | null][] = [
+        ['/dashboard/ajustes/adquisicion', '/dashboard/clientes?tab=adquisicion&vista=campanas'],
+        ['/dashboard/ajustes/crecimiento', '/dashboard/clientes?tab=adquisicion&vista=campanas'],
+        ['/dashboard/ajustes/retencion', '/dashboard/clientes?tab=retencion&vista=motor'],
+        ['/dashboard/ajustes/retencion?config=puntos', '/dashboard/clientes?tab=retencion&vista=puntos'],
+        ['/dashboard/ajustes/activacion', null],
+        ['/dashboard/ajustes/experiencia', null],
+      ]
+      for (const [origen, destino] of casos) {
+        await page.goto(`/tests/ajustes-ui.html#${origen}`)
+        await page.reload()
+        if (destino === null) {
+          await expect(page.getByTestId('ruta')).toHaveCount(0)
+          await expect(row(page, 'Google Tag Manager')).toBeVisible()
+        } else {
+          await expect(page.getByTestId('ruta')).toHaveText(destino)
+        }
+      }
+    })
+
     test('horarios reemplaza el resumen y conserva el autosave al volver', async ({ page }) => {
       await section(page, 'Horarios')
       await row(page, 'Horarios de atención').click()
@@ -90,13 +113,16 @@ for (const width of [1440, 390]) {
       await row(page, 'Punto de venta').click()
       await expect(page.getByRole('heading', { name: 'Punto de venta', exact: true })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Ventas en el local', exact: true })).toBeHidden()
+      // Los módulos que se activan en Clientes no caen al fallback "ventas".
+      await expect(page.getByText('Campañas de adquisición')).toHaveCount(0)
+      await expect(page.getByText('Retención')).toHaveCount(0)
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await back(page).click()
-      await section(page, 'Monetización')
+      await section(page, 'Métodos de pago')
       await expect(row(page, 'Métodos de pago habilitados')).toBeVisible()
       await row(page, 'Mercado Pago').first().click()
       await expect(page.getByRole('region', { name: 'Herramientas disponibles', exact: true })).toBeVisible()
-      await expect(page.getByRole('heading', { name: 'Monetización', exact: true })).toBeHidden()
+      await expect(page.getByRole('heading', { name: 'Métodos de pago', exact: true })).toBeHidden()
       await back(page).click()
       await section(page, 'Entregas y zonas')
       await row(page, 'Múltiples sucursales').click()
@@ -106,23 +132,19 @@ for (const width of [1440, 390]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     })
 
-    test('crecimiento, WhatsApp y mapa respetan la misma profundidad', async ({ page }) => {
-      await section(page, 'Adquisición')
+    test('general, WhatsApp y mapa respetan la misma profundidad', async ({ page }) => {
+      await section(page, 'General')
       await row(page, 'Google Tag Manager').click()
       await expect(page.getByRole('region', { name: 'Google Tag Manager', exact: true })).toBeVisible()
-      await expect(row(page, 'Campañas de adquisición')).toBeHidden()
+      await expect(row(page, 'Tu negocio')).toBeHidden()
       await back(page).click()
-      await section(page, 'Activación')
-      await row(page, 'Pedidos entre amigos').click()
-      await expect(page.getByRole('heading', { name: 'Pedidos entre amigos (Sala grupal)', exact: true })).toBeVisible()
-      await back(page).click()
-      await section(page, 'Retención')
-      // El mock de `/modulos/mis-modulos` devuelve `data: []`, así que el precio
-      // del catálogo no está disponible y el botón cae al label sin monto.
-      await page.getByRole('button', { name: /^Activar/ }).click()
-      await expect(page.getByRole('heading', { name: 'Activar Retención', exact: true })).toBeVisible()
-      await expect(page.getByRole('dialog')).toHaveCount(0)
-      await back(page).click()
+      // La sala grupal dejó de tener editor propio: es un switch en la lista.
+      const salaGrupal = page.getByRole('switch', { name: 'Permitir pedidos en grupo' })
+      await expect(salaGrupal).toBeVisible()
+      const guardaSala = page.waitForRequest(request => request.url().endsWith('/restaurante/toggle-order-group-enabled') && request.method() === 'PUT')
+      await salaGrupal.click()
+      await guardaSala
+      await expect(salaGrupal).not.toBeChecked()
       await section(page, 'WhatsApp')
       await expect(row(page, 'WhatsApp Business')).toContainText('Conectado')
       await row(page, 'WhatsApp Business').click()

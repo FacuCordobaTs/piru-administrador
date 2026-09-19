@@ -1,14 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, type ComponentType } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import {
   Store,
   CreditCard,
   Clock,
   Truck,
-  TrendingUp,
-  Zap,
-  Repeat,
-  FileText,
   Printer,
   User,
   UtensilsCrossed,
@@ -35,34 +31,12 @@ import { resetSettingsScroll } from '@/components/settings-navigation-context'
 import { AjusteEditor } from './components/AjusteEditor'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean; visibleInNav?: boolean }
+interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean }
 
 const SECTIONS: SectionDef[] = [
-  // --- Pilares del Sistema de Crecimiento ---
-  {
-    id: 'adquisicion',
-    label: 'Adquisición',
-    descripcion: 'Campañas de adquisición, códigos de descuento y medición con GTM / Pixel.',
-    Icon: TrendingUp,
-    Component: lazy(() => import('./sections/Adquisicion')),
-  },
-  {
-    id: 'activacion',
-    label: 'Activación',
-    descripcion: 'Tu tienda web en el navegador, experiencia sin fricción y loop viral con pedidos en grupo.',
-    Icon: Zap,
-    Component: lazy(() => import('./sections/Activacion')),
-  },
-  {
-    id: 'retencion',
-    label: 'Retención',
-    descripcion: 'Retención: motor de recompra, segmentación inteligente, micro-campañas y Club de Puntos.',
-    Icon: Repeat,
-    Component: lazy(() => import('./sections/Retencion')),
-  },
   {
     id: 'monetizacion',
-    label: 'Monetización',
+    label: 'Métodos de pago',
     descripcion: 'Cómo cobrás: Mercado Pago, Talo 3.0, efectivo y facturación electrónica ARCA.',
     Icon: CreditCard,
     Component: lazy(() => import('./sections/Monetizacion')),
@@ -133,48 +107,6 @@ const SECTIONS: SectionDef[] = [
     Icon: User,
     Component: lazy(() => import('./sections/Cuenta')),
   },
-
-  // --- Aliases de compatibilidad con rutas/enlaces antiguos ---
-  {
-    id: 'crecimiento',
-    label: 'Adquisición',
-    descripcion: 'Redirigido a Adquisición.',
-    Icon: TrendingUp,
-    Component: lazy(() => import('./sections/Adquisicion')),
-    visibleInNav: false,
-  },
-  {
-    id: 'experiencia',
-    label: 'Activación',
-    descripcion: 'Redirigido a Activación.',
-    Icon: Zap,
-    Component: lazy(() => import('./sections/Activacion')),
-    visibleInNav: false,
-  },
-  {
-    id: 'pagos',
-    label: 'Monetización',
-    descripcion: 'Redirigido a Monetización.',
-    Icon: CreditCard,
-    Component: lazy(() => import('./sections/Monetizacion')),
-    visibleInNav: false,
-  },
-  {
-    id: 'avisos',
-    label: 'WhatsApp',
-    descripcion: 'Redirigido a WhatsApp.',
-    Icon: MessageCircle,
-    Component: lazy(() => import('./sections/WhatsApp')),
-    visibleInNav: false,
-  },
-  {
-    id: 'facturacion',
-    label: 'Monetización',
-    descripcion: 'Redirigido a Monetización.',
-    Icon: FileText,
-    Component: lazy(() => import('./sections/Monetizacion')),
-    visibleInNav: false,
-  },
 ]
 
 const ALIASES_SECCION: Record<string, string> = {
@@ -185,33 +117,34 @@ const ALIASES_SECCION: Record<string, string> = {
   facturacion: 'monetizacion',
 }
 
+/**
+ * URLs que alguna vez apuntaron a una sección de Ajustes y hoy viven en otro
+ * lado. Se resuelven con un redirect en vez de "Sección no encontrada" porque
+ * Mis módulos todavía emite links viejos guardados por el usuario.
+ */
+const REDIRECTS_SECCION: Record<string, string> = {
+  adquisicion: '/dashboard/clientes?tab=adquisicion&vista=campanas',
+  activacion: '/dashboard/ajustes/general',
+  retencion: '/dashboard/clientes?tab=retencion&vista=motor',
+}
+const DESTINO_PUNTOS = '/dashboard/clientes?tab=retencion&vista=puntos'
+
 const REQUISITOS: Record<string, string[]> = {
   impresion: ['impresion_comandas'],
   mozos: ['pos', 'mesas'],
 }
 
 const GROUPS = [
-  { label: 'Crecimiento', ids: ['adquisicion', 'activacion', 'retencion', 'monetizacion'] },
   { label: 'Operación', ids: ['whatsapp', 'entregas', 'horarios', 'ventas'] },
-  { label: 'Tu negocio', ids: ['general', 'modulos', 'suscripcion', 'cuenta'] },
+  { label: 'Tu negocio', ids: ['general', 'monetizacion', 'modulos', 'suscripcion', 'cuenta'] },
 ]
 
-// Un único destino canónico por módulo en el Sistema de Crecimiento y Operación.
+// Un único destino canónico por módulo que sí se configura dentro de Ajustes.
 const MODULOS_SECCION: Record<string, string> = {
-  // Monetización
   mercadopago: 'monetizacion',
   talo: 'monetizacion',
   facturacion_arca: 'monetizacion',
 
-  // Adquisición
-  crecimiento: 'adquisicion',
-  codigos_descuento: 'adquisicion',
-
-  // Retención
-  motor_recompra: 'retencion',
-  puntos_clientes: 'retencion',
-
-  // Operación
   avisos_automaticos_whatsapp: 'whatsapp',
   pos: 'ventas',
   mesas: 'ventas',
@@ -223,6 +156,19 @@ const MODULOS_SECCION: Record<string, string> = {
   impresion_comandas: 'impresion',
 }
 const seccionModulo = (codigo: string) => MODULOS_SECCION[codigo] ?? 'ventas'
+
+/**
+ * Módulos que se activan y configuran donde se usan, no en Ajustes: sus URLs
+ * canónicas las emite `Modulos.tsx`. Sin esta lista, `seccionModulo` los mandaría
+ * al fallback `ventas` y reaparecerían como "Herramientas disponibles" dentro de
+ * Ventas en el local.
+ */
+const MODULOS_FUERA_DE_AJUSTES = new Set([
+  'crecimiento',
+  'codigos_descuento',
+  'motor_recompra',
+  'puntos_clientes',
+])
 
 export default function AjustesPage() {
   const { seccion: seccionParam } = useParams()
@@ -245,7 +191,6 @@ export default function AjustesPage() {
   const operacion = SECTIONS.filter(
     (s) =>
       !GROUPS.some((g) => g.ids.includes(s.id)) &&
-      s.visibleInNav !== false &&
       habilitada(s.id) &&
       (!s.tauriOnly || isTauri)
   )
@@ -253,7 +198,7 @@ export default function AjustesPage() {
     g.label === 'Operación' ? { ...g, ids: [...g.ids, ...operacion.map((s) => s.id)] } : g
   )
   const asociados = modulos
-    .filter((m) => seccionModulo(m.codigo) === seccion && (m.activable || m.activoAhora))
+    .filter((m) => !MODULOS_FUERA_DE_AJUSTES.has(m.codigo) && seccionModulo(m.codigo) === seccion && (m.activable || m.activoAhora))
     .map((m) => m.codigo)
   const destinoPadre = seccionModulo(REQUISITOS[seccion]?.[0] ?? '')
 
@@ -264,6 +209,12 @@ export default function AjustesPage() {
     if (contenidoRef.current) resetSettingsScroll(contenidoRef.current)
     contenidoRef.current?.focus({ preventScroll: true })
   }, [seccion, hash, locationKey])
+
+  const destinoRedireccion =
+    seccion === 'retencion' && new URLSearchParams(search).get('config') === 'puntos'
+      ? DESTINO_PUNTOS
+      : REDIRECTS_SECCION[seccion]
+  if (destinoRedireccion) return <Navigate to={destinoRedireccion} replace />
 
   return <main className="mx-auto min-w-0 w-full max-w-6xl px-5 py-8 sm:px-10 lg:py-16">
     <header className={cn('mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-border/50 pb-7 lg:mb-10', seccionParam ? 'hidden md:flex' : 'flex')}>
@@ -299,7 +250,7 @@ export default function AjustesPage() {
             : active.tauriOnly && !isTauri ? <div className="space-y-4"><SectionHeading title="Impresión" description="Abrí la app de escritorio de Piru para configurar tu impresora." /><DescargarAppBanner /></div>
             : <Suspense key={seccion} fallback={<SectionSkeleton />}>{ActiveSection && <ActiveSection />}</Suspense>
           : <div className="space-y-4"><SectionHeading title="Sección no encontrada" description="Elegí una sección del menú para continuar." /><Button asChild variant="outline"><Link to="/dashboard/ajustes/general">Ir a General</Link></Button></div>}
-        {active && asociados.length > 0 && seccion !== 'adquisicion' && seccion !== 'retencion' && <section id="modulos-seccion" className="mt-10 border-t border-border/50 pt-7" aria-label="Módulos de esta sección"><header className="mb-4"><h3 className="text-sm font-medium">Herramientas disponibles</h3><p className="mt-1 text-xs text-muted-foreground">Activá o configurá las herramientas que necesitás.</p></header><Modulos key={seccion} embedded codigos={asociados} /></section>}
+        {active && asociados.length > 0 && <section id="modulos-seccion" className="mt-10 border-t border-border/50 pt-7" aria-label="Módulos de esta sección"><header className="mb-4"><h3 className="text-sm font-medium">Herramientas disponibles</h3><p className="mt-1 text-xs text-muted-foreground">Activá o configurá las herramientas que necesitás.</p></header><Modulos key={seccion} embedded codigos={asociados} /></section>}
         <AjusteEditor open={hash === '#modulos-seccion'} onOpenChange={open => { if (!open) navigate({ pathname, search, hash: '' }, { replace: true }) }} titulo="Herramientas disponibles" descripcion="Activá o configurá las herramientas que necesitás.">
           <Modulos embedded codigos={asociados} />
         </AjusteEditor>

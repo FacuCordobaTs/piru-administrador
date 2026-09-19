@@ -5,7 +5,7 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
-import { ToggleConExplicacion } from './AvisosAutomaticos'
+import { ToggleConExplicacion } from '../components/ToggleConExplicacion'
 import { useWhatsApp } from '../hooks/useWhatsApp'
 import { WhatsAppEditor } from './pagos/IntegracionEditors'
 

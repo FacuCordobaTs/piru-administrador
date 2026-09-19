@@ -87,7 +87,7 @@ export default function Monetizacion() {
     <section className="space-y-8">
       <header className="space-y-3">
         <h2 className="text-xl font-medium tracking-tight text-foreground">
-          Monetización
+          Métodos de pago
         </h2>
         <div className="space-y-2 text-sm text-muted-foreground leading-relaxed max-w-2xl">
           <p>

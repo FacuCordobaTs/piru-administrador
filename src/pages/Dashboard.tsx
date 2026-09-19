@@ -38,6 +38,7 @@ import {
     formatComanda,
     commandsToBytes,
     formatNombreProductoConVariantes,
+    itemsParaComanda,
     parseAgregadosPedido,
 } from '@/utils/printerUtils'
 import { toast } from 'sonner'
@@ -1142,7 +1143,7 @@ const PosComandaPreview = ({
                         {/* Comanda */}
                         <div className="mb-6">
                             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Comanda · {totalItems} ítems</h3>
-                            {!config.catalogoEnColumna && <div id="pos-catalogo-compacto" className="mb-2" />}
+                            {!config.catalogoEnColumna && <div id="pos-catalogo-compacto" className="relative z-[1000] mb-2" />}
                             {draft.items.length === 0 ? (config.catalogoEnColumna ? (
                                 <p className="text-sm text-muted-foreground/60 py-8 text-center border border-dashed border-border rounded-xl">
                                     Todavía no hay productos
@@ -1369,6 +1370,10 @@ const Dashboard = () => {
     // reservan para el botón "Imprimir nuevos productos". La marca se crea
     // antes del autosave para ganarle a una eventual actualización por WS.
     const mesaOrdersPendingManualPrintRef = useRef<Set<number>>(new Set())
+    // El mozo tampoco tiene impresora: lo que manda desde la app se imprime acá
+    // apenas llega el evento, aunque sea una mesa. La marca la crea el evento
+    // `origenMozo` y muere con el claim, igual que `realtimeOrdersPendingPrintRef`.
+    const mesaOrdersPendingAutoPrintRef = useRef<Set<number>>(new Set())
     // Un pedido ya existente puede autoguardarse mientras se edita, pero nunca
     // debe entrar al auto-printer. Sólo sus botones manuales pueden imprimirlo.
     const pedidosEditadosSinAutoImpresionRef = useRef<Set<number>>(new Set())
@@ -1813,7 +1818,13 @@ const Dashboard = () => {
             return
         }
         if (lastUpdate.shouldPrint && lastUpdate.pedidoId) {
-            realtimeOrdersPendingPrintRef.current.add(lastUpdate.pedidoId)
+            // Una mesa no imprime sola, salvo que el cambio venga de la app de
+            // mozos: ese delta no tiene otro dispositivo que lo saque.
+            if (lastUpdate.type === 'mesa') {
+                if (lastUpdate.origenMozo) mesaOrdersPendingAutoPrintRef.current.add(lastUpdate.pedidoId)
+            } else {
+                realtimeOrdersPendingPrintRef.current.add(lastUpdate.pedidoId)
+            }
         }
         fetchPedidos(1, false)
         fetchPedidosMesaAbiertos()
@@ -1869,14 +1880,26 @@ const Dashboard = () => {
             const deferUntilPaid = deferComandaHastaPagado(pedido.metodoPago, restauranteStore?.cucuruConfigurado)
             const pendingFromPos = posOrdersPendingPrintRef.current.has(pedido.id)
             const pendingFromRealtime = realtimeOrdersPendingPrintRef.current.has(pedido.id)
-            const pendingManualMesaPrint = pedido.tipo === 'mesa' && mesaOrdersPendingManualPrintRef.current.has(pedido.id)
-            const pedidoEditadoSinAutoImpresion = pedidosEditadosSinAutoImpresionRef.current.has(pedido.id)
+            const pendingMesaFromMozo = pedido.tipo === 'mesa' && mesaOrdersPendingAutoPrintRef.current.has(pedido.id)
+
+            // Lo que manda el mozo se imprime: las reservas manuales de esta
+            // pantalla no lo frenan, porque el POS del dueño puede estar editando
+            // la misma mesa al mismo tiempo. Se limpian acá, antes de los guardas
+            // de abajo, que releen los refs en vez de una copia previa.
+            if (pendingMesaFromMozo) {
+                posOrdersPendingPrintRef.current.delete(pedido.id)
+                realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                mesaOrdersPendingManualPrintRef.current.delete(pedido.id)
+                pedidosEditadosSinAutoImpresionRef.current.delete(pedido.id)
+            }
 
             // Guardar una mesa, tanto al abrirla como al agregar productos, nunca
             // manda una comanda por sí solo. Los ítems quedan sin reclamar para
             // "Imprimir productos nuevos", "Reimprimir comanda entera" o el
-            // despacho explícito con impresión.
-            if (pedido.tipo === 'mesa') {
+            // despacho explícito con impresión. La excepción es el delta que
+            // manda la app de mozos: ese ya no tiene otro dispositivo que lo
+            // imprima, así que sigue el camino normal de autoimpresión.
+            if (pedido.tipo === 'mesa' && !pendingMesaFromMozo) {
                 posOrdersPendingPrintRef.current.delete(pedido.id)
                 realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 mesaOrdersPendingManualPrintRef.current.delete(pedido.id)
@@ -1889,7 +1912,7 @@ const Dashboard = () => {
                 return
             }
 
-            if (pedidoEditadoSinAutoImpresion) {
+            if (pedidosEditadosSinAutoImpresionRef.current.has(pedido.id)) {
                 posOrdersPendingPrintRef.current.delete(pedido.id)
                 realtimeOrdersPendingPrintRef.current.delete(pedido.id)
                 processedOrdersRef.current.set(pedidoKey, {
@@ -1901,10 +1924,10 @@ const Dashboard = () => {
             }
 
             // Una mesa ya abierta no debe sacar una comanda automática por cada
-            // producto que agrega el mozo. Sólo registramos la versión nueva;
-            // claimImpreso queda sin tocar para que "Imprimir nuevos productos"
-            // siga encontrando e imprimiendo el delta completo.
-            if (pendingManualMesaPrint) {
+            // producto que agrega el POS del dueño en este equipo. Sólo registramos
+            // la versión nueva; claimImpreso queda sin tocar para que "Imprimir
+            // nuevos productos" siga encontrando e imprimiendo el delta completo.
+            if (pedido.tipo === 'mesa' && mesaOrdersPendingManualPrintRef.current.has(pedido.id)) {
                 mesaOrdersPendingManualPrintRef.current.delete(pedido.id)
                 // Si el alta inicial de la mesa todavía esperaba su turno de
                 // autoimpresión, el nuevo delta pasa a gobernar: todo queda
@@ -1923,6 +1946,7 @@ const Dashboard = () => {
             if (pedido.estado === 'archived') {
                 posOrdersPendingPrintRef.current.delete(pedido.id)
                 realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
@@ -1931,6 +1955,7 @@ const Dashboard = () => {
             if (pedido.impreso) {
                 posOrdersPendingPrintRef.current.delete(pedido.id)
                 realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                 if (!prevData) processedOrdersRef.current.set(pedidoKey, { status: pedido.estado, itemIds: new Set(pedido.items.map(i => i.id)), pagado: currentPagado })
                 return
             }
@@ -1938,7 +1963,7 @@ const Dashboard = () => {
             // Un alta confirmada por el POS es evidencia explícita de que el
             // pedido es nuevo, incluso si un refetch del WebSocket lo alcanzó
             // antes y ya lo registró en processedOrdersRef.
-            let shouldPrint = (pendingFromPos || pendingFromRealtime) && (!deferUntilPaid || !!currentPagado)
+            let shouldPrint = (pendingFromPos || pendingFromRealtime || pendingMesaFromMozo) && (!deferUntilPaid || !!currentPagado)
 
             if (!shouldPrint && !prevData) {
                 // Primera vez que vemos este pedido
@@ -1959,9 +1984,9 @@ const Dashboard = () => {
                 // Pedido ya conocido: imprimir solo si acaba de pasar a pagado (para deferred)
                 if (deferUntilPaid && currentPagado && !prevData?.pagado) {
                     shouldPrint = true
-                } else if (prevData && pedido.impreso === false) {
-                    // Las mesas ya salieron de este circuito arriba; los demás
-                    // pedidos sí reintentan automáticamente cuando quedan sin imprimir.
+                } else if (pedido.tipo !== 'mesa' && prevData && pedido.impreso === false) {
+                    // Las mesas sólo se autoimprimen con su marca de mozo; los
+                    // demás pedidos sí reintentan cuando quedan sin imprimir.
                     shouldPrint = true
                 }
             }
@@ -1974,6 +1999,7 @@ const Dashboard = () => {
                         if (!res?.claimed) {
                             posOrdersPendingPrintRef.current.delete(pedido.id)
                             realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                            mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                             return
                         }
 
@@ -1984,13 +2010,16 @@ const Dashboard = () => {
                                 return Number.isInteger(candidate.id) && Number(candidate.cantidad) > 0
                             })
                             : []
-                        const pendientes = Array.isArray(res?.pendingItems)
-                            ? new Map<number, number>(claimedItems.map((item) => [item.id, item.cantidad]))
-                            : null
                         try {
-                            const baseItems = pendientes && !res?.printFull
-                                ? pedido.items.filter((item) => pendientes.has(item.id)).map((item) => ({ ...item, cantidad: pendientes.get(item.id)! }))
-                                : pedido.items
+                            // En una mesa el delta es la única fuente de verdad:
+                            // sin pendientes no hay nada nuevo que mandar a cocina.
+                            const baseItems = itemsParaComanda(pedido, res)
+                            if (!baseItems) {
+                                // El mozo borró lo que había agregado antes de que
+                                // saliera la comanda: no se imprime nada.
+                                mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
+                                return
+                            }
                             const itemsToPrint = baseItems.map(item => {
                                 const producto = allProductos.find(p => p.id === item.productoId)
                                 return { ...item, producto, categoriaEsBebida: producto?.categoriaEsBebida ?? false }
@@ -2029,6 +2058,7 @@ const Dashboard = () => {
 
                         posOrdersPendingPrintRef.current.delete(pedido.id)
                         realtimeOrdersPendingPrintRef.current.delete(pedido.id)
+                        mesaOrdersPendingAutoPrintRef.current.delete(pedido.id)
                         setUnifiedPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, impreso: true } : p))
                     })
                     .catch((err) => {

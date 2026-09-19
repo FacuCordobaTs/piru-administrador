@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { ModuloComercial } from '@/components/ModuloComercial'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -451,7 +452,18 @@ export default function GrowthAssetsPanel(props: Props) {
           <div className="space-y-2 p-2">
             {tab === 'campanas' ? (
               <>
-                {!props.crecimientoActivo && <Disabled label="Las campañas están desactivadas" />}
+                {!props.crecimientoActivo && (
+                  <ModuloComercial
+                    key={tab}
+                    variante="fila"
+                    codigo="crecimiento"
+                    tipo="pago"
+                    titulo="Campañas de adquisición"
+                    descripcion="Medí ventas desde Historias de Instagram, Reels, TikTok, Meta Ads y Packaging con enlaces y carritos precargados."
+                    icono={TrendingUp}
+                    onCambioEstado={() => void props.onReload()}
+                  />
+                )}
                 {props.crecimientoActivo &&
                   (!query.trim() || 'orgánico sin campaña directo'.includes(query.trim().toLowerCase())) && (
                     <AssetButton
@@ -492,7 +504,19 @@ export default function GrowthAssetsPanel(props: Props) {
               </>
             ) : (
               <>
-                {!props.cuponesActivos && <Disabled label="Códigos de descuento está desactivado" />}
+                {!props.cuponesActivos && (
+                  <ModuloComercial
+                    key={tab}
+                    variante="fila"
+                    codigo="codigos_descuento"
+                    tipo="incluido"
+                    titulo="Códigos de descuento (Cupones)"
+                    descripcion="Cupones promocionales y de bienvenida para captar comensales en redes y folletería."
+                    icono={Tag}
+                    nombreComercial="Códigos de descuento"
+                    onCambioEstado={() => void props.onReload()}
+                  />
+                )}
                 {props.cuponesActivos &&
                   cuponesFiltrados.map((cupon) => (
                     <CouponAssetButton
@@ -966,15 +990,6 @@ function CouponAssetButton({
 
 function Empty({ label }: { label: string }) {
   return <p className="rounded-2xl bg-muted/30 p-6 text-center text-xs text-muted-foreground">{label}</p>
-}
-
-function Disabled({ label }: { label: string }) {
-  return (
-    <div className="rounded-2xl bg-muted/30 p-4 text-center">
-      <p className="text-xs font-medium text-foreground">{label}</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">Podés activarlo desde Módulos.</p>
-    </div>
-  )
 }
 
 /** Switch Campañas | Cupones de la columna lista, en desktop. */

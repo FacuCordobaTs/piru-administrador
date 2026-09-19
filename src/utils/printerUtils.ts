@@ -618,6 +618,43 @@ const CP437_FALLBACKS: Readonly<Record<string, string>> = {
     '…': '...', '·': '-', ' ': ' ', ' ': ' ',
 }
 
+/** Respuesta de `PUT /api/pedido-unificado/:id/impreso` (claim atómico). */
+export interface ClaimImpresion {
+    claimed: boolean
+    printFull: boolean
+    pendingItems?: Array<{ id: number; cantidad: number }>
+}
+
+/**
+ * Ítems que van en la comanda de un claim de impresión.
+ *
+ * `printFull` reimprime la comanda entera y sólo aplica a la primera comanda de
+ * delivery/takeaway. En una mesa el delta es la única fuente de verdad: lo que ya
+ * salió no vuelve a salir, y sin pendientes no hay nada que mandar a cocina.
+ *
+ * Devuelve `null` en ese último caso para que el llamador no envíe un trabajo
+ * vacío (ni libere un claim que corresponde a otra acción).
+ */
+export const itemsParaComanda = <T extends { id: number; cantidad: number }>(
+    pedido: { tipo: 'delivery' | 'takeaway' | 'mesa'; items: T[] },
+    claim: ClaimImpresion,
+): T[] | null => {
+    if (!Array.isArray(claim.pendingItems)) return pedido.items
+    if (claim.printFull && pedido.tipo !== 'mesa') return pedido.items
+
+    const pendientes = new Map(
+        claim.pendingItems
+            .filter((item) => Number.isInteger(item?.id) && Number(item?.cantidad) > 0)
+            .map((item) => [item.id, Number(item.cantidad)] as const),
+    )
+    const items = pedido.items
+        .filter((item) => pendientes.has(item.id))
+        .map((item) => ({ ...item, cantidad: pendientes.get(item.id)! }))
+
+    if (pedido.tipo === 'mesa' && items.length === 0) return null
+    return items
+}
+
 /**
  * Repite la comanda completa, incluidos inicialización, avance y corte ESC/POS.
  * Las copias viajan juntas en un solo trabajo; no duplican claims ni ventas.

@@ -1,0 +1,2 @@
+import { defineConfig } from '@playwright/test'
+export default defineConfig({ testDir: '.', testMatch: 'modulo-comercial.spec.ts', workers: 1, timeout: 60000, outputDir: '../node_modules/.cache/modulo-comercial-results', use: { baseURL: 'http://127.0.0.1:4184', viewport: { width: 1440, height: 1000 }, channel: process.env.MODULO_TEST_BROWSER_CHANNEL ?? 'msedge' }, webServer: { command: 'bun run dev --host 127.0.0.1 --port 4184 --strictPort', url: 'http://127.0.0.1:4184/tests/modulo-comercial.html', timeout: 30000 } })

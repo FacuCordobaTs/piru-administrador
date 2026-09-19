@@ -243,3 +243,25 @@ export function useModuloActivo(codigo: string): boolean {
 
   return activo
 }
+
+/** El módulo del catálogo, resolviendo el alias de `puntos_clientes`.
+ * Se re-renderiza solo cuando el store recarga, así que una activación hecha
+ * in-place se refleja sin que el consumidor tenga que recargar nada. */
+export function useModuloCatalogo(codigo: string): Modulo | undefined {
+  const codigoEfectivo = ALIASES_FRONTEND[codigo] ?? codigo
+  const modulo = useModulosStore((state) => todosLosModulos(state.categorias)
+    .find((item) => item.codigo === codigoEfectivo))
+  const cargar = useModulosStore((state) => state.cargar)
+
+  useEffect(() => {
+    void cargar().catch(() => {})
+  }, [cargar])
+
+  return modulo
+}
+
+/** Monto que la UI debe mostrar: el congelado del local si lo tiene (es lo que
+ * realmente sigue pagando), si no el de catálogo. Nunca un literal. */
+export function precioModulo(modulo?: Modulo): string | null {
+  return modulo?.precioMensualCongelado ?? modulo?.precioMensual ?? null
+}

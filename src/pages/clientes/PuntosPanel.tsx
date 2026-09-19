@@ -14,6 +14,7 @@ import {
 import { Gift, Loader2, Package, Search, Settings2, Sparkles, TicketPercent, Truck, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfiguracionPuntosDialog } from './ConfiguracionPuntosDialog'
+import { ModuloComercial } from '@/components/ModuloComercial'
 import { FilaMovimientoPuntos, HistorialPuntosContenido } from './MovimientosPuntos'
 import { formatFechaHora, formatPuntos, metaMovimientoPuntos } from './types'
 
@@ -232,9 +233,22 @@ export function PuntosPanel() {
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
             Puntos y motor de recompra son el mismo módulo. Activalo para que tus clientes acumulen puntos y puedan canjearlos.
           </p>
-          <Button asChild className="mt-4 rounded-full">
-            <a href="/dashboard/ajustes/retencion">Ver plan y activar</a>
-          </Button>
+          <div className="mx-auto mt-6 max-w-sm text-left">
+            <ModuloComercial
+              codigo="motor_recompra"
+              variante="tarjeta"
+              tipo="pago"
+              titulo="Retención"
+              nombreComercial="Retención"
+              descripcion="Club de puntos, motor de recompra y campañas de recuperación sobre tu propia base de clientes."
+              icono={Sparkles}
+              onCambioEstado={() => {
+                setBloqueado(false)
+                void cargarResumen()
+                void cargarClientes(1, true)
+              }}
+            />
+          </div>
         </div>
       </div>
     )
