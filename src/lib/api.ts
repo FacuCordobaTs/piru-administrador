@@ -221,6 +221,75 @@ export const cartaIaApi = {
 export type SegmentoRecompra = 'primer_pedido' | 'en_riesgo' | 'dormido' | 'perdido'
 export type EstadoClienteRecompra = 'pendiente' | 'enviado' | 'control' | 'salido_por_pedido' | 'fallido'
 export type ModoRecompra = 'automatico' | 'manual'
+/**
+ * Una receta del Motor de Recompra: el mensaje preparado para un segmento. El beneficio que
+ * muestra (`descuento`) ya viene resuelto por el backend: la escalera manda y la receta sólo
+ * puede bajarlo, así que elegir una receta sin descuento apaga el cupón y cambia el link.
+ */
+export interface RecetaRecompraOpcion {
+  codigo: SegmentoRecompra
+  nombre: string
+  descripcion: string
+  /** Hook del segmento: la primera línea del mensaje, sin la línea del cupón. */
+  textoBase: string
+  /** true si es la receta del segmento del cliente: la que el motor recomienda. */
+  esRecomendada: boolean
+  /** true si es la que se aplicó al mensaje devuelto. */
+  esSeleccionada: boolean
+  descuento: number
+  expiraHoras: number | null
+  nivel: number
+}
+
+/** `lo-mismo` abre el carrito de siempre y NUNCA lleva descuento; `reactivacion` abre con el elegido. */
+export type ModalidadLinkRecompra = 'lo-mismo' | 'reactivacion'
+/** De dónde salió el `%` que se va a mandar: la escalera, el techo de la receta o el operador. */
+export type OrigenDescuentoRecompra = 'escalon' | 'receta' | 'manual'
+
+/**
+ * Un toque del goteo. El SEGMENTO elige la voz y el TOQUE elige el trabajo (1º relato + antojo,
+ * 2º recordatorio corto, 3º cierre): son dos ejes independientes, así que `toque` y `nivel` pueden
+ * diferir — el operador puede mandar el texto del 3º sin adelantar la escalera del cliente.
+ */
+export interface OpcionToqueRecompra {
+  toque: number
+  /** "1º toque", "2º toque", "3º toque". */
+  titulo: string
+  /** Qué trabajo hace ese toque ("recordatorio corto", "cierre"). */
+  descripcion: string
+  /** `%` del escalón de ese toque: el que aplicaría el motor si se lo deja por defecto. */
+  descuento: number
+  expiraHoras: number | null
+  esActual: boolean
+  /** true si es el toque que la escalera marca hoy para este cliente: el DEFAULT del diálogo. */
+  esDeLaEscalera: boolean
+}
+export interface OpcionLinkRecompra {
+  modalidad: ModalidadLinkRecompra
+  titulo: string
+  descripcion: string
+  esActual: boolean
+}
+/** El catálogo de las tres decisiones, con sus defaults ya resueltos por el backend. */
+export interface OpcionesMensajeRecompra {
+  segmentos: { codigo: SegmentoRecompra; nombre: string; esDelCliente: boolean; esActual: boolean }[]
+  toques: OpcionToqueRecompra[]
+  links: OpcionLinkRecompra[]
+  descuentos: { min: number; max: number; sugeridos: number[]; recomendado: number }
+}
+
+/**
+ * Lo que el operador decide antes de mandar: el MENSAJE (`segmento` × `toque`), el LINK y el
+ * DESCUENTO. Todo opcional: lo que no se manda queda en el default del motor (segmento recalculado
+ * en vivo, toque de la escalera, `%` de ese escalón).
+ */
+export interface DecisionesRecompra {
+  segmento?: SegmentoRecompra
+  toque?: number
+  link?: ModalidadLinkRecompra
+  descuento?: number
+}
+
 export interface MensajeColaData {
   clienteId: number
   clienteNombre: string
@@ -229,18 +298,51 @@ export interface MensajeColaData {
   tiempoSinPedir: string
   productoFavorito: string
   incentivo: string
+  /** `%` del beneficio que se va a mandar. 0 = sin descuento. */
   descuento: number
   codigoDescuento: string | null
   nivel: number
+  /** Toque efectivamente aplicado a este mensaje (1..3). */
+  toque: number
+  /** Toque que traía la fila de la cola. Si difiere de `toque`, el operador lo cambió a mano. */
+  toquePlanificado: number | null
+  /** Plantilla de Meta que corresponde a (segmento × toque): qué se va a mandar si sale automático. */
+  plantillaWhatsapp: string
+  /** ¿La plantilla lleva encabezado con la foto del producto? Sólo el 1º toque. */
+  conImagen: boolean
+  /** Con qué modalidad abre el link. */
+  link: ModalidadLinkRecompra
+  /** De dónde salió el descuento aplicado. */
+  descuentoOrigen: OrigenDescuentoRecompra
+  expiraHoras: number | null
+  /** Segmento que clasificó la campaña. Difiere del vivo si el cliente cambió de hábito. */
+  segmentoFila: SegmentoRecompra | null
+  /** Receta aplicada al mensaje (la recomendada salvo que se haya pedido otra). */
+  receta: RecetaRecompraOpcion
+  /** Todas las recetas disponibles con su beneficio: el menú de "cambiar mensaje". */
+  recetas: RecetaRecompraOpcion[]
+  /** El catálogo de las tres decisiones: con esto el diálogo no inventa defaults. */
+  opciones: OpcionesMensajeRecompra
   urlTienda: string
   texto: string
   waMeUrl: string | null
   horarioSugerido?: string | null
 }
+
+/** Lo que el backend registró al marcar una fila como enviada: es la auditoría del envío manual. */
+export interface EnvioManualRecompra {
+  toque: number | null
+  nivel: number | null
+  descuento: number
+  link: ModalidadLinkRecompra | null
+  codigoDescuento: string | null
+}
 export interface PaginadoRecompra<T> { items: T[]; pagina: number; limite: number; total: number; paginas: number }
 export interface ColaRecompraItem {
   id: number; clienteId: number; clienteNombre: string; telefono: string | null
   segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; rol: 'contactado'
+  /** Toque que le toca a esta fila (1..3). Null sólo en las filas de control. */
+  toque: number | null
   prioridad: number; dueDate: string | null; fechaProyectada: string; posicionPrioridad: number
   horarioSugerido?: string | null
   totalGastado: number; ultimoPedidoAt: string | null; createdAt: string | null
@@ -250,12 +352,22 @@ export interface HistorialRecompraItem {
   segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; origenContacto: 'automatico' | 'manual'
   estadoDespacho: 'entregado' | 'fallido'; plantillaWhatsapp: string; codigoDescuento: string | null
   nivel: number | null; fechaHora: string | null; errorEnvio: string | null
+  /** Toque que salió en este despacho. */
+  toque: number | null
+  /** Con qué link salió (`lo-mismo` no lleva descuento). */
+  linkModalidad: string | null
+  /** `%` que se mandó. 0 = sin descuento. */
+  descuentoEnviado: number | null
 }
 export interface ClienteMotorRecompra {
   id: number; clienteId: number; clienteNombre: string; telefono: string | null
   segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; rol: 'contactado' | 'control'
   estado: EstadoClienteRecompra; prioridad: number; ticketPromedio: number; ultimoPedidoAt: string | null
   dueDate: string | null; enviadoAt: string | null
+  /** Toque de esta fila (1..3): permite leer el recorrido "1º enviado · 2º pendiente". */
+  toque: number | null
+  /** Cuántos toques lleva desde su último pedido: es el avance crudo de la escalera. */
+  toquesDesdeUltimoPedido: number
   protecciones: { horarioSilencioActivo: boolean; cooldownHasta: string | null; topeFrecuenciaAlcanzado: boolean; toques30Dias: number; maximoToques30Dias: number; optOut: boolean }
 }
 
@@ -350,16 +462,27 @@ export const clientesApi = {
       body: JSON.stringify({ modo }),
     })
   },
-  mensajeColaRecompra: async (token: string, filaId: number) => {
-    return fetchApi<{ success: boolean; data: MensajeColaData }>(`/clientes/recompra/cola/${filaId}/mensaje`, {
+  // Mensaje preparado de una fila de la cola, con las DECISIONES del operador aplicadas: `segmento`
+  // (el mensaje), `toque` (el tramo), `link` y `descuento`. Sin decisiones devuelve los defaults del
+  // motor: el segmento recalculado en vivo, el toque de la escalera y el `%` de ese escalón.
+  mensajeColaRecompra: async (token: string, filaId: number, decisiones: DecisionesRecompra = {}) => {
+    return fetchApi<{ success: boolean; data: MensajeColaData }>(`/clientes/recompra/cola/${filaId}/mensaje${queryRecompra({
+      segmento: decisiones.segmento,
+      toque: decisiones.toque,
+      link: decisiones.link,
+      descuento: decisiones.descuento,
+    })}`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     })
   },
-  marcarEnviadoColaRecompra: async (token: string, filaId: number) => {
-    return fetchApi<{ success: boolean; message: string }>(`/clientes/recompra/cola/${filaId}/marcar-enviado`, {
+  // El envío manual es donde el cupón se emite de verdad: el diálogo previsualiza, esto registra.
+  // La respuesta devuelve lo que quedó grabado (toque, nivel, `%`, link y código) para poder auditarlo.
+  marcarEnviadoColaRecompra: async (token: string, filaId: number, decisiones: DecisionesRecompra = {}) => {
+    return fetchApi<{ success: boolean; message: string; data: EnvioManualRecompra }>(`/clientes/recompra/cola/${filaId}/marcar-enviado`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(decisiones),
     })
   },
   recompraCola: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string } = {}) => {

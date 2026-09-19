@@ -13,7 +13,9 @@ import {
     ApiError,
     type ClienteMotorRecompra,
     type ColaRecompraItem,
+    type DecisionesRecompra,
     type HistorialRecompraItem,
+    type ModalidadLinkRecompra,
     type PaginadoRecompra,
     type ModoRecompra,
     type MensajeColaData,
@@ -25,6 +27,7 @@ import {
     Pause, Play, ListOrdered, History, UserRoundCheck, Clock,
     RefreshCw, Copy, Check, ExternalLink, Bot, MessageSquare,
     Search, X, ArrowLeft, User, Ticket, CheckCheck, ChevronRight as ChevronRightIcon,
+    Repeat2, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -46,6 +49,29 @@ const SEG_META: Record<Segmento, { label: string; dot: string }> = {
     en_riesgo: { label: 'En riesgo', dot: 'bg-orange-500' },
     dormido: { label: 'Dormidos', dot: 'bg-violet-500' },
     perdido: { label: 'Perdidos', dot: 'bg-rose-500' },
+}
+
+/** Clave del mensaje cacheado: una entrada por (fila, decisiones del operador). */
+function claveMensaje(filaId: number, decisiones: DecisionesRecompra | undefined): string {
+    if (!decisiones) return `${filaId}:motor`
+    const { segmento, toque, link, descuento } = decisiones
+    return `${filaId}:${segmento ?? 'vivo'}:${toque ?? 'escalera'}:${link ?? 'auto'}:${descuento ?? 'auto'}`
+}
+
+/** Los tres toques del goteo: el ordinal con el que el operador los nombra. */
+const TOQUE_ORDINAL = ['1º', '2º', '3º']
+
+/** "2º toque" · null si la fila no trae toque (las de control). */
+function etiquetaToque(toque: number | null | undefined): string | null {
+    if (toque == null || !Number.isFinite(toque)) return null
+    return `${TOQUE_ORDINAL[toque - 1] ?? `${toque}º`} toque`
+}
+
+/** El resumen de lo que se va a mandar, para las filas y el detalle: "2º toque · 10 % OFF". */
+function resumenEnvio(toque: number | null | undefined, descuento: number | null | undefined): string {
+    const partes = [etiquetaToque(toque)]
+    if (descuento != null && descuento > 0) partes.push(`${descuento}% OFF`)
+    return partes.filter(Boolean).join(' · ')
 }
 
 interface PlanSegmento { segmento: Segmento; detectados: number; facturacionEnJuego: number }
@@ -221,8 +247,14 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
     const [selectedHistorialId, setSelectedHistorialId] = useState<number | null>(null)
     const [selectedClienteId, setSelectedClienteId] = useState<number | null>(null)
 
-    // Mensajes para la cola
-    const [mensajeCache, setMensajeCache] = useState<Record<number, MensajeColaData>>({})
+    // Mensajes para la cola. Cada fila recuerda con QUÉ decisiones se generó el mensaje cacheado, para
+    // poder refrescarlo cuando el operador cambia de mensaje, de link o de descuento (el texto, el
+    // cupón y la URL cambian con cada una). `data: null` = ese mensaje no se pudo preparar; se recuerda
+    // para no reintentar en loop y poder decir la verdad en pantalla en lugar de dejar un esqueleto.
+    const [mensajeCache, setMensajeCache] = useState<Record<number, { clave: string; data: MensajeColaData | null }>>({})
+    // Decisiones a mano por fila. Ausente = las del motor (segmento recalculado en vivo, toque de la
+    // escalera, `%` de ese escalón): es el default y el estado natural de la fila.
+    const [decisionesPorFila, setDecisionesPorFila] = useState<Record<number, DecisionesRecompra>>({})
     const [cargandoMensajeId, setCargandoMensajeId] = useState<number | null>(null)
     const [marcandoId, setMarcandoId] = useState<number | null>(null)
     const [copiadoId, setCopiadoId] = useState<number | null>(null)
@@ -319,26 +351,49 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
         return () => window.clearInterval(timer)
     }, [cargarObservabilidad])
 
-    // Cargar mensaje para cliente de cola seleccionado
+    // Cargar el mensaje del cliente seleccionado (y regenerarlo si el operador cambió las decisiones)
     useEffect(() => {
         if (!token || tab !== 'cola' || !selectedColaId) return
-        if (mensajeCache[selectedColaId]) return
+        const decisiones = decisionesPorFila[selectedColaId]
+        const clave = claveMensaje(selectedColaId, decisiones)
+        if (mensajeCache[selectedColaId]?.clave === clave) return
 
         let mounted = true
         setCargandoMensajeId(selectedColaId)
-        clientesApi.mensajeColaRecompra(token, selectedColaId)
-            .then(res => {
-                if (mounted && res.success && res.data) {
-                    setMensajeCache(prev => ({ ...prev, [selectedColaId]: res.data }))
-                }
+        // Guardar el resultado bajo la clave pedida, incluso si falló (`data: null`): así el efecto no
+        // reintenta en loop y la pantalla puede distinguir "no se pudo" de "todavía no llegó".
+        const guardar = (data: MensajeColaData | null) => {
+            setMensajeCache(prev => ({ ...prev, [selectedColaId]: { clave, data } }))
+        }
+        // Volver a los defaults del motor para no dejar la selección apuntando a un mensaje que nunca
+        // va a llegar; si ya estaba en los defaults no hay nada que revertir.
+        const volverAlMotor = () => {
+            toast.error('No se pudo preparar ese mensaje. Volvimos a las decisiones del motor.')
+            setDecisionesPorFila(prev => {
+                if (!(selectedColaId in prev)) return prev
+                const siguiente = { ...prev }
+                delete siguiente[selectedColaId]
+                return siguiente
             })
-            .catch(() => {})
+        }
+        clientesApi.mensajeColaRecompra(token, selectedColaId, decisiones)
+            .then(res => {
+                if (!mounted) return
+                const data = res.success && res.data ? res.data : null
+                guardar(data)
+                if (!data && decisiones) volverAlMotor()
+            })
+            .catch(() => {
+                if (!mounted) return
+                guardar(null)
+                if (decisiones) volverAlMotor()
+            })
             .finally(() => {
                 if (mounted) setCargandoMensajeId(null)
             })
 
         return () => { mounted = false }
-    }, [token, tab, selectedColaId, mensajeCache])
+    }, [token, tab, selectedColaId, decisionesPorFila, mensajeCache])
 
     const cambiarTab = (siguiente: ObservabilidadTab) => {
         setTab(siguiente)
@@ -385,13 +440,20 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
         }
     }
 
-    const marcarEnviado = async (filaId: number) => {
+    // Se registran las decisiones que el operador realmente mandó: pueden no llevar descuento. El
+    // backend devuelve lo que quedó escrito en la fila, así el toast dice el toque y el `%` reales y
+    // no lo que la UI creía.
+    const marcarEnviado = async (filaId: number, decisiones?: DecisionesRecompra) => {
         if (!token || marcandoId) return
         setMarcandoId(filaId)
         try {
-            const res = await clientesApi.marcarEnviadoColaRecompra(token, filaId) as { success: boolean }
+            const res = await clientesApi.marcarEnviadoColaRecompra(token, filaId, decisiones)
             if (res.success) {
-                toast.success('Registrado como enviado')
+                const registro = res.data
+                const detalle = registro?.toque
+                    ? `${registro.toque}º toque${registro.descuento > 0 ? ` · ${registro.descuento}% OFF` : ' · sin descuento'}`
+                    : null
+                toast.success(detalle ? `Registrado: ${detalle}` : 'Registrado como enviado')
                 void cargarObservabilidad(true)
                 onCambio()
             }
@@ -400,6 +462,15 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
         } finally {
             setMarcandoId(null)
         }
+    }
+
+    const cambiarDecisiones = (filaId: number, decisiones: DecisionesRecompra | null) => {
+        setDecisionesPorFila(prev => {
+            const siguiente = { ...prev }
+            if (decisiones) siguiente[filaId] = decisiones
+            else delete siguiente[filaId]
+            return siguiente
+        })
     }
 
     const itemCola = useMemo(() => cola?.items.find(i => i.id === selectedColaId) ?? null, [cola, selectedColaId])
@@ -768,7 +839,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                     {campana.modo === 'manual' && (
                                         <div className="rounded-xl border border-border/40 bg-background/80 p-3.5 text-xs text-muted-foreground shadow-2xs backdrop-blur-xs">
                                             <span className="font-semibold text-foreground">Modo Manual: </span>
-                                            <span>El motor prepara los textos con cupón listo para cada cliente. Vos los copiás y enviás directamente desde WhatsApp sin costo de créditos.</span>
+                                            <span>Cada cliente llega con el mensaje de su segmento ya preparado (cupón y link incluidos). Podés cambiar la receta antes de enviar —por ejemplo, cambiar el descuento por un mensaje sin cupón— y después copiarlo y enviarlo desde tu WhatsApp, sin costo de créditos.</span>
                                         </div>
                                     )}
 
@@ -792,13 +863,17 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                     {tab === 'cola' ? (
                                         itemCola ? (
                                             <DetalleColaCliente
+                                                token={token}
                                                 item={itemCola}
-                                                mensaje={mensajeCache[itemCola.id] ?? null}
-                                                cargandoMensaje={cargandoMensajeId === itemCola.id}
+                                                mensaje={mensajeCache[itemCola.id]?.data ?? null}
+                                                alDia={mensajeCache[itemCola.id]?.clave === claveMensaje(itemCola.id, decisionesPorFila[itemCola.id])}
+                                                decisiones={decisionesPorFila[itemCola.id]}
+                                                cargandoMensaje={cargandoMensajeId === itemCola.id || mensajeCache[itemCola.id] === undefined}
                                                 marcandoId={marcandoId}
                                                 copiadoId={copiadoId}
                                                 onCopiar={(txt) => void copiarTexto(txt, itemCola.id)}
-                                                onMarcarEnviado={() => void marcarEnviado(itemCola.id)}
+                                                onCambiarDecisiones={(d) => cambiarDecisiones(itemCola.id, d)}
+                                                onMarcarEnviado={() => void marcarEnviado(itemCola.id, decisionesPorFila[itemCola.id])}
                                             />
                                         ) : (
                                             <EmptyDetail texto="Seleccioná un cliente de la lista para ver su mensaje listo." />
@@ -830,24 +905,332 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
 // SUB-COMPONENTES DEL DETALLE FLOTANTE (ESTILO APPLE)
 // =============================================================================
 
+// =============================================================================
+// DIÁLOGO DE LAS TRES DECISIONES
+//
+// El operador decide tres cosas independientes: el SEGMENTO (la voz del mensaje), el TOQUE (el
+// trabajo: relato y antojo, recordatorio corto o cierre) y el LINK con su DESCUENTO. La escalera
+// sigue siendo la dueña del beneficio: el `%` arranca en el que el cliente ya se ganó y sólo se
+// registra como decisión manual si el operador lo toca.
+//
+// La vista previa sale del MISMO endpoint que alimenta el envío, así que muestra el texto exacto que
+// se va a copiar y el `%` exacto que se va a prometer. El cupón se emite al registrar el envío.
+// =============================================================================
+
+function DialogoDecisionesRecompra({
+    token, item, mensaje, decisiones, onCerrar, onAplicar,
+}: {
+    token: string | null
+    item: ColaRecompraItem
+    mensaje: MensajeColaData
+    decisiones: DecisionesRecompra | undefined
+    onCerrar: () => void
+    onAplicar: (decisiones: DecisionesRecompra) => void
+}) {
+    const opciones = mensaje.opciones
+    // El segmento RECALCULADO en vivo (con los pedidos de hoy) es el default del diálogo: la fila se
+    // encoló con el segmento de ayer y el cliente pudo cambiar de hábito desde entonces.
+    const segmentoVivo = opciones.segmentos.find(s => s.esDelCliente)?.codigo ?? mensaje.segmento
+    const [segmento, setSegmento] = useState<Segmento>(decisiones?.segmento ?? segmentoVivo)
+    const [toque, setToque] = useState<number>(decisiones?.toque ?? mensaje.toque)
+    const [link, setLink] = useState<ModalidadLinkRecompra>(decisiones?.link ?? mensaje.link)
+    const [descuento, setDescuento] = useState<number>(decisiones?.descuento ?? opciones.descuentos.recomendado)
+    // Sólo cuenta como decisión MANUAL si el operador la eligió: dejarla como venía la registra como
+    // el `%` de la escalera, que es la verdad de por qué se mandó ese número.
+    const [descuentoAMano, setDescuentoAMano] = useState(decisiones?.descuento != null)
+    const [vista, setVista] = useState<MensajeColaData | null>(null)
+    const [cargandoVista, setCargandoVista] = useState(true)
+
+    const decisionesPendientes = useMemo<DecisionesRecompra>(() => {
+        const siguientes: DecisionesRecompra = { segmento, toque, link }
+        if (link === 'reactivacion' && descuentoAMano) siguientes.descuento = descuento
+        return siguientes
+    }, [segmento, toque, link, descuento, descuentoAMano])
+
+    // Vista previa con debounce: el operador puede escribir el `%` y no queremos una consulta por
+    // tecla. El contador de secuencia descarta respuestas que llegan fuera de orden.
+    useEffect(() => {
+        if (!token) return
+        const pedido = decisionesPendientes
+        let vigente = true
+        setCargandoVista(true)
+        const timer = window.setTimeout(() => {
+            clientesApi.mensajeColaRecompra(token, item.id, pedido)
+                .then(res => {
+                    if (!vigente) return
+                    setVista(res.success && res.data ? res.data : null)
+                })
+                .catch(() => { if (vigente) setVista(null) })
+                .finally(() => { if (vigente) setCargandoVista(false) })
+        }, 220)
+        return () => { vigente = false; window.clearTimeout(timer) }
+    }, [token, item.id, decisionesPendientes])
+
+    const descuentoEfectivo = link === 'reactivacion' ? descuento : 0
+    const sinBeneficio = link === 'reactivacion' && descuentoEfectivo === 0
+    const vivoSugerido = opciones.segmentos.find(s => s.esDelCliente)?.codigo
+
+    return (
+        <Dialog open onOpenChange={(abierto) => { if (!abierto) onCerrar() }}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle>Armá el mensaje de {item.clienteNombre}</DialogTitle>
+                    <DialogDescription>
+                        El segmento elige la voz y el toque elige el trabajo; el link y el descuento van aparte.
+                        El beneficio que el cliente ya se ganó por la escalera no se reinicia al cambiar de mensaje.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-5 py-1">
+                    {/* 1. SEGMENTO — la voz */}
+                    <div className="space-y-2">
+                        <FilaTitulo icono={<MessageSquare className="h-3.5 w-3.5" />} titulo="Voz del mensaje" detalle="Con qué relato le hablás" />
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            {opciones.segmentos.map(s => (
+                                <button
+                                    key={s.codigo}
+                                    type="button"
+                                    onClick={() => setSegmento(s.codigo)}
+                                    className={cn(
+                                        "rounded-xl border p-3 text-left transition-colors",
+                                        segmento === s.codigo
+                                            ? "border-foreground/30 bg-background shadow-2xs"
+                                            : "border-border/40 bg-background/50 hover:bg-muted/50",
+                                    )}
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <span className={cn("h-1.5 w-1.5 rounded-full", SEG_META[s.codigo].dot)} />
+                                        <span className="text-xs font-semibold text-foreground">{SEG_META[s.codigo].label}</span>
+                                        {s.esDelCliente && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+                                                <Sparkles className="h-2.5 w-2.5" />
+                                                Hoy
+                                            </span>
+                                        )}
+                                        {segmento === s.codigo && <Check className="ml-auto h-3 w-3 text-foreground" />}
+                                    </div>
+                                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground/70">{s.nombre}</p>
+                                </button>
+                            ))}
+                        </div>
+                        {vivoSugerido && vivoSugerido !== segmento && (
+                            <p className="text-[11px] leading-snug text-muted-foreground/70">
+                                La campaña lo clasificó como <span className="font-semibold text-foreground">{SEG_META[item.segmento].label}</span>{' '}
+                                y hoy se reclasificaría como <span className="font-semibold text-foreground">{SEG_META[vivoSugerido].label}</span>.
+                            </p>
+                        )}
+                    </div>
+
+                    {/* 2. TOQUE — el trabajo del mensaje */}
+                    <div className="space-y-2">
+                        <FilaTitulo icono={<Clock className="h-3.5 w-3.5" />} titulo="Toque del goteo" detalle="Qué trabajo hace el mensaje" />
+                        <div className="grid gap-2 sm:grid-cols-3">
+                            {opciones.toques.map(t => (
+                                <button
+                                    key={t.toque}
+                                    type="button"
+                                    onClick={() => setToque(t.toque)}
+                                    className={cn(
+                                        "rounded-xl border p-3 text-left transition-colors",
+                                        toque === t.toque
+                                            ? "border-foreground/30 bg-background shadow-2xs"
+                                            : "border-border/40 bg-background/50 hover:bg-muted/50",
+                                    )}
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-semibold text-foreground">{t.titulo}</span>
+                                        {t.esDeLaEscalera && (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+                                                Le toca
+                                            </span>
+                                        )}
+                                        {toque === t.toque && <Check className="ml-auto h-3 w-3 text-foreground" />}
+                                    </div>
+                                    <p className="mt-1 text-[11px] font-medium text-muted-foreground">{t.descripcion}</p>
+                                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground/70">
+                                        {t.descuento > 0
+                                            ? `En este escalón la escalera da ${t.descuento}%${t.expiraHoras != null ? ` · vence en ${t.expiraHoras} hs` : ''}`
+                                            : 'En este escalón no hay descuento'}
+                                        {t.toque === 1 ? ' · con foto del producto' : ' · sin encabezado'}
+                                    </p>
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-[11px] leading-snug text-muted-foreground/70">
+                            El toque elige el texto, no el avance: el nivel del cliente sigue donde estaba.
+                        </p>
+                    </div>
+
+                    {/* 3. LINK + DESCUENTO — lo que el cliente ve al tocar */}
+                    <div className="space-y-2">
+                        <FilaTitulo icono={<ExternalLink className="h-3.5 w-3.5" />} titulo="A dónde entra" detalle="Cómo abre la tienda" />
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            {opciones.links.map(l => (
+                                <button
+                                    key={l.modalidad}
+                                    type="button"
+                                    onClick={() => setLink(l.modalidad)}
+                                    className={cn(
+                                        "rounded-xl border p-3 text-left transition-colors",
+                                        link === l.modalidad
+                                            ? "border-foreground/30 bg-background shadow-2xs"
+                                            : "border-border/40 bg-background/50 hover:bg-muted/50",
+                                    )}
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-semibold text-foreground">{l.titulo}</span>
+                                        {link === l.modalidad && <Check className="ml-auto h-3 w-3 text-foreground" />}
+                                    </div>
+                                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground/70">{l.descripcion}</p>
+                                </button>
+                            ))}
+                        </div>
+
+                        {link === 'reactivacion' ? (
+                            <div className="rounded-xl border border-border/40 bg-muted/20 p-3 space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                                        Descuento
+                                    </span>
+                                    {opciones.descuentos.sugeridos.map(s => (
+                                        <button
+                                            key={s}
+                                            type="button"
+                                            onClick={() => { setDescuento(s); setDescuentoAMano(true) }}
+                                            className={cn(
+                                                "h-7 rounded-full px-3 text-xs font-medium transition-colors",
+                                                descuentoEfectivo === s
+                                                    ? "bg-foreground text-background"
+                                                    : "bg-background text-muted-foreground hover:text-foreground shadow-2xs",
+                                            )}
+                                        >
+                                            {s}%
+                                        </button>
+                                    ))}
+                                    <div className="ml-auto flex items-center gap-1.5">
+                                        <Input
+                                            type="number"
+                                            min={0}
+                                            max={opciones.descuentos.max}
+                                            value={descuento}
+                                            onChange={(e) => {
+                                                const n = Number(e.target.value)
+                                                setDescuento(Number.isFinite(n) ? Math.min(Math.max(Math.trunc(n), 0), opciones.descuentos.max) : 0)
+                                                setDescuentoAMano(true)
+                                            }}
+                                            className="h-7 w-16 rounded-full text-center text-xs"
+                                        />
+                                        <span className="text-xs text-muted-foreground">%</span>
+                                    </div>
+                                </div>
+                                <p className="text-[11px] leading-snug text-muted-foreground/70">
+                                    {descuentoAMano
+                                        ? `Lo elegís vos (el rango es ${opciones.descuentos.min}–${opciones.descuentos.max}%).`
+                                        : `Es el que ya se ganó por la escalera (nivel ${mensaje.nivel}).`}
+                                    {descuentoEfectivo > 0 && (vista?.expiraHoras ?? mensaje.expiraHoras) != null
+                                        ? ` Vence en ${vista?.expiraHoras ?? mensaje.expiraHoras} hs.`
+                                        : ''}
+                                    {' '}El cliente no tipea ningún código.
+                                </p>
+                                {sinBeneficio && (
+                                    <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
+                                        Con 0% el link abre igual, pero la tienda no muestra ningún beneficio: para eso está «volver a pedir lo mismo».
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <p className="text-[11px] leading-snug text-muted-foreground/70">
+                                «Volver a pedir lo mismo» no lleva descuento: abre su último pedido ya cargado.
+                            </p>
+                        )}
+                    </div>
+
+                    {/* 4. VISTA PREVIA — el mismo texto que se copia */}
+                    <div className="space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <FilaTitulo icono={<Ticket className="h-3.5 w-3.5" />} titulo="Vista previa" detalle="Lo que se manda, tal cual" />
+                            {vista && (
+                                <span className="font-mono text-[10px] text-muted-foreground/70">
+                                    {vista.plantillaWhatsapp}{vista.conImagen ? ' · con foto' : ' · sin encabezado'}
+                                </span>
+                            )}
+                        </div>
+                        {cargandoVista ? (
+                            <div className="space-y-2 rounded-2xl bg-muted/20 p-4">
+                                <Skeleton className="h-4 w-3/4" />
+                                <Skeleton className="h-4 w-full" />
+                                <Skeleton className="h-4 w-1/2" />
+                            </div>
+                        ) : vista?.texto ? (
+                            <div className="rounded-2xl border border-border/30 bg-white dark:bg-muted/30 p-4 text-xs font-sans leading-relaxed text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-all shadow-2xs">
+                                {vista.texto}
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl border border-border/30 bg-muted/20 p-4 text-xs text-muted-foreground">
+                                No se pudo previsualizar esa combinación. Probá con otro toque o segmento.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <DialogFooter className="gap-2 sm:gap-0">
+                    <Button variant="ghost" onClick={onCerrar}>Cancelar</Button>
+                    <Button onClick={() => onAplicar(decisionesPendientes)} disabled={!vista} className="gap-2">
+                        <Check className="h-4 w-4" />
+                        Usar este mensaje
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+function FilaTitulo({ icono, titulo, detalle }: { icono: React.ReactNode; titulo: string; detalle: string }) {
+    return (
+        <div className="flex items-baseline gap-2">
+            <span className="text-muted-foreground/70">{icono}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">{titulo}</span>
+            <span className="text-[11px] text-muted-foreground/60">{detalle}</span>
+        </div>
+    )
+}
+
 function DetalleColaCliente({
+    token,
     item,
     mensaje,
+    alDia,
+    decisiones,
     cargandoMensaje,
     marcandoId,
     copiadoId,
     onCopiar,
+    onCambiarDecisiones,
     onMarcarEnviado,
 }: {
+    token: string | null
     item: ColaRecompraItem
     mensaje: MensajeColaData | null
+    /** false mientras se regenera el mensaje con las decisiones recién elegidas. */
+    alDia: boolean
+    /** Decisiones elegidas a mano (undefined = las que propone el motor). */
+    decisiones: DecisionesRecompra | undefined
     cargandoMensaje: boolean
     marcandoId: number | null
     copiadoId: number | null
     onCopiar: (txt: string) => void
+    onCambiarDecisiones: (decisiones: DecisionesRecompra | null) => void
     onMarcarEnviado: () => void
 }) {
     const meta = SEG_META[item.segmento]
+    const [dialogoAbierto, setDialogoAbierto] = useState(false)
+
+    const listo = !!mensaje?.texto && alDia
+    // Mientras llega el mensaje mostramos el toque planificado de la fila: nunca menos de lo que la
+    // fila ya sabe de sí misma.
+    const toque = mensaje?.toque ?? item.toque
+    const badgeToque = etiquetaToque(toque)
+    const descuentoVisible = mensaje?.descuento ?? 0
 
     return (
         <div className="space-y-5">
@@ -869,6 +1252,11 @@ function DetalleColaCliente({
                             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                                 {item.poblacion === 'flujo' ? 'Flujo nuevo' : 'Stock'}
                             </span>
+                            {badgeToque && (
+                                <span className="rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-background uppercase tracking-wider">
+                                    {badgeToque}{descuentoVisible > 0 ? ` · ${descuentoVisible}%` : ''}
+                                </span>
+                            )}
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground/80">
                             {item.telefono ? `${item.telefono} · ` : ''}Prioridad #{item.posicionPrioridad} en cola
@@ -885,26 +1273,111 @@ function DetalleColaCliente({
                         <span>Recomendado: {mensaje?.horarioSugerido ?? item.horarioSugerido}</span>
                     </span>
                 )}
-                {mensaje?.codigoDescuento && (
+                {mensaje && (mensaje.codigoDescuento ? (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-xs">
                         <Ticket className="h-3 w-3 text-muted-foreground/70" />
                         <span className="font-mono text-foreground font-semibold">{mensaje.codigoDescuento}</span>
                         <span>({mensaje.descuento}% OFF)</span>
                     </span>
+                ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-xs">
+                        <Ticket className="h-3 w-3 text-muted-foreground/70" />
+                        <span>Sin descuento: no se emite cupón</span>
+                    </span>
+                ))}
+            </div>
+
+            {/* Las tres decisiones: mensaje (segmento × toque), link y descuento */}
+            <div className="rounded-2xl border border-border/30 bg-muted/20 p-3.5 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                            Mensaje, link y descuento
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {mensaje ? (
+                                <>
+                                    Va el <span className="font-semibold text-foreground">{badgeToque ?? 'mensaje del motor'}</span>
+                                    {' '}con el relato de <span className="font-semibold text-foreground">{SEG_META[mensaje.segmento].label}</span>
+                                    {mensaje.link === 'reactivacion'
+                                        ? <> y el link abre la tienda con <span className="font-semibold text-foreground">{descuentoVisible > 0 ? `${descuentoVisible}% OFF` : 'sin descuento'}</span>.</>
+                                        : <> y el link abre su último pedido tal como estaba.</>}
+                                </>
+                            ) : (
+                                'Preparando el mensaje…'
+                            )}
+                        </p>
+                        {mensaje && (
+                            <p className="mt-1 text-[11px] leading-snug text-muted-foreground/70">
+                                {mensaje.descuentoOrigen === 'manual'
+                                    ? `El ${mensaje.descuento}% lo elegiste vos.`
+                                    : mensaje.descuento > 0
+                                        ? `El ${mensaje.descuento}% es el que ya se ganó por la escalera (nivel ${mensaje.nivel}).`
+                                        : 'Sin descuento: no se emite cupón.'}
+                                {mensaje.descuento > 0 && mensaje.expiraHoras != null ? ` Vence en ${mensaje.expiraHoras} hs.` : ''}
+                            </p>
+                        )}
+                    </div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!mensaje || !alDia}
+                        onClick={() => setDialogoAbierto(true)}
+                        className="h-7 shrink-0 rounded-full px-3 text-xs font-medium border-border/60 bg-background/80 hover:bg-muted/50 gap-1.5"
+                    >
+                        <Repeat2 className="h-3 w-3" />
+                        Cambiar mensaje
+                    </Button>
+                </div>
+
+                {/* El operador se fue del default del motor: que se vea y que se pueda volver. */}
+                {decisiones && (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-muted-foreground">
+                        <span>Estás usando decisiones a mano: ni el mensaje ni el link son los que propone el motor.</span>
+                        <button
+                            type="button"
+                            onClick={() => onCambiarDecisiones(null)}
+                            className="font-semibold text-foreground underline underline-offset-2"
+                        >
+                            Volver a lo que propone el motor
+                        </button>
+                    </div>
+                )}
+
+                {/* El toque de la fila es el que la campaña planificó; mandar otro es válido, pero explícito. */}
+                {mensaje?.toquePlanificado != null && mensaje.toque !== mensaje.toquePlanificado && (
+                    <p className="text-[11px] leading-snug text-muted-foreground/70">
+                        La fila venía planificada como {etiquetaToque(mensaje.toquePlanificado)} y estás mandando el{' '}
+                        {etiquetaToque(mensaje.toque)}: cambia el texto, no el nivel del cliente.
+                    </p>
                 )}
             </div>
+
+            {/* Diálogo: las tres decisiones + vista previa del texto final */}
+            {dialogoAbierto && mensaje && (
+                <DialogoDecisionesRecompra
+                    token={token}
+                    item={item}
+                    mensaje={mensaje}
+                    decisiones={decisiones}
+                    onCerrar={() => setDialogoAbierto(false)}
+                    onAplicar={(elegidas) => { onCambiarDecisiones(elegidas); setDialogoAbierto(false) }}
+                />
+            )}
 
             {/* Mensaje preparado para enviar */}
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                        Mensaje sugerido para WhatsApp
+                        Mensaje sugerido para WhatsApp{mensaje ? ` · ${badgeToque ?? 'toque 1'}` : ''}
+                        {mensaje && !mensaje.conImagen ? ' · sin encabezado' : ''}
                     </span>
-                    {mensaje?.texto && (
+                    {listo && (
                         <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => onCopiar(mensaje.texto)}
+                            onClick={() => onCopiar(mensaje!.texto)}
                             className="h-6 px-2 rounded-full text-xs text-muted-foreground hover:text-foreground gap-1"
                         >
                             {copiadoId === item.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -913,7 +1386,7 @@ function DetalleColaCliente({
                     )}
                 </div>
 
-                {cargandoMensaje ? (
+                {cargandoMensaje || (!alDia && !!mensaje) ? (
                     <div className="space-y-2 p-4 rounded-2xl bg-white/60 dark:bg-muted/20">
                         <Skeleton className="h-4 w-3/4" />
                         <Skeleton className="h-4 w-full" />
@@ -932,7 +1405,7 @@ function DetalleColaCliente({
 
             {/* Acciones operativas estilo Apple */}
             <div className="flex flex-wrap items-center gap-2 pt-2">
-                {mensaje?.waMeUrl && (
+                {listo && mensaje?.waMeUrl && (
                     <Button
                         type="button"
                         onClick={() => window.open(mensaje.waMeUrl!, '_blank')}
@@ -943,11 +1416,11 @@ function DetalleColaCliente({
                     </Button>
                 )}
 
-                {mensaje?.texto && (
+                {listo && (
                     <Button
                         type="button"
                         variant="outline"
-                        onClick={() => onCopiar(mensaje.texto)}
+                        onClick={() => onCopiar(mensaje!.texto)}
                         className="h-9 rounded-full px-4 text-xs font-medium border-border/60 bg-background/80 hover:bg-muted/50 shadow-2xs gap-1.5"
                     >
                         {copiadoId === item.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -958,7 +1431,7 @@ function DetalleColaCliente({
                 <Button
                     type="button"
                     variant="secondary"
-                    disabled={marcandoId === item.id}
+                    disabled={marcandoId === item.id || !listo}
                     onClick={onMarcarEnviado}
                     className="h-9 rounded-full px-4 text-xs font-medium shadow-2xs gap-1.5 ml-auto"
                 >
@@ -991,6 +1464,14 @@ function DetalleHistorialCliente({ item }: { item: HistorialRecompraItem }) {
                         <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">
                             {item.estadoDespacho === 'entregado' ? 'Entregado' : 'Fallido'}
                         </span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">
+                            {item.poblacion === 'flujo' ? 'Flujo' : 'Stock'}
+                        </span>
+                        {etiquetaToque(item.toque) && (
+                            <span className="rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-background uppercase tracking-wider">
+                                {resumenEnvio(item.toque, item.descuentoEnviado)}
+                            </span>
+                        )}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground/80">
                         {item.telefono ? `${item.telefono} · ` : ''}Enviado el {formatDateTime(item.fechaHora)}
@@ -1000,9 +1481,12 @@ function DetalleHistorialCliente({ item }: { item: HistorialRecompraItem }) {
 
             <div className="grid grid-cols-2 gap-4 border-y border-border/30 py-4 sm:grid-cols-4">
                 <FloatingMetric label="Origen" value={item.origenContacto === 'automatico' ? 'Goteo' : 'Manual'} />
+                <FloatingMetric label="Toque" value={etiquetaToque(item.toque) ?? 'Sin dato'} />
                 <FloatingMetric label="Cupón" value={item.codigoDescuento ?? 'Sin cupón'} />
-                <FloatingMetric label="Población" value={item.poblacion === 'flujo' ? 'Flujo' : 'Stock'} />
-                <FloatingMetric label="Estado" value={item.estadoDespacho === 'entregado' ? 'Entregado' : 'Falló'} />
+                <FloatingMetric
+                    label="A dónde entró"
+                    value={item.linkModalidad === 'reactivacion' ? 'Con descuento' : item.linkModalidad === 'lo-mismo' ? 'Lo mismo' : 'Sin dato'}
+                />
             </div>
 
             {item.errorEnvio && (
@@ -1047,6 +1531,40 @@ function DetalleClienteMotor({ item }: { item: ClienteMotorRecompra }) {
                 <FloatingMetric label="Ticket promedio" value={formatCurrency(item.ticketPromedio)} />
                 <FloatingMetric label="Último pedido" value={formatDateTime(item.ultimoPedidoAt)} />
                 <FloatingMetric label="Score prioridad" value={item.prioridad.toLocaleString('es-AR')} />
+            </div>
+
+            {/* Recorrido del goteo: los toques van 1 → 2 → 3 y este cliente está en alguno de ellos. */}
+            <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    Recorrido del goteo
+                </span>
+                <div className="flex flex-wrap gap-2 pt-1">
+                    {[1, 2, 3].map(n => {
+                        const enviado = n <= item.toquesDesdeUltimoPedido
+                        const enCola = item.toque === n
+                        return (
+                            <span
+                                key={n}
+                                className={cn(
+                                    "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                                    enviado
+                                        ? "bg-foreground text-background"
+                                        : enCola
+                                            ? "bg-muted text-foreground ring-1 ring-border/60"
+                                            : "bg-muted/50 text-muted-foreground/70",
+                                )}
+                            >
+                                {etiquetaToque(n)}{enviado ? ' · enviado' : enCola ? ' · en cola' : ''}
+                            </span>
+                        )
+                    })}
+                </div>
+                <p className="text-[11px] leading-snug text-muted-foreground/70">
+                    {item.toquesDesdeUltimoPedido === 0
+                        ? 'Todavía no recibió ningún toque desde su último pedido.'
+                        : `Recibió ${item.toquesDesdeUltimoPedido} ${item.toquesDesdeUltimoPedido === 1 ? 'toque' : 'toques'} desde su último pedido.`}
+                    {item.rol === 'control' ? ' Está en el grupo de control: no se lo contacta.' : ''}
+                </p>
             </div>
 
             <div className="space-y-1.5 pt-1">
@@ -1109,6 +1627,12 @@ function RowCola({ item, selected, onClick }: { item: ColaRecompraItem; selected
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
                     <span>{meta.label}</span>
+                    {item.toque != null && (
+                        <>
+                            <span>·</span>
+                            <span className="font-medium text-foreground">{etiquetaToque(item.toque)}</span>
+                        </>
+                    )}
                     <span>·</span>
                     <span>{item.horarioSugerido ?? formatDay(item.fechaProyectada)}</span>
                 </div>
@@ -1148,6 +1672,12 @@ function RowHistorial({ item, selected, onClick }: { item: HistorialRecompraItem
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
                     <span>{meta.label}</span>
+                    {item.toque != null && (
+                        <>
+                            <span>·</span>
+                            <span className="font-medium text-foreground">{resumenEnvio(item.toque, item.descuentoEnviado)}</span>
+                        </>
+                    )}
                     <span>·</span>
                     <span>{formatDateTime(item.fechaHora)}</span>
                 </div>
