@@ -17,7 +17,7 @@ import {
   CostoEnvioField,
 } from './general/campos'
 
-type EditorId = 'negocio' | 'tienda' | 'gtm' | 'envio' | 'logos' | 'avisos' | null
+type EditorId = 'negocio' | 'tienda' | 'gtm' | 'pixel' | 'envio' | 'logos' | 'avisos' | null
 
 const formatoGtm = (value: string) => value.trim().toUpperCase()
 const validarGtm = (value: string) => {
@@ -25,6 +25,16 @@ const validarGtm = (value: string) => {
   return /^GTM-[A-Z0-9]{4,32}$/.test(value)
     ? null
     : 'Usá el ID del contenedor, por ejemplo GTM-ABC123.'
+}
+
+// Se pega muy seguido el snippet entero en vez del número: quedarse con los
+// dígitos deja pasar ese caso, y si no alcanzan los 15-16 la validación avisa.
+const formatoPixel = (value: string) => value.trim().replace(/\D/g, '')
+const validarPixel = (value: string) => {
+  if (value === '') return null
+  return /^\d{15,16}$/.test(value)
+    ? null
+    : 'Usá sólo el número de tu pixel, sin el código, por ejemplo 2426435001137598.'
 }
 
 export default function General() {
@@ -41,6 +51,7 @@ export default function General() {
   const colorUnico = restaurante?.usarColorUnico === true
   const costoEnvioNum = parseFloat(restaurante?.deliveryFee ?? '') || 0
   const gtmContainerId = restaurante?.gtmContainerId?.trim() || ''
+  const metaPixelId = restaurante?.metaPixelId?.trim() || ''
 
   return (
     <section className="space-y-6">
@@ -73,7 +84,7 @@ export default function General() {
           onAccion={() => setEditor('tienda')}
         />
         <AjusteRow
-          titulo="Google Tag Manager (GTM) y Meta Pixel"
+          titulo="Google Tag Manager"
           oracion={
             gtmContainerId
               ? `Contenedor ${gtmContainerId} conectado · Medición de visitas y conversiones activa`
@@ -82,6 +93,17 @@ export default function General() {
           estado={gtmContainerId ? 'configurado' : 'sin-configurar'}
           accionLabel={gtmContainerId ? 'Editar' : 'Configurar'}
           onAccion={() => setEditor('gtm')}
+        />
+        <AjusteRow
+          titulo="Meta Pixel"
+          oracion={
+            metaPixelId
+              ? `Pixel ${metaPixelId} conectado · Conversiones de Meta activas`
+              : 'Sin pixel configurado — cargá tu ID para medir conversiones de Meta'
+          }
+          estado={metaPixelId ? 'configurado' : 'sin-configurar'}
+          accionLabel={metaPixelId ? 'Editar' : 'Configurar'}
+          onAccion={() => setEditor('pixel')}
         />
         <AjusteRow
           titulo="Costo de envío"
@@ -192,7 +214,29 @@ export default function General() {
             validate={validarGtm}
           />
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Piru no inyecta scripts pesados por defecto para que la tienda cargue en milisegundos. Si utilizás Meta Pixel, Google Analytics 4 o TikTok Pixel, administralos de forma transparente dentro de tu contenedor GTM.
+            Piru no inyecta scripts pesados por defecto para que la tienda cargue en milisegundos. Usá el contenedor para Google Analytics 4, TikTok Pixel y otras herramientas que administres vos.
+          </p>
+        </div>
+      </AjusteEditor>
+
+      <AjusteEditor
+        open={editor === 'pixel'}
+        onOpenChange={(o) => !o && setEditor(null)}
+        titulo="Meta Pixel"
+        descripcion="Pegá el ID de tu pixel para medir conversiones de tu tienda."
+      >
+        <div className="space-y-3">
+          <AjusteInput
+            campo="metaPixelId"
+            label="ID del pixel"
+            placeholder="2426435001137598"
+            mono
+            inputMode="tel"
+            transform={formatoPixel}
+            validate={validarPixel}
+          />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Lo encontrás en Meta Events Manager → Orígenes de datos, al lado del nombre de tu pixel: es sólo el número, no el código completo. Con esto la tienda mide visitas, productos vistos, agregados al carrito, inicios de compra y compras.
           </p>
         </div>
       </AjusteEditor>

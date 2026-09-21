@@ -701,6 +701,8 @@ export const restauranteApi = {
       deliveryFee?: string
       /** ID público del contenedor GTM; null o vacío lo desconfigura. */
       gtmContainerId?: string | null
+      /** ID público del pixel de Meta; null o vacío lo desconfigura. */
+      metaPixelId?: string | null
     }
   ) => {
     return fetchApi('/restaurante/update', {

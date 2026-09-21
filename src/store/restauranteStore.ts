@@ -72,6 +72,8 @@ export interface RestauranteData {
   dominioTienda?: string | null
   /** ID público de Google Tag Manager; los admins viejos pueden ignorarlo. */
   gtmContainerId?: string | null
+  /** ID público del pixel de Meta; los admins viejos pueden ignorarlo. */
+  metaPixelId?: string | null
   createdAt: string
   // Campos OAuth de MercadoPago
   mpConnected: boolean | null

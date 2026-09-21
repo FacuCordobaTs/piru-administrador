@@ -132,6 +132,27 @@ for (const width of [1440, 390]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     })
 
+    test('Meta Pixel se configura aparte de GTM', async ({ page }) => {
+      await section(page, 'General')
+      // Son dos filas separadas: la vieja prometía las dos integraciones y sólo gobernaba GTM.
+      await expect(row(page, 'Google Tag Manager')).toBeVisible()
+      await row(page, 'Meta Pixel').click()
+      await expect(page.getByRole('region', { name: 'Meta Pixel', exact: true })).toBeVisible()
+      await expect(row(page, 'Google Tag Manager')).toBeHidden()
+
+      const pixel = page.getByLabel('ID del pixel')
+      await pixel.fill('2426')
+      await pixel.blur()
+      // Un ID que no llega a 15 dígitos no se guarda y el error queda a la vista.
+      await expect(page.getByText(/Usá sólo el número de tu pixel/)).toBeVisible()
+
+      await pixel.fill('2426435001137598')
+      const guardado = page.waitForRequest(request => request.url().endsWith('/restaurante/update') && request.method() === 'PUT')
+      await pixel.blur()
+      expect((await guardado).postDataJSON()).toEqual({ metaPixelId: '2426435001137598' })
+      await back(page).click()
+    })
+
     test('general, WhatsApp y mapa respetan la misma profundidad', async ({ page }) => {
       await section(page, 'General')
       await row(page, 'Google Tag Manager').click()
