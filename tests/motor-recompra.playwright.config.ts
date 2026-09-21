@@ -1,0 +1,2 @@
+import { defineConfig } from '@playwright/test'
+export default defineConfig({ testDir: '.', testMatch: 'motor-recompra.spec.ts', workers: 1, timeout: 60000, outputDir: '../node_modules/.cache/motor-recompra-results', use: { baseURL: 'http://127.0.0.1:4186', viewport: { width: 1440, height: 1000 }, channel: process.env.MOTOR_TEST_BROWSER_CHANNEL ?? 'msedge' }, webServer: { command: 'bun run dev --host 127.0.0.1 --port 4186 --strictPort', url: 'http://127.0.0.1:4186/tests/motor-recompra.html', timeout: 30000 } })

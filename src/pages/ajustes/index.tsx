@@ -186,7 +186,10 @@ export default function AjustesPage() {
   const active = SECTIONS.find((s) => s.id === seccion)
   const ActiveSection = active?.Component
   const secundaria = !!active && !GROUPS.some((g) => g.ids.includes(active.id))
-  const link = restaurante?.username ? `https://piru.app/${restaurante.username}` : null
+  // `baseTienda` ya trae el dominio propio si el local lo tiene (o my.piru.app/<username>/).
+  // El literal queda sólo como fallback mientras el perfil todavía no cargó.
+  const link = restaurante?.baseTienda ?? (restaurante?.username ? `https://my.piru.app/${restaurante.username}` : null)
+  const hostLink = link?.replace(/^https?:\/\//, '').replace(/\/$/, '') ?? null
   const atencion = ['suspendida', 'cancelada', 'pago_pendiente'].includes(suscripcion?.estado ?? '')
   const operacion = SECTIONS.filter(
     (s) =>
@@ -220,7 +223,7 @@ export default function AjustesPage() {
     <header className={cn('mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-border/50 pb-7 lg:mb-10', seccionParam ? 'hidden md:flex' : 'flex')}>
       <div><h1 className="text-3xl font-semibold tracking-tight">Ajustes</h1><p className="mt-2 text-sm text-muted-foreground">Tu negocio, tus herramientas y tu cuenta.</p></div>
       {link && <div className="flex max-w-full items-center gap-1 rounded-xl bg-muted/60 p-1">
-        <a href={link} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm font-medium"><Globe className="size-4 shrink-0 text-brand" /><span className="max-w-48 truncate">piru.app/{restaurante?.username}</span><ExternalLink className="size-3.5 shrink-0 text-muted-foreground" /></a>
+        <a href={link} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm font-medium"><Globe className="size-4 shrink-0 text-brand" /><span className="max-w-48 truncate">{hostLink}</span><ExternalLink className="size-3.5 shrink-0 text-muted-foreground" /></a>
         <Button size="icon" variant="ghost" aria-label="Copiar link de mi tienda" onClick={async () => { try { await navigator.clipboard.writeText(link); toast.success('Link copiado') } catch { toast.error('No se pudo copiar el link') } }}><Copy className="size-4" /></Button>
       </div>}
     </header>

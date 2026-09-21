@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
+import { useAuthStore } from '@/store/authStore'
 import {
   LayoutDashboard,
   Package,
@@ -10,6 +11,7 @@ import {
   MessageSquare,
   TrendingUp,
   Settings,
+  Shirt,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -19,6 +21,7 @@ import {
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
   { icon: Package, label: 'Menú', path: '/dashboard/productos' },
+  { icon: Shirt, label: 'Ropa', path: '/dashboard/ropa' },
   { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
   { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes' },
   { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas' },
@@ -26,10 +29,17 @@ const NAV_ITEMS = [
 
 const MENSAJES_PATH = '/dashboard/mensajes'
 
+/** Tienda de indumentaria: pantalla de un solo local. El backend también lo exige. */
+const ROPA_PATH = '/dashboard/ropa'
+const ROPA_RESTAURANTE_ID = 6
+
 const DashboardLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const restauranteStore = useRestauranteStore()
+  // Del authStore, no del restauranteStore: está disponible apenas hay sesión, sin esperar
+  // a que resuelva fetchData().
+  const restauranteId = useAuthStore((s) => s.restaurante?.id)
   const avisosAutomaticosActivos = useModuloActivo('avisos_automaticos_whatsapp')
   const crecimientoActivo = useModuloActivo('crecimiento')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -85,9 +95,12 @@ const DashboardLayout = () => {
 
 
   // Mensajes concentra los cupos de Avisos y Crecimiento; sólo aparece si alguno está activo.
-  const navItems = NAV_ITEMS.filter(
-    (item) => item.path !== MENSAJES_PATH || avisosAutomaticosActivos || crecimientoActivo,
-  )
+  // Ropa es de un solo local: el filtro es por id, no por módulo contratable.
+  const navItems = NAV_ITEMS.filter((item) => {
+    if (item.path === MENSAJES_PATH) return avisosAutomaticosActivos || crecimientoActivo
+    if (item.path === ROPA_PATH) return restauranteId === ROPA_RESTAURANTE_ID
+    return true
+  })
 
   // `compact` = rail de solo iconos (aplica en el sidebar de escritorio).
   // `drawer` = versión móvil (push): el botón de cabecera cierra el drawer.

@@ -48,13 +48,13 @@ export function HistorialPuntosDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-6 rounded-3xl">
         <DialogHeader>
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs uppercase tracking-wider">
-            <Sparkles className="w-4 h-4" />
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+            <Sparkles className="w-3.5 h-3.5" />
             <span>Puntos de Fidelización</span>
           </div>
-          <DialogTitle className="text-xl font-bold flex items-center justify-between mt-1">
+          <DialogTitle className="text-xl font-bold tracking-tight flex items-center justify-between mt-1.5">
             <span className="truncate">{clienteNombre}</span>
-            <span className="shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-300 px-3 py-1 rounded-full text-base font-black">
+            <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-base font-black tabular-nums text-amber-700 dark:text-amber-300">
               {puntos} pts
             </span>
           </DialogTitle>

@@ -130,6 +130,13 @@ export type FiltrosTab = 'clientes' | AssetTab
 export type RetencionTab = 'puntos' | 'motor'
 export const RETENCION_TABS: RetencionTab[] = ['puntos', 'motor']
 
+/**
+ * Estado del módulo dueño de Retención, con la ambigüedad ya resuelta: mientras
+ * el catálogo no llegó no corresponde decidir —ni navegación ni venta— porque
+ * un local que sí tiene el módulo vería un flash de la pantalla de activación.
+ */
+export type EstadoRetencion = 'cargando' | 'activa' | 'inactiva'
+
 export interface ResultadoCupon {
   codigo: CodigoDescuentoGrowth
   filtros: { from: string | null; to: string | null; sucursalId: number | null }
@@ -268,7 +275,7 @@ export const CATEGORIAS_CAMPANA_META: Record<CategoriaCampana, MetaCategoriaCamp
     emoji: '🎬',
     subtitulo: 'Link en bio, llamado a la acción directo',
     canal: 'Videos cortos / Link in Bio',
-    utilidad: 'Medí el impacto real de tus videos en Reels y TikTok colocando el Smart Link en la biografía con un llamado a la acción directo ("Pedí desde el link de nuestro perfil").',
+    utilidad: 'Medí el impacto real de tus videos en Reels y TikTok colocando el link de la campaña en la biografía con un llamado a la acción directo ("Pedí desde el link de nuestro perfil").',
     ejemploUso: 'Enlace principal en la biografía acompañado de videos atractivos de preparación o platos.',
   },
   pauta_digital: {
@@ -286,7 +293,7 @@ export const CATEGORIAS_CAMPANA_META: Record<CategoriaCampana, MetaCategoriaCamp
     emoji: '🏷️',
     subtitulo: 'Impresos en mesas, manteles, cartas físicas',
     canal: 'Material físico en local / Mostrador',
-    utilidad: 'Generá un código QR con este Smart Link para colocarlo en mesas, individuales, barras o exhibidores de mostrador y agilizar pedidos en salón o takeaway sin filas.',
+    utilidad: 'Generá un código QR con el link de esta campaña para colocarlo en mesas, individuales, barras o exhibidores de mostrador y agilizar pedidos en salón o takeaway sin filas.',
     ejemploUso: 'Stickers QR en mesas, manteles individuales o carteles en el mostrador de atención.',
   },
   volantes_packaging: {

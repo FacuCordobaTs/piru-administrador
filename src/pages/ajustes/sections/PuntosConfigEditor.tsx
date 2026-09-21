@@ -5,6 +5,7 @@ import { puntosApi, type ConfiguracionPuntosData } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -15,11 +16,16 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, Gift, Truck, TicketPercent, Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface PuntosConfigEditorProps {
   onSaved?: () => void
 }
 
+/**
+ * Reglas del Club de Puntos. Mismo lenguaje visual que el resto del workspace:
+ * bloques flotantes sin caja, títulos en micro-mayúsculas y ayudas en gris.
+ */
 export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
   const token = useAuthStore((s) => s.token)
   const fetchData = useRestauranteStore((s) => s.fetchData)
@@ -118,9 +124,10 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
-        <Loader2 className="w-6 h-6 animate-spin text-brand" />
-        <span className="text-sm">Cargando configuración de puntos...</span>
+      <div className="space-y-6 pb-6">
+        <Skeleton className="h-[76px] rounded-2xl" />
+        <Skeleton className="h-[220px] rounded-2xl" />
+        <Skeleton className="h-[120px] rounded-2xl" />
       </div>
     )
   }
@@ -128,9 +135,9 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6 pb-6">
       {/* ── Switch principal: Activo / Pausado ── */}
-      <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/40 p-4">
-        <div className="space-y-0.5 pr-4">
-          <Label htmlFor="puntos-activo" className="text-sm font-semibold cursor-pointer">
+      <div className="flex items-center justify-between gap-4 rounded-2xl bg-muted/30 p-4">
+        <div className="space-y-0.5">
+          <Label htmlFor="puntos-activo" className="cursor-pointer text-sm font-semibold">
             Programa de puntos activo
           </Label>
           <p className="text-xs text-muted-foreground">
@@ -145,17 +152,17 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
       </div>
 
       {/* ── Regla de acumulación ── */}
-      <div className="space-y-4 rounded-xl border border-border/60 p-4 bg-background">
-        <div className="flex items-center gap-2 pb-2 border-b border-border/40 text-amber-600 dark:text-amber-400 font-semibold text-xs uppercase tracking-wider">
-          <Sparkles className="w-4 h-4" />
-          <span>Suma de puntos por compras</span>
-        </div>
+      <section className="space-y-4">
+        <TituloSeccion
+          icono={<Sparkles className="h-3.5 w-3.5" />}
+          titulo="Suma de puntos por compras"
+          detalle="cuánto suma cada pedido"
+          clase="text-amber-600 dark:text-amber-400"
+        />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="pesosPorPunto" className="text-xs font-semibold text-muted-foreground">
-              Pesos por cada 1 punto ($)
-            </Label>
+            <Label htmlFor="pesosPorPunto">Pesos por cada 1 punto ($)</Label>
             <Input
               id="pesosPorPunto"
               type="number"
@@ -165,7 +172,7 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
               onChange={(e) =>
                 setConfig((prev) => ({ ...prev, pesosPorPunto: Math.max(1, parseInt(e.target.value, 10) || 1) }))
               }
-              className="h-10"
+              className="h-10 tabular-nums"
             />
             <p className="text-[11px] text-muted-foreground">
               Ej: $100 significa que cada $100 gastados suma 1 punto.
@@ -173,9 +180,7 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="puntosPrimerPedido" className="text-xs font-semibold text-muted-foreground">
-              Bono de bienvenida 1er pedido
-            </Label>
+            <Label htmlFor="puntosPrimerPedido">Bono de bienvenida 1er pedido</Label>
             <Input
               id="puntosPrimerPedido"
               type="number"
@@ -185,7 +190,7 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
               onChange={(e) =>
                 setConfig((prev) => ({ ...prev, puntosPrimerPedido: Math.max(0, parseInt(e.target.value, 10) || 0) }))
               }
-              className="h-10"
+              className="h-10 tabular-nums"
             />
             <p className="text-[11px] text-muted-foreground">
               Puntos extra de regalo en la primera compra (0 para desactivar).
@@ -193,10 +198,8 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
           </div>
         </div>
 
-        <div className="space-y-1.5 pt-1">
-          <Label htmlFor="puntosMinimosCanje" className="text-xs font-semibold text-muted-foreground">
-            Mínimo de puntos requeridos para canjear
-          </Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="puntosMinimosCanje">Mínimo de puntos requeridos para canjear</Label>
           <Input
             id="puntosMinimosCanje"
             type="number"
@@ -206,21 +209,22 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
             onChange={(e) =>
               setConfig((prev) => ({ ...prev, puntosMinimosCanje: Math.max(0, parseInt(e.target.value, 10) || 0) }))
             }
-            className="h-10"
+            className="h-10 tabular-nums"
           />
           <p className="text-[11px] text-muted-foreground">
             El cliente debe alcanzar este saldo antes de poder utilizar sus puntos.
           </p>
         </div>
-      </div>
+      </section>
 
       {/* ── Canje: Envío Gratis ── */}
-      <div className="space-y-4 rounded-xl border border-border/60 p-4 bg-background">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400 font-semibold text-xs uppercase tracking-wider">
-            <Truck className="w-4 h-4" />
-            <span>Canje por Envío Gratis</span>
-          </div>
+      <section className="space-y-4 border-t border-border/30 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <TituloSeccion
+            icono={<Truck className="h-3.5 w-3.5" />}
+            titulo="Canje por Envío Gratis"
+            clase="text-sky-600 dark:text-sky-400"
+          />
           <Switch
             checked={config.permiteCanjeEnvioGratis}
             onCheckedChange={(checked) =>
@@ -230,10 +234,8 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
         </div>
 
         {config.permiteCanjeEnvioGratis && (
-          <div className="space-y-1.5 pt-2 border-t border-border/40">
-            <Label htmlFor="puntosEnvioGratis" className="text-xs font-semibold text-muted-foreground">
-              Costo en puntos para envío gratis
-            </Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="puntosEnvioGratis">Costo en puntos para envío gratis</Label>
             <Input
               id="puntosEnvioGratis"
               type="number"
@@ -243,22 +245,23 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
               onChange={(e) =>
                 setConfig((prev) => ({ ...prev, puntosEnvioGratis: Math.max(1, parseInt(e.target.value, 10) || 1) }))
               }
-              className="h-10"
+              className="h-10 tabular-nums"
             />
             <p className="text-[11px] text-muted-foreground">
               Descuenta el 100% del costo de delivery a cambio de esta cantidad de puntos.
             </p>
           </div>
         )}
-      </div>
+      </section>
 
       {/* ── Canje: Cupón de Descuento ── */}
-      <div className="space-y-4 rounded-xl border border-border/60 p-4 bg-background">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold text-xs uppercase tracking-wider">
-            <TicketPercent className="w-4 h-4" />
-            <span>Canje por Cupón de Descuento</span>
-          </div>
+      <section className="space-y-4 border-t border-border/30 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <TituloSeccion
+            icono={<TicketPercent className="h-3.5 w-3.5" />}
+            titulo="Canje por Cupón de Descuento"
+            clase="text-emerald-600 dark:text-emerald-400"
+          />
           <Switch
             checked={config.permiteCanjeDescuento}
             onCheckedChange={(checked) =>
@@ -268,12 +271,10 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
         </div>
 
         {config.permiteCanjeDescuento && (
-          <div className="space-y-4 pt-2 border-t border-border/40">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="descuentoPuntosCosto" className="text-xs font-semibold text-muted-foreground">
-                  Costo en puntos
-                </Label>
+                <Label htmlFor="descuentoPuntosCosto">Costo en puntos</Label>
                 <Input
                   id="descuentoPuntosCosto"
                   type="number"
@@ -283,14 +284,12 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
                   onChange={(e) =>
                     setConfig((prev) => ({ ...prev, descuentoPuntosCosto: Math.max(1, parseInt(e.target.value, 10) || 1) }))
                   }
-                  className="h-10"
+                  className="h-10 tabular-nums"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="descuentoTipo" className="text-xs font-semibold text-muted-foreground">
-                  Tipo de descuento
-                </Label>
+                <Label htmlFor="descuentoTipo">Tipo de descuento</Label>
                 <Select
                   value={config.descuentoTipo}
                   onValueChange={(val: 'monto_fijo' | 'porcentaje') =>
@@ -308,9 +307,9 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="descuentoValor" className="text-xs font-semibold text-muted-foreground">
+                <Label htmlFor="descuentoValor">
                   {config.descuentoTipo === 'monto_fijo' ? 'Monto a descontar ($)' : 'Porcentaje a descontar (%)'}
                 </Label>
                 <Input
@@ -322,14 +321,12 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
                   onChange={(e) =>
                     setConfig((prev) => ({ ...prev, descuentoValor: Math.max(1, parseInt(e.target.value, 10) || 1) }))
                   }
-                  className="h-10"
+                  className="h-10 tabular-nums"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="descuentoMontoMinimo" className="text-xs font-semibold text-muted-foreground">
-                  Pedido mínimo requerido ($)
-                </Label>
+                <Label htmlFor="descuentoMontoMinimo">Pedido mínimo requerido ($)</Label>
                 <Input
                   id="descuentoMontoMinimo"
                   type="number"
@@ -339,21 +336,22 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
                   onChange={(e) =>
                     setConfig((prev) => ({ ...prev, descuentoMontoMinimo: Math.max(0, parseInt(e.target.value, 10) || 0) }))
                   }
-                  className="h-10"
+                  className="h-10 tabular-nums"
                 />
               </div>
             </div>
           </div>
         )}
-      </div>
+      </section>
 
       {/* ── Canje por Productos (Informativo) ── */}
-      <div className="rounded-xl border border-border/60 bg-muted/30 p-4 space-y-2">
-        <div className="flex items-center gap-2 text-violet-600 dark:text-violet-400 font-semibold text-xs uppercase tracking-wider">
-          <Gift className="w-4 h-4" />
-          <span>Canje de productos de tu carta</span>
-        </div>
-        <p className="text-xs text-muted-foreground leading-relaxed">
+      <div className="space-y-2 rounded-2xl bg-muted/30 p-4">
+        <TituloSeccion
+          icono={<Gift className="h-3.5 w-3.5" />}
+          titulo="Canje de productos de tu carta"
+          clase="text-violet-600 dark:text-violet-400"
+        />
+        <p className="text-xs leading-relaxed text-muted-foreground">
           Podés asignar cuántos puntos otorga y cuánto cuesta canjear cada producto desde la pestaña{' '}
           <strong className="text-foreground">Productos</strong> de esta misma configuración (o desde{' '}
           <strong className="text-foreground">Menú &gt; Productos</strong>, editando el producto y completando{' '}
@@ -365,7 +363,7 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
       <Button
         type="submit"
         disabled={saving}
-        className="w-full h-11 bg-brand text-brand-foreground font-semibold rounded-xl"
+        className="w-full h-11 bg-brand text-brand-foreground font-semibold rounded-full"
       >
         {saving ? (
           <>
@@ -380,5 +378,16 @@ export function PuntosConfigEditor({ onSaved }: PuntosConfigEditorProps) {
         )}
       </Button>
     </form>
+  )
+}
+
+/** Micro-título de sección: icono + rótulo en mayúsculas + aclaración en gris. */
+function TituloSeccion({ icono, titulo, detalle, clase }: { icono: React.ReactNode; titulo: string; detalle?: string; clase?: string }) {
+  return (
+    <span className={cn('flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-wider', clase ?? 'text-muted-foreground/80')}>
+      {icono}
+      <span className="truncate">{titulo}</span>
+      {detalle && <span className="hidden shrink-0 font-normal normal-case tracking-normal text-muted-foreground/60 sm:inline">{detalle}</span>}
+    </span>
   )
 }

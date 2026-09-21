@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import {
   ApiError,
@@ -11,8 +12,9 @@ import {
   type MovimientoPuntosData,
   type ResumenPuntosData,
 } from '@/lib/api'
-import { Gift, Loader2, Package, Search, Settings2, Sparkles, TicketPercent, Truck, Users } from 'lucide-react'
+import { ChevronRight, History, Loader2, Search, Settings2, Sparkles, TicketPercent, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { ConfiguracionPuntosDialog } from './ConfiguracionPuntosDialog'
 import { ModuloComercial } from '@/components/ModuloComercial'
 import { FilaMovimientoPuntos, HistorialPuntosContenido } from './MovimientosPuntos'
@@ -56,10 +58,22 @@ const TIPO_META: Array<{ valor: FiltroTipoMovimientoPuntos; label: string }> = [
   { valor: 'ajuste_manual', label: 'Ajustes' },
 ]
 
+/** Los tres canjes del ledger, en el orden en que se leen en el resumen. */
+const CANJES_META: Array<{ tipo: 'canje_producto' | 'canje_envio' | 'canje_descuento'; campo: keyof ResumenPuntosData }> = [
+  { tipo: 'canje_producto', campo: 'canjesProducto' },
+  { tipo: 'canje_envio', campo: 'canjesEnvio' },
+  { tipo: 'canje_descuento', campo: 'canjesDescuento' },
+]
+
+const iniciales = (nombre: string) =>
+  nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()
+
 /**
  * Mitad "Puntos" de la pantalla de Retención: cuántos puntos hay en juego, qué
  * clientes los tienen, en qué los gastaron y toda la configuración del
- * programa (reglas, beneficios y productos).
+ * programa (reglas, beneficios y productos). Sigue el mismo lenguaje visual que
+ * Clientes, Campañas y Motor de recompra: listado flotante a la izquierda y, a
+ * la derecha, el resumen del club encabezando el detalle del cliente abierto.
  */
 export function PuntosPanel() {
   const token = useAuthStore((state) => state.token)
@@ -255,90 +269,98 @@ export function PuntosPanel() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-4 sm:px-6">
-        <div className="mx-auto max-w-[1680px]">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl border border-border/50 bg-white/70 p-4 shadow-2xs dark:bg-muted/20 sm:grid-cols-4">
-            <MetricaPuntos
-              label="Puntos en circulación"
-              value={cargandoResumen && !resumen ? '—' : formatPuntos(resumen?.puntosEnCirculacion ?? 0)}
-              sublabel="Saldo pendiente de canje"
-            />
-            <MetricaPuntos
-              label="Clientes con puntos"
-              value={cargandoResumen && !resumen ? '—' : formatPuntos(resumen?.clientesConPuntos ?? 0)}
-              sublabel={`${formatPuntos(resumen?.clientesConHistorial ?? 0)} con historial`}
-            />
-            <MetricaPuntos
-              label="Otorgados (30 días)"
-              value={cargandoResumen && !resumen ? '—' : formatPuntos(resumen?.puntosOtorgados30Dias ?? 0)}
-              sublabel={`${formatPuntos(resumen?.puntosOtorgados ?? 0)} históricos`}
-            />
-            <MetricaPuntos
-              label="Canjes (30 días)"
-              value={cargandoResumen && !resumen ? '—' : formatPuntos(resumen?.canjes30Dias ?? 0)}
-              sublabel={`${formatPuntos(resumen?.canjes ?? 0)} históricos`}
-            />
-          </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
-              {resumen?.ultimoMovimientoAt
-                ? `Último movimiento de puntos: ${formatFechaHora(resumen.ultimoMovimientoAt)}`
-                : 'Todavía no hay movimientos de puntos registrados.'}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfigOpen(true)}
-              className="h-8 gap-1.5 rounded-full px-3 text-xs font-medium"
-            >
-              <Settings2 className="h-3.5 w-3.5" />
-              Configurar beneficios y productos
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* En mobile la mitad de lista y el detalle se alternan desde acá. */}
-      <nav className="sticky top-0 z-20 mt-3 shrink-0 border-y bg-[#FFFBF0]/95 px-4 py-2 backdrop-blur dark:bg-background/95 sm:px-6 xl:hidden" aria-label="Vistas de puntos">
-        <div className="mx-auto grid max-w-[1680px] grid-cols-3 rounded-xl bg-muted/60 p-1">
-          <BotonNavPuntos activo={subTab === 'clientes' && vistaMobile === 'lista'} onClick={() => cambiarSubTab('clientes')}>
-            Clientes ({formatPuntos(totalClientes)})
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* En mobile el switch de arriba elige la mitad y, dentro de la lista, la vista. */}
+      <div className="shrink-0 border-b border-border/30 bg-background/80 px-4 py-2 backdrop-blur-xs xl:hidden">
+        <div className="mx-auto grid max-w-xs grid-cols-3 items-center gap-1 rounded-full bg-muted/70 p-1">
+          <BotonNavPuntos activo={vistaMobile === 'lista' && subTab === 'clientes'} onClick={() => cambiarSubTab('clientes')}>
+            Clientes
           </BotonNavPuntos>
-          <BotonNavPuntos activo={subTab === 'movimientos' && vistaMobile === 'lista'} onClick={() => cambiarSubTab('movimientos')}>
-            Movimientos ({formatPuntos(totalMovimientos)})
+          <BotonNavPuntos activo={vistaMobile === 'lista' && subTab === 'movimientos'} onClick={() => cambiarSubTab('movimientos')}>
+            Movimientos
           </BotonNavPuntos>
           <BotonNavPuntos activo={vistaMobile === 'detalle'} onClick={() => setVistaMobile('detalle')}>
             Detalle
           </BotonNavPuntos>
         </div>
-      </nav>
+      </div>
 
-      <main className="min-h-0 flex-1 px-4 pb-4 pt-3 sm:px-6">
-        <div className="mx-auto grid h-full max-w-[1680px] gap-4 xl:grid-cols-[minmax(300px,380px)_1fr]">
-          <section className={`${vistaMobile === 'lista' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
-            <div className="space-y-2 p-3">
-              {/* En desktop la mitad se elige acá; en mobile lo hace la barra de 3 slots. */}
-              <div className="hidden rounded-xl bg-muted/60 p-1 xl:flex">
-                <BotonSubTab activo={subTab === 'clientes'} onClick={() => cambiarSubTab('clientes')}>
+      {/* Resumen general flotante: sin caja, sólo la tira de métricas. En mobile
+          va arriba de todo porque la columna derecha no existe; en escritorio
+          vive dentro de esa columna, arriba del cliente seleccionado. */}
+      <div className="shrink-0 px-4 pt-4 sm:px-6 xl:hidden">
+        <div className="mx-auto max-w-[1680px]">
+          <ResumenGeneralPuntos resumen={resumen} cargando={cargandoResumen && !resumen} />
+        </div>
+      </div>
+
+      <main className="min-h-0 flex-1 overflow-hidden px-4 pb-4 pt-4 sm:px-6">
+        <div className="mx-auto grid h-full max-w-[1680px] gap-6 xl:grid-cols-[minmax(320px,380px)_1fr]">
+          <section className={cn('min-h-0 flex-col overflow-hidden', vistaMobile === 'lista' ? 'flex' : 'hidden xl:flex')}>
+            <div className="space-y-3 pb-3">
+              {/* En escritorio la mitad se elige acá; en mobile lo elige la barra de arriba. */}
+              <div className="hidden items-center gap-1.5 overflow-x-auto [scrollbar-width:none] xl:flex">
+                <TabPill activo={subTab === 'clientes'} icono={<Users className="h-3.5 w-3.5" />} onClick={() => cambiarSubTab('clientes')}>
                   Clientes con puntos
-                </BotonSubTab>
-                <BotonSubTab activo={subTab === 'movimientos'} onClick={() => cambiarSubTab('movimientos')}>
+                </TabPill>
+                <TabPill activo={subTab === 'movimientos'} icono={<History className="h-3.5 w-3.5" />} onClick={() => cambiarSubTab('movimientos')}>
                   Movimientos
-                </BotonSubTab>
+                </TabPill>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] tabular-nums text-muted-foreground">
+                  {subTab === 'clientes'
+                    ? `${formatPuntos(totalClientes)} ${totalClientes === 1 ? 'cliente' : 'clientes'}`
+                    : `${formatPuntos(totalMovimientos)} ${totalMovimientos === 1 ? 'movimiento' : 'movimientos'}`}
+                </p>
+                <div className="flex items-center gap-1.5">
+                  {subTab === 'clientes' && (
+                    <select
+                      value={orden}
+                      onChange={(evento) => setOrden(evento.target.value as 'puntos' | 'reciente' | 'nombre')}
+                      aria-label="Ordenar clientes"
+                      className="h-8 rounded-full border border-border/40 bg-background/80 px-3 text-[11px] font-medium text-muted-foreground shadow-2xs backdrop-blur-xs transition-colors hover:text-foreground"
+                    >
+                      {ORDEN_META.map((item) => (
+                        <option key={item.valor} value={item.valor}>{item.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfigOpen(true)}
+                    className="h-8 gap-1.5 rounded-full border-border/40 bg-background/80 px-3 text-xs font-medium shadow-2xs"
+                    title="Configurar beneficios y productos"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Beneficios y productos</span>
+                  </Button>
+                </div>
               </div>
 
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
                 <Input
                   value={busqueda}
                   onChange={(evento) => setBusqueda(evento.target.value)}
-                  placeholder={subTab === 'clientes' ? 'Buscar cliente por nombre o teléfono' : 'Buscar por cliente o motivo'}
-                  className="h-9 rounded-xl pl-8 text-sm"
+                  placeholder={subTab === 'clientes' ? 'Buscar por nombre o teléfono…' : 'Buscar por cliente o motivo…'}
+                  className="h-9 rounded-full border-border/40 bg-background/80 pl-9 pr-8 text-xs shadow-2xs backdrop-blur-xs transition-all placeholder:text-muted-foreground/50 focus-visible:ring-1"
                 />
+                {busqueda && (
+                  <button
+                    type="button"
+                    onClick={() => setBusqueda('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+                    title="Borrar búsqueda"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
                 {subTab === 'clientes'
                   ? ALCANCE_META.map((item) => (
                       <PillFiltro key={item.valor} activo={alcance === item.valor} onClick={() => setAlcance(item.valor)}>
@@ -351,43 +373,22 @@ export function PuntosPanel() {
                       </PillFiltro>
                     ))}
               </div>
-
-              <div className="flex items-center justify-between gap-2 pt-0.5">
-                <p className="text-[11px] text-muted-foreground">
-                  {subTab === 'clientes'
-                    ? `${formatPuntos(totalClientes)} ${totalClientes === 1 ? 'cliente' : 'clientes'}`
-                    : `${formatPuntos(totalMovimientos)} ${totalMovimientos === 1 ? 'movimiento' : 'movimientos'}`}
-                </p>
-                {subTab === 'clientes' && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">Orden</span>
-                    <select
-                      value={orden}
-                      onChange={(evento) => setOrden(evento.target.value as 'puntos' | 'reciente' | 'nombre')}
-                      className="h-7 rounded-lg border border-border/50 bg-background px-2 text-[11px] font-medium text-foreground"
-                    >
-                      {ORDEN_META.map((item) => (
-                        <option key={item.valor} value={item.valor}>{item.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
             </div>
 
             <ScrollArea className="min-h-0 flex-1">
-              <div className="space-y-2 p-2">
+              <div className="space-y-1.5 pr-2">
                 {subTab === 'clientes' ? (
                   <>
                     {cargandoClientes && clientes.length === 0 ? (
-                      <CargandoLista />
+                      <EsqueletosLista />
                     ) : clientes.length === 0 ? (
                       <VacioLista
-                        icono={<Users className="h-5 w-5 text-muted-foreground/60" />}
-                        texto={busquedaAplicada
-                          ? 'Ningún cliente coincide con la búsqueda.'
+                        icono={<Users className="h-8 w-8" />}
+                        texto={busquedaAplicada ? 'Ningún cliente coincide' : 'Todavía nadie acumuló puntos'}
+                        subtexto={busquedaAplicada
+                          ? 'Probá con otro nombre o teléfono.'
                           : alcance === 'saldo'
-                            ? 'Todavía ningún cliente acumuló puntos.'
+                            ? 'Cuando tus clientes compren, sus puntos aparecen acá.'
                             : 'Todavía ningún cliente tiene movimientos de puntos.'}
                       />
                     ) : (
@@ -400,28 +401,18 @@ export function PuntosPanel() {
                         />
                       ))
                     )}
-                    {hayMasClientes && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={cargandoClientes}
-                        onClick={() => void cargarClientes(paginaClientes + 1, false)}
-                        className="h-8 w-full rounded-xl text-xs"
-                      >
-                        {cargandoClientes ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Ver más clientes'}
-                      </Button>
-                    )}
                   </>
                 ) : (
                   <>
                     {cargandoMovimientos && movimientos.length === 0 ? (
-                      <CargandoLista />
+                      <EsqueletosLista />
                     ) : movimientos.length === 0 ? (
                       <VacioLista
-                        icono={<TicketPercent className="h-5 w-5 text-muted-foreground/60" />}
-                        texto={busquedaAplicada || tipoMovimiento !== 'todos'
-                          ? 'Ningún movimiento coincide con el filtro.'
-                          : 'Todavía no hay movimientos de puntos.'}
+                        icono={<TicketPercent className="h-8 w-8" />}
+                        texto={busquedaAplicada || tipoMovimiento !== 'todos' ? 'Ningún movimiento coincide' : 'Todavía no hay movimientos'}
+                        subtexto={busquedaAplicada || tipoMovimiento !== 'todos'
+                          ? 'Probá con otro tipo o quitá la búsqueda.'
+                          : 'Los puntos que suman y canjean tus clientes se registran acá.'}
                       />
                     ) : (
                       movimientos.map((movimiento) => (
@@ -429,38 +420,54 @@ export function PuntosPanel() {
                           key={movimiento.id}
                           movimiento={movimiento}
                           onSeleccionarCliente={() => abrirDesdeMovimiento(movimiento)}
-                          compacto
                         />
                       ))
-                    )}
-                    {hayMasMovimientos && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={cargandoMovimientos}
-                        onClick={() => void cargarMovimientos(paginaMovimientos + 1, false)}
-                        className="h-8 w-full rounded-xl text-xs"
-                      >
-                        {cargandoMovimientos ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Ver más movimientos'}
-                      </Button>
                     )}
                   </>
                 )}
               </div>
             </ScrollArea>
+
+            <div className="flex shrink-0 items-center justify-between pt-3 text-[11px] text-muted-foreground">
+              <span className="tabular-nums">
+                {subTab === 'clientes'
+                  ? `Mostrando ${formatPuntos(clientes.length)} de ${formatPuntos(totalClientes)}`
+                  : `Mostrando ${formatPuntos(movimientos.length)} de ${formatPuntos(totalMovimientos)}`}
+              </span>
+              {(subTab === 'clientes' ? hayMasClientes : hayMasMovimientos) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={subTab === 'clientes' ? cargandoClientes : cargandoMovimientos}
+                  onClick={() => {
+                    if (subTab === 'clientes') void cargarClientes(paginaClientes + 1, false)
+                    else void cargarMovimientos(paginaMovimientos + 1, false)
+                  }}
+                  className="h-7 rounded-full px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  {(subTab === 'clientes' ? cargandoClientes : cargandoMovimientos)
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : 'Ver más'}
+                </Button>
+              )}
+            </div>
           </section>
 
-          <section className={`${vistaMobile === 'detalle' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
+          <section className={cn('min-h-0 flex-col overflow-hidden', vistaMobile === 'detalle' ? 'flex' : 'hidden xl:flex')}>
+            {/* El resumen encabeza la columna: a la derecha del listado y por
+                encima del detalle, abra o no un cliente. */}
+            <div className="hidden shrink-0 px-4 pt-4 sm:px-6 xl:block">
+              <ResumenGeneralPuntos resumen={resumen} cargando={cargandoResumen && !resumen} />
+            </div>
             {detalle ? (
               <DetalleClientePuntos
                 cliente={detalle}
                 token={token ?? ''}
-                onCerrar={() => setVistaMobile('lista')}
                 onSaldoActualizado={(nuevos) => actualizarSaldo(detalle.id, nuevos)}
                 onConfigurar={() => setConfigOpen(true)}
               />
             ) : (
-              <ResumenPuntos resumen={resumen} cargando={cargandoResumen} onConfigurar={() => setConfigOpen(true)} />
+              <SinClienteSeleccionado resumen={resumen} cargando={cargandoResumen && !resumen} />
             )}
           </section>
         </div>
@@ -478,24 +485,39 @@ export function PuntosPanel() {
   )
 }
 
-function MetricaPuntos({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
+/** Tira de métricas flotante, sin caja: el mismo tratamiento que Clientes y Cupones. */
+function FloatingMetric({ label, value, sublabel }: { label: string; value: string | number; sublabel?: string }) {
   return (
     <div className="flex flex-col">
       <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">{label}</span>
-      <span className="mt-1 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{value}</span>
+      <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">{value}</span>
       {sublabel && <span className="mt-0.5 text-[11px] text-muted-foreground">{sublabel}</span>}
     </div>
   )
 }
 
-function BotonSubTab({ activo, onClick, children }: { activo: boolean; onClick: () => void; children: React.ReactNode }) {
+/** Métrica densa para las filas internas del detalle. */
+function CompactMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex flex-col">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">{label}</span>
+      <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function TabPill({ activo, onClick, icono, children }: { activo: boolean; onClick: () => void; icono: React.ReactNode; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-8 flex-1 items-center justify-center rounded-lg px-2 text-xs font-semibold transition-colors ${activo ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+      className={cn(
+        'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium transition-colors',
+        activo ? 'bg-foreground text-background shadow-2xs' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
     >
-      {children}
+      {icono}
+      <span>{children}</span>
     </button>
   )
 }
@@ -505,7 +527,10 @@ function BotonNavPuntos({ activo, onClick, children }: { activo: boolean; onClic
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-9 min-w-0 items-center justify-center truncate rounded-lg px-2 text-xs font-semibold transition-colors ${activo ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+      className={cn(
+        'min-w-0 truncate rounded-full px-2 py-1 text-center text-xs font-medium transition-all',
+        activo ? 'bg-background text-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground',
+      )}
     >
       {children}
     </button>
@@ -517,26 +542,34 @@ function PillFiltro({ activo, onClick, children }: { activo: boolean; onClick: (
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${activo ? 'border-foreground/20 bg-foreground text-background' : 'border-border/60 bg-background text-muted-foreground hover:text-foreground'}`}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all shadow-2xs',
+        activo
+          ? 'bg-foreground text-background'
+          : 'border border-border/40 bg-background/80 text-muted-foreground backdrop-blur-xs hover:text-foreground',
+      )}
     >
       {children}
     </button>
   )
 }
 
-function CargandoLista() {
+function EsqueletosLista() {
   return (
-    <div className="flex items-center justify-center py-12 text-muted-foreground">
-      <Loader2 className="h-5 w-5 animate-spin" />
+    <div className="space-y-1.5">
+      {Array.from({ length: 6 }).map((_, indice) => (
+        <Skeleton key={indice} className="h-16 rounded-xl" />
+      ))}
     </div>
   )
 }
 
-function VacioLista({ icono, texto }: { icono: React.ReactNode; texto: string }) {
+function VacioLista({ icono, texto, subtexto }: { icono: React.ReactNode; texto: string; subtexto: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-      {icono}
-      <p className="text-xs text-muted-foreground">{texto}</p>
+    <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
+      <span className="text-muted-foreground/30">{icono}</span>
+      <p className="mt-3 text-sm font-medium text-foreground">{texto}</p>
+      <p className="mt-1 max-w-xs text-xs text-muted-foreground">{subtexto}</p>
     </div>
   )
 }
@@ -546,21 +579,35 @@ function FilaClientePuntos({ cliente, activo, onClick }: { cliente: ClienteConPu
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors ${activo ? 'border-foreground/20 bg-muted/60' : 'border-border/40 bg-card hover:border-border hover:bg-muted/40'}`}
+      className={cn(
+        'flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors',
+        activo
+          ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40 shadow-2xs'
+          : 'bg-white shadow-2xs hover:bg-muted/40 dark:bg-muted/20',
+      )}
     >
-      <div className="min-w-0">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-foreground">
+        {iniciales(cliente.nombre)}
+      </div>
+
+      <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-foreground">{cliente.nombre}</p>
-        <p className="truncate text-[11px] text-muted-foreground">
-          {cliente.telefono}
-          {cliente.canjes > 0 ? ` · ${cliente.canjes} ${cliente.canjes === 1 ? 'canje' : 'canjes'}` : ' · sin canjes'}
+        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="truncate">{cliente.telefono}</span>
+          <span>·</span>
+          <span className="shrink-0">{cliente.canjes > 0 ? `${cliente.canjes} ${cliente.canjes === 1 ? 'canje' : 'canjes'}` : 'sin canjes'}</span>
+        </div>
+        <p className="mt-1 truncate text-[11px] text-muted-foreground/70">
+          {cliente.ultimoMovimientoAt ? `Último ${formatFechaHora(cliente.ultimoMovimientoAt)}` : 'Sin movimientos'}
         </p>
       </div>
+
       <div className="shrink-0 text-right">
         <p className="text-sm font-black tabular-nums text-amber-600 dark:text-amber-400">{formatPuntos(cliente.puntos)}</p>
-        <p className="text-[10px] text-muted-foreground">
-          {cliente.ultimoMovimientoAt ? formatFechaHora(cliente.ultimoMovimientoAt) : 'Sin movimientos'}
-        </p>
+        <p className="text-[10px] text-muted-foreground/70">pts</p>
       </div>
+
+      <ChevronRight className={cn('h-4 w-4 shrink-0', activo ? 'text-[#FF7A00]' : 'text-muted-foreground/30')} />
     </button>
   )
 }
@@ -568,47 +615,56 @@ function FilaClientePuntos({ cliente, activo, onClick }: { cliente: ClienteConPu
 function DetalleClientePuntos({
   cliente,
   token,
-  onCerrar,
   onSaldoActualizado,
   onConfigurar,
 }: {
   cliente: ClienteEnDetalle
   token: string
-  onCerrar: () => void
   onSaldoActualizado: (nuevosPuntos: number) => void
   onConfigurar: () => void
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/40 pb-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-lg font-bold tracking-tight text-foreground">{cliente.nombre}</h3>
-            <span className="shrink-0 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-sm font-black tabular-nums text-amber-700 dark:text-amber-300">
-              {cliente.puntos === null ? '—' : formatPuntos(cliente.puntos)} pts
-            </span>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-start justify-between gap-3 p-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted/80 text-sm font-semibold tracking-tight text-foreground">
+            {iniciales(cliente.nombre)}
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {cliente.telefono || 'Sin teléfono'}
-            {cliente.actividad?.ultimoMovimientoAt ? ` · último movimiento ${formatFechaHora(cliente.actividad.ultimoMovimientoAt)}` : ''}
-          </p>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{cliente.nombre}</h2>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                <Sparkles className="h-3 w-3" />
+                {cliente.puntos === null ? '—' : formatPuntos(cliente.puntos)} pts
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-muted-foreground/80">
+              {cliente.telefono || 'Sin teléfono'}
+              {cliente.actividad?.ultimoMovimientoAt ? ` · último movimiento ${formatFechaHora(cliente.actividad.ultimoMovimientoAt)}` : ''}
+            </p>
+          </div>
         </div>
+
         <div className="flex items-center gap-1.5">
-          <Button variant="ghost" size="sm" onClick={onConfigurar} className="h-8 rounded-full text-xs text-muted-foreground hover:text-foreground xl:hidden">
-            <Settings2 className="mr-1 h-3.5 w-3.5" />
-            Configurar
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onCerrar} className="h-8 rounded-full text-xs text-muted-foreground hover:text-foreground xl:hidden">
-            Volver a la lista
+          {/* En mobile la lista vuelve con el switch de arriba; acá sólo queda la configuración. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onConfigurar}
+            title="Configurar beneficios y productos"
+            className="h-8 gap-1.5 rounded-full px-3 text-xs font-medium xl:hidden"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Configurar</span>
           </Button>
         </div>
       </div>
 
       {cliente.actividad && (
-        <div className="grid grid-cols-3 gap-3 border-b border-border/40 py-3">
-          <MetricaPuntos label="Otorgados" value={formatPuntos(cliente.actividad.puntosOtorgados)} />
-          <MetricaPuntos label="Canjeados" value={formatPuntos(cliente.actividad.puntosCanjeados)} />
-          <MetricaPuntos label="Movimientos" value={formatPuntos(cliente.actividad.movimientos)} />
+        <div className="grid shrink-0 grid-cols-3 gap-x-6 gap-y-3 border-y border-border/30 py-4 pr-4 sm:px-6">
+          <CompactMetric label="Otorgados" value={formatPuntos(cliente.actividad.puntosOtorgados)} />
+          <CompactMetric label="Canjeados" value={formatPuntos(cliente.actividad.puntosCanjeados)} />
+          <CompactMetric label="Movimientos" value={formatPuntos(cliente.actividad.movimientos)} />
         </div>
       )}
 
@@ -618,75 +674,87 @@ function DetalleClientePuntos({
         clienteId={cliente.id}
         puntosActuales={cliente.puntos ?? 0}
         onPuntosActualizados={onSaldoActualizado}
+        className="flex min-h-0 flex-1 flex-col px-4 sm:px-6"
       />
     </div>
   )
 }
 
-function ResumenPuntos({
-  resumen,
-  cargando,
-  onConfigurar,
-}: {
-  resumen: ResumenPuntosData | null
-  cargando: boolean
-  onConfigurar: () => void
-}) {
-  const meta = (tipo: string) => metaMovimientoPuntos(tipo)
+/** Resumen general del club: rótulo, conteo y la tira de métricas flotantes. */
+function ResumenGeneralPuntos({ resumen, cargando }: { resumen: ResumenPuntosData | null; cargando: boolean }) {
+  const dato = (valor: number | undefined) => (cargando ? '—' : formatPuntos(valor ?? 0))
+  const sublabel = (texto: string) => (cargando ? undefined : texto)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-6">
-      <div className="w-full max-w-lg space-y-4 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-          <Sparkles className="h-7 w-7" />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold tracking-tight text-foreground">Club de Puntos</h3>
-          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            Elegí un cliente de la lista para ver sus movimientos y ajustar su saldo, o revisá cómo se reparten los canjes.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2 text-left sm:grid-cols-3">
-          <TarjetaCanje
-            icono={<Package className="h-4 w-4" />}
-            label={meta('canje_producto').label}
-            valor={resumen?.canjesProducto ?? 0}
-            cargando={cargando && !resumen}
-          />
-          <TarjetaCanje
-            icono={<Truck className="h-4 w-4" />}
-            label={meta('canje_envio').label}
-            valor={resumen?.canjesEnvio ?? 0}
-            cargando={cargando && !resumen}
-          />
-          <TarjetaCanje
-            icono={<TicketPercent className="h-4 w-4" />}
-            label={meta('canje_descuento').label}
-            valor={resumen?.canjesDescuento ?? 0}
-            cargando={cargando && !resumen}
-          />
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Button onClick={onConfigurar} className="h-9 rounded-full px-4 text-xs font-semibold">
-            <Gift className="mr-1.5 h-3.5 w-3.5" />
-            Configurar beneficios y productos
-          </Button>
-        </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          Resumen del club de puntos
+        </span>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {cargando ? '—' : formatPuntos(resumen?.movimientos ?? 0)} movimientos
+        </span>
       </div>
+
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+        <FloatingMetric
+          label="Puntos en circulación"
+          value={dato(resumen?.puntosEnCirculacion)}
+          sublabel={sublabel('Saldo pendiente de canje')}
+        />
+        <FloatingMetric
+          label="Clientes con puntos"
+          value={dato(resumen?.clientesConPuntos)}
+          sublabel={sublabel(`${formatPuntos(resumen?.clientesConHistorial ?? 0)} con historial`)}
+        />
+        <FloatingMetric
+          label="Otorgados (30 días)"
+          value={dato(resumen?.puntosOtorgados30Dias)}
+          sublabel={sublabel(`${formatPuntos(resumen?.puntosOtorgados ?? 0)} históricos`)}
+        />
+        <FloatingMetric
+          label="Canjes (30 días)"
+          value={dato(resumen?.canjes30Dias)}
+          sublabel={sublabel(`${formatPuntos(resumen?.canjes ?? 0)} históricos`)}
+        />
+      </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        {resumen?.ultimoMovimientoAt
+          ? `Último movimiento de puntos: ${formatFechaHora(resumen.ultimoMovimientoAt)}`
+          : 'Todavía no hay movimientos de puntos registrados.'}
+      </p>
     </div>
   )
 }
 
-function TarjetaCanje({ icono, label, valor, cargando }: { icono: React.ReactNode; label: string; valor: number; cargando: boolean }) {
+/** Columna derecha sin cliente abierto: qué hacer y en qué se gastan los puntos. */
+function SinClienteSeleccionado({ resumen, cargando }: { resumen: ResumenPuntosData | null; cargando: boolean }) {
   return (
-    <div className="rounded-xl border border-border/50 bg-card p-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
-        {icono}
-        <span className="truncate">{label}</span>
+    <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-10 text-center sm:px-6">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/80">
+        <Sparkles className="h-6 w-6 text-muted-foreground" />
       </div>
-      <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{cargando ? '—' : formatPuntos(valor)}</p>
+      <h2 className="mt-4 text-base font-semibold tracking-tight text-foreground">Seleccioná un cliente</h2>
+      <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+        Vas a ver su saldo, su historial de movimientos y podés ajustarle puntos a mano.
+      </p>
+
+      <div className="mt-8 w-full max-w-sm space-y-2 text-left">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+          Canjes por tipo
+        </span>
+        <div className="divide-y divide-border/25 border-y border-border/25">
+          {CANJES_META.map(({ tipo, campo }) => (
+            <div key={tipo} className="flex items-center justify-between py-2 text-xs">
+              <span className="text-muted-foreground">{metaMovimientoPuntos(tipo).label}</span>
+              <span className="font-semibold tabular-nums text-foreground">
+                {cargando ? '—' : formatPuntos(resumen?.[campo] as number | undefined)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

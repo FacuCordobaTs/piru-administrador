@@ -13,7 +13,7 @@ import {
 import { fmtARS, cn } from '@/lib/utils'
 import { useModuloCatalogo, useModulosStore, precioModulo } from '@/store/modulosStore'
 
-export type ModuloComercialVariante = 'tarjeta' | 'fila'
+export type ModuloComercialVariante = 'tarjeta' | 'fila' | 'plana'
 
 export interface ModuloComercialProps {
   /** Código del módulo en el catálogo. El estado, el precio y el nombre salen de ahí. */
@@ -21,12 +21,13 @@ export interface ModuloComercialProps {
   titulo: string
   descripcion: string
   icono: React.ElementType
-  /** `pago` cobra (checkout o link por WhatsApp); `incluido` se activa solo. */
+  /** `pago` cobra (checkout o link por WhatsApp); `incluido` se activa solo. El catálogo manda. */
   tipo: 'pago' | 'incluido'
   /** Nombre que usan los diálogos y los avisos. Por defecto, `titulo`. */
   nombreComercial?: string
   /** Párrafo del diálogo de pago. Por defecto, `descripcion`. */
   incluye?: string
+  /** `tarjeta` y `fila` son cajas; `plana` es una línea suelta, sin caja. */
   variante?: ModuloComercialVariante
   /** Se dispara después de cada mutación confirmada, para que el consumidor recargue. */
   onCambioEstado?: () => void
@@ -64,7 +65,13 @@ export function ModuloComercial({
   const nombre = nombreComercial ?? titulo
   const activo = modulo?.activoAhora ?? false
   const estado = modulo?.estado ?? 'inactivo'
-  const precioTexto = fmtARS(precioModulo(modulo))
+  // El catálogo gana sobre la prop: si un módulo pasó a incluido, la pantalla no
+  // puede ofrecer un checkout que el backend rechaza. La prop queda como pista
+  // para cuando el catálogo todavía no cargó.
+  const tipoEfectivo = modulo?.tipo ?? tipo
+  // Un incluido no tiene precio ni aunque le quede un monto en el catálogo: `fmtARS(0)`
+  // devuelve "$ 0", que es un precio, y acá no corresponde ninguno.
+  const precioTexto = tipoEfectivo === 'pago' ? fmtARS(precioModulo(modulo)) : null
 
   // El módulo prendido no tiene bloque comercial en esta superficie.
   if (activo) return null
@@ -162,6 +169,8 @@ export function ModuloComercial({
   }
 
   const ocupado = Boolean(procesando)
+  // En `plana` el botón no ocupa el ancho: la línea no es una caja que lo contenga.
+  const anchoCta = variante === 'plana' ? '' : 'w-full'
 
   const acciones = estado === 'pendiente_pago' ? (
     <>
@@ -177,12 +186,12 @@ export function ModuloComercial({
     <Button size="sm" disabled={ocupado} onClick={reactivarModulo} className="font-medium">
       {procesando === 'reactivar' ? 'Guardando…' : 'Reactivar módulo'}
     </Button>
-  ) : tipo === 'pago' ? (
-    <Button size="sm" disabled={ocupado} onClick={() => setModalPago(true)} className="w-full font-medium">
+  ) : tipoEfectivo === 'pago' ? (
+    <Button size="sm" disabled={ocupado} onClick={() => setModalPago(true)} className={cn('font-medium', anchoCta)}>
       {precioTexto ? `Activar por ${precioTexto}/mes` : 'Activar módulo'}
     </Button>
   ) : (
-    <Button size="sm" disabled={ocupado} onClick={activarIncluido} className="w-full font-medium">
+    <Button size="sm" disabled={ocupado} onClick={activarIncluido} className={cn('font-medium', anchoCta)}>
       {procesando === 'activar' ? 'Activando…' : 'Activar gratis'}
     </Button>
   )
@@ -195,7 +204,22 @@ export function ModuloComercial({
 
   return (
     <>
-      {variante === 'fila' ? (
+      {variante === 'plana' ? (
+        <>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <Icon className="size-4 shrink-0 text-muted-foreground" />
+              <p className="min-w-0 truncate text-sm font-semibold text-foreground">{titulo}</p>
+              {precioTexto && (
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">{precioTexto}/mes</span>
+              )}
+            </div>
+            {badge}
+            <div className="ml-auto flex flex-wrap items-center gap-2">{acciones}</div>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{descripcion}</p>
+        </>
+      ) : variante === 'fila' ? (
         <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
@@ -206,7 +230,7 @@ export function ModuloComercial({
             </div>
             {badge}
           </div>
-          {precioTexto && tipo === 'pago' && (
+          {precioTexto && (
             <p className="mt-2 text-xs font-medium text-muted-foreground">{precioTexto}/mes</p>
           )}
           <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground line-clamp-3">{descripcion}</p>
@@ -222,7 +246,7 @@ export function ModuloComercial({
                 </span>
                 <div className="min-w-0">
                   <h3 className="truncate text-sm font-semibold text-foreground">{titulo}</h3>
-                  {precioTexto && tipo === 'pago' && (
+                  {precioTexto && (
                     <p className="mt-0.5 text-xs font-medium text-muted-foreground">+{precioTexto}/mes</p>
                   )}
                 </div>

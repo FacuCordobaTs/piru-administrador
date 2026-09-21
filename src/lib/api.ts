@@ -1212,6 +1212,155 @@ export const productosApi = {
     }),
 }
 
+// ── Tienda de indumentaria (alfajor) ──
+// Pantalla de un solo local: el backend rechaza con 403 a cualquier restaurante que no
+// sea el id 6, así que estos métodos sólo sirven desde esa cuenta.
+
+export interface RopaColor {
+  nombre: string
+  hex: string
+}
+
+export interface RopaProducto {
+  id: number
+  nombre: string
+  subtitulo: string | null
+  descripcion: string | null
+  composicion: string | null
+  fit: string | null
+  precio: number
+  precioAnterior: number | null
+  categoria: string | null
+  imagenes: string[]
+  talles: string[]
+  colores: RopaColor[]
+  stock: number | null
+  activo: boolean
+  orden: number
+}
+
+export interface RopaProductoInput {
+  nombre: string
+  subtitulo?: string | null
+  descripcion?: string | null
+  composicion?: string | null
+  fit?: string | null
+  precio: number
+  precioAnterior?: number | null
+  categoria?: string | null
+  /** Cada entrada es un data URL (se sube a R2) o una URL ya subida (se conserva). */
+  imagenes?: string[]
+  talles?: string[]
+  colores?: RopaColor[]
+  stock?: number | null
+  activo?: boolean
+  orden?: number
+}
+
+export interface RopaPedidoItem {
+  id: number
+  productoId: number
+  nombreProducto: string
+  imagenUrl: string | null
+  talle: string | null
+  colorNombre: string | null
+  colorHex: string | null
+  cantidad: number
+  precioUnitario: number
+}
+
+export type RopaEstado = 'pendiente' | 'preparando' | 'enviado' | 'entregado' | 'cancelado'
+
+export interface RopaPedido {
+  id: number
+  nombreCliente: string
+  telefono: string
+  email: string | null
+  tipoEntrega: 'retiro' | 'envio'
+  direccion: string | null
+  ciudad: string | null
+  codigoPostal: string | null
+  notas: string | null
+  subtotal: number
+  costoEnvio: number
+  total: number
+  metodoPago: string | null
+  pagado: boolean
+  estadoPago: 'pendiente' | 'pagado' | 'fallido'
+  estado: RopaEstado
+  aliasTransferencia: string | null
+  cvuTransferencia: string | null
+  createdAt: string
+  items: RopaPedidoItem[]
+}
+
+export const ropaApi = {
+  resumen: (token: string) =>
+    fetchApi<{ success: boolean; data: { pendientesPago: number; pendientesEntrega: number; totalPedidos: number; totalProductos: number } }>(
+      '/ropa/admin/resumen',
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
+  productos: (token: string) =>
+    fetchApi<{ success: boolean; productos: RopaProducto[] }>('/ropa/admin/productos', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  crearProducto: (token: string, data: RopaProductoInput) =>
+    fetchApi<{ success: boolean; id: number }>('/ropa/admin/productos', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+
+  actualizarProducto: (token: string, id: number, data: Partial<RopaProductoInput>) =>
+    fetchApi<{ success: boolean }>(`/ropa/admin/productos/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+
+  eliminarProducto: (token: string, id: number) =>
+    fetchApi<{ success: boolean }>(`/ropa/admin/productos/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  pedidos: (token: string, estado?: RopaEstado) =>
+    fetchApi<{ success: boolean; pedidos: RopaPedido[] }>(
+      `/ropa/admin/pedidos${estado ? `?estado=${estado}` : ''}`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
+  cambiarEstado: (token: string, id: number, estado: RopaEstado) =>
+    fetchApi<{ success: boolean }>(`/ropa/admin/pedidos/${id}/estado`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ estado }),
+    }),
+
+  marcarPagado: (token: string, id: number, pagado: boolean) =>
+    fetchApi<{ success: boolean }>(`/ropa/admin/pedidos/${id}/pagado`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pagado }),
+    }),
+
+  getConfig: (token: string) =>
+    fetchApi<{ success: boolean; data: { ropaEnvioEnabled: boolean; ropaCostoEnvio: number } }>(
+      '/ropa/admin/config',
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+    ),
+
+  setConfig: (token: string, data: { ropaEnvioEnabled?: boolean; ropaCostoEnvio?: number }) =>
+    fetchApi<{ success: boolean }>('/ropa/admin/config', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+}
+
 // Ingredientes API
 export const ingredientesApi = {
   getAll: async (token: string) => {

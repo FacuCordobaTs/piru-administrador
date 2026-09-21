@@ -62,6 +62,14 @@ export interface RestauranteData {
   mercadoPagoPublicKey: string | null
   mercadoPagoPrivateKey: string | null
   username: string | null
+  /**
+   * Base ya armada de la tienda (`https://my.piru.app/<username>/` o el dominio propio,
+   * con barra final) para componer links de campaña. La calcula el backend: el admin no
+   * debe reimplementar la regla. `null` si el local todavía no tiene username.
+   */
+  baseTienda?: string | null
+  /** Dominio propio del local, sin protocolo; `null` = vive en my.piru.app/<username>. */
+  dominioTienda?: string | null
   /** ID público de Google Tag Manager; los admins viejos pueden ignorarlo. */
   gtmContainerId?: string | null
   createdAt: string

@@ -31,6 +31,7 @@ import PagoLink from './pages/PagoLink';
 import ClaimTienda from './pages/ClaimTienda';
 
 import Mesas from './pages/Mesas';
+import Ropa from './pages/Ropa';
 import AccesoInterno from './pages/AccesoInterno';
 import { initializeDesktopZoom } from './utils/desktopZoom';
 
@@ -155,6 +156,10 @@ const router = createBrowserRouter([
           {
             path: "productos",
             element: <Productos />,
+          },
+          {
+            path: "ropa",
+            element: <Ropa />,
           },
           {
             path: "clientes",

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { cn } from '@/lib/utils'
+import { useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { ModuloComercial } from '@/components/ModuloComercial'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ApiError, codigosDescuentoApi, crecimientoApi, type CampanaCrecimiento, type CrearCampanaCrecimiento } from '@/lib/api'
-import { ArrowUpDown, ChevronRight, Copy, Globe2, Link2, Loader2, Megaphone, Package, Pencil, Plus, Power, PowerOff, RefreshCw, ShoppingBag, ShoppingCart, Sparkles, Tag, Trash2, TrendingUp, Users, X } from 'lucide-react'
+import { ArrowUpDown, ChevronRight, Copy, Globe2, Link2, Loader2, Lock, Megaphone, Package, Pencil, Plus, Power, PowerOff, RefreshCw, Repeat2, ShoppingBag, ShoppingCart, Sparkles, Tag, Trash2, TrendingUp, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   type AssetTab,
@@ -41,8 +41,9 @@ type MobileView = 'lista' | 'detalle' | 'clientes'
 interface Props {
   token: string
   username?: string | null
+  /** Base ya armada de la tienda (dominio propio incluido, con barra final) que da el backend. */
+  baseTienda?: string | null
   tab: AssetTab
-  onChangeTab: (tab: AssetTab) => void
   campanas: CampanaCrecimiento[]
   cupones: CodigoDescuentoGrowth[]
   clientes: ClienteGrowth[]
@@ -133,6 +134,7 @@ function getCampaignStatus(campana: CampanaCrecimiento | null, organic: boolean)
     return { estado: 'Vista automática', dotColor: 'bg-sky-500' }
   }
   if (!campana) return { estado: 'Desconocido', dotColor: 'bg-zinc-400' }
+  if (esCampanaDelMotor(campana)) return { estado: 'Solo motor de recompra', dotColor: 'bg-zinc-400' }
   if (campana.estado === 'activa') return { estado: 'Activa', dotColor: 'bg-emerald-500' }
   if (campana.estado === 'borrador') return { estado: 'Borrador', dotColor: 'bg-amber-500' }
   return { estado: 'Inactiva', dotColor: 'bg-zinc-400' }
@@ -144,6 +146,24 @@ function formatTipoCampana(campana?: Pick<CampanaCrecimiento, 'destinoTipo'> | n
   if (campana.destinoTipo === 'carrito') return 'Carrito prearmado'
   return 'Seguimiento'
 }
+
+/**
+ * Las dos campañas maestras del motor de recompra (`lo-mismo` y `reactivacion`, ver
+ * `asegurarCampanasMaestras` en `routes/marketing.ts`): las crea el backend por local y el motor las
+ * usa para armar el link de cada toque. Viven en la lista de Campañas para poder explicarlas —es la
+ * pantalla a la que manda el botón del mensaje—, pero no se operan desde Adquisición: no se activan,
+ * no se editan, no se borran y su link no se copia, porque no hay una URL fija que compartir.
+ */
+const esCampanaDelMotor = (campana?: Pick<CampanaCrecimiento, 'tipo'> | null) =>
+  campana?.tipo === 'lo_mismo' || campana?.tipo === 'reactivacion'
+
+/** El estado visible: las maestras del motor figuran desactivadas acá. */
+const estadoVisibleCampana = (campana: CampanaCrecimiento) =>
+  esCampanaDelMotor(campana) ? 'inactiva' : campana.estado
+
+/** El tipo visible: en las maestras, "Seguimiento" no dice nada — son el motor. */
+const etiquetaTipoCampana = (campana?: CampanaCrecimiento | null) =>
+  esCampanaDelMotor(campana) ? 'Motor de recompra' : formatTipoCampana(campana)
 
 function CampaignTypeIcon({ campana, className = 'h-4 w-4' }: { campana?: CampanaCrecimiento | null; className?: string }) {
   const Icon = campana?.tipo === 'lo_mismo'
@@ -164,6 +184,10 @@ function CampaignTypeIcon({ campana, className = 'h-4 w-4' }: { campana?: Campan
 export default function GrowthAssetsPanel(props: Props) {
   const { token, tab, campanas, cupones, query, filtros, campanaSeleccionada, cuponSeleccionado } = props
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false)
+  // Las campañas maestras se operan en la otra mitad de Retención: desde su aviso se vuelve ahí,
+  // igual que el botón del mensaje del motor manda para acá.
+  const navigate = useNavigate()
+  const irAlMotor = () => navigate('/dashboard/clientes?tab=retencion&vista=motor')
   const [resultadoCampana, setResultadoCampana] = useState<ResultadoCampana | null>(null)
   const [resultadoCupon, setResultadoCupon] = useState<ResultadoCupon | null>(null)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
@@ -222,8 +246,8 @@ export default function GrowthAssetsPanel(props: Props) {
       const catMeta = getCategoriaMeta(item.categoria)
       const textoCategoria = catMeta ? `${catMeta.label} ${catMeta.subtitulo} ${catMeta.canal}`.toLowerCase() : ''
       if (q && !`${item.nombre} ${item.slug} ${textoCategoria}`.toLowerCase().includes(q)) return false
-      if (props.estadoCampana === 'activa' && item.estado !== 'activa') return false
-      if (props.estadoCampana === 'inactiva' && item.estado === 'activa') return false
+      if (props.estadoCampana === 'activa' && estadoVisibleCampana(item) !== 'activa') return false
+      if (props.estadoCampana === 'inactiva' && estadoVisibleCampana(item) === 'activa') return false
       if (props.tipoCampana && props.tipoCampana !== 'todos' && item.destinoTipo !== props.tipoCampana) return false
       return true
     })
@@ -356,10 +380,15 @@ export default function GrowthAssetsPanel(props: Props) {
   }
 
   const copiarCampana = async (campana: CampanaCrecimiento) => {
+    // El link de una maestra no existe hasta que el motor lo arma para un cliente: se corta acá
+    // además de en la UI, para que no vuelva por otro camino.
+    if (esCampanaDelMotor(campana)) return toast.error('Es una campaña del motor de recompra: el link se arma por cliente y no se copia desde acá.')
     if (!props.username) return toast.error('El local todavía no tiene un username público disponible.')
     if (campana.estado !== 'activa') return toast.error('Activá la campaña antes de compartir el link.')
-    await navigator.clipboard.writeText(`https://my.piru.app/${props.username}/c/${campana.slug}`)
-    toast.success('Smart Link copiado.')
+    // `baseTienda` la arma el backend y ya trae el dominio propio si el local tiene uno;
+    // el fallback reproduce el link compartido mientras el perfil todavía no cargó.
+    await navigator.clipboard.writeText(`${props.baseTienda ?? `https://my.piru.app/${props.username}/`}c/${campana.slug}`)
+    toast.success('Link de campaña copiado.')
   }
 
   const copiarCupon = async (cupon: CodigoDescuentoGrowth) => {
@@ -406,15 +435,8 @@ export default function GrowthAssetsPanel(props: Props) {
         } min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}
       >
         <div className="space-y-2 p-3">
-          {/* En desktop la mitad se elige acá; en mobile lo hace la barra de 4 slots. */}
-          <div className="hidden rounded-xl bg-muted/60 p-1 xl:flex">
-            <AssetSwitchTab active={tab === 'campanas'} onClick={() => props.onChangeTab('campanas')}>
-              Campañas
-            </AssetSwitchTab>
-            <AssetSwitchTab active={tab === 'cupones'} onClick={() => props.onChangeTab('cupones')}>
-              Cupones
-            </AssetSwitchTab>
-          </div>
+          {/* La mitad (Campañas / Cupones) se elige en el header del workspace;
+              en mobile lo hace la barra de 4 slots. */}
           <div className="flex items-center justify-between gap-3">
             <p className="text-[11px] text-muted-foreground">
               {tab === 'campanas' ? campanasFiltradas.length + 1 : cuponesFiltrados.length} resultados
@@ -457,7 +479,7 @@ export default function GrowthAssetsPanel(props: Props) {
                     key={tab}
                     variante="fila"
                     codigo="crecimiento"
-                    tipo="pago"
+                    tipo="incluido"
                     titulo="Campañas de adquisición"
                     descripcion="Medí ventas desde Historias de Instagram, Reels, TikTok, Meta Ads y Packaging con enlaces y carritos precargados."
                     icono={TrendingUp}
@@ -478,6 +500,7 @@ export default function GrowthAssetsPanel(props: Props) {
                 {props.crecimientoActivo &&
                   campanasFiltradas.map((campana) => {
                     const catMeta = getCategoriaMeta(campana.categoria)
+                    const esDelMotor = esCampanaDelMotor(campana)
                     return (
                       <AssetButton
                         key={campana.id}
@@ -485,16 +508,20 @@ export default function GrowthAssetsPanel(props: Props) {
                         onClick={() => props.onSelectCampana(campanaSeleccionada === campana.id ? null : campana.id)}
                         icon={<CampaignTypeIcon campana={campana} />}
                         title={campana.nombre}
-                        subtitle={`${
-                          catMeta ? `${catMeta.label} · ` : ''
-                        }${
-                          campana.destinoTipo === 'producto' && campana.productoId != null
-                            ? 'Promoción de producto'
-                            : campana.destinoTipo === 'carrito'
-                              ? 'Carrito prearmado'
-                              : 'Link de seguimiento'
-                        } · /c/${campana.slug}`}
+                        // Las maestras no anuncian slug: su link no se comparte, lo arma el motor.
+                        subtitle={esDelMotor
+                          ? 'La usa el motor de recompra · no se comparte por link'
+                          : `${
+                            catMeta ? `${catMeta.label} · ` : ''
+                          }${
+                            campana.destinoTipo === 'producto' && campana.productoId != null
+                              ? 'Promoción de producto'
+                              : campana.destinoTipo === 'carrito'
+                                ? 'Carrito prearmado'
+                                : 'Link de seguimiento'
+                          } · /c/${campana.slug}`}
                         badge={campana.estado}
+                        motor={esDelMotor}
                       />
                     )
                   })}
@@ -543,11 +570,7 @@ export default function GrowthAssetsPanel(props: Props) {
         {tab === 'campanas' ? (
           <div className="flex h-full flex-col overflow-hidden">
             <div className="shrink-0 p-4 sm:px-6 border-b border-border/30 bg-background/50 backdrop-blur-xs">
-              <ResumenGeneralCampanas
-                campanas={props.campanas}
-                campanaSeleccionadaId={campanaSeleccionada}
-                onSelectCampana={(id) => props.onSelectCampana(id)}
-              />
+              <ResumenGeneralCampanas campanas={props.campanas} />
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {loadingDetalle ? (
@@ -563,10 +586,10 @@ export default function GrowthAssetsPanel(props: Props) {
                   onEdit={() => campanaActual && abrirCampana(campanaActual)}
                   onToggle={() => campanaActual && void toggleCampana(campanaActual)}
                   onDelete={() => campanaActual && void borrarCampana(campanaActual)}
+                  onIrAlMotor={irAlMotor}
                   mostrarAsociaciones={mostrarAsociaciones}
                   onToggleAsociaciones={toggleAsociaciones}
                   actividadCount={actividadCount}
-                  username={props.username}
                 />
               ) : (
                 <EmptySelection tab="campanas" />
@@ -576,11 +599,7 @@ export default function GrowthAssetsPanel(props: Props) {
         ) : (
           <div className="flex h-full flex-col overflow-hidden">
             <div className="shrink-0 p-4 sm:px-6 border-b border-border/30 bg-background/50 backdrop-blur-xs">
-              <ResumenGeneralCupones
-                cupones={props.cupones}
-                cuponSeleccionadoId={cuponSeleccionado}
-                onSelectCupon={(id) => props.onSelectCupon(id)}
-              />
+              <ResumenGeneralCupones cupones={props.cupones} />
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {loadingDetalle ? (
@@ -638,6 +657,7 @@ export default function GrowthAssetsPanel(props: Props) {
         saving={saving}
         onSave={() => void guardarCampana()}
         username={props.username}
+        baseTienda={props.baseTienda}
       />
       <CuponDialog
         open={cuponDialog}
@@ -662,15 +682,7 @@ function LoadingDetail() {
   )
 }
 
-function ResumenGeneralCupones({
-  cupones,
-  cuponSeleccionadoId,
-  onSelectCupon,
-}: {
-  cupones: CodigoDescuentoGrowth[]
-  cuponSeleccionadoId: number | null
-  onSelectCupon: (id: number | null) => void
-}) {
+function ResumenGeneralCupones({ cupones }: { cupones: CodigoDescuentoGrowth[] }) {
   const totalCupones = cupones.length
   const { vigentes, totalUsos, agotados, topCupon } = useMemo(() => {
     let v = 0
@@ -687,12 +699,6 @@ function ResumenGeneralCupones({
       }
     }
     return { vigentes: v, totalUsos: u, agotados: a, topCupon: top }
-  }, [cupones])
-
-  const cuponesDestacados = useMemo(() => {
-    return [...cupones]
-      .sort((a, b) => (b.usosActuales || 0) - (a.usosActuales || 0))
-      .slice(0, 5)
   }, [cupones])
 
   return (
@@ -733,73 +739,30 @@ function ResumenGeneralCupones({
           </span>
         </div>
       </div>
-
-      {/* Fila de cupones destacados */}
-      {cuponesDestacados.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">
-            Destacados:
-          </span>
-          {cuponesDestacados.map((c) => {
-            const isSelected = c.id === cuponSeleccionadoId
-            const { dotColor } = getCouponStatus(c)
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onSelectCupon(isSelected ? null : c.id)}
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all shadow-2xs backdrop-blur-xs',
-                  isSelected
-                    ? 'border-foreground bg-foreground text-background font-medium'
-                    : 'border-border/40 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground'
-                )}
-              >
-                <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotColor)} />
-                <span className="font-mono font-semibold uppercase">{c.codigo}</span>
-                <span className="text-[10px] opacity-70">
-                  · {c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : formatCurrency(c.valor)} · {c.usosActuales} {c.usosActuales === 1 ? 'uso' : 'usos'}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
 
-function ResumenGeneralCampanas({
-  campanas,
-  campanaSeleccionadaId,
-  onSelectCampana,
-}: {
-  campanas: CampanaCrecimiento[]
-  campanaSeleccionadaId: FiltroCampana
-  onSelectCampana: (id: FiltroCampana) => void
-}) {
+function ResumenGeneralCampanas({ campanas }: { campanas: CampanaCrecimiento[] }) {
   const totalCampanas = campanas.length
-  const { activas, adquisicionCount, recompraCount } = useMemo(() => {
+  const { activas, adquisicionCount, motorCount } = useMemo(() => {
     let act = 0
     let adq = 0
-    let rec = 0
+    let motor = 0
     for (const c of campanas) {
-      if (c.estado === 'activa') act++
+      // Las maestras del motor no cuentan como activas: no se activan desde acá.
+      if (esCampanaDelMotor(c)) motor++
+      else if (c.estado === 'activa') act++
       if (c.tipo === 'adquisicion') adq++
-      else rec++
     }
-    return { activas: act, adquisicionCount: adq, recompraCount: rec }
-  }, [campanas])
-
-  const campanasDestacadas = useMemo(() => {
-    return [...campanas].slice(0, 5)
+    return { activas: act, adquisicionCount: adq, motorCount: motor }
   }, [campanas])
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-          Resumen de campañas y smart links
+          Resumen de campañas
         </span>
         <span className="text-xs text-muted-foreground tabular-nums">
           {totalCampanas} {totalCampanas === 1 ? 'campaña' : 'campañas'}
@@ -807,60 +770,20 @@ function ResumenGeneralCampanas({
       </div>
 
       {/* Métricas flotantes Apple */}
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-y border-border/30 py-3">
         <div className="flex flex-col">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Campañas</span>
           <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalCampanas}</span>
-          <span className="mt-0.5 text-[10px] text-muted-foreground">{activas} activas</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">
+            {motorCount > 0 ? `${activas} activas · ${motorCount} del motor` : `${activas} activas`}
+          </span>
         </div>
         <div className="flex flex-col">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Adquisición</span>
           <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{adquisicionCount}</span>
           <span className="mt-0.5 text-[10px] text-muted-foreground">captación de clientes</span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Recompra</span>
-          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{recompraCount}</span>
-          <span className="mt-0.5 text-[10px] text-muted-foreground">retención e incentivos</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Estado</span>
-          <span className="mt-0.5 text-xl font-bold tracking-tight truncate text-foreground sm:text-2xl">
-            {activas > 0 ? 'Activo' : 'En pausa'}
-          </span>
-          <span className="mt-0.5 text-[10px] text-muted-foreground">{campanas.length - activas} inactivas / borrador</span>
-        </div>
       </div>
-
-      {/* Fila de campañas destacadas */}
-      {campanasDestacadas.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">
-            Campañas:
-          </span>
-          {campanasDestacadas.map((c) => {
-            const isSelected = c.id === campanaSeleccionadaId
-            const { dotColor } = getCampaignStatus(c, false)
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onSelectCampana(isSelected ? null : c.id)}
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all shadow-2xs backdrop-blur-xs',
-                  isSelected
-                    ? 'border-foreground bg-foreground text-background font-medium'
-                    : 'border-border/40 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground'
-                )}
-              >
-                <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotColor)} />
-                <span className="font-medium truncate max-w-[120px]">{c.nombre}</span>
-                <span className="text-[10px] opacity-70">· /c/{c.slug}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
@@ -894,6 +817,7 @@ function AssetButton({
   title,
   subtitle,
   badge,
+  motor = false,
 }: {
   active: boolean
   onClick: () => void
@@ -901,6 +825,8 @@ function AssetButton({
   title: string
   subtitle: string
   badge: string
+  /** Campaña maestra del motor de recompra: se ve apagada y su badge no es un estado comercial. */
+  motor?: boolean
 }) {
   return (
     <button
@@ -909,18 +835,29 @@ function AssetButton({
       className={`w-full rounded-2xl border-0 p-3.5 text-left transition-all ${
         active
           ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40 shadow-2xs'
-          : 'bg-white hover:bg-muted/40 dark:bg-muted/20'
+          : motor
+            ? 'bg-muted/30 hover:bg-muted/50'
+            : 'bg-white hover:bg-muted/40 dark:bg-muted/20'
       }`}
     >
       <div className="flex items-start gap-3">
         <span className={`mt-0.5 shrink-0 ${active ? 'text-[#FF7A00]' : 'text-muted-foreground'}`}>{icon}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold tracking-tight text-foreground">{title}</span>
+          <span className={`block truncate text-sm font-semibold tracking-tight ${motor ? 'text-muted-foreground' : 'text-foreground'}`}>
+            {title}
+          </span>
           <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitle}</span>
         </span>
-        <span className="shrink-0 rounded-full border border-border/40 bg-muted/50 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
-          {badge}
-        </span>
+        {motor ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/40 bg-background/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <Lock className="h-2.5 w-2.5" />
+            Solo motor
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full border border-border/40 bg-muted/50 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
+            {badge}
+          </span>
+        )}
       </div>
     </button>
   )
@@ -990,11 +927,6 @@ function CouponAssetButton({
 
 function Empty({ label }: { label: string }) {
   return <p className="rounded-2xl bg-muted/30 p-6 text-center text-xs text-muted-foreground">{label}</p>
-}
-
-/** Switch Campañas | Cupones de la columna lista, en desktop. */
-function AssetSwitchTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" onClick={onClick} className={`flex h-8 flex-1 items-center justify-center rounded-lg px-2 text-xs font-semibold transition-colors ${active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{children}</button>
 }
 
 const inicialesAsociacion = (nombre: string) =>
@@ -1222,10 +1154,10 @@ function CampaignDetail({
   onEdit,
   onToggle,
   onDelete,
+  onIrAlMotor,
   mostrarAsociaciones,
   onToggleAsociaciones,
   actividadCount,
-  username,
 }: {
   organic: boolean
   campana: CampanaCrecimiento | null
@@ -1236,10 +1168,10 @@ function CampaignDetail({
   onEdit: () => void
   onToggle: () => void
   onDelete: () => void
+  onIrAlMotor: () => void
   mostrarAsociaciones: boolean
   onToggleAsociaciones: () => void
   actividadCount: { clientes: number; pedidos: number }
-  username?: string | null
 }) {
   const m = resultado.metricas
   const visitas = organic
@@ -1248,6 +1180,8 @@ function CampaignDetail({
   const conversion = visitas ? Math.round((m.pedidos / visitas) * 10_000) / 100 : 0
   const esPromocionProducto = campana?.destinoTipo === 'producto' && campana.productoId != null
   const esCarritoPrearmado = campana?.destinoTipo === 'carrito' && Boolean(campana.carritoRep)
+  // Las maestras del motor se miran, no se operan: sin copiar, sin editar, sin pausar, sin borrar.
+  const soloMotor = esCampanaDelMotor(campana)
   const status = getCampaignStatus(campana, organic)
   const catMeta = !organic ? getCategoriaMeta(campana?.categoria) : null
 
@@ -1276,7 +1210,9 @@ function CampaignDetail({
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {organic
                 ? 'Visitas directas y compras sin touch de campaña'
-                : `${formatTipoCampana(campana)} · /c/${campana?.slug}`}
+                : soloMotor
+                  ? 'Campaña interna del motor de recompra · no se comparte por link'
+                  : `${formatTipoCampana(campana)} · /c/${campana?.slug}`}
             </p>
           </div>
 
@@ -1291,7 +1227,7 @@ function CampaignDetail({
               <Users className="h-3.5 w-3.5" />
               <span>Ocultar actividad</span>
             </Button>
-            {!organic && campana && (
+            {!organic && campana && !soloMotor && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -1348,19 +1284,16 @@ function CampaignDetail({
 
             {/* Configuración */}
             {!organic && campana && (
+              soloMotor ? (
+                <DetalleCampanaMotor tipo={campana.tipo} onIrAlMotor={onIrAlMotor} compact />
+              ) : (
               <div className="space-y-5">
                 <CampaignExplanation
                   nombre={campana.nombre}
-                  categoria={campana.categoria}
                   modalidad={esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'seguimiento'}
                   productoId={campana.productoId}
                   carritoRep={campana.carritoRep}
                   descuentoProductoPorcentaje={campana.descuentoProductoPorcentaje}
-                  limiteUsos={campana.limiteUsos}
-                  usosActuales={campana.usosActuales}
-                  estado={campana.estado}
-                  fechaInicio={campana.fechaInicio}
-                  fechaFin={campana.fechaFin}
                   productos={productos}
                   compact
                 />
@@ -1438,6 +1371,7 @@ function CampaignDetail({
                   </Button>
                 </div>
               </div>
+              )
             )}
           </div>
         </ScrollArea>
@@ -1465,7 +1399,7 @@ function CampaignDetail({
               {!organic && campana && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                   <CampaignTypeIcon campana={campana} className="h-3.5 w-3.5" />
-                  {formatTipoCampana(campana)}
+                  {etiquetaTipoCampana(campana)}
                 </span>
               )}
               {catMeta && (
@@ -1477,8 +1411,10 @@ function CampaignDetail({
             </div>
             <p className="mt-1 text-xs text-muted-foreground/80">
               {organic
-                ? 'Personas que llegaron directamente a la tienda, sin Smart Link ni receta atribuible.'
-                : `Smart Link directo · /c/${campana?.slug}`}
+                ? 'Personas que llegaron directamente a la tienda, sin campaña ni receta atribuible.'
+                : soloMotor
+                  ? 'Campaña interna del motor de recompra: el link se arma por cliente y no se copia.'
+                  : `Link de campaña · /c/${campana?.slug}`}
             </p>
           </div>
         </div>
@@ -1497,7 +1433,7 @@ function CampaignDetail({
             </span>
           </Button>
 
-          {!organic && campana && (
+          {!organic && campana && !soloMotor && (
             <>
               <Button
                 variant="outline"
@@ -1554,7 +1490,7 @@ function CampaignDetail({
 
           {/* Distribución en 2 columnas: Embudo/Link a la izq, Configuración/Condiciones a la der */}
           <div className="grid grid-cols-1 gap-8 items-start lg:grid-cols-12 lg:gap-12">
-            {/* Columna Principal: Embudo y Smart Link */}
+            {/* Columna Principal: Embudo */}
             <div className="space-y-8 lg:col-span-7">
               {/* Embudo */}
               <div className="space-y-3">
@@ -1576,7 +1512,7 @@ function CampaignDetail({
                   <div className="flex items-center justify-between py-3">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground">
-                        1. {organic ? 'Visitas directas a la tienda' : 'Visitaron el Smart Link'}
+                        1. {organic ? 'Visitas directas a la tienda' : 'Visitaron el link de campaña'}
                       </p>
                       <p className="text-[11px] text-muted-foreground">Punto de entrada a la tienda</p>
                     </div>
@@ -1621,53 +1557,27 @@ function CampaignDetail({
                   )}
                 </div>
               </div>
-
-              {/* Smart Link Card */}
-              {!organic && campana && (
-                <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.03] p-5 transition-all dark:bg-primary/[0.06]">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Globe2 className="h-4 w-4 shrink-0 text-primary" />
-                        <span className="text-sm font-semibold tracking-tight text-foreground">
-                          Smart Link de campaña
-                        </span>
-                      </div>
-                      <p className="truncate font-mono text-xs text-muted-foreground">
-                        https://my.piru.app/{username ?? 'tu-local'}/c/{campana.slug}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={onCopy}
-                      className="shrink-0 rounded-full px-4 text-xs font-medium shadow-2xs"
-                    >
-                      <Copy className="mr-1.5 h-3.5 w-3.5" />
-                      Copiar link
-                    </Button>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Columna Secundaria: Configuración y condiciones */}
             <div className="space-y-6 lg:col-span-5">
               {!organic && campana && (
-                <CampaignExplanation
-                  nombre={campana.nombre}
-                  categoria={campana.categoria}
-                  modalidad={esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'seguimiento'}
-                  productoId={campana.productoId}
-                  carritoRep={campana.carritoRep}
-                  descuentoProductoPorcentaje={campana.descuentoProductoPorcentaje}
-                  limiteUsos={campana.limiteUsos}
-                  usosActuales={campana.usosActuales}
-                  estado={campana.estado}
-                  fechaInicio={campana.fechaInicio}
-                  fechaFin={campana.fechaFin}
-                  productos={productos}
-                />
+                soloMotor ? (
+                  <DetalleCampanaMotor tipo={campana.tipo} onIrAlMotor={onIrAlMotor} />
+                ) : (
+                  <CampaignExplanation
+                    nombre={campana.nombre}
+                    modalidad={esPromocionProducto ? 'producto' : esCarritoPrearmado ? 'carrito' : 'seguimiento'}
+                    productoId={campana.productoId}
+                    carritoRep={campana.carritoRep}
+                    descuentoProductoPorcentaje={campana.descuentoProductoPorcentaje}
+                    productos={productos}
+                  />
+                )
               )}
+              {/* Las maestras del motor no tienen condiciones comerciales que mostrar: su vigencia,
+                  su cupo y su descuento los decide el motor toque por toque. */}
+              {!soloMotor && (
               <div className="space-y-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                   Configuración y condiciones
@@ -1746,6 +1656,7 @@ function CampaignDetail({
                   </div>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -2127,40 +2038,89 @@ function CouponDetail({
   )
 }
 
+/**
+ * Detalle de una campaña maestra del motor de recompra. Adquisición no la opera: existe para
+ * entenderla y explicarla. Es a donde manda "Entender cómo funciona el link" del diálogo de mensaje
+ * del motor (`pages/MotorRecompra.tsx`), así que el texto alcanza para contarle al comensal qué
+ * pasa cuando abre el link.
+ */
+function DetalleCampanaMotor({ tipo, onIrAlMotor, compact = false }: {
+  tipo: CampanaCrecimiento['tipo']
+  onIrAlMotor: () => void
+  compact?: boolean
+}) {
+  const esLoMismo = tipo === 'lo_mismo'
+
+  return (
+    <section className={compact ? 'space-y-5' : 'space-y-6'}>
+      <div className="space-y-2.5 rounded-2xl border border-border/40 bg-muted/30 p-3.5">
+        <p className="flex items-center gap-1.5 text-xs font-semibold tracking-tight text-foreground">
+          <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+          No se usa desde acá
+        </p>
+        <p className={`${compact ? 'text-[11px]' : 'text-xs'} leading-relaxed text-muted-foreground`}>
+          La crea Piru en cada local y la usa el motor de recompra: no se activa, no se edita, no se
+          borra y su link no se copia, porque no hay una URL fija que compartir — el motor arma una
+          por cliente en cada mensaje.
+        </p>
+        <Button size="sm" variant="secondary" className="h-8 rounded-full px-3 text-xs" onClick={onIrAlMotor}>
+          <Repeat2 className="mr-1.5 h-3.5 w-3.5" />
+          Ir al motor de recompra
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        <header className="space-y-1.5">
+          <p className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-muted-foreground`}>
+            Cómo funciona el link
+          </p>
+          <h3 className={`${compact ? 'text-lg' : 'text-2xl'} font-semibold leading-tight tracking-tight text-foreground`}>
+            {esLoMismo
+              ? 'Abre su pedido de siempre, ya cargado'
+              : 'Abre la tienda con el descuento ya aplicado'}
+          </h3>
+        </header>
+        <div className={`${compact ? 'space-y-2.5 text-xs' : 'space-y-3 text-sm'} leading-relaxed text-muted-foreground`}>
+          <p>
+            <span className="font-medium text-foreground">Sale con cada mensaje del motor.</span>{' '}
+            El link viaja dentro del toque, con un token cifrado, y deja de servir cuando vence.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">El cliente lo abre.</span>{' '}
+            {esLoMismo
+              ? 'Encuentra su último pedido listo para confirmar, sin descuento ni cupón: es el empujón para quien no necesita más.'
+              : 'Encuentra el menú con el % que se ganó ya aplicado, sin tipear ningún código. El cupón se emite recién al registrar el envío.'}
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Vos ves el resultado acá.</span>{' '}
+            Las visitas y las ventas que llegan desde esos links quedan atribuidas a esta campaña.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function CampaignExplanation({
   nombre,
-  categoria,
   modalidad,
   productoId,
   carritoRep,
   descuentoProductoPorcentaje,
-  limiteUsos,
-  usosActuales,
-  estado,
-  fechaInicio,
-  fechaFin,
   productos,
   compact = false,
 }: {
   nombre?: string
-  categoria?: CategoriaCampana | string | null
   modalidad: FormCampana['modalidad']
   productoId?: string | number | null
   carritoRep?: string | null
   descuentoProductoPorcentaje?: string | number | null
-  limiteUsos?: string | number | null
-  usosActuales?: number
-  estado: CampanaCrecimiento['estado']
-  fechaInicio?: string | null
-  fechaFin?: string | null
   productos: ProductoGrowth[]
   compact?: boolean
 }) {
-  const catMeta = getCategoriaMeta(categoria)
   const productoIdNormalizado = productoId == null || productoId === '' ? null : Number(productoId)
   const producto = productoIdNormalizado == null ? null : productos.find((item) => item.id === productoIdNormalizado) ?? null
   const descuento = Number(descuentoProductoPorcentaje || 0)
-  const limite = limiteUsos == null || limiteUsos === '' ? null : Number(limiteUsos)
   const carrito = modalidad === 'carrito' ? parseCarritoPrearmado(carritoRep ?? '') : []
   const nombresCarrito = carrito.map((item) => {
     const itemProducto = productos.find((actual) => actual.id === item.productoId)
@@ -2182,13 +2142,13 @@ function CampaignExplanation({
 
   const introduccion = modalidad === 'producto'
     ? producto
-      ? `Quien abra el link encontrará ${producto.nombre} destacado${descuento > 0 ? ` con ${descuento}% OFF` : ', sin cambiar su precio'}. El resto del menú seguirá disponible.`
-      : 'Cuando elijas el producto, el link lo abrirá destacado dentro del menú y Piru medirá las compras que genere.'
+      ? `Quien abra el link encontrará ${producto.nombre} destacado${descuento > 0 ? ` con ${descuento}% OFF` : ', sin cambiar su precio'}.`
+      : 'Cuando elijas el producto, el link lo abrirá destacado dentro del menú.'
     : modalidad === 'carrito'
       ? resumenCarrito
-        ? `El cliente recibirá ${resumenCarrito} dentro del carrito. Podrá revisar la selección, modificarla y completar su pedido.`
-        : 'Cuando agregues productos, el link abrirá el carrito con esa selección preparada para que el cliente sólo la revise y compre.'
-      : 'El cliente entrará a la tienda normal, sin cambios en productos ni precios. Piru identificará las visitas y ventas que lleguen desde este link.'
+        ? `El cliente recibirá ${resumenCarrito} en el carrito y podrá ajustarlo antes de comprar.`
+        : 'Cuando agregues productos, el link abrirá el carrito con esa selección lista para revisar.'
+      : 'El cliente entra a la tienda normal. Piru atribuye las visitas y las ventas que lleguen desde este link.'
 
   const pasoCliente = modalidad === 'producto'
     ? producto
@@ -2200,15 +2160,8 @@ function CampaignExplanation({
         : 'Encuentra el carrito con la selección que prepares.'
       : 'Recorre el menú y compra como siempre.'
 
-  const estadoTexto = estado === 'activa'
-    ? 'Activa: el link puede recibir visitas durante su vigencia.'
-    : estado === 'borrador'
-      ? 'Borrador: el link no estará disponible hasta que actives la campaña.'
-      : 'Inactiva: conserva sus resultados, pero el link no recibe nuevas visitas.'
-  const vigencia = `${fechaInicio ? `Desde ${formatDate(fechaInicio)}` : 'Disponible desde ahora'} · ${fechaFin ? `hasta ${formatDate(fechaFin)}` : 'sin vencimiento'}`
-
   return (
-    <section className={compact ? 'space-y-5' : 'space-y-7'}>
+    <section className={compact ? 'space-y-4' : 'space-y-5'}>
       <header>
         <p className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-muted-foreground`}>
           {nombre?.trim() ? `Cómo funciona “${nombre.trim()}”` : 'Cómo funcionará esta campaña'}
@@ -2219,70 +2172,25 @@ function CampaignExplanation({
         <p className={`${compact ? 'mt-2 text-sm' : 'mt-3 text-base'} leading-relaxed text-muted-foreground`}>{introduccion}</p>
       </header>
 
-      {/* Explicación de utilidades por categoría de canal */}
-      {catMeta ? (
-        <div className="rounded-2xl border border-primary/25 bg-primary/[0.04] p-4 sm:p-5 dark:bg-primary/[0.08]">
-          <div className="flex items-center gap-2.5">
-            <span className="text-2xl select-none">{catMeta.emoji}</span>
-            <div className="min-w-0">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
-                Canal y utilidad recomendada
-              </span>
-              <h4 className="text-sm font-bold text-foreground sm:text-base">
-                {catMeta.label}
-              </h4>
-            </div>
-          </div>
-          <p className="mt-1 text-xs font-medium text-muted-foreground">
-            {catMeta.subtitulo}
-          </p>
-          <p className="mt-2.5 text-xs sm:text-sm leading-relaxed text-foreground/90">
-            {catMeta.utilidad}
-          </p>
-          <div className="mt-3 rounded-lg bg-background/60 p-2.5 text-xs text-muted-foreground border border-border/40">
-            <span className="font-semibold text-foreground">Tip de uso: </span>
-            {catMeta.ejemploUso}
-          </div>
-          <p className="mt-2 text-[11px] text-muted-foreground/75 italic">
-            * Esta categoría es una etiqueta organizativa para tus métricas; no altera la funcionalidad con el cliente ni la experiencia en la tienda.
-          </p>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 p-3.5 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">💡 Utilidad y canales de campañas:</p>
-          <p className="mt-1 leading-relaxed">
-            Podés asociar una categoría de canal (Historias de Instagram, Reels & TikTok, Pauta Digital, QR en Mostrador, Volantes en Packaging, WhatsApp o Influencers) para organizar tus métricas y saber de dónde proviene cada venta.
-          </p>
-        </div>
-      )}
-
-      <div className={`${compact ? 'space-y-4' : 'space-y-5'}`}>
-        <div>
-          <h4 className={`${compact ? 'text-sm' : 'text-base'} font-medium text-foreground`}>Compartís el link</h4>
-          <p className={`${compact ? 'mt-1 text-xs' : 'mt-1.5 text-sm'} leading-relaxed text-muted-foreground`}>Podés usarlo en redes, historias, mensajes o piezas impresas.</p>
-        </div>
-        <div>
-          <h4 className={`${compact ? 'text-sm' : 'text-base'} font-medium text-foreground`}>El cliente abre la campaña</h4>
-          <p className={`${compact ? 'mt-1 text-xs' : 'mt-1.5 text-sm'} leading-relaxed text-muted-foreground`}>{pasoCliente}</p>
-        </div>
-        <div>
-          <h4 className={`${compact ? 'text-sm' : 'text-base'} font-medium text-foreground`}>Piru mide el resultado</h4>
-          <p className={`${compact ? 'mt-1 text-xs' : 'mt-1.5 text-sm'} leading-relaxed text-muted-foreground`}>Las visitas y los pedidos cobrados quedan atribuidos a esta campaña durante 30 días.</p>
-        </div>
-      </div>
-
-      <div className={`${compact ? 'space-y-1.5 text-xs' : 'space-y-2 text-sm'} text-muted-foreground`}>
-        <h4 className={`${compact ? 'text-sm' : 'text-base'} font-medium text-foreground`}>Condiciones</h4>
-        {modalidad === 'producto' && <p><span className="font-medium text-foreground">Beneficio:</span> {descuento > 0 ? `${descuento}% OFF sólo en el producto.` : 'Producto destacado sin descuento.'}</p>}
-        {modalidad === 'producto' && <p><span className="font-medium text-foreground">Cupo:</span> {limite == null ? 'sin límite de compras.' : usosActuales == null ? `${limite} compras.` : `${usosActuales} de ${limite} compras usadas.`}</p>}
-        <p><span className="font-medium text-foreground">Vigencia:</span> {vigencia}.</p>
-        <p>{estadoTexto}</p>
+      <div className={`${compact ? 'space-y-2.5 text-xs' : 'space-y-3 text-sm'} text-muted-foreground`}>
+        <p><span className="font-medium text-foreground">Compartís el link</span> en redes, historias, mensajes o piezas impresas.</p>
+        <p><span className="font-medium text-foreground">El cliente abre la campaña.</span> {pasoCliente}</p>
+        <p><span className="font-medium text-foreground">Piru mide el resultado.</span> Las visitas y los pedidos cobrados quedan atribuidos 30 días.</p>
       </div>
     </section>
   )
 }
 
-function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos, error, saving, onSave, username }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CampanaCrecimiento | null; form: FormCampana; setForm: React.Dispatch<React.SetStateAction<FormCampana>>; productos: ProductoGrowth[]; error: string; saving: boolean; onSave: () => void; username?: string | null }) {
+/**
+ * Host visible del link de campaña, sin protocolo: el dominio propio del local si lo
+ * tiene, o el compartido con su username. Es sólo para mostrar — el link que se copia
+ * sale entero de `baseTienda`.
+ */
+function hostTienda(baseTienda: string | null | undefined, username: string | null | undefined) {
+  return baseTienda ? baseTienda.replace(/^https?:\/\//, '') : `my.piru.app/${username ?? 'tu-local'}/`
+}
+
+function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos, error, saving, onSave, username, baseTienda }: { open: boolean; onOpenChange: (open: boolean) => void; editando: CampanaCrecimiento | null; form: FormCampana; setForm: React.Dispatch<React.SetStateAction<FormCampana>>; productos: ProductoGrowth[]; error: string; saving: boolean; onSave: () => void; username?: string | null; baseTienda?: string | null }) {
   const set = <K extends keyof FormCampana>(key: K, value: FormCampana[K]) => setForm((actual) => ({ ...actual, [key]: value }))
   const esPromocionProducto = form.modalidad === 'producto'
   const esCarritoPrearmado = form.modalidad === 'carrito'
@@ -2303,7 +2211,7 @@ function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos,
           <div className="flex min-w-0 flex-col p-6 sm:p-8">
             <DialogHeader>
               <DialogTitle className="text-2xl">{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle>
-              <DialogDescription className="text-sm">Configurá el Smart Link. La explicación se actualiza a medida que completás la campaña.</DialogDescription>
+              <DialogDescription className="text-sm">Configurá la campaña. La explicación se actualiza a medida que la completás.</DialogDescription>
             </DialogHeader>
 
             <div className="mt-6 grid gap-5 sm:grid-cols-2">
@@ -2353,7 +2261,7 @@ function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos,
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Link de campaña</Label>
-                <Input disabled value={`my.piru.app/${username ?? 'tu-local'}/c/${form.slug || 'campana'}`} />
+                <Input disabled value={`${hostTienda(baseTienda, username)}c/${form.slug || 'campana'}`} />
                 <p className="text-[11px] text-muted-foreground">La dirección queda fija después de crearla para no perder la medición.</p>
               </div>
               {error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}
@@ -2369,15 +2277,10 @@ function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos,
             <div className="md:sticky md:top-0">
               <CampaignExplanation
                 nombre={form.nombre}
-                categoria={form.categoria}
                 modalidad={form.modalidad}
                 productoId={form.productoId}
                 carritoRep={form.carritoRep}
                 descuentoProductoPorcentaje={form.descuentoProductoPorcentaje}
-                limiteUsos={form.limiteUsos}
-                estado={form.estado}
-                fechaInicio={form.fechaInicio}
-                fechaFin={form.fechaFin}
                 productos={productos}
               />
             </div>
@@ -2390,7 +2293,7 @@ function CampanaDialog({ open, onOpenChange, editando, form, setForm, productos,
   /* Implementación anterior pausada: se conserva en el archivo para reactivar
      capacidades de a una, sin volver a inventar su composición visual.
   const recetaElegida = RECETAS.find((item) => item.codigo === form.recetaCodigo)
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>El Smart Link abre el destino elegido, conserva la atribución y aplica el beneficio en el checkout.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><div className="space-y-1.5"><Label>Dirección del link</Label><Input disabled={Boolean(editando)} value={form.slug} onChange={(e) => set('slug', slug(e.target.value))} /><p className="text-[11px] text-muted-foreground">my.piru.app/{username ?? 'tu-local'}/c/{form.slug || 'campana'}</p></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[['borrador', 'Borrador'], ['activa', 'Activa'], ['inactiva', 'Inactiva']]} /><FieldSelect label="Tipo" value={form.tipo} onValueChange={(v) => set('tipo', v as FormCampana['tipo'])} options={[['adquisicion', 'Adquisición'], ['recompra', 'Recompra']]} /><FieldSelect label="Receta" value={form.recetaCodigo || 'ninguna'} onValueChange={(v) => set('recetaCodigo', v === 'ninguna' ? '' : v)} options={[['ninguna', 'Sin receta'], ...RECETAS.map((r) => [r.codigo, `${r.nombre}${r.descuentoPorcentaje ? ` · ${r.descuentoPorcentaje}% OFF` : ''}`] as [string, string])]} /><FieldSelect label="Al abrir el link" value={form.destinoTipo} onValueChange={(v) => set('destinoTipo', v as FormCampana['destinoTipo'])} options={[['tienda', 'Mostrar la tienda'], ['producto', 'Abrir un producto'], ['carrito', 'Dejar un carrito listo']]} />{form.destinoTipo === 'producto' && <FieldSelect label="Producto" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[['ninguno', 'Elegí un producto'], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} />}{form.destinoTipo === 'carrito' && <CarritoBuilder productos={productos} value={form.carritoRep} onChange={(value) => set('carritoRep', value)} />}<FieldSelect label="Cupón" value={form.codigoDescuentoId || 'ninguno'} onValueChange={(v) => set('codigoDescuentoId', v === 'ninguno' ? '' : v)} options={[['ninguno', recetaElegida?.descuentoPorcentaje ? `Crear automáticamente ${recetaElegida.descuentoPorcentaje}% OFF` : 'Sin cupón'], ...cupones.filter((c) => c.activo).map((c) => [String(c.id), `${c.codigo} · ${c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : formatCurrency(c.valor)}`] as [string, string])]} /><div className="space-y-1.5"><Label>Inversión manual</Label><Input type="number" min="0" value={form.inversionManual} onChange={(e) => set('inversionManual', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>UTM avanzadas</Label><div className="grid gap-2 sm:grid-cols-2"><Input placeholder="utm_source" value={form.utmSource} onChange={(e) => set('utmSource', e.target.value)} /><Input placeholder="utm_medium" value={form.utmMedium} onChange={(e) => set('utmMedium', e.target.value)} /><Input placeholder="utm_campaign" value={form.utmCampaign} onChange={(e) => set('utmCampaign', e.target.value)} /><Input placeholder="utm_content" value={form.utmContent} onChange={(e) => set('utmContent', e.target.value)} /></div><Input className="mt-2" placeholder="utm_term" value={form.utmTerm} onChange={(e) => set('utmTerm', e.target.value)} /></div><p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground sm:col-span-2">Las campañas por link miden atribución real. El grupo de control no se ofrece acá porque una audiencia pública no es una cohorte cerrada comparable.</p>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editando ? 'Editar campaña' : 'Nueva campaña'}</DialogTitle><DialogDescription>El Smart Link abre el destino elegido, conserva la atribución y aplica el beneficio en el checkout.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Nombre</Label><Input value={form.nombre} onChange={(e) => { const nombre = e.target.value; setForm((actual) => ({ ...actual, nombre, slug: editando ? actual.slug : slug(nombre) })) }} /></div><div className="space-y-1.5"><Label>Dirección del link</Label><Input disabled={Boolean(editando)} value={form.slug} onChange={(e) => set('slug', slug(e.target.value))} /><p className="text-[11px] text-muted-foreground">{hostTienda(baseTienda, username)}c/{form.slug || 'campana'}</p></div><FieldSelect label="Estado" value={form.estado} onValueChange={(v) => set('estado', v as FormCampana['estado'])} options={[['borrador', 'Borrador'], ['activa', 'Activa'], ['inactiva', 'Inactiva']]} /><FieldSelect label="Tipo" value={form.tipo} onValueChange={(v) => set('tipo', v as FormCampana['tipo'])} options={[['adquisicion', 'Adquisición'], ['recompra', 'Recompra']]} /><FieldSelect label="Receta" value={form.recetaCodigo || 'ninguna'} onValueChange={(v) => set('recetaCodigo', v === 'ninguna' ? '' : v)} options={[['ninguna', 'Sin receta'], ...RECETAS.map((r) => [r.codigo, `${r.nombre}${r.descuentoPorcentaje ? ` · ${r.descuentoPorcentaje}% OFF` : ''}`] as [string, string])]} /><FieldSelect label="Al abrir el link" value={form.destinoTipo} onValueChange={(v) => set('destinoTipo', v as FormCampana['destinoTipo'])} options={[['tienda', 'Mostrar la tienda'], ['producto', 'Abrir un producto'], ['carrito', 'Dejar un carrito listo']]} />{form.destinoTipo === 'producto' && <FieldSelect label="Producto" value={form.productoId || 'ninguno'} onValueChange={(v) => set('productoId', v === 'ninguno' ? '' : v)} options={[['ninguno', 'Elegí un producto'], ...productos.map((p) => [String(p.id), p.nombre] as [string, string])]} />}{form.destinoTipo === 'carrito' && <CarritoBuilder productos={productos} value={form.carritoRep} onChange={(value) => set('carritoRep', value)} />}<FieldSelect label="Cupón" value={form.codigoDescuentoId || 'ninguno'} onValueChange={(v) => set('codigoDescuentoId', v === 'ninguno' ? '' : v)} options={[['ninguno', recetaElegida?.descuentoPorcentaje ? `Crear automáticamente ${recetaElegida.descuentoPorcentaje}% OFF` : 'Sin cupón'], ...cupones.filter((c) => c.activo).map((c) => [String(c.id), `${c.codigo} · ${c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : formatCurrency(c.valor)}`] as [string, string])]} /><div className="space-y-1.5"><Label>Inversión manual</Label><Input type="number" min="0" value={form.inversionManual} onChange={(e) => set('inversionManual', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>UTM avanzadas</Label><div className="grid gap-2 sm:grid-cols-2"><Input placeholder="utm_source" value={form.utmSource} onChange={(e) => set('utmSource', e.target.value)} /><Input placeholder="utm_medium" value={form.utmMedium} onChange={(e) => set('utmMedium', e.target.value)} /><Input placeholder="utm_campaign" value={form.utmCampaign} onChange={(e) => set('utmCampaign', e.target.value)} /><Input placeholder="utm_content" value={form.utmContent} onChange={(e) => set('utmContent', e.target.value)} /></div><Input className="mt-2" placeholder="utm_term" value={form.utmTerm} onChange={(e) => set('utmTerm', e.target.value)} /></div><p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground sm:col-span-2">Las campañas por link miden atribución real. El grupo de control no se ofrece acá porque una audiencia pública no es una cohorte cerrada comparable.</p>{error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2">{error}</p>}</div><DialogFooter><Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancelar</Button><Button disabled={saving} onClick={onSave}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editando ? 'Guardar cambios' : 'Crear campaña'}</Button></DialogFooter></DialogContent></Dialog>
   */
 }
 

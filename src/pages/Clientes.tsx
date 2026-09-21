@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
-import { useModuloActivo } from '@/store/modulosStore'
-import { cn } from '@/lib/utils'
+import { useRestauranteStore } from '@/store/restauranteStore'
+import { useModuloActivo, useModulosStore } from '@/store/modulosStore'
 import { clientesApi, codigosDescuentoApi, crecimientoApi, productosApi, sucursalesApi, type CampanaCrecimiento } from '@/lib/api'
 import { ArrowLeft, ArrowUpDown, ChevronRight, Crown, Package, ReceiptText, Search, SlidersHorizontal, Sparkles, Ticket, Trash2, TrendingUp, User, Users, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
@@ -30,6 +30,7 @@ import {
   type TipoCampanaFilter,
   type EstadoCuponFilter,
   type TipoCuponFilter,
+  type EstadoRetencion,
   type WorkspaceTab,
   SEGMENTO_META,
   SORT_CLIENTE_LABELS,
@@ -60,9 +61,19 @@ const dateEnd = (fecha?: string) => fecha ? new Date(`${fecha}T23:59:59.999`).ge
 export default function Clientes() {
   const token = useAuthStore((state) => state.token)
   const username = useAuthStore((state) => state.restaurante?.username)
+  // El dominio propio no vive en authStore (es un subset persistido): sale del perfil,
+  // que lo entrega ya armado como `baseTienda`.
+  const baseTienda = useRestauranteStore((state) => state.restaurante?.baseTienda)
   const crecimientoActivo = useModuloActivo('crecimiento')
   const cuponesActivos = useModuloActivo('codigos_descuento')
   const retencionActiva = useModuloActivo('motor_recompra')
+  // Mientras el catálogo no llegó, `retencionActiva` es `false` por falta de
+  // datos, no por falta de módulo: sin esta guarda, un local que sí lo tiene ve
+  // un flash de la pantalla de activación. Con la carga fallada y sin copia
+  // local, el estado queda en 'inactiva', igual que hace Adquisición con sus
+  // módulos.
+  const catalogoListo = useModulosStore((state) => state.categorias.length > 0 || state.error !== null)
+  const estadoRetencion: EstadoRetencion = !catalogoListo ? 'cargando' : retencionActiva ? 'activa' : 'inactiva'
   const [searchParams, setSearchParams] = useSearchParams()
   const [clientes, setClientes] = useState<ClienteGrowth[]>([])
   const [campanas, setCampanas] = useState<CampanaCrecimiento[]>([])
@@ -452,47 +463,33 @@ export default function Clientes() {
     return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
       <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
         <div className="mx-auto max-w-[1680px]">
-          <div className="relative mb-4 flex flex-col items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => cambiarWorkspaceTab(null)}
-              className="self-start text-xs text-muted-foreground hover:text-foreground sm:absolute sm:left-0 sm:top-1/2 sm:-translate-y-1/2"
-            >
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-              Volver
-            </Button>
-            <div className="text-center">
-              <h1 className="text-2xl font-bold tracking-tight">Retención</h1>
-              <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Puntos y recompra en un solo lugar: fidelizá a tus clientes y recuperá a los que se enfriaron.</p>
-            </div>
-            <WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} />
-          </div>
+          <WorkspaceHeader
+            tab={workspaceTab}
+            onChangeTab={cambiarWorkspaceTab}
+            assetTab={assetTab}
+            onChangeAssetTab={cambiarAssetTab}
+            retencionTab={retencionTab}
+            onChangeRetencionTab={cambiarRetencionTab}
+            retencionEstado={estadoRetencion}
+          />
         </div>
       </header>
-      <RetencionPanel vista={retencionTab} onCambiarVista={cambiarRetencionTab} />
+      <RetencionPanel vista={retencionTab} estado={estadoRetencion} />
     </div>
   }
 
   return <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#FFFBF0] dark:bg-background xl:overflow-hidden">
     <header className="shrink-0 px-4 pb-3 pt-5 sm:px-6">
       <div className="mx-auto max-w-[1680px]">
-        <div className="relative mb-4 flex flex-col items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => cambiarWorkspaceTab(null)}
-            className="self-start text-xs text-muted-foreground hover:text-foreground sm:absolute sm:left-0 sm:top-1/2 sm:-translate-y-1/2"
-          >
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Volver
-          </Button>
-          <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight">Clientes</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">Conocé tu base, medí el recorrido de cada promoción y seguí tus cupones.</p>
-          </div>
-          <WorkspaceTabs value={workspaceTab} onChange={cambiarWorkspaceTab} />
-        </div>
+        <WorkspaceHeader
+          tab={workspaceTab}
+          onChangeTab={cambiarWorkspaceTab}
+          assetTab={assetTab}
+          onChangeAssetTab={cambiarAssetTab}
+          retencionTab={retencionTab}
+          onChangeRetencionTab={cambiarRetencionTab}
+          retencionEstado={estadoRetencion}
+        />
         {/* Barra de Búsqueda y Botón de Filtros / Orden con estilo Apple */}
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="relative flex-1">
@@ -677,11 +674,7 @@ export default function Clientes() {
           }`}
         >
           <section className={`${mobileView === 'clientes' ? 'flex' : 'hidden'} min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
-            <div className="flex items-center justify-between gap-2 p-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Clientes</p>
-                <p className="text-[11px] text-muted-foreground">{filtrados.length} resultados</p>
-              </div>
+            <div className="flex items-center justify-end gap-2 p-3">
               <Button
                 variant="ghost"
                 size="sm"
@@ -719,11 +712,7 @@ export default function Clientes() {
 
           <section className={`${mobileView === 'detalle' ? 'flex' : 'hidden'} min-h-[640px] flex-col overflow-hidden xl:flex xl:min-h-0`}>
             <div className="shrink-0 p-4 sm:px-6 border-b border-border/30 bg-background/50 backdrop-blur-xs">
-              <ResumenBaseClientes
-                clientes={clientes}
-                onSelectCliente={(id) => seleccionarCliente(id)}
-                clienteSeleccionadoId={clienteSeleccionado}
-              />
+              <ResumenBaseClientes clientes={clientes} />
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {cliente ? (
@@ -769,8 +758,8 @@ export default function Clientes() {
           <GrowthAssetsPanel
             token={token}
             username={username}
+            baseTienda={baseTienda}
             tab={assetTab}
-            onChangeTab={cambiarAssetTab}
             campanas={campanas}
             cupones={cupones}
             clientes={clientes}
@@ -863,27 +852,96 @@ function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (va
   return <nav className="flex items-center gap-2" aria-label="Secciones de clientes">{tabs.map((tab) => <button key={tab.value} type="button" onClick={() => onChange(tab.value)} className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${value === tab.value ? 'bg-foreground text-background shadow-sm' : 'bg-muted/70 text-muted-foreground hover:text-foreground'}`}>{tab.icon}{tab.label}</button>)}</nav>
 }
 
-
-function ResumenBaseClientes({
-  clientes,
-  onSelectCliente,
-  clienteSeleccionadoId,
+/**
+ * Header de las tres tabs del workspace. La tab activa no repite su título ni
+ * su bajada: la navegación arranca directo, y la mitad interna (Campañas /
+ * Cupones, Puntos / Motor) baja acá en lugar de vivir dentro del panel.
+ */
+function WorkspaceHeader({
+  tab,
+  onChangeTab,
+  assetTab,
+  onChangeAssetTab,
+  retencionTab,
+  onChangeRetencionTab,
+  retencionEstado,
 }: {
-  clientes: ClienteGrowth[]
-  onSelectCliente: (id: number) => void
-  clienteSeleccionadoId: number | null
+  tab: WorkspaceTab
+  onChangeTab: (tab: WorkspaceTab | null) => void
+  assetTab: AssetTab
+  onChangeAssetTab: (tab: AssetTab) => void
+  retencionTab: RetencionTab
+  onChangeRetencionTab: (tab: RetencionTab) => void
+  retencionEstado: EstadoRetencion
 }) {
+  return (
+    <div className="relative mb-4 flex flex-col items-center gap-3">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onChangeTab(null)}
+        className="self-start text-xs text-muted-foreground hover:text-foreground sm:absolute sm:left-0 sm:top-1/2 sm:-translate-y-1/2"
+      >
+        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+        Volver
+      </Button>
+      <WorkspaceTabs value={tab} onChange={onChangeTab} />
+      {/* Adquisición ya elige su mitad desde la barra de mobile, así que el
+          switch de escritorio es el único que falta acá. */}
+      {tab === 'adquisicion' && (
+        <nav className="hidden items-center gap-1 rounded-full bg-muted/60 p-1 xl:flex" aria-label="Vistas de adquisición">
+          <SubTab active={assetTab === 'campanas'} onClick={() => onChangeAssetTab('campanas')} icon={<TrendingUp className="h-4 w-4" />}>
+            Campañas
+          </SubTab>
+          <SubTab active={assetTab === 'cupones'} onClick={() => onChangeAssetTab('cupones')} icon={<Ticket className="h-4 w-4" />}>
+            Cupones
+          </SubTab>
+        </nav>
+      )}
+      {/* Con el módulo apagado no hay mitades que elegir: la pantalla explica y
+          ofrece activarlo, así que el switch sobra (y llevaría a la nada). */}
+      {tab === 'retencion' && retencionEstado === 'activa' && (
+        <nav className="flex items-center gap-1 rounded-full bg-muted/60 p-1" aria-label="Vistas de retención">
+          <SubTab active={retencionTab === 'puntos'} onClick={() => onChangeRetencionTab('puntos')} icon={<Sparkles className="h-4 w-4" />}>
+            Puntos
+          </SubTab>
+          <SubTab active={retencionTab === 'motor'} onClick={() => onChangeRetencionTab('motor')} icon={<Zap className="h-4 w-4" />}>
+            Motor de recompra
+          </SubTab>
+        </nav>
+      )}
+    </div>
+  )
+}
+
+function SubTab({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors ${active ? 'bg-foreground text-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+    >
+      {icon}
+      <span className="truncate">{children}</span>
+    </button>
+  )
+}
+
+
+function ResumenBaseClientes({ clientes }: { clientes: ClienteGrowth[] }) {
   const totalClientes = clientes.length
   const totalFacturado = useMemo(() => clientes.reduce((acc, c) => acc + (c.totalGastado || 0), 0), [clientes])
   const totalPedidos = useMemo(() => clientes.reduce((acc, c) => acc + (c.cantidadPedidos || 0), 0), [clientes])
-  const totalVip = useMemo(() => clientes.filter((c) => c.esVip).length, [clientes])
+  const totalAltoValor = useMemo(() => clientes.filter((c) => c.esVip).length, [clientes])
   const ticketPromedio = totalPedidos > 0 ? totalFacturado / totalPedidos : 0
 
-  const ultimosClientes = useMemo(() => {
-    return [...clientes]
-      .filter((c) => c.ultimoPedidoAt)
-      .sort((a, b) => new Date(b.ultimoPedidoAt!).getTime() - new Date(a.ultimoPedidoAt!).getTime())
-      .slice(0, 5)
+  // Todos los segmentos entran siempre, incluso en cero: el reparto se lee de un
+  // vistazo y la fila no cambia de forma según cuál tenga clientes.
+  const conteoSegmentos = useMemo(() => {
+    const conteo = {} as Record<keyof typeof SEGMENTO_META, number>
+    for (const clave of Object.keys(SEGMENTO_META) as Array<keyof typeof SEGMENTO_META>) conteo[clave] = 0
+    for (const cliente of clientes) if (cliente.segmento) conteo[cliente.segmento] += 1
+    return conteo
   }, [clientes])
 
   return (
@@ -905,9 +963,11 @@ function ResumenBaseClientes({
           <span className="mt-0.5 text-[10px] text-muted-foreground">{totalPedidos} pedidos en total</span>
         </div>
         <div className="flex flex-col">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">VIP</span>
-          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalVip}</span>
-          <span className="mt-0.5 text-[10px] text-muted-foreground">máxima recurrencia</span>
+          {/* `esVip` no es el segmento `vip`: acá entran los de alto valor aunque
+              se hayan enfriado, así que no comparte rótulo con el de abajo. */}
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Alto valor</span>
+          <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{totalAltoValor}</span>
+          <span className="mt-0.5 text-[10px] text-muted-foreground">sin importar su recencia</span>
         </div>
         <div className="flex flex-col">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Facturación</span>
@@ -916,42 +976,32 @@ function ResumenBaseClientes({
         </div>
       </div>
 
-      {/* Fila de últimos pedidos */}
-      {ultimosClientes.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">
-            Últimos pedidos:
-          </span>
-          {ultimosClientes.map((c) => {
-            const isSelected = c.id === clienteSeleccionadoId
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onSelectCliente(c.id)}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all shadow-2xs backdrop-blur-xs",
-                  isSelected
-                    ? "border-foreground bg-foreground text-background font-medium"
-                    : "border-border/40 bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground"
-                )}
-              >
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-bold text-foreground">
-                  {iniciales(c.nombre)}
-                </span>
-                <span className="truncate max-w-[100px] font-medium">{c.nombre}</span>
-                <span className="text-[10px] opacity-70">· {formatCurrency(c.totalGastado)}</span>
-              </button>
-            )
-          })}
+      {/* El reparto por segmento RFM es un dato más del resumen, así que usa el
+          mismo tratamiento que las métricas de arriba: rótulo chico y número grande. */}
+      <div className="space-y-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          Clientes por segmento
+        </span>
+        {/* Los seis segmentos entran en una sola fila apenas hay ancho para eso. */}
+        <div className="grid grid-cols-3 gap-x-6 gap-y-3 md:grid-cols-6">
+          {(Object.keys(SEGMENTO_META) as Array<keyof typeof SEGMENTO_META>).map((clave) => (
+            <div key={clave} className="flex flex-col">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                {SEGMENTO_META[clave].label}
+              </span>
+              <span className="mt-0.5 text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
+                {conteoSegmentos[clave]}
+              </span>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   )
 }
 
 function ClientRow({ cliente, selected, onClick }: { cliente: ClienteGrowth; selected: boolean; onClick: () => void }) {
-  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{cliente.nombre}</p>{cliente.esVip && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span>{cliente.cantidadPedidos} pedidos</span>{(cliente.puntos ?? 0) > 0 && (<><span>·</span><span className="font-semibold text-amber-600 dark:text-amber-400">{cliente.puntos} pts</span></>)}</div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
+  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl border-0 p-3 text-left transition-colors ${selected ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40' : 'bg-white hover:bg-muted/40 dark:bg-muted/20'}`}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">{iniciales(cliente.nombre)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{cliente.nombre}</p><div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"><span>{cliente.cantidadPedidos} pedidos</span>{(cliente.puntos ?? 0) > 0 && (<><span>·</span><span className="font-semibold text-amber-600 dark:text-amber-400">{cliente.puntos} pts</span></>)}</div><p className="mt-1 truncate text-[11px] text-muted-foreground">{cliente.ultimoPedidoAt ? `Último ${formatDate(cliente.ultimoPedidoAt)}` : 'Sin pedidos'} · {formatCurrency(cliente.totalGastado)}</p></div><ChevronRight className={`h-4 w-4 shrink-0 ${selected ? 'text-[#FF7A00]' : 'text-muted-foreground/40'}`} /></button>
 }
 function EmptyClients() {
   return (

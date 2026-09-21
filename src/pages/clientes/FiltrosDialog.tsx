@@ -223,7 +223,7 @@ export function FiltrosDialog({
                     active={sortCampana === 'visits'}
                     onClick={() => onSortCampanaChange('visits')}
                     label="Más visitas"
-                    desc="Total de accesos al Smart Link"
+                    desc="Total de accesos al link de campaña"
                   />
                   <SortPill
                     active={sortCampana === 'alphabetical'}

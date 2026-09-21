@@ -9,10 +9,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { productosApi } from '@/lib/api'
 import { toast } from 'sonner'
-import { Check, Gift, Loader2, Package, Search, Settings2 } from 'lucide-react'
+import { Check, Gift, Loader2, Package, Search, Settings2, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { PuntosConfigEditor } from '../ajustes/sections/PuntosConfigEditor'
 
 interface ProductoConPuntos {
@@ -45,16 +47,16 @@ export function ConfiguracionPuntosDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] max-w-2xl flex flex-col gap-0 overflow-hidden p-0 rounded-3xl">
-        <DialogHeader className="shrink-0 border-b border-border/50 p-6 pb-4">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-            <Settings2 className="h-4 w-4" />
+        <DialogHeader className="shrink-0 border-b border-border/30 p-6 pb-4">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+            <Settings2 className="h-3.5 w-3.5" />
             <span>Club de Puntos</span>
           </div>
-          <DialogTitle className="mt-1 text-xl font-bold">Configuración</DialogTitle>
+          <DialogTitle className="mt-1.5 text-xl font-bold tracking-tight">Configuración</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             Definí cómo ganan puntos tus clientes, qué beneficios pueden canjear y cuánto cuesta cada producto.
           </DialogDescription>
-          <div className="mt-2 flex rounded-xl bg-muted/60 p-1">
+          <div className="mt-3 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
             <TabConfig activo={bloque === 'beneficios'} onClick={() => setBloque('beneficios')}>
               <Gift className="h-3.5 w-3.5" /> Beneficios y costos
             </TabConfig>
@@ -72,14 +74,16 @@ export function ConfiguracionPuntosDialog({
   )
 }
 
+/** Pill de navegación, igual al de las pantallas de Clientes y Motor de recompra. */
 function TabConfig({ activo, onClick, children }: { activo: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-semibold transition-colors ${
-        activo ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-      }`}
+      className={cn(
+        'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium transition-colors',
+        activo ? 'bg-foreground text-background shadow-2xs' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
     >
       {children}
     </button>
@@ -164,81 +168,100 @@ function ProductosPuntosEditor({ onSaved }: { onSaved?: () => void }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
+      <div className="space-y-1.5">
+        {Array.from({ length: 5 }).map((_, indice) => (
+          <Skeleton key={indice} className="h-[68px] rounded-2xl" />
+        ))}
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border/60 bg-muted/30 p-4 text-xs leading-relaxed text-muted-foreground">
+      <div className="rounded-2xl bg-muted/30 p-4 text-xs leading-relaxed text-muted-foreground">
         <strong className="text-foreground">Puntos que otorga:</strong> se suman cuando el cliente compra este producto.{' '}
         <strong className="text-foreground">Costo en puntos:</strong> saldo que necesita para canjearlo gratis.
         Dejar en <strong className="text-foreground">0</strong> desactiva esa regla para el producto.
       </div>
 
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar producto por nombre"
-          className="h-9 rounded-xl pl-8 text-sm"
+          className="h-9 rounded-full border-border/40 bg-background/80 pl-9 pr-8 text-xs shadow-2xs backdrop-blur-xs placeholder:text-muted-foreground/50 focus-visible:ring-1"
         />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+            title="Borrar búsqueda"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
       </div>
 
       {filtrados.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-          <Package className="h-5 w-5 text-muted-foreground/60" />
-          <p className="text-xs text-muted-foreground">
-            {productos.length === 0 ? 'Todavía no cargaste productos en tu carta.' : 'Ningún producto coincide con la búsqueda.'}
+        <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
+          <Package className="h-8 w-8 text-muted-foreground/30" />
+          <p className="mt-3 text-sm font-medium text-foreground">
+            {productos.length === 0 ? 'Todavía no cargaste productos' : 'Ningún producto coincide'}
+          </p>
+          <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+            {productos.length === 0
+              ? 'Cargá tu carta y después definí cuántos puntos otorga y cuánto cuesta cada producto.'
+              : 'Probá con otro nombre.'}
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {filtrados.map((producto) => {
             const borrador = borradores[producto.id] ?? { ganados: valorActual(producto, 'ganados'), necesarios: valorActual(producto, 'necesarios') }
             const sucio = estaSucio(producto)
             return (
-              <div key={producto.id} className="flex flex-col gap-2 rounded-xl border border-border/50 bg-background p-3 sm:flex-row sm:items-end">
-                <div className="min-w-0 flex-1">
+              <div key={producto.id} className="space-y-3 rounded-2xl bg-white p-3.5 shadow-2xs dark:bg-muted/20">
+                <div className="flex items-baseline justify-between gap-3">
                   <p className="truncate text-sm font-semibold text-foreground">{producto.nombre}</p>
-                  {producto.activo === false && <p className="text-[11px] text-muted-foreground">Producto pausado</p>}
+                  {producto.activo === false && <span className="shrink-0 text-[11px] text-muted-foreground">Producto pausado</span>}
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:w-64">
-                  <div>
-                    <Label className="text-[11px] font-semibold text-muted-foreground">Otorga</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={borrador.ganados}
-                      onChange={(e) => setBorradores((prev) => ({ ...prev, [producto.id]: { ...borrador, ganados: e.target.value } }))}
-                      className="mt-1 h-9 rounded-xl text-sm font-semibold tabular-nums"
-                    />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="grid flex-1 grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Otorga</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={borrador.ganados}
+                        onChange={(e) => setBorradores((prev) => ({ ...prev, [producto.id]: { ...borrador, ganados: e.target.value } }))}
+                        className="mt-1.5 h-9 rounded-xl text-sm font-semibold tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Costo en puntos</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={borrador.necesarios}
+                        onChange={(e) => setBorradores((prev) => ({ ...prev, [producto.id]: { ...borrador, necesarios: e.target.value } }))}
+                        className="mt-1.5 h-9 rounded-xl text-sm font-semibold tabular-nums"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-[11px] font-semibold text-muted-foreground">Costo en puntos</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={borrador.necesarios}
-                      onChange={(e) => setBorradores((prev) => ({ ...prev, [producto.id]: { ...borrador, necesarios: e.target.value } }))}
-                      className="mt-1 h-9 rounded-xl text-sm font-semibold tabular-nums"
-                    />
-                  </div>
+                  <Button
+                    size="sm"
+                    variant={sucio ? 'default' : 'ghost'}
+                    disabled={!sucio || guardando === producto.id}
+                    onClick={() => void guardar(producto)}
+                    className="h-9 shrink-0 rounded-full text-xs font-medium sm:w-24"
+                  >
+                    {guardando === producto.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Check className="mr-1 h-3.5 w-3.5" />Guardar</>}
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant={sucio ? 'default' : 'ghost'}
-                  disabled={!sucio || guardando === producto.id}
-                  onClick={() => void guardar(producto)}
-                  className="h-9 shrink-0 rounded-xl text-xs sm:w-24"
-                >
-                  {guardando === producto.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Check className="mr-1 h-3.5 w-3.5" />Guardar</>}
-                </Button>
               </div>
             )
           })}

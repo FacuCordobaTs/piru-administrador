@@ -22,6 +22,12 @@ interface TiendaPreviewProps {
   nombre: string
   logo: string | null
   slug: string
+  /**
+   * Base real de la tienda (dominio propio incluido, con barra final) si el local ya la tiene.
+   * Sin esto la barra del navegador muestra el dominio compartido, que es lo correcto mientras
+   * el local se está creando.
+   */
+  baseTienda?: string | null
   direccion: string
   deliveryPrice: string
   metodosPago: { transferenciaManual: boolean; efectivo: boolean }
@@ -36,7 +42,7 @@ interface TiendaPreviewProps {
 //    y cómo funciona su tienda antes de publicarla. Se le ahorran pasos (datos precargados,
 //    takeaway por defecto) sin perder la fidelidad visual. ──
 export function TiendaPreview({
-  nombre, logo, slug, direccion, deliveryPrice, metodosPago, proveedorPago, productos, onConfirmar,
+  nombre, logo, slug, baseTienda, direccion, deliveryPrice, metodosPago, proveedorPago, productos, onConfirmar,
 }: TiendaPreviewProps) {
   const [cart, setCart] = useState<CartLine[]>([])
   const [detalle, setDetalle] = useState<PreviewProduct | null>(null)
@@ -131,7 +137,7 @@ export function TiendaPreview({
         <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
         <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
         <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-        <span className="ml-2 text-xs font-mono text-muted-foreground truncate">my.piru.app/{slug}</span>
+        <span className="ml-2 text-xs font-mono text-muted-foreground truncate">{baseTienda ? baseTienda.replace(/^https?:\/\//, '').replace(/\/$/, '') : `my.piru.app/${slug}`}</span>
       </div>
 
       {/* Viewport tipo teléfono: todo (menú, carrito, detalle) vive acá dentro */}

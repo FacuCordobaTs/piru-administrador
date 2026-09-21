@@ -2871,6 +2871,7 @@ const ClaimOnboarding = () => {
           nombre={nombre}
           logo={logo}
           slug={slug}
+          baseTienda={restaurante?.baseTienda}
           direccion={restaurante?.direccion || ''}
           deliveryPrice={restaurante?.deliveryFee || '0'}
           metodosPago={{
