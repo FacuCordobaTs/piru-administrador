@@ -15,13 +15,17 @@ import {
     clientesApi,
     ApiError,
     type ColaRecompraItem,
+    type ConfigMotorRecompra,
+    type DashboardRecompra,
     type DecisionesRecompra,
+    type EstadoMotorLocal,
     type HistorialRecompraItem,
     type ModalidadLinkRecompra,
     type PaginadoRecompra,
+    type PlanActivacionRecompra,
     type ModoRecompra,
     type MensajeColaData,
-    type SegmentoRecompra,
+    type ProgramacionResumen,
 } from '@/lib/api'
 import { toast } from 'sonner'
 import {
@@ -29,29 +33,43 @@ import {
     Pause, Play, ListOrdered, History, Clock, CircleHelp,
     RefreshCw, Copy, Check, ExternalLink, Bot, MessageSquare,
     Search, X, ArrowLeft, User, Ticket, CheckCheck, ChevronRight as ChevronRightIcon,
-    Repeat2,
+    Repeat2, SlidersHorizontal, CalendarClock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ModuloComercial } from '@/components/ModuloComercial'
+import {
+    SEG_META, etiquetaSegmento, formatCurrency, formatDateTime,
+    type Segmento,
+} from './clientes/motor/comun'
+import { Campo, ChipOpcion, Marca } from './clientes/motor/controles'
+import PanelProgramaciones, { PantallaProgramacion } from './clientes/motor/PanelProgramaciones'
+import DialogoProgramarEnvio from './clientes/motor/DialogoProgramarEnvio'
+import DialogoConfigMotor from './clientes/motor/DialogoConfigMotor'
 
 // =============================================================================
-// MOTOR DE RECOMPRA · GOTEO (piloto automático)
+// MOTOR DE RECOMPRA · TANDAS PROGRAMADAS
+//
+// El motor ya no se enciende y gotea solo: el dueño PROGRAMA una tanda (a quiénes, cuántos, hasta qué
+// toque y cada cuánto) y el backend agenda esos envíos con su día y su hora. Esta pantalla es la cola
+// del local —lo que está por salir y lo que ya salió— más el acceso a programar la próxima tanda.
 //
 // Estilo Apple minimalista, componentes flotantes sobre fondo cálido,
 // métricas numéricas grandes sin cajas duras ni neon, listado a la izquierda
 // y motor + detalle del cliente a la derecha.
 // =============================================================================
 
-type Segmento = SegmentoRecompra
-type EstadoCampana = 'activa' | 'pausada_sin_saldo' | 'pausada_manual' | 'completada'
 type ObservabilidadTab = 'cola' | 'historial'
 type MobileView = 'lista' | 'detalle'
 
-const SEG_META: Record<Segmento, { label: string; dot: string }> = {
-    primer_pedido: { label: 'Primer pedido', dot: 'bg-emerald-500' },
-    en_riesgo: { label: 'En riesgo', dot: 'bg-orange-500' },
-    dormido: { label: 'Dormidos', dot: 'bg-violet-500' },
-    perdido: { label: 'Perdidos', dot: 'bg-rose-500' },
+type Plan = PlanActivacionRecompra
+type Dashboard = DashboardRecompra
+type EstadoMotor = {
+    activa: boolean
+    config: ConfigMotorRecompra
+    campana: Dashboard | null
+    programaciones: ProgramacionResumen[]
+    plan: Plan
+    saldoMarketing: number
 }
 
 /** Clave del mensaje cacheado: una entrada por (fila, decisiones del operador). */
@@ -61,7 +79,6 @@ function claveMensaje(filaId: number, decisiones: DecisionesRecompra | undefined
     return `${filaId}:${segmento ?? 'vivo'}:${toque ?? 'escalera'}:${link ?? 'auto'}:${descuento ?? 'auto'}`
 }
 
-/** Los tres toques del goteo: el ordinal con el que el operador los nombra. */
 const TOQUE_ORDINAL = ['1º', '2º', '3º']
 
 /** "2º toque" · null si la fila no trae toque (las de control). */
@@ -89,56 +106,7 @@ function acortarUrl(url: string, max = 52): string {
     return `${url.slice(0, borde > 24 ? borde : max)}…`
 }
 
-interface PlanSegmento { segmento: Segmento; detectados: number; facturacionEnJuego: number }
-
-interface Plan {
-    totalDetectados: number
-    totalContactar: number
-    totalControl: number
-    porSegmento: PlanSegmento[]
-    primerSegmento: Segmento | null
-    cupoSugerido: number
-    saldoMarketing: number
-    diasCubiertos: number
-}
-
-interface Dashboard {
-    estado: EstadoCampana
-    modo: ModoRecompra
-    cupoDiario: number
-    enviadosHoy: number
-    totalEnviados: number
-    enCola: number
-    contactados: number
-    volvieron: number
-    plataRecuperada: number
-    control: number
-    controlVolvieron: number
-    tasaContactados: number
-    tasaControl: number
-    saldoMarketing: number
-    activadaAt: string | null
-    pausadaAt: string | null
-}
-
-interface EstadoMotor {
-    activa: boolean
-    campana: Dashboard | null
-    plan: Plan | null
-    saldoMarketing: number
-}
-
-const CUPO_MIN = 5
-const CUPO_MAX = 60
-
-const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value)
-
 const pct = (v: number) => `${Math.round(v * 100)}%`
-
-const formatDateTime = (value: string | null) => value
-    ? new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(value))
-    : '—'
 
 const formatDay = (value: string | null) => value
     ? new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(`${value}T12:00:00-03:00`))
@@ -159,7 +127,7 @@ export default function MotorRecompra() {
         setLoading(true)
         setBloqueadoPlan(false)
         try {
-            const res = await clientesApi.recompraEstado(token) as { success: boolean; data: EstadoMotor }
+            const res = await clientesApi.recompraEstado(token)
             if (res.success) setEstado(res.data)
         } catch (err) {
             if (err instanceof ApiError && err.status === 403 && err.response?.upgradeRequired) {
@@ -190,10 +158,15 @@ export default function MotorRecompra() {
         )
     }
 
+    // Con tandas vivas la pantalla es el tablero: lo que está programado y cómo viene. Sin tandas es
+    // el universo disponible y el asistente para programar la primera. El `plan` viene siempre, así
+    // que la pantalla nunca queda en blanco.
     if (estado?.activa && estado.campana) {
         return (
             <PantallaEncendido
                 campana={estado.campana}
+                config={estado.config}
+                programaciones={estado.programaciones}
                 onCambio={cargar}
                 onRecargar={() => navigate('/dashboard/mensajes')}
             />
@@ -204,7 +177,12 @@ export default function MotorRecompra() {
         return (
             <ScrollArea className="h-full">
                 <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8">
-                    <PantallaApagado plan={estado.plan} onActivado={cargar} />
+                    <PantallaProgramacion
+                        plan={estado.plan}
+                        config={estado.config}
+                        onCambio={cargar}
+                        onRecargar={() => navigate('/dashboard/mensajes')}
+                    />
                 </div>
             </ScrollArea>
         )
@@ -237,8 +215,10 @@ function Cargando() {
 // =============================================================================
 // ENCENDIDO — SPLIT PANE CON ESTILO APPLE (LISTA + DETALLE FLOTANTE)
 // =============================================================================
-function PantallaEncendido({ campana, onCambio, onRecargar }: {
+function PantallaEncendido({ campana, config, programaciones, onCambio, onRecargar }: {
     campana: Dashboard
+    config: ConfigMotorRecompra
+    programaciones: ProgramacionResumen[]
     onCambio: () => void
     onRecargar: () => void
 }) {
@@ -249,6 +229,8 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
     const [tab, setTab] = useState<ObservabilidadTab>('cola')
     const [pagina, setPagina] = useState(1)
     const [segmento, setSegmento] = useState<string>('todos')
+    /** `'todas'` o el id de una tanda: la cola del local se puede mirar entera o tanda por tanda. */
+    const [campanaFiltro, setCampanaFiltro] = useState<number | 'todas'>('todas')
     const [query, setQuery] = useState('')
 
     // Observabilidad
@@ -275,9 +257,11 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
     // Control del motor
     const [accionMotor, setAccionMotor] = useState(false)
     const [cambiandoModo, setCambiandoModo] = useState(false)
-    const [editandoCupo, setEditandoCupo] = useState(false)
-    const [cupo, setCupo] = useState(campana.cupoDiario)
     const [ayudaAbierta, setAyudaAbierta] = useState(false)
+    // Programar otra tanda y ajustar la config del local viven acá, no en el panel: el panel muestra
+    // las tandas, y estos son los dos botones que salen de esa lista.
+    const [dialogoProgramar, setDialogoProgramar] = useState(false)
+    const [dialogoConfig, setDialogoConfig] = useState(false)
 
     const doAccion = async (fn: () => Promise<unknown>, okMsg: string) => {
         if (!token) return
@@ -308,27 +292,15 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
         }
     }
 
-    const guardarCupo = async () => {
-        if (!token) return
-        setAccionMotor(true)
-        try {
-            const res = await clientesApi.configRecompra(token, cupo) as { success: boolean }
-            if (res.success) { toast.success('Cupo diario actualizado'); setEditandoCupo(false); onCambio() }
-        } catch {
-            toast.error('No se pudo actualizar el cupo')
-        } finally {
-            setAccionMotor(false)
-        }
-    }
-
     // Carga de datos
     const cargarObservabilidad = useCallback(async (silencioso = false) => {
         if (!token) return
         if (!silencioso) setLoadingObservabilidad(true)
         try {
             const segParam = segmento !== 'todos' ? segmento : undefined
+            const campanaParam = campanaFiltro !== 'todas' ? campanaFiltro : undefined
             if (tab === 'cola') {
-                const res = await clientesApi.recompraCola(token, { pagina, limite: 25, segmento: segParam })
+                const res = await clientesApi.recompraCola(token, { pagina, limite: 25, segmento: segParam, campanaId: campanaParam })
                 setCola(res.data)
                 if (res.data.items.length > 0) {
                     setSelectedColaId(prev => (prev && res.data.items.some(i => i.id === prev) ? prev : res.data.items[0].id))
@@ -336,7 +308,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                     setSelectedColaId(null)
                 }
             } else {
-                const res = await clientesApi.recompraHistorial(token, { pagina, limite: 25, segmento: segParam })
+                const res = await clientesApi.recompraHistorial(token, { pagina, limite: 25, segmento: segParam, campanaId: campanaParam })
                 setHistorial(res.data)
                 if (res.data.items.length > 0) {
                     setSelectedHistorialId(prev => (prev && res.data.items.some(i => i.id === prev) ? prev : res.data.items[0].id))
@@ -349,7 +321,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
         } finally {
             if (!silencioso) setLoadingObservabilidad(false)
         }
-    }, [token, tab, pagina, segmento])
+    }, [token, tab, pagina, segmento, campanaFiltro])
 
     useEffect(() => {
         void cargarObservabilidad()
@@ -554,26 +526,52 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                 )}
                             </div>
 
-                            {/* Filtro de segmento */}
-                            <Select value={segmento} onValueChange={(valor) => { setSegmento(valor); setPagina(1) }}>
-                                <SelectTrigger
-                                    aria-label="Segmento de clientes"
-                                    className="h-9 w-full rounded-full border-border/40 bg-background/80 text-xs font-medium shadow-2xs backdrop-blur-xs"
+                            {/* Filtros: segmento y tanda. La cola es del LOCAL, así que se puede
+                                mirar entera o sólo lo que programó una tanda. */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <Select value={segmento} onValueChange={(valor) => { setSegmento(valor); setPagina(1) }}>
+                                    <SelectTrigger
+                                        aria-label="Segmento de clientes"
+                                        className="h-9 w-full rounded-full border-border/40 bg-background/80 text-xs font-medium shadow-2xs backdrop-blur-xs"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="todos">Todos los segmentos</SelectItem>
+                                        {(Object.keys(SEG_META) as Segmento[]).map((seg) => (
+                                            <SelectItem key={seg} value={seg}>
+                                                <span className="flex items-center gap-2">
+                                                    <span className={cn("h-1.5 w-1.5 rounded-full", SEG_META[seg].dot)} />
+                                                    {SEG_META[seg].label}
+                                                </span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Select
+                                    value={String(campanaFiltro)}
+                                    onValueChange={(valor) => {
+                                        setCampanaFiltro(valor === 'todas' ? 'todas' : Number(valor))
+                                        setPagina(1)
+                                    }}
                                 >
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="todos">Todos los segmentos</SelectItem>
-                                    {(Object.keys(SEG_META) as Segmento[]).map((seg) => (
-                                        <SelectItem key={seg} value={seg}>
-                                            <span className="flex items-center gap-2">
-                                                <span className={cn("h-1.5 w-1.5 rounded-full", SEG_META[seg].dot)} />
-                                                {SEG_META[seg].label}
-                                            </span>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                                    <SelectTrigger
+                                        aria-label="Tanda"
+                                        className="h-9 w-full rounded-full border-border/40 bg-background/80 text-xs font-medium shadow-2xs backdrop-blur-xs"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="todas">Todas las tandas</SelectItem>
+                                        {programaciones.map(tanda => (
+                                            <SelectItem key={tanda.id} value={String(tanda.id)}>
+                                                {etiquetaSegmento(tanda.segmento)} · {formatDay(tanda.programadaAt?.slice(0, 10) ?? null)}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
 
                         {/* Lista de filas flotantes */}
@@ -669,8 +667,41 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
 
                         <ScrollArea className="h-full">
                             <div className="space-y-6 pb-12 pr-4">
+                                {/* SECCIÓN 0: LAS TANDAS PROGRAMADAS — qué está agendado y cuánto falta */}
+                                <div className="space-y-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                                            <CalendarClock className="h-3.5 w-3.5" /> Tandas programadas
+                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => setDialogoConfig(true)}
+                                                className="h-8 gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
+                                            >
+                                                <SlidersHorizontal className="h-3.5 w-3.5" /> Configuración
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                onClick={() => setDialogoProgramar(true)}
+                                                className="h-8 gap-1.5 rounded-full px-3.5 text-xs font-medium shadow-2xs"
+                                            >
+                                                <Zap className="h-3 w-3" /> Programar envío
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <PanelProgramaciones
+                                        programaciones={programaciones}
+                                        onCambio={onCambio}
+                                        onProgramar={() => setDialogoProgramar(true)}
+                                        onConfig={() => setDialogoConfig(true)}
+                                        compacto
+                                    />
+                                </div>
+
                                 {/* SECCIÓN 1: ESTADO, MÉTRICAS FLOTANTES Y CONFIGURACIÓN DEL MOTOR */}
-                                <div className="space-y-4">
+                                <div className="space-y-4 border-t border-border/30 pt-6">
                                     {/* Fila superior de controles */}
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex items-center gap-2.5">
@@ -717,7 +748,12 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                                 <CircleHelp className="h-3.5 w-3.5" /> ¿Cómo funciona?
                                             </Button>
 
-                                            {campana.estado === 'activa' || campana.estado === 'completada' ? (
+                                            {/* Pausar/Reanudar el motor del LOCAL: la pausa es del local
+                                                entero, no de una tanda. El estado "pausado sin saldo"
+                                                también se puede reanudar: si sigue sin crédito, el motor
+                                                vuelve a pausarse solo en el próximo tick y no se pierde
+                                                nada. */}
+                                            {campana.estado === 'activa' ? (
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
@@ -727,7 +763,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                                 >
                                                     <Pause className="h-3 w-3" /> Pausar
                                                 </Button>
-                                            ) : campana.estado === 'pausada_manual' ? (
+                                            ) : (
                                                 <Button
                                                     size="sm"
                                                     disabled={accionMotor || cambiandoModo}
@@ -736,7 +772,7 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                                 >
                                                     <Play className="h-3 w-3" /> Reanudar
                                                 </Button>
-                                            ) : null}
+                                            )}
                                         </div>
                                     </div>
 
@@ -745,7 +781,11 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                         <FloatingMetric
                                             label="Contactados"
                                             value={campana.contactados}
-                                            sublabel={campana.modo === 'manual' ? 'enviados a mano' : `${campana.totalEnviados} mensajes usados`}
+                                            // `contactados` son personas y `toquesEnviados` son mensajes: el
+                                            // mismo cliente puede haber recibido hasta 3. Se muestran los
+                                            // dos para que el número grande sea "cuánta gente" y no "cuántos
+                                            // mensajes", que es lo que el cupo limita.
+                                            sublabel={`${campana.toquesEnviados} mensaje${campana.toquesEnviados === 1 ? '' : 's'} enviado${campana.toquesEnviados === 1 ? '' : 's'}`}
                                         />
                                         <FloatingMetric
                                             label="Volvieron"
@@ -762,46 +802,22 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                                             value={campana.enCola}
                                             sublabel="por contactar"
                                         />
-                                        {/* El ritmo se ajusta acá mismo: es un dato más del motor. */}
+                                        {/* El ritmo es del LOCAL y se ajusta en un solo lugar: la
+                                            configuración del motor. Tenerlo editable acá además del
+                                            diálogo sería dos fuentes para el mismo número. */}
                                         <div className="flex flex-col">
                                             <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Ritmo</span>
-                                            {editandoCupo ? (
-                                                <div className="mt-1.5 flex flex-col items-start gap-1.5">
-                                                    <StepperCupo value={cupo} onChange={setCupo} />
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            type="button"
-                                                            disabled={accionMotor}
-                                                            onClick={() => void guardarCupo()}
-                                                            className="text-[11px] font-semibold text-foreground hover:underline disabled:opacity-50"
-                                                        >
-                                                            Listo
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            disabled={accionMotor}
-                                                            onClick={() => { setEditandoCupo(false); setCupo(campana.cupoDiario) }}
-                                                            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                                                        >
-                                                            Cancelar
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">
-                                                        {campana.cupoDiario}
-                                                        <span className="ml-0.5 text-sm font-medium text-muted-foreground">/día</span>
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => { setCupo(campana.cupoDiario); setEditandoCupo(true) }}
-                                                        className="mt-0.5 self-start text-[11px] font-medium text-foreground hover:underline"
-                                                    >
-                                                        Cambiar
-                                                    </button>
-                                                </>
-                                            )}
+                                            <span className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">
+                                                {campana.cupoDiario}
+                                                <span className="ml-0.5 text-sm font-medium text-muted-foreground">/día</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDialogoConfig(true)}
+                                                className="mt-0.5 self-start text-[11px] font-medium text-foreground hover:underline"
+                                            >
+                                                Ajustar
+                                            </button>
                                         </div>
                                     </div>
 
@@ -874,6 +890,22 @@ function PantallaEncendido({ campana, onCambio, onRecargar }: {
                     onCerrar={() => setAyudaAbierta(false)}
                 />
             )}
+
+            {dialogoProgramar && (
+                <DialogoProgramarEnvio
+                    config={config}
+                    onCerrar={() => setDialogoProgramar(false)}
+                    onProgramado={() => { setDialogoProgramar(false); onCambio() }}
+                />
+            )}
+
+            {dialogoConfig && (
+                <DialogoConfigMotor
+                    config={config}
+                    onCerrar={() => setDialogoConfig(false)}
+                    onGuardado={() => { setDialogoConfig(false); onCambio() }}
+                />
+            )}
         </div>
     )
 }
@@ -916,11 +948,20 @@ function DialogoAyudaMotor({ campana, onCerrar }: {
                 <DialogHeader className="shrink-0 border-b border-border/40 px-6 py-5 pr-14">
                     <DialogTitle className="text-xl">Cómo funciona el motor</DialogTitle>
                     <DialogDescription className="text-sm leading-relaxed">
-                        Detecta clientes que dejaron de pedir y los acompaña para que vuelvan.
+                        Le habla a los clientes que dejaron de pedir. Nada sale sin que vos lo programes.
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+
+                    {/* 0. QUIÉN DECIDE — la diferencia con el goteo viejo */}
+                    <SeccionAyuda icono={<CalendarClock className="h-3.5 w-3.5" />} titulo="Vos programás, el motor envía">
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                            El motor no sale a buscar clientes por su cuenta. Vos elegís a quiénes y cuántos
+                            (una tanda), y el motor la manda de a poco respetando el cupo diario. El que vuelve
+                            a pedir sale de la tanda al instante, y lo que ya salió no se puede deshacer.
+                        </p>
+                    </SeccionAyuda>
 
                     {/* 1. A QUIÉN LE HABLA */}
                     <SeccionAyuda icono={<Users className="h-3.5 w-3.5" />} titulo="A quién le habla">
@@ -941,7 +982,8 @@ function DialogoAyudaMotor({ campana, onCerrar }: {
                     {/* 2. EL GOTEO */}
                     <SeccionAyuda icono={<Repeat2 className="h-3.5 w-3.5" />} titulo="Hasta 3 intentos">
                         <p className="text-sm leading-relaxed text-muted-foreground">
-                            Espera al menos 48 horas entre mensajes y se detiene apenas el cliente vuelve.
+                            Hasta 3 mensajes por cliente, con al menos 48 horas entre uno y otro. Cada tanda elige
+                            hasta qué toque llega: si programaste sólo el primero, no hay recordatorio.
                         </p>
                         <ol className="space-y-2">
                             {TOQUES_AYUDA.map(({ toque, trabajo, descuento, expiraHoras }) => (
@@ -974,8 +1016,8 @@ function DialogoAyudaMotor({ campana, onCerrar }: {
                                     {automatico && <EtiquetaActivo />}
                                 </div>
                                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                                    Envía hasta {campana.cupoDiario} mensajes por día. Cada uno usa 1 crédito de marketing;
-                                    hoy tenés {campana.saldoMarketing}.
+                                    Envía los mensajes que programaste, hasta {campana.cupoDiario} por día. Cada uno usa 1
+                                    crédito de marketing; hoy tenés {campana.saldoMarketing}.
                                 </p>
                             </div>
 
@@ -1001,8 +1043,8 @@ function DialogoAyudaMotor({ campana, onCerrar }: {
                     {/* 4. MEDICIÓN Y PROTECCIÓN */}
                     <SeccionAyuda icono={<CheckCircle2 className="h-3.5 w-3.5" />} titulo="Medición y límites">
                         <p className="text-sm leading-relaxed text-muted-foreground">
-                            Un 10% queda sin contactar para comparar resultados. Además, el motor respeta BAJA/STOP,
-                            evita la madrugada y limita el contacto a 4 mensajes de marketing cada 30 días.
+                            Un 10% de cada tanda queda sin contactar para comparar resultados. Además, el motor respeta
+                            BAJA/STOP, evita la madrugada y limita el contacto a 4 mensajes de marketing cada 30 días.
                         </p>
                         {hayControl && (
                             <p className="rounded-xl border border-border/40 bg-muted/20 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
@@ -1325,50 +1367,6 @@ function DialogoDecisionesRecompra({
             </DialogContent>
         </Dialog>
     )
-}
-
-/** Título de un paso del diálogo: una línea, sin explicaciones al lado. `accion` es para el atajo
- *  que sale del paso (hoy, el que explica el link en Campañas de Adquisición). */
-function Campo({ titulo, children, accion }: { titulo: string; children: React.ReactNode; accion?: React.ReactNode }) {
-    return (
-        <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">{titulo}</span>
-                {accion}
-            </div>
-            {children}
-        </div>
-    )
-}
-
-/** Una opción del diálogo. La explicación larga vive en el `title`, no en el cuerpo. */
-function ChipOpcion({ activo, onClick, title, children }: {
-    activo: boolean
-    onClick: () => void
-    title?: string
-    children: React.ReactNode
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            title={title}
-            aria-pressed={activo}
-            className={cn(
-                "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                activo
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border/40 bg-background/60 text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-            )}
-        >
-            {children}
-        </button>
-    )
-}
-
-/** Marca chica dentro de un chip ("hoy", "le toca"), legible en chip claro y en chip lleno. */
-function Marca({ children }: { children: React.ReactNode }) {
-    return <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider opacity-60">{children}</span>
 }
 
 /**
@@ -1816,12 +1814,11 @@ function FloatingMetric({ label, value, sublabel }: { label: string; value: stri
     )
 }
 
-function EstadoBadge({ estado }: { estado: EstadoCampana }) {
+function EstadoBadge({ estado }: { estado: EstadoMotorLocal }) {
     // "Pausado sin saldo" no se rotula: el punto naranja ya lo distingue y el aviso de créditos
     // agotados —que es el que explica qué hacer— aparece unas líneas más abajo.
-    const map: Record<EstadoCampana, { label: string; dot: string }> = {
+    const map: Record<EstadoMotorLocal, { label: string; dot: string }> = {
         activa: { label: 'Activo', dot: 'bg-emerald-500' },
-        completada: { label: 'Automático', dot: 'bg-emerald-500' },
         pausada_manual: { label: 'Pausado', dot: 'bg-muted-foreground' },
         pausada_sin_saldo: { label: 'Pausado', dot: 'bg-orange-500' },
     }
@@ -1831,17 +1828,6 @@ function EstadoBadge({ estado }: { estado: EstadoCampana }) {
             <span className={cn("h-1.5 w-1.5 rounded-full", m.dot, estado === 'activa' && "animate-pulse")} />
             {m.label}
         </span>
-    )
-}
-
-function StepperCupo({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-    const clamp = (v: number) => Math.max(CUPO_MIN, Math.min(CUPO_MAX, v))
-    return (
-        <div className="inline-flex items-center rounded-full border border-border/60 bg-background shadow-2xs">
-            <button className="w-6 h-6 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={value <= CUPO_MIN} onClick={() => onChange(clamp(value - 5))}>−</button>
-            <span className="w-7 text-center text-xs font-semibold text-foreground tabular-nums">{value}</span>
-            <button className="w-6 h-6 text-muted-foreground hover:text-foreground disabled:opacity-40" disabled={value >= CUPO_MAX} onClick={() => onChange(clamp(value + 5))}>+</button>
-        </div>
     )
 }
 
@@ -1865,175 +1851,6 @@ function EmptyDetail({ texto }: { texto: string }) {
     )
 }
 
-// =============================================================================
-// APAGADO — EL PLAN DE ENCENDIDO (ESTILO APPLE)
-// =============================================================================
-function PantallaApagado({ plan, onActivado }: { plan: Plan; onActivado: () => void }) {
-    const token = useAuthStore(state => state.token)
-    const [cupo, setCupo] = useState(plan.cupoSugerido)
-    const [modo, setModo] = useState<ModoRecompra>('automatico')
-    const [editandoCupo, setEditandoCupo] = useState(false)
-    const [confirmOpen, setConfirmOpen] = useState(false)
-    const [activando, setActivando] = useState(false)
-
-    const vacio = plan.totalDetectados === 0
-    const primer = plan.primerSegmento ? SEG_META[plan.primerSegmento] : null
-    const primerCount = plan.primerSegmento
-        ? plan.porSegmento.find(s => s.segmento === plan.primerSegmento)?.detectados ?? 0
-        : 0
-
-    const activar = async () => {
-        if (!token) return
-        setActivando(true)
-        try {
-            const res = await clientesApi.activarRecompra(token, { cupoDiario: cupo, modo }) as { success: boolean; data?: { vacio?: boolean } }
-            if (res.success) {
-                setConfirmOpen(false)
-                if (res.data?.vacio) toast.info('No hay clientes para recuperar en este momento')
-                else toast.success(modo === 'automatico' ? 'Motor de recompra encendido en automático.' : 'Motor encendido en modo manual.')
-                onActivado()
-            }
-        } catch (err) {
-            if (err instanceof ApiError && err.status === 403 && err.response?.upgradeRequired) {
-                toast.error('Activá el módulo Retención para usarlo')
-            } else {
-                toast.error('No se pudo encender el motor')
-            }
-            setConfirmOpen(false)
-        } finally {
-            setActivando(false)
-        }
-    }
-
-    if (vacio) {
-        return (
-            <div className="text-center py-20">
-                <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle2 className="w-7 h-7 text-foreground" />
-                </div>
-                <h2 className="text-xl font-bold tracking-tight text-foreground">Tu base está al día</h2>
-                <p className="text-sm text-muted-foreground mt-1.5 max-w-sm mx-auto">
-                    No hay clientes enfriados para recuperar en este momento. Cuando alguno baje su ritmo habitual,
-                    el motor lo detectará solo.
-                </p>
-            </div>
-        )
-    }
-
-    return (
-        <div className="space-y-6">
-            <div className="rounded-2xl border border-border/40 bg-white/80 dark:bg-muted/30 p-6 shadow-2xs backdrop-blur-xs">
-                <p className="text-base leading-relaxed text-foreground">
-                    Encontré <strong className="font-semibold">{plan.totalDetectados} clientes</strong> que se enfriaron
-                    {plan.porSegmento.length > 0 && (
-                        <>: {plan.porSegmento.map((s, i) => (
-                            <span key={s.segmento}>
-                                {i > 0 && (i === plan.porSegmento.length - 1 ? ' y ' : ', ')}
-                                <span className="font-medium">{s.detectados} {SEG_META[s.segmento].label.toLowerCase()}</span>
-                            </span>
-                        ))}</>
-                    )}.
-                    {primer && (
-                        <> Propongo arrancar por los <strong className="font-semibold">{primerCount} {primer.label.toLowerCase()}</strong> a un ritmo de <strong className="font-semibold">hasta {cupo} por día</strong>, priorizando mayor ticket histórico.</>
-                    )}
-                </p>
-
-                {/* Ajuste de ritmo */}
-                <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                    <Gauge className="w-4 h-4 text-muted-foreground/70" />
-                    {editandoCupo ? (
-                        <div className="flex items-center gap-2">
-                            <span>Hasta</span>
-                            <StepperCupo value={cupo} onChange={setCupo} />
-                            <span>por día</span>
-                            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setEditandoCupo(false)}>Listo</Button>
-                        </div>
-                    ) : (
-                        <span>
-                            Enviando hasta <span className="font-medium text-foreground">{cupo}/día</span>
-                            {' · '}
-                            <button onClick={() => setEditandoCupo(true)} className="text-foreground hover:underline font-medium">Cambiar</button>
-                        </span>
-                    )}
-                </div>
-
-                {/* Selector de modo */}
-                <div className="mt-6 pt-5 border-t border-border/30">
-                    <p className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Modalidad de envío</p>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                        <button
-                            type="button"
-                            onClick={() => setModo('automatico')}
-                            className={cn(
-                                "text-left p-4 rounded-xl border transition-all",
-                                modo === 'automatico'
-                                    ? "border-foreground bg-foreground/5 ring-1 ring-foreground"
-                                    : "border-border/60 bg-muted/20 hover:border-border"
-                            )}
-                        >
-                            <div className="flex items-center gap-2 font-semibold text-sm text-foreground">
-                                <Bot className="w-4 h-4" />
-                                Modo Automático
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                El motor envía los mensajes solo según el cupo diario. Consume créditos de marketing.
-                            </p>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setModo('manual')}
-                            className={cn(
-                                "text-left p-4 rounded-xl border transition-all",
-                                modo === 'manual'
-                                    ? "border-foreground bg-foreground/5 ring-1 ring-foreground"
-                                    : "border-border/60 bg-muted/20 hover:border-border"
-                            )}
-                        >
-                            <div className="flex items-center gap-2 font-semibold text-sm text-foreground">
-                                <MessageSquare className="w-4 h-4" />
-                                Modo Manual
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                El motor arma los mensajes con cupón. Vos los enviás por WhatsApp sin costo de créditos.
-                            </p>
-                        </button>
-                    </div>
-                </div>
-
-                <Button
-                    onClick={() => setConfirmOpen(true)}
-                    size="lg"
-                    className="mt-6 h-11 px-6 rounded-full text-sm font-medium shadow-2xs gap-2"
-                >
-                    <Zap className="w-4 h-4" /> Activar motor {modo === 'manual' ? '(Manual)' : '(Automático)'}
-                </Button>
-            </div>
-
-            {/* Diálogo de confirmación */}
-            <Dialog open={confirmOpen} onOpenChange={(o) => !activando && setConfirmOpen(o)}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Encender el motor de recompra</DialogTitle>
-                        <DialogDescription>
-                            {modo === 'automatico'
-                                ? `El motor contactará hasta ${cupo} clientes por día de forma automática. Podés pausarlo cuando quieras.`
-                                : `El motor preparará la cola de hasta ${cupo} clientes diarios para que los envíes manualmente.`}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="gap-2 sm:gap-0">
-                        <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={activando}>Cancelar</Button>
-                        <Button onClick={activar} disabled={activando} className="gap-2">
-                            {activando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                            Confirmar activación
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </div>
-    )
-}
-
 function PlanBloqueado({ onCambioEstado }: { onCambioEstado: () => void }) {
     return (
         <div className="text-center py-20">
@@ -2042,8 +1859,8 @@ function PlanBloqueado({ onCambioEstado }: { onCambioEstado: () => void }) {
             </div>
             <h2 className="text-xl font-bold tracking-tight text-foreground">Activá Retención</h2>
             <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto leading-relaxed">
-                Convertí tu base de clientes en recompra automática: detección de ritmo habitual, mensajes personalizados
-                goteados y atribución con grupo de control.
+                Convertí tu base de clientes en recompra: segmentos por ritmo de compra, tandas de mensajes
+                personalizados con su día y su hora, y atribución con grupo de control.
             </p>
             <div className="mx-auto mt-6 max-w-sm text-left">
                 <ModuloComercial

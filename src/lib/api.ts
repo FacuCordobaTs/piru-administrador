@@ -371,7 +371,164 @@ export interface ClienteMotorRecompra {
   protecciones: { horarioSilencioActivo: boolean; cooldownHasta: string | null; topeFrecuenciaAlcanzado: boolean; toques30Dias: number; maximoToques30Dias: number; optOut: boolean }
 }
 
-function queryRecompra(params: Record<string, string | number | undefined>) {
+// ── Motor de Recompra · PROGRAMACIONES ───────────────────────────────────────
+// El motor ya no se enciende una vez y gotea solo: el dueño programa una tanda (a quiénes, cuántos,
+// hasta qué toque y cada cuánto) y el backend agenda los envíos concretos. Estos tipos son el
+// contrato del asistente de programación y del panel de tandas.
+
+export type EstadoMotorLocal = 'activa' | 'pausada_sin_saldo' | 'pausada_manual'
+export type EstadoProgramacion = 'activa' | 'completada' | 'pausada_sin_saldo' | 'pausada_manual' | 'cancelada'
+export type OrigenProgramacion = 'goteo' | 'programada'
+
+export interface ConfigMotorRecompra {
+  restauranteId: number
+  estado: EstadoMotorLocal
+  modo: ModoRecompra
+  cupoDiario: number
+  /** Días entre el 1º y el 2º toque (y entre el 2º y el 3º). Piso anti-spam: nunca menos de 2. */
+  diasToque2: number
+  diasToque3: number
+  porcentajeControl: number
+  ultimoDrenajeDia: string | null
+  avisoSinSaldoAt: string | null
+}
+
+export interface ProgramacionResumen {
+  id: number
+  origen: OrigenProgramacion
+  estado: EstadoProgramacion
+  segmento: SegmentoRecompra | null
+  /** N que pidió el dueño (mensajes a enviar). Null en las campañas legacy. */
+  cantidadObjetivo: number | null
+  /** Hasta qué toque llega la tanda (1..3). */
+  toqueHasta: number
+  diasToque2: number
+  diasToque3: number
+  porcentajeControl: number
+  programadaAt: string | null
+  /** Clientes distintos que recibieron al menos un toque. */
+  contactados: number
+  control: number
+  /** Toques enviados: una tanda de N con 3 toques puede llegar a 3N. */
+  enviados: number
+  pendientes: number
+  fallidos: number
+  /** Cuándo vuelve a salir algo de esta tanda (menor `dueDate` pendiente). */
+  proximoDespachoAt: string | null
+  /** Techo de mensajes de la tanda: `cantidadObjetivo × toqueHasta`. */
+  mensajesObjetivo: number
+}
+
+export interface CandidatoLote {
+  clienteId: number; nombre: string; telefono: string; segmento: SegmentoRecompra
+  diasDesdeUltimo: number | null; totalGastado: number; ticketPromedio: number
+  toquesDesdeUltimoPedido: number; proximoNivel: number
+  /** El día y la hora en que le tocaría salir si se lo programa ahora ("Viernes 21:00 hs"). */
+  horarioSugerido: string
+  dueDate: string
+  /** false = ya está comprometido en otra tanda viva: la UI no lo deja elegir. */
+  elegible: boolean
+}
+
+export interface PreviewProgramacion {
+  segmento: SegmentoRecompra | null
+  candidatos: CandidatoLote[]
+  /** Ids que se apartarían como grupo de control si se programara así. */
+  controlSugerido: number[]
+  /** Coincidencias de `buscar` en TODA la cohorte, para agregar a alguien puntual. */
+  busqueda: CandidatoLote[]
+  resumen: {
+    porSegmento: { segmento: SegmentoRecompra; elegibles: number; facturacionEnJuego: number }[]
+    totalElegibles: number
+    totalEnTanda: number
+    cantidad: number; cantidadMin: number; cantidadMax: number
+    cupoDiario: number; enviadosHoy: number; cupoRestanteHoy: number
+    saldoMarketing: number; modo: ModoRecompra
+    diasToque2: number; diasToque3: number; diasMinEntreToques: number
+    porcentajeControl: number
+    horarioSilencio: boolean
+  }
+}
+
+/** Lo que el dueño elige en el asistente. Todo opcional salvo la cantidad. */
+export interface EspecificacionProgramacion {
+  segmento?: SegmentoRecompra | null
+  cantidad?: number | null
+  toqueHasta?: number | null
+  diasToque2?: number | null
+  diasToque3?: number | null
+  porcentajeControl?: number | null
+  incluirIds?: number[] | null
+  excluirIds?: number[] | null
+}
+
+export interface ResultadoProgramacion {
+  ok: boolean
+  campanaId?: number
+  cantidad: number
+  control: number
+  filasCreadas: number
+  omitidos: { clienteId: number; motivo: 'no_elegible' | 'ya_en_tanda' | 'excluido' }[]
+  porSegmento: { segmento: SegmentoRecompra; contactar: number; control: number }[]
+  primerDespachoAt: string | null
+  cupoDiario: number
+  diasToque2: number
+  diasToque3: number
+  porcentajeControl: number
+  toqueHasta: number
+}
+
+/** El universo disponible para programar cuando todavía no hay tandas vivas. */
+export interface PlanActivacionRecompra {
+  totalDetectados: number
+  totalContactar: number
+  totalControl: number
+  porSegmento: { segmento: SegmentoRecompra; detectados: number; facturacionEnJuego: number }[]
+  primerSegmento: SegmentoRecompra | null
+  cupoSugerido: number
+  saldoMarketing: number
+  diasCubiertos: number
+  /** Clientes ya comprometidos en una tanda viva: no se pueden volver a programar. */
+  enTanda: number
+}
+
+/** Marcador AGREGADO de todas las tandas vivas (no de una sola). */
+export interface DashboardRecompra {
+  estado: EstadoMotorLocal
+  modo: ModoRecompra
+  cupoDiario: number
+  /** Envíos de hoy contra el cupo del local, que es compartido por todas las tandas. */
+  enviadosHoy: number
+  totalEnviados: number
+  enCola: number
+  /** Clientes ÚNICOS con al menos un toque enviado. */
+  contactados: number
+  /** Toques enviados: `contactados` ≤ `toquesEnviados` ≤ 3 × `contactados`. */
+  toquesEnviados: number
+  volvieron: number
+  plataRecuperada: number
+  control: number
+  controlVolvieron: number
+  tasaContactados: number
+  tasaControl: number
+  saldoMarketing: number
+  activadaAt: string | null
+  pausadaAt: string | null
+}
+
+/** La pantalla del motor entera: config del local, tandas, marcador y universo disponible. */
+export interface EstadoMotorRecompra {
+  /** true si hay al menos una tanda viva: decide si la pantalla muestra el marcador o el plan. */
+  activa: boolean
+  config: ConfigMotorRecompra
+  campana: DashboardRecompra | null
+  programaciones: ProgramacionResumen[]
+  /** Se devuelve SIEMPRE: es el insumo del asistente de programación. */
+  plan: PlanActivacionRecompra
+  saldoMarketing: number
+}
+
+function queryRecompra(params: Record<string, string | number | null | undefined>) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) if (value != null && value !== '') query.set(key, String(value))
   const serialized = query.toString()
@@ -413,25 +570,44 @@ export const clientesApi = {
       },
     })
   },
-  // Motor de Recompra · goteo — estado del motor: PLAN de activación (apagado) o DASHBOARD (encendido).
+  // Motor de Recompra · programaciones — estado del motor: PLAN (sin tandas vivas) o DASHBOARD
+  // agregado, más la config del local, las tandas y el universo disponible para programar.
   recompraEstado: async (token: string) => {
-    return fetchApi('/clientes/recompra/estado', {
+    return fetchApi<{ success: boolean; data: EstadoMotorRecompra }>('/clientes/recompra/estado', {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
     })
   },
-  // Enciende el motor (una vez): detecta el stock, aparta el control y arranca el goteo. cupoDiario y modo opcionales.
-  activarRecompra: async (token: string, config?: number | { cupoDiario?: number; modo?: ModoRecompra }) => {
-    const body = typeof config === 'number'
-      ? { cupoDiario: config }
-      : config != null
-        ? config
-        : {}
-    return fetchApi('/clientes/recompra/activar', {
+  // El universo del asistente: candidatos en orden de prioridad con su día y hora, el control que se
+  // apartaría y las coincidencias de `buscar` en toda la cohorte. No escribe nada.
+  previewProgramacionRecompra: async (token: string, params: {
+    segmento?: SegmentoRecompra | null; cantidad?: number | null; buscar?: string | null; limite?: number | null
+  } = {}) => {
+    return fetchApi<{ success: boolean; data: PreviewProgramacion }>(
+      `/clientes/recompra/programar/preview${queryRecompra(params)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+  },
+  // LA DECISIÓN: crea la tanda y deja agendados los envíos. No manda nada; el goteo lo hace el tick.
+  programarRecompra: async (token: string, spec: EspecificacionProgramacion) => {
+    return fetchApi<{ success: boolean; message: string; data: ResultadoProgramacion }>('/clientes/recompra/programar', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(spec),
     })
+  },
+  programacionesRecompra: async (token: string, limite = 20) => {
+    return fetchApi<{ success: boolean; data: ProgramacionResumen[] }>(
+      `/clientes/recompra/programaciones?limite=${limite}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+  },
+  // Cancela una tanda: lo que todavía no salió, no sale. Lo ya enviado y el control se conservan.
+  cancelarProgramacionRecompra: async (token: string, campanaId: number) => {
+    return fetchApi<{ success: boolean; message: string; data: { ok: boolean; canceladas: number } }>(
+      `/clientes/recompra/programaciones/${campanaId}/cancelar`,
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+    )
   },
   pausarRecompra: async (token: string) => {
     return fetchApi('/clientes/recompra/pausar', {
@@ -445,11 +621,14 @@ export const clientesApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
-  configRecompra: async (token: string, config: number | { cupoDiario?: number; modo?: ModoRecompra }) => {
+  // La config es del LOCAL (cupo, modo, días entre toques y % de control), no de una tanda.
+  configRecompra: async (token: string, config: number | {
+    cupoDiario?: number; modo?: ModoRecompra; diasToque2?: number; diasToque3?: number; porcentajeControl?: number
+  }) => {
     const body = typeof config === 'number'
       ? { cupoDiario: config }
       : config
-    return fetchApi('/clientes/recompra/config', {
+    return fetchApi<{ success: boolean; message: string; data: { config: ConfigMotorRecompra } }>('/clientes/recompra/config', {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -485,17 +664,17 @@ export const clientesApi = {
       body: JSON.stringify(decisiones),
     })
   },
-  recompraCola: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string } = {}) => {
+  recompraCola: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string; campanaId?: number } = {}) => {
     return fetchApi<{ success: boolean; data: PaginadoRecompra<ColaRecompraItem> }>(`/clientes/recompra/cola${queryRecompra(params)}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
-  recompraHistorial: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; estado?: string } = {}) => {
+  recompraHistorial: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; estado?: string; campanaId?: number } = {}) => {
     return fetchApi<{ success: boolean; data: PaginadoRecompra<HistorialRecompraItem> }>(`/clientes/recompra/historial${queryRecompra(params)}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
-  recompraClientes: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string; rol?: string; estado?: string } = {}) => {
+  recompraClientes: async (token: string, params: { pagina?: number; limite?: number; segmento?: string; poblacion?: string; rol?: string; estado?: string; campanaId?: number } = {}) => {
     return fetchApi<{ success: boolean; data: PaginadoRecompra<ClienteMotorRecompra> }>(`/clientes/recompra/clientes${queryRecompra(params)}`, {
       headers: { Authorization: `Bearer ${token}` },
     })

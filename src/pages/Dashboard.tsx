@@ -304,6 +304,23 @@ function parseDashboardDate(value: string | undefined | null): Date {
     return new Date(s)
 }
 
+// La lista se rearma entera en cada refetch (WebSocket). `created_at` es un TIMESTAMP
+// de segundos, así que con varios pedidos hay empates, y sin desempate el orden entre
+// los empatados queda a merced del orden en que la API devolvió las filas. Si ese orden
+// cambia, React mueve las tarjetas en el DOM y el navegador pierde el ancla del scroll:
+// el listado salta hacia arriba justo cuando el usuario está bajando. Con un orden total
+// (fecha y, a igualdad, id) la lista es la misma para los mismos datos y no se mueve nada.
+function compararPedidos(a: UnifiedPedido, b: UnifiedPedido): number {
+    const fechaA = parseDashboardDate(a.createdAt).getTime()
+    const fechaB = parseDashboardDate(b.createdAt).getTime()
+    const porFecha = (Number.isNaN(fechaB) ? 0 : fechaB) - (Number.isNaN(fechaA) ? 0 : fechaA)
+    if (porFecha !== 0) return porFecha
+    const idA = Number(a.id)
+    const idB = Number(b.id)
+    if (Number.isFinite(idA) && Number.isFinite(idB) && idA !== idB) return idB - idA
+    return `${b.tipo}-${b.id}`.localeCompare(`${a.tipo}-${a.id}`)
+}
+
 // El backend envía timestamps con el horario local AR pero etiquetados como UTC (Z),
 // por lo que parseDashboardDate devuelve un instante 3h atrasado respecto al real.
 // getPedidoInstant() aplica la corrección para obtener el instante correcto.
@@ -1733,7 +1750,7 @@ const Dashboard = () => {
                     const uniqueMap = new Map<string, UnifiedPedido>()
                     combined.forEach((item: UnifiedPedido) => uniqueMap.set(`${item.tipo}-${item.id}`, item))
                     const unique = Array.from(uniqueMap.values())
-                    return unique.sort((a: UnifiedPedido, b: UnifiedPedido) => parseDashboardDate(b.createdAt).getTime() - parseDashboardDate(a.createdAt).getTime())
+                    return unique.sort(compararPedidos)
                 })
 
                 setHasMore(response.pagination?.hasMore ?? false)

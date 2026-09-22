@@ -58,6 +58,7 @@ const CAMPANA = {
   totalEnviados: 12,
   enCola: 148,
   contactados: 12,
+  toquesEnviados: 12,
   volvieron: 3,
   plataRecuperada: 45200,
   control: 30,
@@ -67,6 +68,94 @@ const CAMPANA = {
   saldoMarketing: 120,
   activadaAt: '2026-09-01T12:00:00.000Z',
   pausadaAt: null,
+}
+
+/** La config del LOCAL: cupo, modo, días y control ya no viven en la campaña. */
+const CONFIG = {
+  restauranteId: 1,
+  estado: 'activa',
+  modo: 'manual',
+  cupoDiario: 30,
+  diasToque2: 2,
+  diasToque3: 2,
+  porcentajeControl: 10,
+  ultimoDrenajeDia: null,
+  avisoSinSaldoAt: null,
+}
+
+/** Una tanda programada viva: lo que ahora dice qué está agendado y cuánto falta. */
+const TANDA = {
+  id: 3,
+  origen: 'programada',
+  estado: 'activa',
+  segmento: 'dormido',
+  cantidadObjetivo: 50,
+  toqueHasta: 2,
+  diasToque2: 2,
+  diasToque3: 2,
+  porcentajeControl: 10,
+  programadaAt: '2026-09-20T12:00:00.000Z',
+  contactados: 12,
+  control: 5,
+  enviados: 12,
+  pendientes: 38,
+  fallidos: 0,
+  mensajesObjetivo: 100,
+  proximoDespachoAt: '2026-09-22T23:00:00.000Z',
+}
+
+const PLAN = {
+  totalDetectados: 148,
+  totalContactar: 133,
+  totalControl: 15,
+  porSegmento: [{ segmento: 'dormido', detectados: 148, facturacionEnJuego: 2100000 }],
+  primerSegmento: 'dormido',
+  cupoSugerido: 30,
+  saldoMarketing: 120,
+  diasCubiertos: 5,
+  enTanda: 0,
+}
+
+/** Un candidato del asistente: el backend los manda ya en orden de prioridad. */
+const candidato = (
+  clienteId: number, nombre: string, segmento: string, totalGastado: number,
+): Record<string, unknown> => ({
+  clienteId, nombre, telefono: `11456789${String(clienteId).padStart(2, '0')}`, segmento,
+  diasDesdeUltimo: 40 + clienteId, totalGastado, ticketPromedio: Math.round(totalGastado / 4),
+  toquesDesdeUltimoPedido: 0, proximoNivel: 1, horarioSugerido: 'Viernes 21:00 hs',
+  dueDate: '2026-09-25T21:00:00.000Z', elegible: true,
+})
+
+// Ocho, para que la lista tenga con qué reemplazar al que se destilda y quién quede de control.
+const CANDIDATOS = [
+  candidato(41, 'Camila Duarte', 'dormido', 38200),
+  candidato(42, 'Bruno Sosa', 'perdido', 21400),
+  candidato(43, 'Delfina Ruiz', 'dormido', 15800),
+  candidato(44, 'Ezequiel Molina', 'perdido', 43100),
+  candidato(45, 'Florencia Paz', 'dormido', 9800),
+  candidato(46, 'Gonzalo Ibarra', 'perdido', 27300),
+  candidato(47, 'Helena Vargas', 'dormido', 12600),
+  candidato(48, 'Iván Ríos', 'dormido', 30500),
+]
+
+/** El resumen del preview, derivado de los candidatos: así no puede quedar desincronizado. */
+const resumenPreview = (segmento: string | null) => {
+  const delSegmento = CANDIDATOS.filter(c => c.segmento === segmento)
+  const conteo = (seg: string) => CANDIDATOS.filter(c => c.segmento === seg).length
+  const facturacion = (seg: string) =>
+    CANDIDATOS.filter(c => c.segmento === seg).reduce((acc, c) => acc + (c.totalGastado as number), 0)
+  return {
+    porSegmento: ['primer_pedido', 'en_riesgo', 'dormido', 'perdido']
+      .filter(seg => conteo(seg) > 0)
+      .map(seg => ({ segmento: seg, elegibles: conteo(seg), facturacionEnJuego: facturacion(seg) })),
+    totalElegibles: segmento ? delSegmento.length : CANDIDATOS.length,
+    totalEnTanda: 0,
+    cantidad: 0, cantidadMin: 1, cantidadMax: 500,
+    cupoDiario: 30, enviadosHoy: 4, cupoRestanteHoy: 26,
+    saldoMarketing: 120, modo: 'manual',
+    diasToque2: 2, diasToque3: 2, diasMinEntreToques: 2, porcentajeControl: 10,
+    horarioSilencio: false,
+  }
 }
 
 const FILA = {
@@ -111,12 +200,82 @@ for (const width of [1440, 390]) {
   test.describe(`${width < 768 ? 'mobile' : 'desktop'}`, () => {
     test.use({ viewport: { width, height: 1000 } })
 
-    /** Monta el motor encendido y espera la primera fila de la cola. */
+    /**
+     * Monta el motor con tandas vivas y espera la primera fila de la cola. Devuelve el cuerpo del
+     * último `POST /recompra/programar`, para poder mirar qué se pidió sin depender de la respuesta.
+     */
     async function montar(page: Page, estado = 'activa') {
+      const captura: { programacion: Record<string, unknown> | null; config: Record<string, unknown> | null } = {
+        programacion: null,
+        config: null,
+      }
       await page.route('**/api/**', async route => {
         const url = new URL(route.request().url()).pathname
         if (url.endsWith('/clientes/recompra/estado')) {
-          return route.fulfill({ json: { success: true, data: { activa: true, campana: { ...CAMPANA, estado }, plan: null, saldoMarketing: CAMPANA.saldoMarketing } } })
+          return route.fulfill({
+            json: {
+              success: true,
+              data: {
+                activa: true,
+                config: { ...CONFIG, estado },
+                campana: { ...CAMPANA, estado },
+                programaciones: [TANDA],
+                plan: PLAN,
+                saldoMarketing: CAMPANA.saldoMarketing,
+              },
+            },
+          })
+        }
+        if (url.endsWith('/clientes/recompra/programar/preview')) {
+          const q = new URL(route.request().url()).searchParams
+          const segmento = q.get('segmento')
+          return route.fulfill({
+            json: {
+              success: true,
+              data: {
+                segmento,
+                candidatos: segmento ? CANDIDATOS.filter(c => c.segmento === segmento) : CANDIDATOS,
+                controlSugerido: [],
+                busqueda: [],
+                resumen: resumenPreview(segmento),
+              },
+            },
+          })
+        }
+        if (url.endsWith('/clientes/recompra/programar') && route.request().method() === 'POST') {
+          captura.programacion = route.request().postDataJSON()
+          // La respuesta se deriva del pedido: así lo que muestra la pantalla de resultado es lo que
+          // el asistente pidió, y no un número puesto a mano que podría tapar una divergencia.
+          const p = (captura.programacion ?? {}) as {
+            cantidad?: number; toqueHasta?: number; porcentajeControl?: number
+            segmento?: string | null; incluirIds?: number[]
+          }
+          // Los agregados a mano entran ADEMÁS de la cantidad pedida: es lo que devuelve el backend y
+          // lo que el asistente ya anticipó en el resumen.
+          const cantidad = (p.cantidad ?? 0) + (p.incluirIds?.length ?? 0)
+          const control = Math.round(cantidad * (p.porcentajeControl ?? CONFIG.porcentajeControl) / 100)
+          return route.fulfill({
+            json: {
+              success: true,
+              data: {
+                ok: true, campanaId: 4, cantidad, control, filasCreadas: cantidad, omitidos: [],
+                porSegmento: [{ segmento: p.segmento ?? 'dormido', contactar: cantidad, control }],
+                primerDespachoAt: '2026-09-25T21:00:00.000Z',
+                cupoDiario: CONFIG.cupoDiario,
+                diasToque2: CONFIG.diasToque2,
+                diasToque3: CONFIG.diasToque3,
+                porcentajeControl: p.porcentajeControl ?? CONFIG.porcentajeControl,
+                toqueHasta: p.toqueHasta ?? 1,
+              },
+            },
+          })
+        }
+        if (url.endsWith('/clientes/recompra/config')) {
+          captura.config = route.request().postDataJSON()
+          const pedido = (captura.config ?? {}) as { cupoDiario?: number }
+          return route.fulfill({
+            json: { success: true, data: { config: { ...CONFIG, cupoDiario: pedido.cupoDiario ?? CONFIG.cupoDiario } } },
+          })
         }
         if (url.endsWith('/clientes/recompra/cola')) {
           return route.fulfill({ json: { success: true, data: { items: [FILA], pagina: 1, limite: 25, total: 1, paginas: 1 } } })
@@ -135,12 +294,21 @@ for (const width of [1440, 390]) {
       })
       await page.goto('/tests/motor-recompra.html')
       await expect(page.getByRole('button', { name: /Camila Duarte/ })).toBeVisible()
+      return captura
     }
 
     /** En mobile el detalle vive en la columna que se abre al elegir una fila. */
     async function abrirDetalle(page: Page) {
       await page.getByRole('button', { name: /Camila Duarte/ }).click()
       await expect(page.getByRole('button', { name: 'Marcar como enviado' })).toBeVisible()
+    }
+
+    /** La columna del motor (tandas, métricas y ayuda) sin depender de elegir una fila. */
+    async function abrirMotor(page: Page) {
+      if ((page.viewportSize()?.width ?? 0) < 1280) {
+        await page.getByRole('button', { name: /Motor y Detalle/ }).click()
+      }
+      await expect(page.getByRole('button', { name: /Programar envío/ })).toBeVisible()
     }
 
     test('no quedan ni la tab "Base" ni el badge "Pausado sin saldo"', async ({ page }) => {
@@ -175,11 +343,11 @@ for (const width of [1440, 390]) {
       expect(errors).toEqual([])
     })
 
-    test('el ritmo es una métrica más y se edita ahí mismo', async ({ page }) => {
+    test('el ritmo es del local y se ajusta desde la configuración del motor', async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', e => errors.push(e.message))
-      await montar(page)
-      await abrirDetalle(page)
+      const captura = await montar(page)
+      await abrirMotor(page)
 
       for (const label of ['Contactados', 'Volvieron', 'Recuperado', 'En cola', 'Ritmo']) {
         await expect(page.getByText(label, { exact: true })).toBeVisible()
@@ -191,66 +359,216 @@ for (const width of [1440, 390]) {
       // ...y ya no vive suelto en una fila propia.
       await expect(page.getByText(/clientes\/día/)).toHaveCount(0)
 
-      await ritmo.getByRole('button', { name: 'Cambiar', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Listo' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Cancelar' })).toBeVisible()
-      await page.getByRole('button', { name: 'Listo' }).click()
+      // El cupo tiene una sola fuente: la configuración del motor, que es del
+      // LOCAL porque el cupo protege el número y pueden correr varias tandas.
+      await ritmo.getByRole('button', { name: 'Ajustar' }).click()
+      const dialogo = page.getByRole('dialog')
+      await expect(dialogo.getByRole('heading', { name: 'Configuración del motor' })).toBeVisible()
+      // El piso de 48 hs no se puede bajar desde la UI y se explica por qué.
+      await expect(dialogo).toContainText('El mínimo son 2 días (48 hs)')
 
-      // Guardar recarga el motor entero: la pantalla vuelve a montarse desde
-      // cero (heredado), así que en la columna única de mobile hay que reabrir
-      // el detalle. El valor guardado sigue ahí.
-      await abrirDetalle(page)
-      await expect(ritmo).toContainText('30')
-      await expect(ritmo.getByRole('button', { name: 'Cambiar', exact: true })).toBeVisible()
+      const campoCupo = dialogo.getByText('Cupo diario').locator('../..')
+      await expect(campoCupo).toContainText('30')
+      await campoCupo.getByRole('button', { name: '+' }).click()
+      await campoCupo.getByRole('button', { name: '+' }).click()
+      await expect(campoCupo).toContainText('40')
+
+      await dialogo.getByRole('button', { name: 'Guardar' }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      // Lo que viajó es la config entera, no sólo el cupo: los días y el % de
+      // control son los defaults de las tandas nuevas.
+      expect(captura.config).toEqual({
+        cupoDiario: 40, modo: 'manual', diasToque2: 2, diasToque3: 2, porcentajeControl: 10,
+      })
       expect(errors).toEqual([])
     })
 
-    test('la explicación de los modos vive en "¿Cómo funciona?"', async ({ page }) => {
+    test('las tandas programadas se ven arriba, con lo que falta y su próximo despacho', async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', e => errors.push(e.message))
+      await montar(page)
+      await abrirMotor(page)
+
+      // La tanda viva dice a quiénes agarró, cuánto salió y cuándo vuelve a salir algo.
+      await expect(page.getByText('Tandas programadas')).toBeVisible()
+      // Se busca dentro del panel de tandas: el nombre del segmento también está en cada fila de la cola.
+      const seccion = page.getByText('Tandas programadas').locator('../..')
+      const tanda = seccion.getByText('Dormidos', { exact: true }).locator('../../..')
+      await expect(tanda).toContainText('En curso')
+      await expect(tanda).toContainText('12')
+      await expect(tanda).toContainText('de 50 contactados')
+      await expect(tanda).toContainText('38 en cola')
+      await expect(tanda).toContainText('hasta el 2º toque')
+      await expect(tanda).toContainText('Próximo despacho')
+      // Cancelar sólo tiene sentido mientras quede algo por salir.
+      await expect(tanda.getByRole('button', { name: 'Cancelar' })).toBeVisible()
+
+      expect(errors).toEqual([])
+    })
+
+    test('el asistente programa a quiénes, cuántos y hasta qué toque', async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', e => errors.push(e.message))
+      const captura = await montar(page)
+      await abrirMotor(page)
+
+      await page.getByRole('button', { name: /Programar envío/ }).click()
+      const dialogo = page.getByRole('dialog')
+      await expect(dialogo.getByRole('heading', { name: 'Programar envío' })).toBeVisible()
+      // Los pasos son los que pidió el local: a quiénes, la lista, los toques y el control.
+      for (const paso of ['1 · A quiénes', '2 · La lista', '3 · Toques', '4 · Grupo de control']) {
+        await expect(dialogo.getByText(paso)).toBeVisible()
+      }
+
+      // La cantidad y el recorte de la lista son la misma cuenta que hace el backend.
+      const cantidadInput = dialogo.locator('input[type="number"]')
+      await cantidadInput.fill('5')
+      const resumen = dialogo.getByText('Vas a programar').locator('..')
+      await expect(resumen).toContainText('5 mensajes')
+      await expect(resumen).toContainText('1 en el grupo de control')
+      await expect(resumen).toContainText('un mensaje por cliente')
+
+      // Con 5 pedidos y 8 candidatos: los primeros 5 reciben, el 6º queda de control y los dos
+      // últimos esperan su turno, sin tilde.
+      const tildes = dialogo.getByRole('checkbox')
+      await expect(tildes).toHaveCount(8)
+      const fila = (nombre: string) => dialogo.getByText(nombre, { exact: true }).locator('../../..')
+      await expect(fila('Gonzalo Ibarra')).toContainText('Control')
+      await expect(fila('Helena Vargas')).toContainText('Espera')
+
+      // Destildar al control lo saca del lote —no lo convierte en contactado— y el que sigue pasa a
+      // ser el control: la cuenta no baja.
+      await tildes.nth(5).click()
+      await expect(fila('Gonzalo Ibarra')).toContainText('Espera')
+      await expect(fila('Helena Vargas')).toContainText('Control')
+      await expect(resumen).toContainText('5 mensajes')
+      // Volver a tildarlo deshace el movimiento, sin quedar como agregado a mano.
+      await tildes.nth(5).click()
+      await expect(fila('Gonzalo Ibarra')).toContainText('Control')
+      await expect(fila('Helena Vargas')).toContainText('Espera')
+
+      // Destildar a uno del lote lo saca de la tanda y entra el siguiente: la cuenta no baja.
+      await tildes.nth(0).click()
+      await expect(fila('Camila Duarte')).toContainText('Espera')
+      await expect(resumen).toContainText('5 mensajes')
+      await expect(resumen).not.toContainText('agregaste vos')
+
+      // Tildar a uno que esperaba lo agrega ADEMÁS de la cantidad pedida.
+      await tildes.nth(7).click()
+      await expect(fila('Iván Ríos')).toContainText('A mano')
+      await expect(resumen).toContainText('6 mensajes')
+      await expect(resumen).toContainText('5 de la lista + 1 que agregaste vos')
+
+      // "1º y 2º" agrega el recordatorio y su intervalo, con el piso de 48 hs a la vista.
+      await dialogo.getByRole('button', { name: /1º y 2º/ }).click()
+      await expect(dialogo).toContainText('El mínimo son 2 días (48 hs)')
+      await expect(resumen).toContainText('un mensaje por cliente y un recordatorio a los 2 días')
+
+      await dialogo.getByRole('button', { name: 'Programar 6 mensajes' }).click()
+
+      // Lo que viajó: la cantidad pedida, el que se sacó del lote, el agregado a mano aparte, y los
+      // días del 2º toque sólo porque la tanda llega hasta ahí.
+      expect(captura.programacion).toEqual({
+        segmento: null,
+        cantidad: 5,
+        toqueHasta: 2,
+        diasToque2: 2,
+        diasToque3: null,
+        porcentajeControl: 10,
+        incluirIds: [48],
+        excluirIds: [41],
+      })
+
+      // El resultado lo dice el backend, no el asistente.
+      await expect(dialogo.getByRole('heading', { name: 'Programado' })).toBeVisible()
+      await expect(dialogo).toContainText('No salió ningún mensaje todavía')
+      await expect(dialogo).toContainText('Cada cliente llega hasta el 2º toque')
+      await dialogo.getByRole('button', { name: 'Ver las tandas' }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+
+      expect(errors).toEqual([])
+    })
+
+    test('el segmento elegido acota la lista y viaja en la programación', async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', e => errors.push(e.message))
+      const captura = await montar(page)
+      await abrirMotor(page)
+
+      await page.getByRole('button', { name: /Programar envío/ }).click()
+      const dialogo = page.getByRole('dialog')
+
+      await dialogo.getByRole('button', { name: /^Perdidos/ }).click()
+      // Sólo quedan los perdidos: los dormidos ya no se listan.
+      const tildes = dialogo.getByRole('checkbox')
+      await expect(tildes).toHaveCount(3)
+      await expect(dialogo.getByText('Bruno Sosa', { exact: true })).toBeVisible()
+      await expect(dialogo.getByText('Camila Duarte', { exact: true })).toHaveCount(0)
+
+      await dialogo.locator('input[type="number"]').fill('2')
+      await dialogo.getByRole('button', { name: 'Programar 2 mensajes' }).click()
+
+      // Sin toques extra, los días no viajan: no se escriben como si fueran a usarse.
+      expect(captura.programacion).toEqual({
+        segmento: 'perdido',
+        cantidad: 2,
+        toqueHasta: 1,
+        diasToque2: null,
+        diasToque3: null,
+        porcentajeControl: 10,
+        incluirIds: [],
+        excluirIds: [],
+      })
+      expect(errors).toEqual([])
+    })
+
+    test('la explicación del motor vive en "¿Cómo funciona?"', async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', e => errors.push(e.message))
       await montar(page)
       // El texto del recuadro de Modo Manual que competía con la operación.
       await expect(page.getByText('Cada cliente llega con el mensaje de su segmento ya preparado')).toHaveCount(0)
 
-      await abrirDetalle(page)
+      await abrirMotor(page)
       await page.getByRole('button', { name: '¿Cómo funciona?' }).click()
 
       const dialogo = page.getByRole('dialog')
 
       // La ayuda es un recorrido: cada bloque explica una parte del motor.
       for (const titulo of [
+        'Vos programás, el motor envía',
         'A quién le habla',
-        'El goteo: hasta 3 toques por cliente',
+        'Hasta 3 intentos',
         'Cómo sale el mensaje',
-        'Las tres decisiones de cada envío',
-        'El grupo de control',
-        'Cómo se leen las métricas de arriba',
-        'Lo que el motor nunca hace',
+        'Medición y límites',
       ]) {
         await expect(dialogo.getByRole('heading', { name: titulo })).toBeVisible()
       }
 
-      // Los números son los del motor, no placeholders: la escalera arranca sin descuento y cierra
-      // en 20% con vencimiento.
-      await expect(dialogo).toContainText('Pasó 1,5 veces su intervalo habitual')
-      await expect(dialogo).toContainText('Pasó 6 veces su intervalo habitual')
+      // Lo primero que dice es lo que cambió: nada sale sin una tanda programada.
+      await expect(dialogo).toContainText('El motor no sale a buscar clientes por su cuenta')
+      await expect(dialogo).toContainText('Vos elegís a quiénes y cuántos')
+      // La escalera sigue siendo la del motor: arranca sin descuento y cierra en 20% con vencimiento.
       await expect(dialogo).toContainText('Sin descuento')
       await expect(dialogo).toContainText('20%')
       await expect(dialogo).toContainText('vence en 48 hs')
       await expect(dialogo).toContainText('4 mensajes de marketing')
+      // El piso de 48 hs entre toques y el alcance configurable de la tanda.
+      await expect(dialogo).toContainText('Hasta 3 mensajes por cliente, con al menos 48 horas')
+      await expect(dialogo).toContainText('Cada tanda elige hasta qué toque llega')
       // El modo activo se marca dentro de su tarjeta, y sólo en la suya.
       const manual = dialogo.getByRole('heading', { name: 'Manual', exact: true }).locator('../..')
       await expect(manual).toContainText('activo')
       const automatico = dialogo.getByRole('heading', { name: 'Automático', exact: true }).locator('../..')
       await expect(automatico).not.toContainText('activo')
       // Y el cupo y el saldo reales entran en la explicación del modo automático.
-      await expect(automatico).toContainText('hasta 30 clientes por día')
-      await expect(automatico).toContainText('120 mensajes')
+      await expect(automatico).toContainText('hasta 30 por día')
+      await expect(automatico).toContainText('hoy tenés 120')
 
       // La comparación con el control usa los números medidos del local.
       await expect(dialogo).toContainText('25%')
       await expect(dialogo).toContainText('7%')
-      await expect(dialogo).toContainText('30 clientes sin contactar')
+      await expect(dialogo).toContainText('Un 10% de cada tanda queda sin contactar')
 
       // `animations: 'disabled'` termina el fade de entrada antes de capturar.
       if (width === 1440) await page.screenshot({ path: 'tests/motor-recompra-ayuda.png', animations: 'disabled' })
@@ -302,7 +620,8 @@ for (const width of [1440, 390]) {
         const cuerpo = document.querySelector<HTMLElement>('[role="dialog"] .overflow-y-auto')!
         cuerpo.scrollTop = cuerpo.scrollHeight
       })
-      await expect(dialogo).toContainText('no se configuran desde acá')
+      await expect(dialogo.getByRole('heading', { name: 'Medición y límites' })).toBeVisible()
+      await expect(dialogo).toContainText('Hoy volvieron')
       await expect(page.getByRole('button', { name: 'Entendido' })).toBeVisible()
 
       if (width === 1440) await page.screenshot({ path: 'tests/motor-recompra-ayuda-scroll.png', animations: 'disabled' })
