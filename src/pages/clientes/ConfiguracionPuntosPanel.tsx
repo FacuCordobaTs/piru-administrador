@@ -1,11 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,48 +22,45 @@ type BloqueConfig = 'beneficios' | 'productos'
 
 /**
  * Configuración completa del Club de Puntos: reglas de acumulación, beneficios
- * de canje y costo/otorgamiento de puntos por producto. Es la versión
- * operativa de lo que antes vivía repartido entre Ajustes > Retención y
- * Menú > Productos.
+ * de canje y costo/otorgamiento de puntos por producto. Es la versión operativa
+ * de lo que antes vivía repartido entre Ajustes > Retención y Menú > Productos.
+ *
+ * No es un diálogo: vive en la columna derecha de la mitad Puntos, en el mismo
+ * lugar que ocupa el detalle de un cliente, así que se ve cada vez que la
+ * pantalla no está mostrando un cliente abierto.
  */
-export function ConfiguracionPuntosDialog({
-  open,
-  onOpenChange,
-  onSaved,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSaved?: () => void
-}) {
+export function ConfiguracionPuntosPanel({ onSaved }: { onSaved?: () => void }) {
   const [bloque, setBloque] = useState<BloqueConfig>('beneficios')
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] max-w-2xl flex flex-col gap-0 overflow-hidden p-0 rounded-3xl">
-        <DialogHeader className="shrink-0 border-b border-border/30 p-6 pb-4">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 space-y-3 px-4 pt-4 sm:px-6">
+        <div className="flex max-w-3xl flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
             <Settings2 className="h-3.5 w-3.5" />
-            <span>Club de Puntos</span>
-          </div>
-          <DialogTitle className="mt-1.5 text-xl font-bold tracking-tight">Configuración</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            Definí cómo ganan puntos tus clientes, qué beneficios pueden canjear y cuánto cuesta cada producto.
-          </DialogDescription>
-          <div className="mt-3 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
-            <TabConfig activo={bloque === 'beneficios'} onClick={() => setBloque('beneficios')}>
-              <Gift className="h-3.5 w-3.5" /> Beneficios y costos
-            </TabConfig>
-            <TabConfig activo={bloque === 'productos'} onClick={() => setBloque('productos')}>
-              <Package className="h-3.5 w-3.5" /> Productos
-            </TabConfig>
-          </div>
-        </DialogHeader>
+            Configuración del club de puntos
+          </span>
+          <p className="text-[11px] text-muted-foreground">
+            Seleccioná un cliente de la lista para ver su saldo, su historial y ajustarle puntos.
+          </p>
+        </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <div className="flex max-w-3xl items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+          <TabConfig activo={bloque === 'beneficios'} onClick={() => setBloque('beneficios')}>
+            <Gift className="h-3.5 w-3.5" /> Beneficios y costos
+          </TabConfig>
+          <TabConfig activo={bloque === 'productos'} onClick={() => setBloque('productos')}>
+            <Package className="h-3.5 w-3.5" /> Productos
+          </TabConfig>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6">
+        <div className="max-w-3xl">
           {bloque === 'beneficios' ? <PuntosConfigEditor onSaved={onSaved} /> : <ProductosPuntosEditor onSaved={onSaved} />}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   )
 }
 

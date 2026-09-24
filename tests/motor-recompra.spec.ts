@@ -4,11 +4,21 @@ import { test, expect, type Page } from '@playwright/test'
  * Motor de Recompra: la pantalla que el local usa todos los días.
  *
  * Fija lo que se cambió a pedido del operador: sin la tab "Base" (la base
- * completa ya no se lista acá), sin el badge "Pausado sin saldo", el segmento
- * elegido con un select en vez de píldoras, el ritmo dentro de la fila de
- * métricas (no suelto abajo), la explicación de los modos sólo detrás de
- * "¿Cómo funciona?" y el diálogo de "Cambiar mensaje" sin scroll horizontal:
- * el link de la tienda es una palabra larguísima y estiraba el diálogo.
+ * completa ya no se lista acá), sin el badge de estado ni el interruptor
+ * Automático/Manual, el segmento elegido con un select en vez de píldoras, el
+ * ritmo dentro de la fila de métricas (no suelto abajo), la explicación de los
+ * modos sólo detrás de "¿Cómo funciona?" y el diálogo de "Cambiar mensaje" sin
+ * scroll horizontal: el link de la tienda es una palabra larguísima y estiraba
+ * el diálogo.
+ *
+ * El tablero —el que se ve mientras hay una tanda viva— sólo MUESTRA y cancela:
+ * no ofrece preparar ni configurar nada. Programar pasa por la pantalla sin
+ * tandas, donde el flujo de envío ES la pantalla: ocho pasos, un valor por paso,
+ * que arrancan eligiendo Manual o Automático, con la lista de clientes en una
+ * caja de alto fijo que scrollea por dentro. Nada se guarda hasta el botón final,
+ * y ahí van dos llamadas en orden: la config del local y después la tanda; al
+ * volver no hay pantalla de resultado, la pantalla muestra el tablero con la
+ * tanda nueva. En Manual el vocabulario no promete un envío programado.
  *
  * La ayuda del motor es un diálogo grande que scrollea por dentro: explica los
  * segmentos, el goteo, los dos modos, las tres decisiones y la protección de la
@@ -182,6 +192,18 @@ const MENSAJE = {
   horarioSugerido: '20:00',
 }
 
+/**
+ * El copy del modo del local mockeado (`CONFIG.modo`). Es la expectativa independiente del
+ * `COPY_ENVIO` de la pantalla: si la implementación cambiara el vocabulario de un modo, esto no la
+ * seguiría.
+ */
+const COPY = {
+  final: (n: number) => `Preparar ${n} mensaje${n === 1 ? '' : 's'}`,
+}
+
+/** Los ocho pasos del flujo, en orden: es el `data-paso` que expone cada uno. */
+const PASOS = ['modo', 'cupo', 'dias', 'a-quienes', 'lista', 'toques', 'control', 'resumen'] as const
+
 /** Cuánto se desborda horizontalmente lo que se mide, en píxeles. */
 async function desbordeHorizontal(page: Page) {
   return page.evaluate(() => {
@@ -201,25 +223,30 @@ for (const width of [1440, 390]) {
     test.use({ viewport: { width, height: 1000 } })
 
     /**
-     * Monta el motor con tandas vivas y espera la primera fila de la cola. Devuelve el cuerpo del
-     * último `POST /recompra/programar`, para poder mirar qué se pidió sin depender de la respuesta.
+     * Las rutas del motor. `captura.orden` guarda el orden en que se tocó el backend: lo que se fija
+     * con eso es que nada viaje hasta el botón final y que la config vaya ANTES que la tanda.
      */
-    async function montar(page: Page, estado = 'activa') {
-      const captura: { programacion: Record<string, unknown> | null; config: Record<string, unknown> | null } = {
-        programacion: null,
-        config: null,
-      }
+    async function rutas(page: Page, { estado = 'activa', sinTandas = false } = {}) {
+      const captura: {
+        programacion: Record<string, unknown> | null
+        config: Record<string, unknown> | null
+        orden: string[]
+      } = { programacion: null, config: null, orden: [] }
+      // Programar una tanda la hace existir: al recargar, la pantalla deja de estar "sin tandas" y
+      // vuelve al tablero. Es lo que reemplaza a la pantalla de resultado que ya no existe.
+      let creada = false
       await page.route('**/api/**', async route => {
         const url = new URL(route.request().url()).pathname
         if (url.endsWith('/clientes/recompra/estado')) {
+          const hayTanda = !sinTandas || creada
           return route.fulfill({
             json: {
               success: true,
               data: {
-                activa: true,
+                activa: hayTanda,
                 config: { ...CONFIG, estado },
-                campana: { ...CAMPANA, estado },
-                programaciones: [TANDA],
+                campana: hayTanda ? { ...CAMPANA, estado } : null,
+                programaciones: hayTanda ? [TANDA] : [],
                 plan: PLAN,
                 saldoMarketing: CAMPANA.saldoMarketing,
               },
@@ -243,34 +270,15 @@ for (const width of [1440, 390]) {
           })
         }
         if (url.endsWith('/clientes/recompra/programar') && route.request().method() === 'POST') {
+          captura.orden.push('programar')
+          creada = true
           captura.programacion = route.request().postDataJSON()
-          // La respuesta se deriva del pedido: así lo que muestra la pantalla de resultado es lo que
-          // el asistente pidió, y no un número puesto a mano que podría tapar una divergencia.
-          const p = (captura.programacion ?? {}) as {
-            cantidad?: number; toqueHasta?: number; porcentajeControl?: number
-            segmento?: string | null; incluirIds?: number[]
-          }
-          // Los agregados a mano entran ADEMÁS de la cantidad pedida: es lo que devuelve el backend y
-          // lo que el asistente ya anticipó en el resumen.
-          const cantidad = (p.cantidad ?? 0) + (p.incluirIds?.length ?? 0)
-          const control = Math.round(cantidad * (p.porcentajeControl ?? CONFIG.porcentajeControl) / 100)
-          return route.fulfill({
-            json: {
-              success: true,
-              data: {
-                ok: true, campanaId: 4, cantidad, control, filasCreadas: cantidad, omitidos: [],
-                porSegmento: [{ segmento: p.segmento ?? 'dormido', contactar: cantidad, control }],
-                primerDespachoAt: '2026-09-25T21:00:00.000Z',
-                cupoDiario: CONFIG.cupoDiario,
-                diasToque2: CONFIG.diasToque2,
-                diasToque3: CONFIG.diasToque3,
-                porcentajeControl: p.porcentajeControl ?? CONFIG.porcentajeControl,
-                toqueHasta: p.toqueHasta ?? 1,
-              },
-            },
-          })
+          // Lo que se mira es el PEDIDO, así que la respuesta es lo mínimo: el flujo ya no tiene una
+          // pantalla de resultado que muestre lo que el backend contestó.
+          return route.fulfill({ json: { success: true, data: { ok: true, campanaId: 4 } } })
         }
         if (url.endsWith('/clientes/recompra/config')) {
+          captura.orden.push('config')
           captura.config = route.request().postDataJSON()
           const pedido = (captura.config ?? {}) as { cupoDiario?: number }
           return route.fulfill({
@@ -292,8 +300,22 @@ for (const width of [1440, 390]) {
         }
         return route.fulfill({ json: { success: true, data: {} } })
       })
+      return captura
+    }
+
+    /** Monta el motor con tandas vivas y espera la primera fila de la cola. */
+    async function montar(page: Page, estado = 'activa') {
+      const captura = await rutas(page, { estado })
       await page.goto('/tests/motor-recompra.html')
       await expect(page.getByRole('button', { name: /Camila Duarte/ })).toBeVisible()
+      return captura
+    }
+
+    /** Monta el motor sin ninguna tanda: la pantalla que ES el flujo, sin tablero. */
+    async function montarSinTandas(page: Page) {
+      const captura = await rutas(page, { sinTandas: true })
+      await page.goto('/tests/motor-recompra.html')
+      await expect(page.getByText('148 clientes para recuperar')).toBeVisible()
       return captura
     }
 
@@ -308,21 +330,71 @@ for (const width of [1440, 390]) {
       if ((page.viewportSize()?.width ?? 0) < 1280) {
         await page.getByRole('button', { name: /Motor y Detalle/ }).click()
       }
-      await expect(page.getByRole('button', { name: /Programar envío/ })).toBeVisible()
+      // En el tablero no hay botón que abra nada: lo que se espera es el panel de tandas.
+      await expect(page.getByText('Tandas programadas')).toBeVisible()
     }
 
-    test('no quedan ni la tab "Base" ni el badge "Pausado sin saldo"', async ({ page }) => {
+    /** El flujo tal como se monta en la pantalla sin tandas: no hay nada que abrir. */
+    async function flujoEnPantalla(page: Page) {
+      const flujo = page.getByTestId('asistente-envio')
+      await expect(flujo).toBeVisible()
+      await expect(flujo).toHaveAttribute('data-paso', PASOS[0])
+      return flujo
+    }
+
+    /**
+     * Lleva el flujo al paso pedido (por índice): para adelante con "Siguiente" y para atrás con
+     * "Atrás". Después de cada clic espera el paso nuevo: sin eso, lo que se mida o se escriba
+     * después podría caer en el paso anterior.
+     */
+    async function irAPaso(page: Page, destino: number) {
+      const flujo = page.getByTestId('asistente-envio')
+      for (;;) {
+        const actual = PASOS.indexOf((await flujo.getAttribute('data-paso')) as typeof PASOS[number])
+        if (actual === destino) return flujo
+        await flujo.getByRole('button', { name: actual < destino ? 'Siguiente' : 'Atrás' }).click()
+        await expect(flujo).toHaveAttribute('data-paso', PASOS[actual < destino ? actual + 1 : actual - 1])
+      }
+    }
+
+    /**
+     * Confirma el último paso y espera a que la tanda haya viajado. Es la única forma segura de mirar
+     * lo que viajó: el flujo manda la config y RECIÉN DESPUÉS la tanda, así que apenas vuelve el clic
+     * todavía no salió la segunda llamada —y no hay pantalla de resultado que esperar, porque el
+     * flujo se cierra y la pantalla vuelve al tablero—.
+     */
+    async function confirmar(page: Page, boton: string, captura: { orden: string[] }) {
+      await page.getByTestId('asistente-envio').getByRole('button', { name: boton }).click()
+      await expect.poll(() => captura.orden.includes('programar')).toBe(true)
+    }
+
+    test('el tablero no ofrece programar, configurar ni cambiar de modo', async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', e => errors.push(e.message))
-      // El estado que antes rotulaba "Pausado sin saldo".
+      // El estado que antes rotulaba "Pausado sin saldo", con la campaña en modo Manual.
       await montar(page, 'pausada_sin_saldo')
+      await abrirMotor(page)
 
+      // La tab "Base" no lista la base completa, y el badge de estado ya no existe.
       await expect(page.getByRole('button', { name: 'Base', exact: true })).toHaveCount(0)
       await expect(page.getByText('Pausado sin saldo')).toHaveCount(0)
+      await expect(page.getByText('Pausado', { exact: true })).toHaveCount(0)
+      await expect(page.getByText('Activo', { exact: true })).toHaveCount(0)
 
-      await abrirDetalle(page)
-      // El badge sigue diciendo que está pausado: lo que se fue es el "sin saldo".
-      await expect(page.getByText('Pausado', { exact: true })).toBeVisible()
+      // Tampoco el interruptor Automático/Manual ni la atribución con el grupo de control.
+      await expect(page.getByRole('button', { name: /^Automático/ })).toHaveCount(0)
+      await expect(page.getByText('Atribución honesta')).toHaveCount(0)
+      await expect(page.getByText('Modo Manual · Sin costo de créditos')).toHaveCount(0)
+
+      // Los tres accesos a programar/configurar que tenía el tablero: el botón de la cabecera del
+      // panel, el "Config" de cada tanda y el "Configuración" de arriba. Programar sólo es posible
+      // sin tandas vivas, o sea después de cancelarlas.
+      await expect(page.getByTestId('abrir-envio')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: /^Config/ })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Configuración' })).toHaveCount(0)
+
+      // Lo que sí queda: cancelar la tanda, que es la única acción del panel.
+      await expect(page.getByRole('button', { name: 'Cancelar' })).toBeVisible()
       expect(errors).toEqual([])
     })
 
@@ -343,43 +415,26 @@ for (const width of [1440, 390]) {
       expect(errors).toEqual([])
     })
 
-    test('el ritmo es del local y se ajusta desde la configuración del motor', async ({ page }) => {
+    test('el ritmo es del local y se muestra sin acción para ajustarlo', async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', e => errors.push(e.message))
-      const captura = await montar(page)
+      await montar(page)
       await abrirMotor(page)
 
       for (const label of ['Contactados', 'Volvieron', 'Recuperado', 'En cola', 'Ritmo']) {
         await expect(page.getByText(label, { exact: true })).toBeVisible()
       }
-      // El ritmo es una métrica con su número y su acción, dentro de la misma fila.
+      // El ritmo es una métrica con su número, dentro de la misma fila...
       const ritmo = page.getByText('Ritmo', { exact: true }).locator('..')
       await expect(ritmo).toContainText('30')
       await expect(ritmo).toContainText('/día')
       // ...y ya no vive suelto en una fila propia.
       await expect(page.getByText(/clientes\/día/)).toHaveCount(0)
 
-      // El cupo tiene una sola fuente: la configuración del motor, que es del
-      // LOCAL porque el cupo protege el número y pueden correr varias tandas.
-      await ritmo.getByRole('button', { name: 'Ajustar' }).click()
-      const dialogo = page.getByRole('dialog')
-      await expect(dialogo.getByRole('heading', { name: 'Configuración del motor' })).toBeVisible()
-      // El piso de 48 hs no se puede bajar desde la UI y se explica por qué.
-      await expect(dialogo).toContainText('El mínimo son 2 días (48 hs)')
-
-      const campoCupo = dialogo.getByText('Cupo diario').locator('../..')
-      await expect(campoCupo).toContainText('30')
-      await campoCupo.getByRole('button', { name: '+' }).click()
-      await campoCupo.getByRole('button', { name: '+' }).click()
-      await expect(campoCupo).toContainText('40')
-
-      await dialogo.getByRole('button', { name: 'Guardar' }).click()
+      // No se ajusta desde el tablero: el cupo se decide en el flujo, que es donde se elige la tanda
+      // que lo va a usar. En el tablero se lee y nada más.
+      await expect(ritmo.getByRole('button')).toHaveCount(0)
       await expect(page.getByRole('dialog')).toHaveCount(0)
-      // Lo que viajó es la config entera, no sólo el cupo: los días y el % de
-      // control son los defaults de las tandas nuevas.
-      expect(captura.config).toEqual({
-        cupoDiario: 40, modo: 'manual', diasToque2: 2, diasToque3: 2, porcentajeControl: 10,
-      })
       expect(errors).toEqual([])
     })
 
@@ -391,8 +446,9 @@ for (const width of [1440, 390]) {
 
       // La tanda viva dice a quiénes agarró, cuánto salió y cuándo vuelve a salir algo.
       await expect(page.getByText('Tandas programadas')).toBeVisible()
-      // Se busca dentro del panel de tandas: el nombre del segmento también está en cada fila de la cola.
-      const seccion = page.getByText('Tandas programadas').locator('../..')
+      // Se busca dentro del panel de tandas: el nombre del segmento también está en cada fila de la cola
+      // y en el detalle del cliente. El rótulo es hijo directo de la sección, que es la que los acota.
+      const seccion = page.getByText('Tandas programadas').locator('..')
       const tanda = seccion.getByText('Dormidos', { exact: true }).locator('../../..')
       await expect(tanda).toContainText('En curso')
       await expect(tanda).toContainText('12')
@@ -406,33 +462,47 @@ for (const width of [1440, 390]) {
       expect(errors).toEqual([])
     })
 
-    test('el asistente programa a quiénes, cuántos y hasta qué toque', async ({ page }) => {
+    test('el flujo de envío va paso por paso y no guarda nada hasta el final', async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', e => errors.push(e.message))
-      const captura = await montar(page)
-      await abrirMotor(page)
+      const captura = await montarSinTandas(page)
+      const flujo = await flujoEnPantalla(page)
 
-      await page.getByRole('button', { name: /Programar envío/ }).click()
-      const dialogo = page.getByRole('dialog')
-      await expect(dialogo.getByRole('heading', { name: 'Programar envío' })).toBeVisible()
-      // Los pasos son los que pidió el local: a quiénes, la lista, los toques y el control.
-      for (const paso of ['1 · A quiénes', '2 · La lista', '3 · Toques', '4 · Grupo de control']) {
-        await expect(dialogo.getByText(paso)).toBeVisible()
+      // Paso 1: el modo. Arranca en el del local y se elige entre las dos tarjetas grandes.
+      for (const nombre of ['Manual', 'Automático']) {
+        await expect(flujo.getByRole('button', { name: new RegExp(`^${nombre}`) })).toBeVisible()
       }
+      await expect(flujo.getByRole('button', { name: /^Manual/ })).toHaveAttribute('aria-pressed', 'true')
+      await expect(flujo.getByRole('progressbar', { name: 'Progreso del asistente' })).toHaveAttribute('aria-valuenow', '1')
 
-      // La cantidad y el recorte de la lista son la misma cuenta que hace el backend.
-      const cantidadInput = dialogo.locator('input[type="number"]')
-      await cantidadInput.fill('5')
-      const resumen = dialogo.getByText('Vas a programar').locator('..')
-      await expect(resumen).toContainText('5 mensajes')
-      await expect(resumen).toContainText('1 en el grupo de control')
-      await expect(resumen).toContainText('un mensaje por cliente')
+      // Paso 2: el cupo. Subirlo queda en el paso, no en el backend.
+      await irAPaso(page, 1)
+      const cupo = flujo.getByRole('group', { name: 'Cupo diario' })
+      await cupo.getByRole('button', { name: '+' }).click()
+      await cupo.getByRole('button', { name: '+' }).click()
+      await expect(cupo).toContainText('40')
 
-      // Con 5 pedidos y 8 candidatos: los primeros 5 reciben, el 6º queda de control y los dos
-      // últimos esperan su turno, sin tilde.
-      const tildes = dialogo.getByRole('checkbox')
+      // Paso 3: los días entre toques. El piso de 48 hs no es copy: es el mínimo del control, así que
+      // con los 2 días del local el "−" queda muerto.
+      await irAPaso(page, 2)
+      const dias = flujo.getByRole('group', { name: 'Días hasta el 2º toque' })
+      await expect(dias.getByRole('button', { name: '−' })).toBeDisabled()
+      await dias.getByRole('button', { name: '+' }).click()
+      await expect(dias).toContainText('3')
+      await expect(dias.getByRole('button', { name: '−' })).toBeEnabled()
+
+      // Paso 4: a quiénes y cuántos. La cantidad es la misma cuenta que hace el backend.
+      await irAPaso(page, 3)
+      await flujo.locator('input[type="number"]').fill('5')
+      // El segmento que se elige acá es el que acota la lista del paso siguiente.
+      await expect(flujo.getByRole('button', { name: /^Dormidos/ })).toBeVisible()
+
+      // Paso 5: la lista. Con 5 pedidos y 8 candidatos, los primeros 5 reciben, el 6º queda de control
+      // y los dos últimos esperan su turno, sin tilde.
+      await irAPaso(page, 4)
+      const tildes = flujo.getByRole('checkbox')
       await expect(tildes).toHaveCount(8)
-      const fila = (nombre: string) => dialogo.getByText(nombre, { exact: true }).locator('../../..')
+      const fila = (nombre: string) => flujo.getByText(nombre, { exact: true }).locator('../../..')
       await expect(fila('Gonzalo Ibarra')).toContainText('Control')
       await expect(fila('Helena Vargas')).toContainText('Espera')
 
@@ -441,7 +511,6 @@ for (const width of [1440, 390]) {
       await tildes.nth(5).click()
       await expect(fila('Gonzalo Ibarra')).toContainText('Espera')
       await expect(fila('Helena Vargas')).toContainText('Control')
-      await expect(resumen).toContainText('5 mensajes')
       // Volver a tildarlo deshace el movimiento, sin quedar como agregado a mano.
       await tildes.nth(5).click()
       await expect(fila('Gonzalo Ibarra')).toContainText('Control')
@@ -450,41 +519,163 @@ for (const width of [1440, 390]) {
       // Destildar a uno del lote lo saca de la tanda y entra el siguiente: la cuenta no baja.
       await tildes.nth(0).click()
       await expect(fila('Camila Duarte')).toContainText('Espera')
-      await expect(resumen).toContainText('5 mensajes')
-      await expect(resumen).not.toContainText('agregaste vos')
 
       // Tildar a uno que esperaba lo agrega ADEMÁS de la cantidad pedida.
       await tildes.nth(7).click()
       await expect(fila('Iván Ríos')).toContainText('A mano')
+
+      // Paso 6: hasta qué toque. "1º y 2º" agrega el recordatorio y muestra los días elegidos.
+      await irAPaso(page, 5)
+      await flujo.getByRole('button', { name: /1º y 2º/ }).click()
+      await expect(flujo).toContainText('El 2º toque sale 3 días después del primero')
+
+      // Paso 7: el control, con la cuenta del lote a la vista: 10% de 6 es 1.
+      await irAPaso(page, 6)
+      await expect(flujo).toContainText('% apartado del lote · 1 cliente')
+
+      // Nada viajó todavía: el flujo no escribe hasta el botón final, ni la config ni la tanda.
+      await irAPaso(page, 7)
+      expect(captura.orden).toEqual([])
+
+      // Paso 8: el resumen. Dice lo que va a pasar y que la config del local también se guarda.
+      const resumen = flujo.getByText(/^Vas a /).locator('..')
       await expect(resumen).toContainText('6 mensajes')
       await expect(resumen).toContainText('5 de la lista + 1 que agregaste vos')
+      await expect(resumen).toContainText('1 en el grupo de control')
+      await expect(resumen).toContainText('un mensaje por cliente y un recordatorio a los 3 días')
+      await expect(flujo).toContainText('Al confirmar también se guardan los valores del local')
 
-      // "1º y 2º" agrega el recordatorio y su intervalo, con el piso de 48 hs a la vista.
-      await dialogo.getByRole('button', { name: /1º y 2º/ }).click()
-      await expect(dialogo).toContainText('El mínimo son 2 días (48 hs)')
-      await expect(resumen).toContainText('un mensaje por cliente y un recordatorio a los 2 días')
+      await confirmar(page, COPY.final(6), captura)
 
-      await dialogo.getByRole('button', { name: 'Programar 6 mensajes' }).click()
-
-      // Lo que viajó: la cantidad pedida, el que se sacó del lote, el agregado a mano aparte, y los
-      // días del 2º toque sólo porque la tanda llega hasta ahí.
+      // Lo que viajó, y en qué orden: primero la config del local —sólo porque cambió— y después la
+      // tanda. Al revés, un fallo dejaría la tanda agendada con el modo viejo.
+      expect(captura.orden).toEqual(['config', 'programar'])
+      expect(captura.config).toEqual({
+        cupoDiario: 40, diasToque2: 3, diasToque3: 2, porcentajeControl: 10, modo: 'manual',
+      })
       expect(captura.programacion).toEqual({
         segmento: null,
         cantidad: 5,
         toqueHasta: 2,
-        diasToque2: 2,
+        diasToque2: 3,
         diasToque3: null,
         porcentajeControl: 10,
         incluirIds: [48],
         excluirIds: [41],
       })
 
-      // El resultado lo dice el backend, no el asistente.
-      await expect(dialogo.getByRole('heading', { name: 'Programado' })).toBeVisible()
-      await expect(dialogo).toContainText('No salió ningún mensaje todavía')
-      await expect(dialogo).toContainText('Cada cliente llega hasta el 2º toque')
-      await dialogo.getByRole('button', { name: 'Ver las tandas' }).click()
+      // No hay pantalla de resultado: confirmar cierra el flujo y la pantalla vuelve al tablero —el
+      // mock da la tanda por creada—, que es donde se lee lo que quedó agendado y cuándo sale.
+      await abrirMotor(page)
+      await expect(page.getByTestId('asistente-envio')).toHaveCount(0)
+
+      expect(errors).toEqual([])
+    })
+
+    test('en modo Manual el flujo no promete un envío programado', async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', e => errors.push(e.message))
+      const captura = await montarSinTandas(page)
+      const flujo = await flujoEnPantalla(page)
+
+      // El modo y el paso final hablan de PREPARAR: en Manual no se agenda ningún envío, los mensajes
+      // los prepara el motor y los manda el dueño desde su WhatsApp.
+      await expect(flujo.getByRole('button', { name: /^Manual/ })).toHaveAttribute('aria-pressed', 'true')
+      await expect(flujo.getByRole('button', { name: /Programar/ })).toHaveCount(0)
+
+      // Sin tocar nada: los 8 candidatos entran (la cantidad por defecto es mayor que la lista) y el
+      // 10% de control redondea a 1.
+      await irAPaso(page, 7)
+      await expect(flujo).toContainText('Vas a preparar')
+      await confirmar(page, COPY.final(8), captura)
+
+      // Confirmar cierra el flujo y lleva al tablero, sin pantalla intermedia que repita lo decidido.
+      await abrirMotor(page)
+      await expect(page.getByTestId('asistente-envio')).toHaveCount(0)
+      await expect(page.getByText('Listo para enviar')).toHaveCount(0)
+      await expect(page.getByText('Ver los mensajes')).toHaveCount(0)
+
+      expect(captura.orden).toEqual(['programar'])
+      expect(errors).toEqual([])
+    })
+
+    test('elegir Automático en el paso 1 cambia el vocabulario y el modo que viaja', async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', e => errors.push(e.message))
+      const captura = await montarSinTandas(page)
+      const flujo = await flujoEnPantalla(page)
+
+      await flujo.getByRole('button', { name: /^Automático/ }).click()
+      await expect(flujo.getByRole('button', { name: /^Automático/ })).toHaveAttribute('aria-pressed', 'true')
+
+      await irAPaso(page, 7)
+      // Mismo flujo, otro vocabulario: ahora sí se programa un envío.
+      await confirmar(page, 'Programar 8 mensajes', captura)
+
+      // La config viaja con el modo nuevo, y antes que la tanda.
+      expect(captura.orden).toEqual(['config', 'programar'])
+      expect(captura.config).toEqual({
+        cupoDiario: 30, diasToque2: 2, diasToque3: 2, porcentajeControl: 10, modo: 'automatico',
+      })
+      // Y la pantalla vuelve al tablero, como en cualquier confirmación.
+      await abrirMotor(page)
+      expect(errors).toEqual([])
+    })
+
+    test('la lista de clientes tiene alto fijo y scrollea por dentro', async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', e => errors.push(e.message))
+      await montarSinTandas(page)
+      const flujo = await flujoEnPantalla(page)
+      await irAPaso(page, 4)
+
+      const caja = flujo.locator('[data-lista-lote]')
+      await expect(caja).toBeVisible()
+      const alto = () => caja.evaluate(el => el.clientHeight)
+      const llego = await caja.evaluate(el => {
+        const scroll = el.querySelector<HTMLElement>('[data-scroll-lote]')!
+        return { alto: el.clientHeight, contenido: scroll.scrollHeight, visible: scroll.clientHeight }
+      })
+
+      // La caja mide mucho menos que su contenido: hay para scrollear adentro.
+      expect(llego.contenido).toBeGreaterThan(llego.visible)
+      expect(llego.visible).toBe(llego.alto)
+      if (width === 1440) expect(llego.alto).toBeLessThan(420)
+      // ...y la página no scrollea en horizontal por la lista.
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+
+      // Con otro segmento la lista se acorta, pero la caja mide lo mismo: el alto no depende de
+      // cuántos clientes haya, así que el pie con el botón de confirmar no se corre.
+      const lleno = await alto()
+      await irAPaso(page, 3)
+      await flujo.getByRole('button', { name: /^Perdidos/ }).click()
+      await irAPaso(page, 4)
+      await expect(flujo.getByRole('checkbox')).toHaveCount(3)
+      expect(await alto()).toBe(lleno)
+
+      expect(errors).toEqual([])
+    })
+
+    test('sin tandas el flujo ya está en la pantalla, sin diálogo que abrir', async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', e => errors.push(e.message))
+      await montarSinTandas(page)
+
+      // La pantalla arranca en el paso 1: no hay botón que lo abra ni diálogo de por medio.
+      const flujo = page.getByTestId('asistente-envio')
+      await expect(flujo).toBeVisible()
+      await expect(flujo).toHaveAttribute('data-paso', 'modo')
       await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(page.getByText('148 clientes para recuperar')).toBeVisible()
+
+      // Sin nada que cancelar no hay "Cancelar", y en el paso 1 tampoco hay "Atrás"...
+      await expect(flujo.getByRole('button', { name: 'Cancelar' })).toHaveCount(0)
+      await expect(flujo.getByRole('button', { name: 'Atrás' })).toHaveCount(0)
+      // ...hasta que se avanza.
+      await flujo.getByRole('button', { name: 'Siguiente' }).click()
+      await expect(flujo).toHaveAttribute('data-paso', 'cupo')
+      await expect(flujo.getByRole('button', { name: 'Atrás' })).toBeVisible()
+      await expect(flujo.getByRole('button', { name: 'Cancelar' })).toHaveCount(0)
 
       expect(errors).toEqual([])
     })
@@ -492,23 +683,26 @@ for (const width of [1440, 390]) {
     test('el segmento elegido acota la lista y viaja en la programación', async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', e => errors.push(e.message))
-      const captura = await montar(page)
-      await abrirMotor(page)
+      const captura = await montarSinTandas(page)
+      const flujo = await flujoEnPantalla(page)
 
-      await page.getByRole('button', { name: /Programar envío/ }).click()
-      const dialogo = page.getByRole('dialog')
-
-      await dialogo.getByRole('button', { name: /^Perdidos/ }).click()
+      await irAPaso(page, 3)
+      await flujo.getByRole('button', { name: /^Perdidos/ }).click()
+      await irAPaso(page, 4)
       // Sólo quedan los perdidos: los dormidos ya no se listan.
-      const tildes = dialogo.getByRole('checkbox')
+      const tildes = flujo.getByRole('checkbox')
       await expect(tildes).toHaveCount(3)
-      await expect(dialogo.getByText('Bruno Sosa', { exact: true })).toBeVisible()
-      await expect(dialogo.getByText('Camila Duarte', { exact: true })).toHaveCount(0)
+      await expect(flujo.getByText('Bruno Sosa', { exact: true })).toBeVisible()
+      await expect(flujo.getByText('Camila Duarte', { exact: true })).toHaveCount(0)
 
-      await dialogo.locator('input[type="number"]').fill('2')
-      await dialogo.getByRole('button', { name: 'Programar 2 mensajes' }).click()
+      await irAPaso(page, 3)
+      await flujo.locator('input[type="number"]').fill('2')
+      await irAPaso(page, 7)
+      await confirmar(page, COPY.final(2), captura)
 
-      // Sin toques extra, los días no viajan: no se escriben como si fueran a usarse.
+      // Sin toques extra, los días no viajan: no se escriben como si fueran a usarse. Y como la config
+      // del local no cambió, el `PUT` de la config no se hace.
+      expect(captura.orden).toEqual(['programar'])
       expect(captura.programacion).toEqual({
         segmento: 'perdido',
         cantidad: 2,

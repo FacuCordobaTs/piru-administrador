@@ -6,10 +6,12 @@ import {
 import { useAuthStore } from '@/store/authStore'
 import { clientesApi, ApiError, type ConfigMotorRecompra, type ModoRecompra } from '@/lib/api'
 import { toast } from 'sonner'
-import { Bot, Loader2, MessageSquare, Save } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { CUPO_MAX, CUPO_MIN, CONTROL_MAX, CONTROL_MIN, DIAS_TOQUE_MAX, DIAS_TOQUE_MIN } from './comun'
-import { Campo, Stepper } from './controles'
+import { Loader2, Save } from 'lucide-react'
+import {
+    CUPO_MAX, CUPO_MIN, CONTROL_MAX, CONTROL_MIN, DIAS_TOQUE_MAX, DIAS_TOQUE_MIN,
+    hayCambios, mensajeDeAjuste, type ValoresConfig,
+} from './comun'
+import { Campo, CampoModo, Stepper } from './controles'
 
 // =============================================================================
 // CONFIGURACIÓN DEL MOTOR — los valores del LOCAL, no de una tanda
@@ -17,7 +19,10 @@ import { Campo, Stepper } from './controles'
 // El cupo es del local porque protege el número de WhatsApp y porque ahora pueden correr varias
 // tandas a la vez: si cada una tuviera el suyo, el cupo no protegería nada. Los días entre toques y
 // el % de control que se eligen acá son el DEFAULT de las tandas nuevas; una tanda puede pisarlos
-// (el asistente los muestra al programar y los guarda con la tanda).
+// (el flujo de envío los muestra paso por paso y los guarda junto con la tanda).
+//
+// Es el acceso rápido para cambiar un valor suelto. Las mismas tarjetas de modo y la misma cuenta de
+// "¿cambió algo?" las usa el flujo: viven en `./camposConfig`.
 // =============================================================================
 
 export default function DialogoConfigMotor({ config, onCerrar, onGuardado }: {
@@ -33,32 +38,17 @@ export default function DialogoConfigMotor({ config, onCerrar, onGuardado }: {
     const [modo, setModo] = useState<ModoRecompra>(config.modo)
     const [guardando, setGuardando] = useState(false)
 
-    const sinCambios = cupoDiario === config.cupoDiario
-        && diasToque2 === config.diasToque2
-        && diasToque3 === config.diasToque3
-        && porcentajeControl === config.porcentajeControl
-        && modo === config.modo
+    const valores: ValoresConfig = { cupoDiario, diasToque2, diasToque3, porcentajeControl, modo }
 
     const guardar = async () => {
         if (!token || guardando) return
         setGuardando(true)
         try {
-            const res = await clientesApi.configRecompra(token, {
-                cupoDiario, modo, diasToque2, diasToque3, porcentajeControl,
-            })
+            const res = await clientesApi.configRecompra(token, valores)
             if (res.success) {
-                // El backend acota lo que recibe (el piso de 48 hs, el tope del cupo). Si lo guardado
-                // no es lo que se pidió, se dice: el dueño tiene que ver el número real, no el suyo.
-                const guardado = res.data?.config
-                const ajustado = guardado && (
-                    guardado.cupoDiario !== cupoDiario
-                    || guardado.diasToque2 !== diasToque2
-                    || guardado.diasToque3 !== diasToque3
-                    || guardado.porcentajeControl !== porcentajeControl
-                )
-                toast.success(ajustado
-                    ? `Guardado con los límites del motor: ${guardado.diasToque2} días entre toques, ${guardado.porcentajeControl}% de control.`
-                    : 'Configuración guardada')
+                // El backend acota lo que recibe (el piso de 48 hs, el tope del cupo): el toast lo dice
+                // con los números reales si lo guardado no es lo que se pidió.
+                toast.success(mensajeDeAjuste(valores, res.data?.config))
                 onGuardado()
             }
         } catch (err) {
@@ -130,48 +120,13 @@ export default function DialogoConfigMotor({ config, onCerrar, onGuardado }: {
                     </Campo>
 
                     <Campo titulo="Modalidad de envío">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <button
-                                type="button"
-                                onClick={() => setModo('automatico')}
-                                className={cn(
-                                    "rounded-xl border p-3.5 text-left transition-all",
-                                    modo === 'automatico'
-                                        ? "border-foreground bg-foreground/5 ring-1 ring-foreground"
-                                        : "border-border/60 bg-muted/20 hover:border-border",
-                                )}
-                            >
-                                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                                    <Bot className="h-4 w-4" /> Automático
-                                </div>
-                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                                    El motor manda los mensajes agendados solo, de a poco. Cada uno usa un crédito.
-                                </p>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setModo('manual')}
-                                className={cn(
-                                    "rounded-xl border p-3.5 text-left transition-all",
-                                    modo === 'manual'
-                                        ? "border-foreground bg-foreground/5 ring-1 ring-foreground"
-                                        : "border-border/60 bg-muted/20 hover:border-border",
-                                )}
-                            >
-                                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                                    <MessageSquare className="h-4 w-4" /> Manual
-                                </div>
-                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                                    El motor prepara los mensajes en la cola y los enviás vos, sin gastar créditos.
-                                </p>
-                            </button>
-                        </div>
+                        <CampoModo valor={modo} onChange={setModo} />
                     </Campo>
                 </div>
 
                 <DialogFooter className="gap-2 sm:gap-0">
                     <Button variant="ghost" onClick={onCerrar} disabled={guardando}>Cancelar</Button>
-                    <Button onClick={guardar} disabled={guardando || sinCambios} className="gap-2">
+                    <Button onClick={guardar} disabled={guardando || !hayCambios(valores, config)} className="gap-2">
                         {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                         Guardar
                     </Button>

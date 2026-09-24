@@ -1,0 +1,2 @@
+import { defineConfig } from '@playwright/test'
+export default defineConfig({ testDir: '.', testMatch: 'puntos-panel.spec.ts', workers: 1, timeout: 60000, outputDir: '../node_modules/.cache/puntos-panel-results', use: { baseURL: 'http://127.0.0.1:4188', viewport: { width: 1440, height: 1000 }, channel: process.env.PUNTOS_TEST_BROWSER_CHANNEL ?? 'msedge' }, webServer: { command: 'bun run dev --host 127.0.0.1 --port 4188 --strictPort', url: 'http://127.0.0.1:4188/tests/puntos-panel.html', timeout: 30000 } })

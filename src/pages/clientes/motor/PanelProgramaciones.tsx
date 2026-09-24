@@ -3,18 +3,16 @@ import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/store/authStore'
 import {
     clientesApi, ApiError,
-    type ConfigMotorRecompra, type EstadoProgramacion, type PlanActivacionRecompra, type ProgramacionResumen,
+    type ConfigMotorRecompra, type EstadoProgramacion, type ModoRecompra, type PlanActivacionRecompra,
+    type ProgramacionResumen,
 } from '@/lib/api'
 import { toast } from 'sonner'
-import {
-    CalendarClock, CheckCircle2, Loader2, Pause, Play, Settings2, SlidersHorizontal, Sparkles, X, Zap,
-} from 'lucide-react'
+import { CalendarClock, Loader2, Play, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-    SEG_META, etiquetaSegmento, formatCurrency, formatDateTime, formatDiaHora, toqueOrdinal,
+    SEG_META, copyEnvio, etiquetaSegmento, formatCurrency, formatDateTime, formatDiaHora, toqueOrdinal,
 } from './comun'
-import DialogoProgramarEnvio from './DialogoProgramarEnvio'
-import DialogoConfigMotor from './DialogoConfigMotor'
+import FlujoEnvioTanda from './FlujoEnvioTanda'
 
 // =============================================================================
 // LAS TANDAS DEL LOCAL — lo que está programado y todavía no salió
@@ -22,6 +20,9 @@ import DialogoConfigMotor from './DialogoConfigMotor'
 // Reemplaza a la pantalla de "encender el motor". El motor ya no se enciende: se programan tandas, y
 // esta es la lista de las que están corriendo. Cada tarjeta dice qué segmento agarró, cuánto salió,
 // cuánto falta y cuándo vuelve a salir algo; el dueño puede cancelar lo que todavía no salió.
+//
+// El panel no ofrece preparar ni configurar nada: programar una tanda nueva pasa por cancelar las que
+// están vivas y volver a la pantalla del flujo, que es la única puerta de entrada.
 // =============================================================================
 
 const ESTADO_TANDA: Record<EstadoProgramacion, { label: string; clase: string }> = {
@@ -33,17 +34,17 @@ const ESTADO_TANDA: Record<EstadoProgramacion, { label: string; clase: string }>
 }
 
 /**
- * El panel de tandas. `compacto` es la versión que va arriba de la cola en la pantalla encendida:
- * mismas tarjetas, sin el bloque de explicación.
+ * El panel de tandas: sólo muestra lo agendado y deja cancelarlo. No programa ni configura nada —para
+ * preparar una tanda hay que cancelar las que están vivas y volver a la pantalla del flujo—, así que
+ * `modo` sólo cambia el vocabulario de la pantalla vacía, no lo que el panel hace.
  */
-export default function PanelProgramaciones({ programaciones, onCambio, onProgramar, onConfig, compacto }: {
+export default function PanelProgramaciones({ programaciones, modo, onCambio }: {
     programaciones: ProgramacionResumen[]
+    modo: ModoRecompra
     onCambio: () => void
-    onProgramar: () => void
-    onConfig: () => void
-    compacto?: boolean
 }) {
     const token = useAuthStore(state => state.token)
+    const copy = copyEnvio(modo)
     const [cancelandoId, setCancelandoId] = useState<number | null>(null)
 
     const cancelar = async (tanda: ProgramacionResumen) => {
@@ -70,13 +71,8 @@ export default function PanelProgramaciones({ programaciones, onCambio, onProgra
         return (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 px-4 py-10 text-center">
                 <CalendarClock className="mb-2.5 h-7 w-7 text-muted-foreground/30" />
-                <p className="text-sm font-medium text-foreground">No hay nada programado</p>
-                <p className="mt-0.5 max-w-sm text-xs text-muted-foreground">
-                    El motor no manda mensajes por su cuenta: los que salen son los que programás vos.
-                </p>
-                <Button onClick={onProgramar} size="sm" className="mt-3 gap-2">
-                    <Zap className="h-3.5 w-3.5" /> Programar envío
-                </Button>
+                <p className="text-sm font-medium text-foreground">{copy.vacioTitulo}</p>
+                <p className="mt-0.5 max-w-sm text-xs text-muted-foreground">{copy.vacioSubtexto}</p>
             </div>
         )
     }
@@ -125,9 +121,6 @@ export default function PanelProgramaciones({ programaciones, onCambio, onProgra
                             </div>
 
                             <div className="flex shrink-0 items-center gap-1.5">
-                                <Button variant="ghost" size="sm" onClick={onConfig} className="h-7 gap-1.5 px-2 text-xs text-muted-foreground">
-                                    <Settings2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Config</span>
-                                </Button>
                                 {cancelable && (
                                     <Button
                                         variant="ghost"
@@ -152,12 +145,6 @@ export default function PanelProgramaciones({ programaciones, onCambio, onProgra
                     </div>
                 )
             })}
-
-            {!compacto && (
-                <Button variant="ghost" size="sm" onClick={onProgramar} className="gap-2 text-xs">
-                    <Zap className="h-3.5 w-3.5" /> Programar otro envío
-                </Button>
-            )}
         </div>
     )
 }
@@ -166,19 +153,20 @@ export default function PanelProgramaciones({ programaciones, onCambio, onProgra
 // SIN TANDAS — la pantalla que reemplaza al "encender el motor"
 //
 // Antes acá había un botón que encendía un goteo permanente. Ahora el motor no sale a buscar clientes
-// solo: esta pantalla muestra el universo disponible y ofrece programar la primera tanda. La
-// diferencia es la del pedido — nada sale sin que el dueño lo programe.
+// solo: esta pantalla muestra el universo disponible y, abajo, el flujo de envío ya abierto en su
+// primer paso. No hay nada que "abrir": la pantalla ES el asistente. La diferencia es la del pedido
+// — nada sale sin que el dueño lo confirme al final.
+//
+// Si la base está al día no se monta el flujo: no hay a quién escribirle, y un asistente vacío sería
+// una promesa que la pantalla no puede cumplir.
 // =============================================================================
 
-export function PantallaProgramacion({ plan, config, onCambio, onRecargar }: {
+export function PantallaProgramacion({ plan, config, onCambio }: {
     plan: PlanActivacionRecompra
     config: ConfigMotorRecompra
     onCambio: () => void
-    onRecargar: () => void
 }) {
     const token = useAuthStore(state => state.token)
-    const [dialogoProgramar, setDialogoProgramar] = useState(false)
-    const [dialogoConfig, setDialogoConfig] = useState(false)
     const [accionMotor, setAccionMotor] = useState(false)
 
     const vacio = plan.totalDetectados === 0
@@ -198,110 +186,65 @@ export function PantallaProgramacion({ plan, config, onCambio, onRecargar }: {
     }
 
     return (
-        <>
-            <div className="space-y-6">
-                <div className="rounded-2xl border border-border/40 bg-white/80 p-6 shadow-2xs backdrop-blur-xs dark:bg-muted/30">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                        <Sparkles className="h-3.5 w-3.5" /> Motor de recompra
-                    </div>
-
-                    {vacio ? (
-                        <>
-                            <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">Tu base está al día</h2>
-                            <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-muted-foreground">
-                                No hay clientes enfriados para recuperar en este momento. Cuando alguno baje su
-                                ritmo habitual va a aparecer acá, listo para programarle un envío.
-                            </p>
-                        </>
-                    ) : (
-                        <>
-                            <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">
-                                {plan.totalDetectados} cliente{plan.totalDetectados === 1 ? '' : 's'} para recuperar
-                            </h2>
-                            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                                {plan.porSegmento.map((s, i) => (
-                                    <span key={s.segmento}>
-                                        {i > 0 && (i === plan.porSegmento.length - 1 ? ' y ' : ', ')}
-                                        <span className="font-medium text-foreground">{s.detectados} {SEG_META[s.segmento].label.toLowerCase()}</span>
-                                    </span>
-                                ))}
-                                {plan.porSegmento.length > 0 && ', '}
-                                por <span className="font-medium text-foreground">{formatCurrency(plan.porSegmento.reduce((acc, s) => acc + s.facturacionEnJuego, 0))}</span> de
-                                compra histórica.
-                            </p>
-                            <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-foreground">
-                                <Zap className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                                <span>
-                                    El motor <strong className="font-semibold">no manda nada por su cuenta</strong>.
-                                    Programá una tanda —a quiénes, cuántos y hasta qué toque— y recién ahí salen los
-                                    mensajes, de a poco y con el cupo de {config.cupoDiario} por día.
-                                </span>
-                            </p>
-                        </>
-                    )}
-
-                    <div className="mt-5 flex flex-wrap items-center gap-2">
-                        <Button
-                            onClick={() => setDialogoProgramar(true)}
-                            size="lg"
-                            className="h-11 gap-2 rounded-full px-6 text-sm font-medium shadow-2xs"
-                        >
-                            <Zap className="h-4 w-4" /> Programar envío
-                        </Button>
-                        <Button variant="ghost" onClick={() => setDialogoConfig(true)} className="h-11 gap-2 rounded-full px-4 text-sm">
-                            <SlidersHorizontal className="h-4 w-4" /> Configuración
-                        </Button>
-                        {pausado && (
-                            <Button variant="ghost" onClick={reanudar} disabled={accionMotor} className="h-11 gap-2 rounded-full px-4 text-sm text-orange-600 dark:text-orange-400">
-                                {accionMotor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                                Reanudar motor
-                            </Button>
-                        )}
-                    </div>
-
-                    {/* El estado del motor, para que "pausado" no sea un misterio */}
-                    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/30 pt-4 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">
-                            {config.estado === 'activa'
-                                ? <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Motor activo</>
-                                : <><Pause className="h-3.5 w-3.5 text-orange-500" /> Motor pausado</>}
-                        </span>
-                        <span>Modo {config.modo === 'manual' ? 'Manual (los enviás vos)' : 'Automático'}</span>
-                        <span>Cupo {config.cupoDiario}/día</span>
-                        <span>Toques cada {config.diasToque2} días</span>
-                        {config.modo === 'automatico' && (
-                            <span>
-                                Saldo:{' '}
-                                <button onClick={onRecargar} className={cn("font-medium hover:underline", plan.saldoMarketing <= 0 ? 'text-orange-600' : 'text-foreground')}>
-                                    {plan.saldoMarketing} mensajes
-                                </button>
-                            </span>
-                        )}
-                    </div>
+        <div className="space-y-6">
+            <div className="rounded-2xl border border-border/40 bg-white/80 p-6 shadow-2xs backdrop-blur-xs dark:bg-muted/30">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    Motor de recompra
                 </div>
 
-                {plan.enTanda > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                        {plan.enTanda} cliente{plan.enTanda === 1 ? '' : 's'} ya está{plan.enTanda === 1 ? '' : 'n'} en una tanda
-                        y no se puede{plan.enTanda === 1 ? '' : 'n'} programar de nuevo hasta que termine.
-                    </p>
+                {vacio ? (
+                    <>
+                        <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">Tu base está al día</h2>
+                        <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-muted-foreground">
+                            No hay clientes enfriados para recuperar en este momento. Cuando alguno baje su
+                            ritmo habitual va a aparecer acá, listo para programarle un envío.
+                        </p>
+                    </>
+                ) : (
+                    <>
+                        <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">
+                            {plan.totalDetectados} cliente{plan.totalDetectados === 1 ? '' : 's'} para recuperar
+                        </h2>
+                        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                            {plan.porSegmento.map((s, i) => (
+                                <span key={s.segmento}>
+                                    {i > 0 && (i === plan.porSegmento.length - 1 ? ' y ' : ', ')}
+                                    <span className="font-medium text-foreground">{s.detectados} {SEG_META[s.segmento].label.toLowerCase()}</span>
+                                </span>
+                            ))}
+                            {plan.porSegmento.length > 0 && ', '}
+                            por <span className="font-medium text-foreground">{formatCurrency(plan.porSegmento.reduce((acc, s) => acc + s.facturacionEnJuego, 0))}</span> de
+                            compra histórica.
+                        </p>
+                    </>
+                )}
+
+                {/* Reanudar es lo único que se ofrece acá: el motor pausado no programa nada, y los
+                    valores del local se editan en el paso del cupo, que es donde se deciden. */}
+                {pausado && (
+                    <div className="mt-5 flex flex-wrap items-center gap-2">
+                        <Button variant="ghost" onClick={reanudar} disabled={accionMotor} className="h-11 gap-2 rounded-full px-4 text-sm text-orange-600 dark:text-orange-400">
+                            {accionMotor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                            Reanudar motor
+                        </Button>
+                    </div>
                 )}
             </div>
 
-            {dialogoProgramar && (
-                <DialogoProgramarEnvio
+            {plan.enTanda > 0 && (
+                <p className="text-xs text-muted-foreground">
+                    {plan.enTanda} cliente{plan.enTanda === 1 ? '' : 's'} ya está{plan.enTanda === 1 ? '' : 'n'} en una tanda
+                    y no se puede{plan.enTanda === 1 ? '' : 'n'} programar de nuevo hasta que termine.
+                </p>
+            )}
+
+            {/* El flujo, sin diálogo ni botón que lo abra: la pantalla arranca en el paso 1. */}
+            {!vacio && (
+                <FlujoEnvioTanda
                     config={config}
-                    onCerrar={() => setDialogoProgramar(false)}
-                    onProgramado={() => { setDialogoProgramar(false); onCambio() }}
+                    onTerminado={onCambio}
                 />
             )}
-            {dialogoConfig && (
-                <DialogoConfigMotor
-                    config={config}
-                    onCerrar={() => setDialogoConfig(false)}
-                    onGuardado={() => { setDialogoConfig(false); onCambio() }}
-                />
-            )}
-        </>
+        </div>
     )
 }

@@ -15,10 +15,10 @@ import {
 import { ChevronRight, History, Loader2, Search, Settings2, Sparkles, TicketPercent, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { ConfiguracionPuntosDialog } from './ConfiguracionPuntosDialog'
+import { ConfiguracionPuntosPanel } from './ConfiguracionPuntosPanel'
 import { ModuloComercial } from '@/components/ModuloComercial'
 import { FilaMovimientoPuntos, HistorialPuntosContenido } from './MovimientosPuntos'
-import { formatFechaHora, formatPuntos, metaMovimientoPuntos } from './types'
+import { formatFechaHora, formatPuntos } from './types'
 
 /** Cliente abierto en el detalle. `puntos: null` = todavía no lo confirmó el backend. */
 interface ClienteEnDetalle {
@@ -56,13 +56,6 @@ const TIPO_META: Array<{ valor: FiltroTipoMovimientoPuntos; label: string }> = [
   { valor: 'canje', label: 'Canjes' },
   { valor: 'suma_compra', label: 'Compras' },
   { valor: 'ajuste_manual', label: 'Ajustes' },
-]
-
-/** Los tres canjes del ledger, en el orden en que se leen en el resumen. */
-const CANJES_META: Array<{ tipo: 'canje_producto' | 'canje_envio' | 'canje_descuento'; campo: keyof ResumenPuntosData }> = [
-  { tipo: 'canje_producto', campo: 'canjesProducto' },
-  { tipo: 'canje_envio', campo: 'canjesEnvio' },
-  { tipo: 'canje_descuento', campo: 'canjesDescuento' },
 ]
 
 const iniciales = (nombre: string) =>
@@ -104,7 +97,6 @@ export function PuntosPanel() {
   const [cargandoMovimientos, setCargandoMovimientos] = useState(false)
 
   const [detalle, setDetalle] = useState<ClienteEnDetalle | null>(null)
-  const [configOpen, setConfigOpen] = useState(false)
 
   const solicitudClientes = useRef(0)
   const solicitudMovimientos = useRef(0)
@@ -210,19 +202,26 @@ export function PuntosPanel() {
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
   }
 
-  const abrirDesdeLista = (cliente: ClienteConPuntosData) => abrirCliente({
-    id: cliente.id,
-    nombre: cliente.nombre,
-    telefono: cliente.telefono,
-    puntos: cliente.puntos,
-    actividad: {
-      puntosOtorgados: cliente.puntosOtorgados,
-      puntosCanjeados: cliente.puntosCanjeados,
-      canjes: cliente.canjes,
-      movimientos: cliente.movimientos,
-      ultimoMovimientoAt: cliente.ultimoMovimientoAt,
-    },
-  })
+  const abrirDesdeLista = (cliente: ClienteConPuntosData) => {
+    // Volver a tocar el cliente abierto lo cierra: la columna derecha vuelve a la configuración.
+    if (detalle?.id === cliente.id) {
+      setDetalle(null)
+      return
+    }
+    abrirCliente({
+      id: cliente.id,
+      nombre: cliente.nombre,
+      telefono: cliente.telefono,
+      puntos: cliente.puntos,
+      actividad: {
+        puntosOtorgados: cliente.puntosOtorgados,
+        puntosCanjeados: cliente.puntosCanjeados,
+        canjes: cliente.canjes,
+        movimientos: cliente.movimientos,
+        ultimoMovimientoAt: cliente.ultimoMovimientoAt,
+      },
+    })
+  }
 
   const abrirDesdeMovimiento = (movimiento: MovimientoPuntosData) => abrirCliente({
     id: movimiento.clienteId,
@@ -233,6 +232,17 @@ export function PuntosPanel() {
 
   const cambiarSubTab = (valor: SubTabPuntos) => {
     setSubTab(valor)
+    setVistaMobile('lista')
+  }
+
+  /** Sin cliente abierto la columna derecha es la configuración del club: llegar es cerrar el detalle. */
+  const verConfiguracion = () => {
+    setDetalle(null)
+    setVistaMobile('detalle')
+  }
+
+  const cerrarCliente = () => {
+    setDetalle(null)
     setVistaMobile('lista')
   }
 
@@ -330,9 +340,9 @@ export function PuntosPanel() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setConfigOpen(true)}
+                    onClick={verConfiguracion}
                     className="h-8 gap-1.5 rounded-full border-border/40 bg-background/80 px-3 text-xs font-medium shadow-2xs"
-                    title="Configurar beneficios y productos"
+                    title="Ver la configuración de beneficios y productos"
                   >
                     <Settings2 className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">Beneficios y productos</span>
@@ -464,23 +474,20 @@ export function PuntosPanel() {
                 cliente={detalle}
                 token={token ?? ''}
                 onSaldoActualizado={(nuevos) => actualizarSaldo(detalle.id, nuevos)}
-                onConfigurar={() => setConfigOpen(true)}
+                onConfigurar={verConfiguracion}
+                onCerrar={cerrarCliente}
               />
             ) : (
-              <SinClienteSeleccionado resumen={resumen} cargando={cargandoResumen && !resumen} />
+              <ConfiguracionPuntosPanel
+                onSaved={() => {
+                  void cargarResumen()
+                  void cargarClientes(1, true)
+                }}
+              />
             )}
           </section>
         </div>
       </main>
-
-      <ConfiguracionPuntosDialog
-        open={configOpen}
-        onOpenChange={setConfigOpen}
-        onSaved={() => {
-          void cargarResumen()
-          void cargarClientes(1, true)
-        }}
-      />
     </div>
   )
 }
@@ -617,11 +624,13 @@ function DetalleClientePuntos({
   token,
   onSaldoActualizado,
   onConfigurar,
+  onCerrar,
 }: {
   cliente: ClienteEnDetalle
   token: string
   onSaldoActualizado: (nuevosPuntos: number) => void
   onConfigurar: () => void
+  onCerrar: () => void
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -646,16 +655,28 @@ function DetalleClientePuntos({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {/* En mobile la lista vuelve con el switch de arriba; acá sólo queda la configuración. */}
+          {/* En mobile la lista vuelve con el switch de arriba; este botón lleva
+              directo a la configuración, que vive en esta misma columna. */}
           <Button
             variant="secondary"
             size="sm"
             onClick={onConfigurar}
-            title="Configurar beneficios y productos"
+            title="Ver la configuración de beneficios y productos"
             className="h-8 gap-1.5 rounded-full px-3 text-xs font-medium xl:hidden"
           >
             <Settings2 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Configurar</span>
+          </Button>
+          {/* Cerrar el cliente devuelve la columna a la configuración del club. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCerrar}
+            title="Cerrar el cliente"
+            aria-label="Cerrar el cliente"
+            className="h-8 w-8 rounded-full text-muted-foreground/60 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -724,37 +745,6 @@ function ResumenGeneralPuntos({ resumen, cargando }: { resumen: ResumenPuntosDat
           ? `Último movimiento de puntos: ${formatFechaHora(resumen.ultimoMovimientoAt)}`
           : 'Todavía no hay movimientos de puntos registrados.'}
       </p>
-    </div>
-  )
-}
-
-/** Columna derecha sin cliente abierto: qué hacer y en qué se gastan los puntos. */
-function SinClienteSeleccionado({ resumen, cargando }: { resumen: ResumenPuntosData | null; cargando: boolean }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-10 text-center sm:px-6">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/80">
-        <Sparkles className="h-6 w-6 text-muted-foreground" />
-      </div>
-      <h2 className="mt-4 text-base font-semibold tracking-tight text-foreground">Seleccioná un cliente</h2>
-      <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
-        Vas a ver su saldo, su historial de movimientos y podés ajustarle puntos a mano.
-      </p>
-
-      <div className="mt-8 w-full max-w-sm space-y-2 text-left">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-          Canjes por tipo
-        </span>
-        <div className="divide-y divide-border/25 border-y border-border/25">
-          {CANJES_META.map(({ tipo, campo }) => (
-            <div key={tipo} className="flex items-center justify-between py-2 text-xs">
-              <span className="text-muted-foreground">{metaMovimientoPuntos(tipo).label}</span>
-              <span className="font-semibold tabular-nums text-foreground">
-                {cargando ? '—' : formatPuntos(resumen?.[campo] as number | undefined)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }

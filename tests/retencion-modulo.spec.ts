@@ -96,6 +96,17 @@ const CAMPANA_RECOMPRA = {
   activadaAt: '2026-09-01T12:00:00.000Z', pausadaAt: null,
 }
 
+/**
+ * La config del local y las tandas. Sin esto el tablero del motor no monta: la mitad derecha
+ * recorre las tandas vivas para el filtro de la cola, y `estado.config` alimenta el diálogo de
+ * configuración. El backend los manda siempre; el mock tiene que hacer lo mismo.
+ */
+const CONFIG_RECOMPRA = {
+  restauranteId: 1, estado: 'activa', modo: 'manual', cupoDiario: 30,
+  diasToque2: 2, diasToque3: 2, porcentajeControl: 10,
+  ultimoDrenajeDia: null, avisoSinSaldoAt: null,
+}
+
 async function montar(
   page: Page,
   ruta: string,
@@ -120,7 +131,7 @@ async function montar(
     if (url.includes('/puntos/resumen')) return route.fulfill({ json: resumenVacio })
     if (url.includes('/puntos/clientes')) return route.fulfill({ json: clientesVacio })
     if (url.includes('/clientes/recompra/estado')) {
-      return route.fulfill({ json: { success: true, data: { activa: true, campana: CAMPANA_RECOMPRA, plan: null, saldoMarketing: CAMPANA_RECOMPRA.saldoMarketing } } })
+      return route.fulfill({ json: { success: true, data: { activa: true, campana: CAMPANA_RECOMPRA, config: CONFIG_RECOMPRA, programaciones: [], plan: null, saldoMarketing: CAMPANA_RECOMPRA.saldoMarketing } } })
     }
     if (url.includes('/clientes/recompra/cola')) return route.fulfill({ json: clientesVacio })
     if (url.includes('/clientes/recompra/historial')) return route.fulfill({ json: clientesVacio })

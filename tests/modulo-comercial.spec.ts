@@ -98,8 +98,10 @@ for (const width of [1440, 390]) {
       activado.valor = true // el webhook acreditó el pago
       await page.getByRole('button', { name: 'Ya pagué, verificar' }).click()
 
-      // `onCambioEstado` limpia el bloqueo y recarga: la mitad Puntos aparece sola.
-      await expect(page.getByText('Puntos en circulación', { exact: true })).toBeVisible()
+      // `onCambioEstado` limpia el bloqueo y recarga: la mitad Puntos aparece sola. El rótulo está
+      // dos veces en el DOM a propósito (el resumen del club se monta arriba en mobile y dentro de
+      // la columna en escritorio), así que se busca el visible, no los dos.
+      await expect(page.locator('span:text-is("Puntos en circulación"):visible')).toHaveCount(1)
       await expect(page.getByRole('button', { name: 'Ya pagué, verificar' })).toHaveCount(0)
       expect(errors).toEqual([])
     })
