@@ -224,15 +224,16 @@ function MesasGrid({
             {mesasVisibles.map((mesa, index) => {
                 const pedido = pedidosPorMesa.get(mesa.id)
                 const ocupada = !!pedido
+                const nombrePedido = pedido?.nombreCliente?.trim()
                 return (
                     <div key={mesa.id} className="relative aspect-square min-h-11">
                     <button
                         type="button"
-                        aria-label={`${mesa.nombre}, ${ocupada ? `ocupada con el pedido ${pedido.id}` : 'libre'}`}
-                        title={`${mesa.nombre} · ${ocupada ? `Ocupada · pedido #${pedido.id}` : 'Libre'}`}
+                        aria-label={`${mesa.nombre}, ${ocupada ? `ocupada con el pedido ${pedido.id}${nombrePedido ? ` de ${nombrePedido}` : ''}` : 'libre'}`}
+                        title={`${mesa.nombre} · ${ocupada ? `Ocupada · pedido #${pedido.id}${nombrePedido ? ` · ${nombrePedido}` : ''}` : 'Libre'}`}
                         onClick={() => pedido ? onMesaOcupada(pedido) : onMesaLibre(mesa)}
                         className={cn(
-                            'h-full w-full rounded-lg border text-base font-black tabular-nums shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]',
+                            'relative h-full w-full rounded-lg border text-base font-black tabular-nums shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]',
                             ocupada
                                 ? 'border-[#FF7A00]/35 bg-[#FF7A00]/15 text-[#C45F00] dark:text-orange-300'
                                 : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
@@ -240,6 +241,10 @@ function MesasGrid({
                         )}
                     >
                         {numeroMesa(mesa, index)}
+                        {/* Anclado abajo para que el número no se corra y la fila siga alineada. */}
+                        {nombrePedido && (
+                            <span className="absolute inset-x-1 bottom-1 truncate text-[10px] font-semibold leading-tight">{nombrePedido}</span>
+                        )}
                     </button>
                     <button
                         type="button"
