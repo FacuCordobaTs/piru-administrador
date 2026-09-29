@@ -4,17 +4,31 @@ import { useModuloActivo } from '@/store/modulosStore';
 import { useRestauranteStore } from '@/store/restauranteStore';
 import { COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY, readComandaGrandeMayusculas, prepararCopiasComanda } from '@/utils/printerUtils';
 import { getPosConfig } from '@/lib/posConfig';
-
-const STORAGE_KEY = 'tauri_printer_name';
+import { describePrinterTarget, type PrinterTarget } from '@/utils/printerTypes';
+import {
+    agregarDestinoManual,
+    parsePrinterTarget,
+    quitarManual,
+    readStoredManualTargets,
+    readStoredPrinterTarget,
+    writeStoredManualTargets,
+    writeStoredPrinterTarget,
+} from '@/utils/printerTargetStorage';
 
 interface PrinterContextType {
-    printers: string[];
-    selectedPrinter: string | null;
+    printers: PrinterTarget[];
+    /** Impresoras cargadas a mano en este equipo (sobreviven a la búsqueda y al reinicio). */
+    manualPrinters: PrinterTarget[];
+    selectedPrinter: PrinterTarget | null;
     refreshPrinters: () => Promise<void>;
     printRaw: (data: number[]) => Promise<void>;
     /** Imprime una comanda respetando la cantidad de copias configurada en el equipo. */
     printComanda: (data: number[]) => Promise<void>;
-    setSelectedPrinter: (name: string) => void;
+    setSelectedPrinter: (target: PrinterTarget | null) => void;
+    /** Suma una impresora a mano. Repetir la misma no la duplica. */
+    addManualPrinter: (target: PrinterTarget) => void;
+    /** La quita de la lista manual; si era la elegida, el equipo queda sin impresora. */
+    removeManualPrinter: (target: PrinterTarget) => void;
     comandaGrandeMayusculas: boolean;
     setComandaGrandeMayusculas: (enabled: boolean) => void;
     /** Alias general del local, usado cuando el pedido no tiene uno propio de sucursal. */
@@ -26,37 +40,61 @@ const PrinterContext = createContext<PrinterContextType | undefined>(undefined);
 export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const impresionComandasActiva = useModuloActivo('impresion_comandas');
     const transferenciaAlias = useRestauranteStore((state) => state.restaurante?.transferenciaAlias ?? null);
-    const [printers, setPrinters] = useState<string[]>([]);
+    const [printers, setPrinters] = useState<PrinterTarget[]>([]);
     const [comandaGrandeMayusculas, setComandaGrandeMayusculasState] = useState(readComandaGrandeMayusculas);
 
-    // Recuperar impresora guardada de localStorage al iniciar
-    const [selectedPrinter, setSelectedPrinterState] = useState<string | null>(() => {
-        return localStorage.getItem(STORAGE_KEY);
-    });
+    // Destino guardado en el equipo. `readStoredPrinterTarget` migra el nombre viejo
+    // (`tauri_printer_name`) a la clave nueva, así que un equipo ya instalado no pierde su impresora.
+    const [selectedPrinter, setSelectedPrinterState] = useState<PrinterTarget | null>(readStoredPrinterTarget);
 
-    // Actualizar localStorage cuando cambie la impresora seleccionada
-    const setSelectedPrinter = useCallback((name: string) => {
-        setSelectedPrinterState(name);
-        localStorage.setItem(STORAGE_KEY, name);
+    // Las cargadas a mano van en su propia clave: una impresora de red se tipea a mano y la
+    // búsqueda no la repone, así que no pueden perderse al elegir otra (cocina y barra a la vez).
+    const [manualPrinters, setManualPrinters] = useState<PrinterTarget[]>(readStoredManualTargets);
+
+    // Única fuente de la lista: se guarda entera cada vez que cambia, así el almacenamiento no
+    // puede quedar desincronizado del estado que ve la UI.
+    useEffect(() => {
+        writeStoredManualTargets(manualPrinters);
+    }, [manualPrinters]);
+
+    const setSelectedPrinter = useCallback((target: PrinterTarget | null) => {
+        setSelectedPrinterState(target);
+        writeStoredPrinterTarget(target);
     }, []);
+
+    const addManualPrinter = useCallback((target: PrinterTarget) => {
+        setManualPrinters((previas) => agregarDestinoManual(previas, target));
+    }, []);
+
+    const removeManualPrinter = useCallback((target: PrinterTarget) => {
+        // Lista y elección son una sola operación: si se borra la que estaba en uso, el equipo
+        // queda sin impresora (y la UI lo muestra) en vez de apuntar a un destino que ya no está.
+        const siguiente = quitarManual({ manuales: manualPrinters, seleccionado: selectedPrinter }, target);
+        setManualPrinters(siguiente.manuales);
+        setSelectedPrinter(siguiente.seleccionado);
+    }, [manualPrinters, selectedPrinter, setSelectedPrinter]);
 
     const setComandaGrandeMayusculas = useCallback((enabled: boolean) => {
         setComandaGrandeMayusculasState(enabled);
         localStorage.setItem(COMANDA_GRANDE_MAYUSCULAS_STORAGE_KEY, String(enabled));
     }, []);
 
-    // Obtener lista de impresoras desde el backend Rust
+    // Obtener lista de destinos desde el backend Rust.
     const refreshPrinters = useCallback(async () => {
         try {
-            const printerList = await invoke<string[]>('get_printers');
-            setPrinters(printerList);
+            const printerList = await invoke<PrinterTarget[]>('get_printers');
+            // Un destino a medio armar rompería el selector antes de que Rust lo rechace.
+            setPrinters(printerList.flatMap((target) => {
+                const valido = parsePrinterTarget(target);
+                return valido === null ? [] : [valido];
+            }));
         } catch (error) {
             console.error('Error al obtener impresoras:', error);
         }
     }, []);
 
     /**
-     * Envía bytes ESC/POS ya formateados. Los estilos por tipo de producto
+     * Envía bytes ESC/POS ya formateados al destino elegido. Los estilos por tipo de producto
      * (incluido el destaque de bebidas) se resuelven antes en `printerUtils`.
      */
     const printRaw = useCallback(async (data: number[]) => {
@@ -75,14 +113,15 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         try {
+            // El transporte viaja como dato: Rust ya no lo deduce de la forma del nombre.
             await invoke('send_print_job', {
-                printerName: selectedPrinter,
+                target: selectedPrinter,
                 content: data
             });
         } catch (error) {
             console.error('Error al imprimir:', error);
             const detail = error instanceof Error ? error.message : String(error);
-            throw new Error(`La impresora "${selectedPrinter}" rechazó el trabajo: ${detail}`);
+            throw new Error(`La impresora "${describePrinterTarget(selectedPrinter)}" rechazó el trabajo: ${detail}`);
         }
     }, [impresionComandasActiva, selectedPrinter]);
 
@@ -102,11 +141,14 @@ export const PrinterProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return (
         <PrinterContext.Provider value={{
             printers,
+            manualPrinters,
             selectedPrinter,
             refreshPrinters,
             printRaw,
             printComanda,
             setSelectedPrinter,
+            addManualPrinter,
+            removeManualPrinter,
             comandaGrandeMayusculas,
             setComandaGrandeMayusculas,
             transferenciaAlias,

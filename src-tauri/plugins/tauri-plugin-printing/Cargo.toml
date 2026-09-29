@@ -1,0 +1,28 @@
+[package]
+name = "tauri-plugin-printing"
+version = "0.1.0"
+description = "Impresión en Android: TCP, Bluetooth RFCOMM y USB Host (ESC/POS raw)."
+edition = "2021"
+rust-version = "1.77.2"
+license = "Apache-2.0 OR MIT"
+publish = false
+
+# `links` es obligatorio para un plugin Tauri: `tauri-plugin` (build-dependency) exige que
+# `CARGO_MANIFEST_LINKS` esté definido, y de acá sale la variable que el build script de la app lee
+# para descubrir el módulo Gradle del plugin
+# (`DEP_TAURI_PLUGIN_PRINTING_ANDROID_LIBRARY_PATH` -> `include ':tauri-plugin-printing'`).
+links = "tauri-plugin-printing"
+
+[lib]
+name = "tauri_plugin_printing"
+
+[build-dependencies]
+# La feature `build` trae `tauri_plugin::Builder` (y con él `android_path`).
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+# `default-features = false` como los plugins oficiales: la app es la que decide las features de
+# tauri (wry, devtools). Cargo unifica las features del grafo, así que no se pierde nada.
+tauri = { version = "2.10", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,5 +1,5 @@
 import { ClienteAutocomplete } from '@/components/ClienteAutocomplete'
-import { useState, useEffect, useCallback, useRef, Fragment, useMemo, type KeyboardEvent, type MouseEvent } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment, useMemo, type KeyboardEvent } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +17,7 @@ import { useAdminContext } from '@/context/AdminContext'
 import CierreTurno from '@/components/CierreTurno'
 import PuntoDeVenta, { type PosDraft, type PosDraftUpdate, type PosEditablePedido, type PuntoDeVentaHandle } from '@/components/PuntoDeVenta'
 import { MesasOperativas } from '@/components/MesasOperativas'
+import type { PosAccionExtra } from '@/components/pos-movil/posMovilLib'
 import {
     Loader2, Plus, Clock, Trash2, Pencil,
     User, ArrowLeft, Printer, Truck, MapPin,
@@ -43,7 +44,7 @@ import {
 } from '@/utils/printerUtils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, getPosConfig, setPosConfig } from '@/lib/posConfig'
+import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, unidadesBorradorGuardado, usePosConfig, getPosConfig, setPosConfig } from '@/lib/posConfig'
 import { PosConfigDialog } from '@/components/PosConfigDialog'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
@@ -1316,7 +1317,7 @@ const PosComandaPreview = ({
                                         disabled={draft.items.length === 0 || draft.submitting}
                                         className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
                                     >
-                                        {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
+                                        {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : (config.confirmarCobrosManualmente ? 'Cobrar' : 'Anotar pedido')}
                                     </Button>
                                 )}
                                 {editingPedidoId && draft.tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
@@ -2411,8 +2412,10 @@ const Dashboard = () => {
         // limpieza post-guardado.
         mesaMergeRef.current = false
         setShowPosMovil(false)
+        setShowOrderMap(false)
         setMesaPosAsignada(null)
         setPedidoPosEditando(null)
+        setDraftPos(null)
         setPosContext('borrador')
         setMobileView('orders')
     }
@@ -2466,14 +2469,6 @@ const Dashboard = () => {
         setPosContext('borrador')
         setShowPosMovil(true)
         setMobileView('detail')
-    }
-
-    // Al estar viendo un pedido, el POS sigue visible detrás. Cualquier zona libre
-    // del POS vuelve al borrador; los controles conservan su interacción normal.
-    const handlePosBackgroundClick = (event: MouseEvent<HTMLDivElement>) => {
-        const target = event.target as Element
-        if (target.closest('button, input, textarea, select, a, [role="button"]')) return
-        volverAlBorrador()
     }
 
     useEffect(() => {
@@ -2871,6 +2866,47 @@ const Dashboard = () => {
         setMesaPosAsignada(null)
         openPedidoInPOS(pedido)
     }
+    // ── POS móvil: salidas hacia el resto del Dashboard ──
+    // El POS ocupa toda la pantalla en celular y tablet. Estos atajos salen de él sin descartar
+    // el borrador (queda en sessionStorage): al volver con "Seguir pedido" reaparece tal cual.
+    const posMovilVisible = posActivo && showPosMovil && !isDesktopViewport
+    // Con el POS oculto no hay snapshot del borrador: se lee de donde el POS lo persiste.
+    const unidadesBorrador = posActivo && !showPosMovil && !isDesktopViewport
+        ? unidadesBorradorGuardado(sucursalActivaId, restaurante?.id)
+        : 0
+    const verPedidosDesdePos = () => {
+        setShowPosMovil(false)
+        setShowOrderMap(false)
+        setSelectedUnifiedPedido(null)
+        setListadoActivo('pedidos')
+        setMobileView('orders')
+    }
+    const verMesasDesdePos = () => {
+        setShowPosMovil(false)
+        setShowOrderMap(false)
+        setSelectedUnifiedPedido(null)
+        setListadoActivo('mesas')
+        if (selectedDay !== hoyDay) setSelectedDay(hoyDay)
+        setMobileView('orders')
+    }
+    const verMapaDesdePos = () => {
+        setShowPosMovil(false)
+        setSelectedUnifiedPedido(null)
+        setShowOrderMap(true)
+        setMobileView('detail')
+    }
+    const accionesPosMovil: PosAccionExtra[] = [
+        ...(mesasActivo ? [{ id: 'mesas', label: 'Mesas', icon: Armchair, onSelect: verMesasDesdePos }] : []),
+        { id: 'mapa', label: 'Mapa de pedidos', icon: MapIcon, onSelect: verMapaDesdePos },
+        { id: 'caja', label: 'Caja', icon: CalendarDays, onSelect: () => { void cargarTurnosCaja().then(() => setShowCierreTurno(true)) } },
+        ...(cierreManualActivo && !sedeEvento && turnoActual && selectedTurnoId === turnoActual.id
+            ? [{ id: 'cerrar-turno', label: 'Cerrar turno', icon: Clock, onSelect: () => setShowCerrarTurno(true) }]
+            : []),
+        ...(sucursalesList.some((sede) => sede.activo || sede.soloPos)
+            ? [{ id: 'sucursal', label: 'Cambiar sucursal', icon: Store, onSelect: () => setShowSucursalSelector(true) }]
+            : []),
+    ]
+
     // El selector del día sigue disponible al abrir el POS; solo el mapa lo reemplaza.
     const isDayTitle = !(mobileView === 'detail' && showOrderMap)
 
@@ -2910,7 +2946,7 @@ const Dashboard = () => {
         <div className="h-full flex flex-col overflow-hidden bg-[#FFFBF0] dark:bg-background">
 
             {/* ── HEADER PRINCIPAL ── */}
-            <header className="shrink-0 bg-[#FFFBF0] dark:bg-background px-4 py-3 flex items-center justify-between gap-2 z-10">
+            <header className={cn('shrink-0 bg-[#FFFBF0] dark:bg-background px-4 py-3 flex items-center justify-between gap-2 z-10', posMovilVisible && 'hidden')}>
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                     {mobileView === 'detail' && (
                         <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 -ml-2" onClick={() => {
@@ -2963,7 +2999,7 @@ const Dashboard = () => {
                             className="h-8 rounded-full px-4 text-xs gap-1.5 flex items-center"
                         >
                             <ShoppingCart className="h-3.5 w-3.5" />
-                            Anotar pedido
+                            {unidadesBorrador > 0 ? `Seguir pedido (${unidadesBorrador})` : 'Anotar pedido'}
                         </Button>
                     )}
                 </div>
@@ -2992,10 +3028,9 @@ const Dashboard = () => {
                         </Button>
                     )}
                     <Button variant="outline" className="h-10 rounded-xl" onClick={() => {
-                        // En desktop el POS nunca se cierra: el mapa se abre en el
-                        // panel derecho conviviendo con el POS. En móvil el overlay
-                        // se cierra primero (paridad con el flujo anterior).
-                        if (showPosMovil && !isDesktopViewport) { requestClosePOS(); return }
+                        // En desktop el POS nunca se cierra: el mapa se abre en el panel
+                        // derecho conviviendo con el POS. En móvil el POS ya está oculto
+                        // cuando este botón se ve, así que el mapa se abre directo.
                         setShowOrderMap(true); setMobileView('detail')
                     }}>
                         <MapIcon className="mr-2 h-4 w-4" /> Mapa
@@ -3120,14 +3155,16 @@ const Dashboard = () => {
                 <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs sm:text-sm text-amber-700 dark:text-amber-300 font-medium">
                     <div className="flex items-center gap-2">
                         <WifiOff className="h-4 w-4 shrink-0 animate-pulse text-amber-600" />
-                        <span>Modo sin conexión: podés seguir usando el punto de venta. Las ventas se guardan en este dispositivo y se sincronizarán al volver internet.</span>
+                        <span className="hidden sm:inline">Modo sin conexión: podés seguir usando el punto de venta. Las ventas se guardan en este dispositivo y se sincronizarán al volver internet.</span>
+                        <span className="sm:hidden">Sin conexión · las ventas se guardan en este dispositivo.</span>
                     </div>
                     <button
                         type="button"
                         onClick={() => void sincronizarPendientes()}
                         className="shrink-0 ml-3 underline hover:no-underline font-semibold cursor-pointer"
                     >
-                        Reintentar sincronización
+                        <span className="hidden sm:inline">Reintentar sincronización</span>
+                        <span className="sm:hidden">Reintentar</span>
                     </button>
                 </div>
             )}
@@ -3492,7 +3529,7 @@ const Dashboard = () => {
                                     catalogoCompacto
                                 />
                             )}
-                            {showPOS && posContext === 'borrador' ? (
+                            {showPOS && isDesktopViewport && posContext === 'borrador' ? (
                                 cargandoPedidoPos ? (
                                     <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
                                         <Loader2 className="h-6 w-6 animate-spin text-[#FF7A00]" />
@@ -3894,9 +3931,10 @@ const Dashboard = () => {
                                                     type="button"
                                                     variant="outline"
                                                     className="h-12 w-full rounded-xl border-[#FF7A00]/40 font-bold text-foreground hover:bg-[#FF7A00]/10 hover:text-foreground"
+                                                    disabled={cargandoPedidoPos}
                                                     onClick={() => void editarPedidoEnPos(selectedUnifiedPedido)}
                                                 >
-                                                    <Pencil className="mr-2 h-4 w-4" /> Editar pedido
+                                                    {cargandoPedidoPos ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Pencil className="mr-2 h-4 w-4" />} Editar pedido
                                                 </Button>
                                             )}
                                                 {/* Eliminar siempre disponible — también en el historial (archived/despachado) */}
@@ -3946,17 +3984,22 @@ const Dashboard = () => {
                             )}
                         </div>
 
-                        {/* ── POS (solo móvil) ──
-                            En lg+ el POS es la columna inline del medio (arriba). En móvil, en
-                            cambio, cubre la pantalla como overlay y la comanda queda detrás. */}
+                        {/* ── POS (solo celular y tablet) ──
+                            En lg+ el POS es la columna inline del medio (arriba). Debajo de ese
+                            ancho ocupa toda la pantalla, con su propia barra: catálogo y pedido
+                            lado a lado en tablet, catálogo y hoja de pedido en celular. La lista
+                            de pedidos, las mesas y el mapa quedan a un toque (botón "Pedidos").
+                            Desde md (tablet) cubre también el menú lateral: vendiendo no hace falta
+                            navegar, y ese ancho es justo el que decide si caben dos paneles. En
+                            celular queda dentro del shell para no perder el acceso al menú. */}
                         {posActivo && showPosMovil && !isDesktopViewport && (
-                            <div className="absolute inset-0 z-50 lg:hidden flex items-center justify-center px-3 pb-3 pt-16 sm:px-6 sm:pb-6 pointer-events-none">
-                                <div
-                                    onClick={handlePosBackgroundClick}
-                                    className="pointer-events-auto w-full max-w-5xl h-full max-h-[860px] rounded-2xl bg-background shadow-2xl overflow-hidden"
-                                >
+                            <div className="absolute inset-0 z-50 flex bg-background md:fixed lg:hidden">
+                                <div className="flex h-full min-w-0 flex-1 flex-col">
+                                    {/* Key estable: remontar el POS cerraría la hoja del pedido en cada autoguardado (cada uno
+                                        trae una versión nueva) y devolvería el catálogo al principio al abrirse una mesa con el
+                                        primer producto. PuntoDeVenta ya rehidrata su estado cuando cambia initialPedido. */}
                                     <PuntoDeVenta
-                                        key={pedidoPosEditando ? `pos-edit-${pedidoPosEditando.id}-${pedidoPosEditando.version}` : 'pos-activo'}
+                                        key="pos-movil"
                                         ref={posRef}
                                         onClose={closePOS}
                                         onCreated={handlePedidoManualCreado}
@@ -3977,6 +4020,9 @@ const Dashboard = () => {
                                         autoFocusSearch={posContext === 'borrador'}
                                         initialPedido={pedidoPosEditando}
                                         onViewPedido={volverAVistaPedido}
+                                        onVerPedidos={verPedidosDesdePos}
+                                        pedidosActivos={activeOrdersListado.length}
+                                        accionesExtra={accionesPosMovil}
                                     />
                                 </div>
                             </div>

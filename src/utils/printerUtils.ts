@@ -167,6 +167,7 @@ export const formatComanda = (
     const LINE_WIDTH = 32;
     const esComandaMesa = pedido.tipo === 'mesa'
     const grandeMayusculas = options?.grandeMayusculas ?? readComandaGrandeMayusculas()
+    const nombrePedido = pedido.nombrePedido?.trim()
 
     // Total consistente con la vista: itemsSubtotal + deliveryFee - descuento
     const itemsSubtotal = items.reduce((acc, item) => acc + (item.cantidad * getItemPrice(item)), 0)
@@ -181,6 +182,11 @@ export const formatComanda = (
         ESC + 'a' + '\x01', // Center
         ESC + '!' + (grandeMayusculas ? '\x08' : '\x30'), // En modo especial, encabezado pequeño y en negrita
         `${(esComandaMesa ? formatMesaComanda(pedido.mesaNombre) : restauranteNombre.toUpperCase())}\n`,
+        // El nombre del pedido acompaña a la mesa en el encabezado, venga la
+        // comanda del POS o del delta que manda la app de mozos.
+        ...(esComandaMesa && nombrePedido
+            ? [ESC + '!' + (grandeMayusculas ? '\x08' : '\x18'), `${nombrePedido.toUpperCase()}\n`]
+            : []),
 
         ESC + '!' + '\x00', // Normal
         esComandaMesa ? '================================\n' : '--------------------------------\n',
@@ -223,8 +229,8 @@ export const formatComanda = (
         commands.push('--------------------------------\n');
     }
 
-    if (pedido.nombrePedido) {
-        commands.push(`Cliente: ${pedido.nombrePedido}\n`);
+    if (nombrePedido && !esComandaMesa) {
+        commands.push(`Cliente: ${nombrePedido}\n`);
     }
     if (pedido.telefono && !esComandaMesa) {
         commands.push(`Tel: ${pedido.telefono}\n`);

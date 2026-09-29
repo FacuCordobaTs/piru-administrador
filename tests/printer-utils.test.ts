@@ -43,6 +43,24 @@ describe('impresión ESC/POS', () => {
     expect(bytes.length).toBeGreaterThan(0)
     expect(bytes.every((byte) => byte >= 0 && byte <= 255)).toBe(true)
   })
+
+  test('la comanda de mesa lleva el nombre del pedido en el encabezado, debajo de la mesa', () => {
+    const items = [{ cantidad: 1, nombreProducto: 'Milanesa', precioUnitario: '9000' }]
+    for (const grandeMayusculas of [false, true]) {
+      const commands = formatComanda({ id: 7, tipo: 'mesa', mesaNombre: '5', nombrePedido: '  Juan Pérez ' }, items, 'Local', { grandeMayusculas })
+      const mesa = commands.indexOf('MESA 5\n')
+      expect(mesa).toBeGreaterThan(-1)
+      expect(commands.indexOf('JUAN PÉREZ\n')).toBeGreaterThan(mesa)
+      expect(commands.indexOf('JUAN PÉREZ\n')).toBeLessThan(commands.indexOf('COMANDA DE COCINA\n'))
+      expect(commands.some((command) => command.startsWith('Cliente:'))).toBe(false)
+    }
+
+    const sinNombre = formatComanda({ id: 7, tipo: 'mesa', mesaNombre: '5', nombrePedido: '  ' }, items, 'Local')
+    expect(sinNombre[sinNombre.indexOf('MESA 5\n') + 1]).toBe('\x1B!\x00')
+    const takeaway = formatComanda({ id: 8, tipo: 'takeaway', nombrePedido: 'Juan' }, items, 'Local')
+    expect(takeaway).toContain('Cliente: Juan\n')
+    expect(takeaway).not.toContain('JUAN\n')
+  })
 })
 
 describe('delta de comanda (claim de impresión)', () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import {
   Armchair,
   Banknote,
@@ -6,6 +6,7 @@ import {
   Columns3,
   Copy,
   Download,
+  HandCoins,
   Loader2,
   Landmark,
   MapPin,
@@ -20,6 +21,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import { PosCajasQrSection } from '@/components/PosCajasQrSection'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
 import { descargarDirectorioPos } from '@/lib/directorioClientesPos'
@@ -170,6 +172,11 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
     })
   }
 
+  // La caja de Mercado Pago de este dispositivo se guarda con el resto de la configuración local.
+  const elegirCajaMpQr = useCallback((cajaId: number | null) => {
+    setConfig((prev) => (prev.cajaMpQrId === cajaId ? prev : { ...prev, cajaMpQrId: cajaId }))
+  }, [])
+
   const toggleCampo = (campo: keyof PosConfig['camposCliente']) => {
     setConfig((prev) => ({ ...prev, camposCliente: { ...prev.camposCliente, [campo]: !prev.camposCliente[campo] } }))
   }
@@ -221,6 +228,16 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Métodos de pago</p>
         <div className="mt-2 space-y-2">
           {METODOS_POS.map((m) => <FilaConfig key={m.id} icon={m.icon} label={m.label} checked={config.metodosPago[m.id]} onCheckedChange={() => toggleMetodoPago(m.id)} />)}
+          <FilaConfig
+            icon={HandCoins}
+            label="Confirmar cobros manualmente"
+            descripcion="Al anotar un pedido se confirma el cobro: con Mercado Pago se verifica solo con el QR de la caja; con efectivo, tarjeta o transferencia, tocás «Cobrado»."
+            checked={config.confirmarCobrosManualmente}
+            onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, confirmarCobrosManualmente: checked }))}
+          />
+          {config.confirmarCobrosManualmente && config.metodosPago.mercadopago && (
+            <PosCajasQrSection cajaElegidaId={config.cajaMpQrId} onElegir={elegirCajaMpQr} />
+          )}
         </div>
       </div>
       <div>

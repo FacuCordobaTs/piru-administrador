@@ -4,3 +4,11 @@
 /gen/schemas
 piru.key
 piru.key.pub
+
+# Firma del APK de Android: nunca se commitea.
+# `gen/android/keystore.properties` apunta al .jks y lleva las contraseñas; el
+# workflow de release lo escribe desde secretos y el .jks viaja en base64.
+# (El patrón sin barra matchea a cualquier profundidad, incluido gen/android/.)
+keystore.properties
+*.jks
+*.keystore

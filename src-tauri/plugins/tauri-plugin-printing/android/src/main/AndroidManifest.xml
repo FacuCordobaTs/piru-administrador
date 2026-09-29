@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A propósito vacío.
+
+    Los permisos que el plugin necesita (`BLUETOOTH_CONNECT` y los `BLUETOOTH`/`BLUETOOTH_ADMIN` de
+    API 30-) y el `uses-feature android.hardware.usb.host required="false"` los declara el manifest
+    de la app: ahí importa que ningún transporte sea obligatorio, porque una tablet sin USB o sin
+    Bluetooth tiene que poder instalar la app igual. Duplicarlos acá no agrega nada (el merge de
+    manifests los uniría) y sí puede desactivar sin querer ese `required="false"`.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+</manifest>

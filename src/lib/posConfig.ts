@@ -12,6 +12,13 @@ export interface PosConfig {
     mostrarColumnaPedidos: boolean
     soloProductosEvento: boolean
     imprimirComandaDosVeces: boolean
+    /**
+     * Los pedidos nuevos no nacen cobrados: Mercado Pago se verifica solo con el QR de la caja y el
+     * resto de los métodos se confirma con "Cobrado". Ver `lib/posCobro.ts`.
+     */
+    confirmarCobrosManualmente: boolean
+    /** Caja de Mercado Pago (QR estático) con la que cobra ESTE dispositivo; `null` = sin elegir. */
+    cajaMpQrId: number | null
 }
 
 export const POS_CONFIG_KEY = 'piru:pos-config'
@@ -21,6 +28,19 @@ export const POS_CONFIG_CHANGED_EVENT = 'piru:pos-config-changed'
  *  la mesa asignada, para que asignar/desasignar mesa conserve el mismo borrador. */
 export const posDraftStorageKey = (sucursalId: number | null, restauranteId?: number | null) =>
     `piru:pos-draft:${sucursalId ?? 'sin-sucursal'}${restauranteId != null ? `:restaurante:${restauranteId}` : ''}`
+
+/** Unidades del borrador que quedó guardado en esta pestaña (0 si no hay ninguno). Sirve para ofrecer
+ *  "Seguir pedido" sin tener el POS montado. */
+export const unidadesBorradorGuardado = (sucursalId: number | null, restauranteId?: number | null): number => {
+    try {
+        const raw = sessionStorage.getItem(posDraftStorageKey(sucursalId, restauranteId))
+        const cart = raw ? (JSON.parse(raw) as { cart?: unknown }).cart : null
+        if (!Array.isArray(cart)) return 0
+        return cart.reduce((suma: number, fila: { cantidad?: unknown }) => suma + (Number(fila?.cantidad) || 0), 0)
+    } catch {
+        return 0
+    }
+}
 
 export const POS_TIPOS_ORDER: PosTipo[] = ['delivery', 'mesa', 'takeaway']
 export const POS_METODOS_ORDER: PosMetodoPago[] = ['cash', 'tarjeta', 'manual_transfer', 'mercadopago']
@@ -34,6 +54,8 @@ export const DEFAULT_POS_CONFIG: PosConfig = {
     mostrarColumnaPedidos: true,
     soloProductosEvento: false,
     imprimirComandaDosVeces: false,
+    confirmarCobrosManualmente: false,
+    cajaMpQrId: null,
 }
 
 /** Fusiona lo guardado con los defaults; la columna de catálogo requiere activación explícita. */
@@ -62,6 +84,8 @@ const mergeConfig = (raw: unknown): PosConfig => {
         mostrarColumnaPedidos: parsed.mostrarColumnaPedidos !== false,
         soloProductosEvento: parsed.soloProductosEvento === true,
         imprimirComandaDosVeces: parsed.imprimirComandaDosVeces === true,
+        confirmarCobrosManualmente: parsed.confirmarCobrosManualmente === true,
+        cajaMpQrId: typeof parsed.cajaMpQrId === 'number' && Number.isInteger(parsed.cajaMpQrId) && parsed.cajaMpQrId > 0 ? parsed.cajaMpQrId : null,
     }
 }
 

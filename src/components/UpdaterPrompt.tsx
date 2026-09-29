@@ -2,7 +2,21 @@ import { useState, useEffect } from 'react';
 import { check, Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { toast } from 'sonner';
+import { esAndroid, esAppTauri } from '@/utils/piruAndroid';
 // Acá importarías tus componentes de Shadcn: Dialog, Button, etc.
+
+/**
+ * El actualizador existe sólo en escritorio: en Rust está detrás de `#[cfg(desktop)]`.
+ *
+ * `__TAURI_INTERNALS__` no alcanza como señal —también está en Android— y ahí `check()` llamaría a
+ * un comando que no existe. La plataforma se deduce del user agent en vez de sumar
+ * `@tauri-apps/plugin-os`, porque registrar un plugin toca `Cargo.toml` y `lib.rs`. Los dos
+ * criterios viven en `piruAndroid`: es la misma condición que decide si se muestra el ajuste de
+ * batería, y conviene que no se separen.
+ */
+function esEscritorio(): boolean {
+    return esAppTauri() && !esAndroid();
+}
 
 export default function UpdaterPrompt() {
     const [update, setUpdate] = useState<Update | null>(null);
@@ -21,8 +35,8 @@ export default function UpdaterPrompt() {
             }
         };
 
-        // Solo buscamos actualizaciones si estamos en el entorno de Tauri (escritorio)
-        if ((window as any).__TAURI_INTERNALS__) {
+        // Solo buscamos actualizaciones en la app de escritorio.
+        if (esEscritorio()) {
             checkForUpdates();
         }
     }, []);

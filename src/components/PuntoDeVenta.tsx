@@ -1,4 +1,3 @@
-import { ClienteAutocomplete } from '@/components/ClienteAutocomplete'
 import { aplicarClienteRespuesta } from '@/lib/directorioClientesPos'
 import { nuevoRequestId, reclamarPendiente } from '@/lib/posOffline'
 import { leerMeta, guardarRegistro, borrarRegistro } from '@/lib/posLocalDb'
@@ -7,11 +6,9 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { ApiError, pedidoUnificadoApi, type PedidoUnificadoItemInput } from '@/lib/api'
-import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { usePrinter } from '@/context/PrinterContext'
 import { formatComanda, commandsToBytes } from '@/utils/printerUtils'
 import {
@@ -21,13 +18,17 @@ import {
 } from '@/lib/posOffline'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { POS_TIPOS_ORDER, posDraftStorageKey, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
+import { POS_TIPOS_ORDER, getPosConfig, posDraftStorageKey, setPosConfig, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
 import { PosConfigDialog } from '@/components/PosConfigDialog'
+import { PosCobroManualDialog, PosCobroQrDialog } from '@/components/PosCobroDialog'
+import { modoDeCobro, requiereConfirmarCobro } from '@/lib/posCobro'
+import { PosMovil } from '@/components/pos-movil/PosMovil'
+import { PosPendientes } from '@/components/pos-movil/PosPendientes'
 import {
-    X, Search, Plus, Minus, Trash2, ShoppingBag, Truck, Loader2,
-    Banknote, CreditCard, Landmark, Smartphone, ShoppingCart, MapPin, ChevronRight,
-    WifiOff, Printer, CheckCircle, MoreHorizontal, Armchair,
-} from 'lucide-react'
+    esPantallaTactil, filtrarProductos, productoTieneOpciones,
+    type PosAccionExtra, type PosItemVista, type PosPedidoAcciones, type PosPedidoDatos,
+} from '@/components/pos-movil/posMovilLib'
+import { X, Search, Plus, Banknote, CreditCard, Landmark, Smartphone } from 'lucide-react'
 
 type Producto = ReturnType<typeof useRestauranteStore.getState>['productos'][number]
 
@@ -56,6 +57,8 @@ interface PersistedPosDraft {
     notas: string
     metodoPago: string
     deliveryFee: string
+    /** Cobro con QR en curso: el pedido impago ya anotado, para retomarlo si se recarga la pantalla. */
+    cobroQr?: { pedidoId: number }
 }
 
 
@@ -194,6 +197,12 @@ interface PuntoDeVentaProps {
     sucursalNombre?: string
     /** En desktop, integra el catálogo como desplegable dentro de la comanda. */
     catalogoCompacto?: boolean
+    /** Celular/tablet: vuelve a la lista de pedidos sin descartar el borrador. */
+    onVerPedidos?: () => void
+    /** Celular/tablet: pedidos activos, para el contador del botón de volver. */
+    pedidosActivos?: number
+    /** Celular/tablet: atajos del Dashboard (caja, mapa, mesas…) que se suman al menú del POS. */
+    accionesExtra?: PosAccionExtra[]
 }
 
 const METODOS_PAGO: Array<{ id: PosMetodoPago; label: string; icon: React.ElementType }> = [
@@ -267,7 +276,7 @@ const pedidoSignature = (values: PedidoSignatureValues) => JSON.stringify({
 })
 
 const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function PuntoDeVenta(
-    { onClose, onCreated, onUpdated, onExistingMesaProductsAdded, onExistingPedidoUpdated, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, sedeEvento = false, onDraftChange, onStartDraft, onViewPedido, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, onProductSearchIntent, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false },
+    { onClose, onCreated, onUpdated, onExistingMesaProductsAdded, onExistingPedidoUpdated, onDispatchMesa, onPrintNewMesa, onPrintAllMesa, sucursalActivaId, sedeEvento = false, onDraftChange, onStartDraft, onViewPedido, mesaAsignada = null, onClearMesa, onMesaOcupadaDetectada, autoFocusSearch = true, onProductSearchIntent, initialPedido = null, mostrarBotonCerrar = true, sucursalNombre = '', catalogoCompacto = false, onVerPedidos, pedidosActivos, accionesExtra = [] },
     ref
 ) {
     const token = useAuthStore((s) => s.token)
@@ -290,6 +299,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const [query, setQuery] = useState('')
     const [configurandoPos, setConfigurandoPos] = useState(false)
+    // Cobro en curso ("Confirmar cobros manualmente"): confirmación manual o cobro con QR de Mercado Pago.
+    const [cobro, setCobro] = useState<{ modo: 'manual' } | { modo: 'qr'; pedidoIdInicial: number | null } | null>(null)
+    // Pedido impago ya anotado para el cobro con QR. Se persiste en el borrador (`cobroQr`).
+    const [cobroQrPedidoId, setCobroQrPedidoId] = useState<number | null>(null)
+    const cobroQrRef = useRef<{ clientRequestId: string; pedidoId: number | null; datos: (PosEditablePedido & { id?: number }) | null } | null>(null)
     const searchInputRef = useRef<HTMLInputElement>(null)
     // El destino cambia entre la comanda y la tercera columna sin perder el borrador.
     const [catalogoTarget, setCatalogoTarget] = useState<HTMLElement | null>(null)
@@ -302,7 +316,12 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         editKey?: string
         initialItem?: CartItem
     } | null>(null)
-    const [mobileStep, setMobileStep] = useState<'productos' | 'checkout'>('productos')
+    // Celular: el pedido vive en una hoja que sube sobre el catálogo (en tablet es una columna fija).
+    // Al abrir un pedido existente para editarlo, lo que se quiere ver primero es el pedido.
+    const [hojaAbierta, setHojaAbierta] = useState(() => initialPedido != null)
+    const [categoriaMovil, setCategoriaMovil] = useState<string | null>(null)
+    // El último intento de anotar un delivery falló por falta de dirección.
+    const [direccionFaltante, setDireccionFaltante] = useState(false)
     // Producto destacado del resultado: es el que Enter agrega al pedido y el
     // que las flechitas recorren durante la búsqueda (indicado con el marquito).
     const [indiceSeleccionado, setIndiceSeleccionado] = useState(0)
@@ -411,14 +430,16 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // En el borrador, el lector/teclado debe poder empezar a buscar sin un click
     // previo. No se roba el foco de campos que el usuario haya elegido de forma
     // explícita, ni del configurador de un producto abierto.
+    // En celular y tablet el buscador no se enfoca solo: abriría el teclado en pantalla
+    // y taparía el catálogo antes de que el cajero toque nada.
     useEffect(() => {
-        if (!autoFocusSearch || configProducto) return
+        if (!autoFocusSearch || configProducto || (!catalogoCompacto && esPantallaTactil())) return
         const frame = window.requestAnimationFrame(focusProductSearch)
         return () => window.cancelAnimationFrame(frame)
-    }, [autoFocusSearch, configProducto, catalogoTarget])
+    }, [autoFocusSearch, configProducto, catalogoTarget, catalogoCompacto])
 
     useEffect(() => {
-        if (configProducto) return
+        if (configProducto || hojaAbierta || cobro) return
 
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return
@@ -439,7 +460,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
         window.addEventListener('keydown', handleKeyDown, true)
         return () => window.removeEventListener('keydown', handleKeyDown, true)
-    }, [configProducto, onProductSearchIntent])
+    }, [configProducto, hojaAbierta, cobro, onProductSearchIntent])
 
     // El borrador sobrevive una recarga accidental dentro de la misma pestaña. Se
     // separa por sucursal para no cruzar comandas entre locales del mismo negocio.
@@ -462,7 +483,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     return [{ id, nombre: String(candidate.nombre ?? ''), precio: String(candidate.precio ?? 0) }]
                 })
             }
-            setCart(initialPedido.items.map((item) => {
+            const carritoDelServidor = initialPedido.items.map((item) => {
                 const agregados = parseAgregados(item.agregados)
                 const precioUnitario = Number(item.precioUnitario) || 0
                 return {
@@ -480,7 +501,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     cantidad: item.cantidad,
                     nota: item.nota ?? undefined,
                 }
-            }))
+            })
+            setCart(carritoDelServidor)
+            // El POS no se remonta con cada versión: un ajuste abierto sobre una fila que el
+            // servidor renumeró (las nuevas nacen con una key local) ya no tiene dónde aplicarse.
+            setConfigProducto((actual) => actual?.editKey != null && !carritoDelServidor.some((fila) => fila.key === actual.editKey) ? null : actual)
             setTipo(initialPedido.tipo)
             setNombre(initialPedido.nombreCliente || '')
             setTelefono(initialPedido.telefono || '')
@@ -496,6 +521,9 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         }
         setHydratedPedidoId(null)
         setHydratedStorageKey(null)
+        // Al volver de una edición a un borrador (p. ej. tras despachar una mesa) el POS móvil no se
+        // remonta: la hoja, la categoría y la búsqueda de la edición anterior no deben quedar puestas.
+        setHojaAbierta(false); setCategoriaMovil(null); setQuery(''); setDireccionFaltante(false)
         let cancelado = false
         let hidratado = false
         void (async () => {
@@ -518,6 +546,13 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 setNotas(typeof parsed.notas === 'string' ? parsed.notas : '')
                 setMetodoPago(typeof parsed.metodoPago === 'string' ? parsed.metodoPago : 'cash')
                 setDeliveryFee(typeof parsed.deliveryFee === 'string' ? parsed.deliveryFee : '')
+                const pedidoCobroQr = Number(parsed.cobroQr?.pedidoId)
+                if (Number.isInteger(pedidoCobroQr) && pedidoCobroQr > 0) {
+                    // Se recargó a mitad de un cobro con QR: el pedido impago ya existe, se retoma el mismo cobro.
+                    cobroQrRef.current = { clientRequestId: nuevoRequestId(), pedidoId: pedidoCobroQr, datos: null }
+                    setCobroQrPedidoId(pedidoCobroQr)
+                    setCobro({ modo: 'qr', pedidoIdInicial: pedidoCobroQr })
+                }
             } else {
                 prefillEnvioRef.current = false
                 setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
@@ -540,7 +575,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     useEffect(() => {
         if (modoEdicion) return
         if (hydratedStorageKey !== storageKey) return
-        const persisted: PersistedPosDraft = { cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee }
+        const persisted: PersistedPosDraft = { cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee, ...(cobroQrPedidoId != null ? { cobroQr: { pedidoId: cobroQrPedidoId } } : {}) }
         const hasContent = cart.length > 0 || [nombre, telefono, direccion, notas, deliveryFee].some((value) => value.trim() !== '')
         try {
             if (hasContent) sessionStorage.setItem(storageKey, JSON.stringify(persisted))
@@ -548,7 +583,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         } catch {
             // sessionStorage puede estar deshabilitado; el POS sigue funcionando en memoria.
         }
-    }, [modoEdicion, hydratedStorageKey, storageKey, cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee])
+    }, [modoEdicion, hydratedStorageKey, storageKey, cart, tipo, nombre, telefono, direccion, notas, metodoPago, deliveryFee, cobroQrPedidoId])
 
     // Si la configuración del POS deshabilitó el tipo o el método de pago del
     // borrador, se pasa al primero habilitado. Al editar se respeta el pedido.
@@ -585,24 +620,19 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // Cada término debe coincidir en algún lado (nombre, descripción, categoría
     // o etiquetas/tags), sin importar el orden: "gratinado milanesa" encuentra un
     // "Sandwich gratinado" de categoría "Milanesa", igual que "gratinado sandwich".
-    const productosFiltrados = useMemo(() => {
-        const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-        const activos = productos.filter((p) => p.activo !== false && (
-            p.eventoSucursalId != null
-                ? p.eventoSucursalId === sucursalActivaId
-                : !(sedeEvento && config.soloProductosEvento)
-        ))
-        if (terms.length === 0) return activos
-        return activos.filter((p) => {
-            const texto = [
-                p.nombre,
-                p.descripcion,
-                p.categoria,
-                ...(p.etiquetas ?? []).map((e) => e.nombre),
-            ].filter(Boolean).join(' ').toLowerCase()
-            return terms.every((term) => texto.includes(term))
-        })
-    }, [productos, query, sucursalActivaId, sedeEvento, config.soloProductosEvento])
+    const productosActivos = useMemo(() => productos.filter((p) => p.activo !== false && (
+        p.eventoSucursalId != null
+            ? p.eventoSucursalId === sucursalActivaId
+            : !(sedeEvento && config.soloProductosEvento)
+    )), [productos, sucursalActivaId, sedeEvento, config.soloProductosEvento])
+    const productosFiltrados = useMemo(() => filtrarProductos(productosActivos, query), [productosActivos, query])
+    // Celular/tablet: las categorías se muestran en el orden que el local definió en Menú.
+    const categoriasStore = useRestauranteStore((s) => s.categorias)
+    const cargandoMenu = useRestauranteStore((s) => s.isLoading)
+    const ordenCategorias = useMemo(
+        () => new Map(categoriasStore.map((categoria) => [categoria.nombre, categoria.orden ?? 0])),
+        [categoriasStore],
+    )
 
     const catalogoEnColumna = catalogoCompacto && config.catalogoEnColumna
     const mostrarListado = catalogoEnColumna || query.trim() !== ''
@@ -673,7 +703,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         () => cart.reduce((s, it) => s + itemUnitPrice(it) * it.cantidad, 0),
         [cart]
     )
-    const totalItems = useMemo(() => cart.reduce((s, it) => s + it.cantidad, 0), [cart])
     const deliveryFeeNum = tipo === 'delivery' ? parseFloat(deliveryFee) || 0 : 0
     const totalFinal = cartTotal + deliveryFeeNum - (Number(initialPedido?.montoDescuento) || 0)
 
@@ -789,8 +818,16 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         // se escribe directo, sin borrar el término anterior.
         setQuery('')
         // Esperar al render garantiza que el input siga montado y activo incluso
-        // cuando el alta cerró el configurador de variantes.
-        window.requestAnimationFrame(() => searchInputRef.current?.focus())
+        // cuando el alta cerró el configurador de variantes. En pantallas táctiles
+        // el foco se suelta: así el teclado en pantalla no tapa el catálogo.
+        const tactil = !catalogoCompacto && esPantallaTactil()
+        if (tactil) {
+            try { navigator.vibrate?.(8) } catch { /* sin vibración disponible */ }
+        }
+        window.requestAnimationFrame(() => {
+            if (tactil) searchInputRef.current?.blur()
+            else searchInputRef.current?.focus()
+        })
     }
 
     const handleProductClick = (producto: Producto, anchor: DOMRect) => {
@@ -845,11 +882,14 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         if (changes.deliveryFee !== undefined) setDeliveryFee(String(changes.deliveryFee))
     }
 
-    const resetForm = () => {
+    // `conservarVista`: la mesa que se abre con su primer producto también pasa por acá, pero quien
+    // sigue cargando productos no debe perder la categoría ni la hoja que tenía a la vista.
+    const resetForm = (conservarVista = false) => {
         prefillEnvioRef.current = false
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
         setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
-        setQuery(''); setMobileStep('productos')
+        setQuery(''); setDireccionFaltante(false)
+        if (!conservarVista) { setHojaAbierta(false); setCategoriaMovil(null) }
         if (!modoEdicion) {
             try { sessionStorage.removeItem(storageKey) } catch { /* noop */ }
         }
@@ -977,21 +1017,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
-    useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: resetForm, focusProductSearch, getCartItems }))
+    useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: () => resetForm(), focusProductSearch, getCartItems }))
 
-    const handleSubmit = async (automatico = false): Promise<number | null> => {
-        if (!token || enviandoRef.current) return null
-        // Despachar una mesa ya guardada no exige introducir un cambio artificial.
-        if (modoEdicion && !hasChanges) return initialPedido.id
-        if (cart.length === 0) {
-            toast.error('Agregá al menos un producto')
-            return null
-        }
-        if (tipo === 'delivery' && config.camposCliente.direccion && !direccion.trim()) {
-            toast.error('Ingresá la dirección de entrega')
-            return null
-        }
-
+    // Datos del alta tal como viajan al backend. `pagadoAlta` es lo único que cambia entre un alta común,
+    // una confirmada con "Cobrado" (nace cobrada) y el pedido impago de un cobro con QR.
+    const armarAlta = (pagadoAlta: boolean) => {
         const items: PedidoUnificadoItemInput[] = cart.map((it) => ({
             id: it.serverItemId,
             productoId: it.productoId,
@@ -1008,7 +1038,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             telefono: telefono.trim() || undefined,
             notas: notas.trim() || undefined,
             anotadoManualmente: true,
-            pagado,
+            pagado: pagadoAlta,
             metodoPago,
             sucursalId: sucursalActivaId ?? undefined,
             items,
@@ -1026,6 +1056,32 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 : mesaAsignada
                   ? { tipo: 'mesa' as const, mesaLocalId: mesaAsignada.id, consumoEnLocal: true as const, ...common }
                   : { tipo: 'takeaway' as const, ...common }
+        return { items, data }
+    }
+
+    const handleSubmit = async (automatico = false, opciones: { cobroConfirmado?: boolean } = {}): Promise<number | null> => {
+        if (!token || enviandoRef.current) return null
+        // Despachar una mesa ya guardada no exige introducir un cambio artificial.
+        if (modoEdicion && !hasChanges) return initialPedido.id
+        if (cart.length === 0) {
+            toast.error('Agregá al menos un producto')
+            return null
+        }
+        if (tipo === 'delivery' && config.camposCliente.direccion && !direccion.trim()) {
+            toast.error('Ingresá la dirección de entrega')
+            // Un guardado automático no interrumpe: sólo el intento manual marca el campo.
+            if (!automatico && !catalogoCompacto) setDireccionFaltante(true)
+            return null
+        }
+
+        // "Confirmar cobros manualmente": el pedido nuevo no se anota hasta que el cobro se confirma.
+        if (!automatico && !opciones.cobroConfirmado
+            && requiereConfirmarCobro({ config, modoEdicion, tipo, conMesa: mesaAsignada != null })) {
+            setCobro(modoDeCobro(metodoPago) === 'qr' ? { modo: 'qr', pedidoIdInicial: null } : { modo: 'manual' })
+            return null
+        }
+
+        const { items, data } = armarAlta(pagado)
 
         enviandoRef.current = true
         setSubmitting(true)
@@ -1099,7 +1155,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             // Si falla IndexedDB, el carrito permanece y no se envía ni imprime.
             await usePosOfflineStore.getState().guardarPendiente(pendiente)
             if (useAuthStore.getState().restaurante?.id !== restauranteId) return null
-            resetForm()
+            resetForm(data.tipo === 'mesa')
             if (!online || navegadorOffline()) {
                 await guardarPedidoOffline(pendiente, true)
                 return null
@@ -1158,6 +1214,51 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         }
     }
 
+    // ── Cobro ("Confirmar cobros manualmente") ──
+    const cerrarCobro = () => {
+        cobroQrRef.current = null
+        setCobroQrPedidoId(null)
+        setCobro(null)
+    }
+
+    // "Cobrado": el pedido se anota ya cobrado, por el mismo camino de siempre (cola offline incluida).
+    const confirmarCobroManual = () => {
+        setCobro(null)
+        void handleSubmit(false, { cobroConfirmado: true })
+    }
+
+    // Cobro con QR: el pedido se anota impago (sin cola offline: sin red no hay cobro posible) y el servidor
+    // lo acredita cuando Mercado Pago confirma. El borrador se conserva hasta entonces, así un cobro
+    // cancelado o vencido no hace perder lo cargado. Reintentar reutiliza el mismo `clientRequestId`.
+    const crearPedidoParaCobroQr = async (): Promise<number | null> => {
+        if (!token) return null
+        if (cobroQrRef.current?.pedidoId != null) return cobroQrRef.current.pedidoId
+        const clientRequestId = cobroQrRef.current?.clientRequestId ?? nuevoRequestId()
+        cobroQrRef.current = { clientRequestId, pedidoId: null, datos: null }
+        try {
+            const res = await pedidoUnificadoApi.create(token, { ...armarAlta(false).data, clientRequestId }) as { success?: boolean; data?: PosEditablePedido & { id?: number } }
+            const pedidoId = res?.data?.id
+            if (!res?.success || !pedidoId) throw new ApiError('Confirmación incompleta', 0)
+            cobroQrRef.current = { clientRequestId, pedidoId, datos: res.data ?? null }
+            setCobroQrPedidoId(pedidoId)
+            return pedidoId
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'No se pudo anotar el pedido')
+            return null
+        }
+    }
+
+    // Mercado Pago confirmó el pago: el pedido ya está cobrado en el servidor. Se limpia el borrador y se
+    // avisa al Dashboard para que imprima la comanda (diferida hasta que el pedido está pago).
+    const finalizarCobroQr = async (pedidoId: number) => {
+        const datos = cobroQrRef.current?.datos ?? undefined
+        cobroQrRef.current = null
+        setCobroQrPedidoId(null)
+        resetForm()
+        toast.success('Pago recibido: pedido anotado')
+        await onCreated(pedidoId, datos)
+    }
+
     // Las mesas nuevas y cualquier pedido abierto en el editor se guardan
     // automáticamente apenas termina una ráfaga de cambios. Este guardado nunca
     // imprime: la impresión siempre es manual.
@@ -1175,238 +1276,130 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         return () => window.clearTimeout(timeout)
     }, [online, modoEdicion, tipo, mesaAsignada?.id, cart.length, hasChanges, submitting, currentSignature])
 
-    // Con la configuración del POS, un campo desactivado se oculta por completo
-    // y no participa de los datos del borrador.
-    const nombreEditable = config.camposCliente.nombre
-    const telefonoEditable = config.camposCliente.telefono
+    // ── Celular y tablet: lo que la pantalla completa (PosMovil) necesita ──
+    // El estado sigue siendo de este componente; PosMovil sólo lo dibuja.
+    const cantidadesPorProducto = useMemo(() => {
+        const mapa = new Map<number, number>()
+        cart.forEach((it) => mapa.set(it.productoId, (mapa.get(it.productoId) ?? 0) + it.cantidad))
+        return mapa
+    }, [cart])
 
-    // ── Sub-componente: panel de checkout (carrito + datos) ──
-    const CheckoutPanel = (
-        <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto p-4 space-y-5">
-                {/* Carrito — solo mobile. En desktop el borrador vive en la comanda del
-                    panel derecho (Dashboard), donde también se quitan ítems. */}
-                <div className="lg:hidden">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-                            <ShoppingCart className="h-3.5 w-3.5" /> Pedido ({totalItems})
-                        </h3>
-                        {cart.length > 0 && (
-                            <button onClick={() => setCart([])} className="text-[11px] text-muted-foreground hover:text-red-500 transition-colors">
-                                Vaciar
-                            </button>
-                        )}
-                    </div>
-                    {cart.length === 0 ? (
-                        <p className="text-sm text-muted-foreground/60 py-6 text-center border border-dashed border-border rounded-xl">
-                            Tocá productos para agregarlos
-                        </p>
-                    ) : (
-                        <div className="space-y-2">
-                            {cart.map((it) => (
-                                <div key={it.key} className="flex items-start gap-2 p-2.5 rounded-xl bg-muted/40">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-foreground truncate">
-                                            {it.nombre}
-                                            {(it.varianteNombre || it.varianteSecundariaNombre) && <span className="text-[#FF7A00] text-xs font-medium"> ({[it.varianteNombre, it.varianteSecundariaNombre].filter(Boolean).join(' · ')})</span>}
-                                        </p>
-                                        {it.agregados.length > 0 && (
-                                            <p className="text-[11px] text-muted-foreground truncate">
-                                                {it.agregados.map((a) => `+ ${a.nombre}`).join(', ')}
-                                            </p>
-                                        )}
-                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                            ${itemUnitPrice(it).toLocaleString('es-AR', { minimumFractionDigits: 0 })} c/u
-                                        </p>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                        <button onClick={() => changeQty(it.key, -1)} className="h-7 w-7 rounded-lg bg-background border border-border flex items-center justify-center hover:bg-accent">
-                                            <Minus className="h-3.5 w-3.5" />
-                                        </button>
-                                        <span className="w-5 text-center text-sm font-bold">{it.cantidad}</span>
-                                        <button onClick={() => changeQty(it.key, 1)} className="h-7 w-7 rounded-lg bg-background border border-border flex items-center justify-center hover:bg-accent">
-                                            <Plus className="h-3.5 w-3.5" />
-                                        </button>
-                                        <button onClick={() => removeItem(it.key)} className="h-7 w-7 rounded-lg text-red-500 hover:bg-red-500/10 flex items-center justify-center">
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+    const itemsVista = useMemo<PosItemVista[]>(() => cart.map((it) => {
+        const producto = productos.find((candidato) => candidato.id === it.productoId)
+        return {
+            key: it.key,
+            nombre: it.nombre,
+            varianteNombre: it.varianteNombre,
+            varianteSecundariaNombre: it.varianteSecundariaNombre,
+            agregadosNombres: it.agregados.map((agregado) => agregado.nombre),
+            ingredientesExcluidosNombres: producto?.ingredientes
+                ?.filter((ingrediente) => it.ingredientesExcluidos.includes(ingrediente.id))
+                .map((ingrediente) => ingrediente.nombre) ?? [],
+            cantidad: it.cantidad,
+            precioUnitario: itemUnitPrice(it),
+            editable: !!producto && (
+                productoTieneOpciones(producto)
+                || (producto.ingredientes?.length ?? 0) > 0
+                || (producto.agregados?.length ?? 0) > 0
+            ),
+        }
+    }), [cart, productos])
 
-                {/* En desktop estos controles viven en la comanda; en mobile este panel es la comanda. */}
-                {tipo !== 'mesa' && tiposHabilitados.length > 0 && <div className="lg:hidden">
-                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Tipo</Label>
-                    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${tiposHabilitados.length}, minmax(0, 1fr))` }}>
-                        {tiposHabilitados.includes('delivery') && (
-                            <button
-                                onClick={() => { onClearMesa?.(); setTipo('delivery') }}
-                                className={cn('flex items-center justify-center gap-1 h-9 rounded-lg border text-xs font-semibold transition-colors',
-                                    tipo === 'delivery' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                            >
-                                <Truck className="h-3.5 w-3.5" /> Delivery
-                            </button>
-                        )}
-                        {tiposHabilitados.includes('takeaway') && (
-                            <button
-                                onClick={() => { onClearMesa?.(); setTipo('takeaway') }}
-                                className={cn('flex items-center justify-center gap-1 h-9 rounded-lg border text-xs font-semibold transition-colors',
-                                    tipo === 'takeaway' ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                            >
-                                <ShoppingBag className="h-3.5 w-3.5" /> Takeaway
-                            </button>
-                        )}
-                    </div>
-                </div>}
-                {/* Datos del cliente */}
-                <div className="relative space-y-3 lg:hidden">
-                    <ClienteAutocomplete nombre={nombre} telefono={telefono} mostrarNombre={nombreEditable} mostrarTelefono={telefonoEditable}
-                        onChange={updateDraft} />
-                    {tipo !== 'mesa' && config.camposCliente.direccion && <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Dirección</Label>
-                        {direccionSoloTexto ? (
-                            <Input
-                                value={direccion}
-                                onChange={(event) => { setDireccion(event.target.value); setLat(null); setLng(null) }}
-                                placeholder="Calle, número, barrio y ciudad..."
-                                disabled={tipo !== 'delivery'}
-                                autoComplete="street-address"
-                                className="h-11 rounded-xl bg-transparent dark:bg-transparent"
-                            />
-                        ) : (
-                            <AddressAutocomplete
-                                value={direccion}
-                                onChange={(addr, newLat, newLng) => { setDireccion(addr); setLat(newLat); setLng(newLng) }}
-                                placeholder="Calle y número..."
-                                disabled={tipo !== 'delivery'}
-                            />
-                        )}
-                    </div>}
-                    {tipo === 'delivery' && (
-                        <div className="space-y-1.5">
-                            <Label className="text-xs font-semibold text-muted-foreground">Costo de envío</Label>
-                            <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
-                                <Input value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0" inputMode="decimal" className="h-11 rounded-xl pl-7 bg-transparent dark:bg-transparent" />
-                            </div>
-                        </div>
-                    )}
-                    {config.notas && <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold text-muted-foreground">Notas</Label>
-                        <Textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Aclaraciones..." className="rounded-xl resize-none min-h-[60px]" />
-                    </div>}
-                </div>
+    const requestVaciar = () => {
+        if (submitting || cart.length === 0) return
+        if (!window.confirm('¿Quitar todos los productos del pedido?')) return
+        setCart([])
+    }
 
-                {/* Método de pago. Con un único método habilitado no se muestra
-                    ningún botón: el pedido se guarda directo con ese método. */}
-                {metodosHabilitados.length > 1 && (
-                    <div className="lg:hidden">
-                        <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 block">Método de pago</Label>
-                        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${metodosHabilitados.length}, minmax(0, 1fr))` }}>
-                            {metodosHabilitados.map((m) => {
-                                const Icon = m.icon
-                                const selected = metodoPago === m.id
-                                return (
-                                    <button
-                                        key={m.id}
-                                        onClick={() => setMetodoPago(m.id)}
-                                        className={cn('flex items-center gap-1.5 h-9 px-2 rounded-lg border text-xs font-semibold transition-colors',
-                                            selected ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-black dark:text-white' : 'border-border text-muted-foreground hover:bg-accent')}
-                                    >
-                                        <Icon className="h-3.5 w-3.5 shrink-0" /> {m.label}
-                                    </button>
-                                )
-                            })}
-                        </div>
-                    </div>
-                )}
-            </div>
+    // Ir a la lista de pedidos no descarta el borrador (queda en sessionStorage). Al editar
+    // un pedido existente, en cambio, lo no guardado se perdería: se pregunta primero.
+    const requestVerPedidos = () => {
+        if (modoEdicion && hasChanges && !window.confirm('¿Salir sin guardar los cambios del pedido?')) return
+        onVerPedidos?.()
+    }
 
-            {/* En desktop el total y la confirmación viven en la comanda del Dashboard. */}
-            <div className="lg:hidden shrink-0 border-t border-border p-4 bg-background">
-                {tipo === 'delivery' && deliveryFeeNum > 0 && (
-                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                        <span>Productos</span><span>${cartTotal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
-                    </div>
-                )}
-                {tipo === 'delivery' && deliveryFeeNum > 0 && (
-                    <div className="flex justify-between text-xs text-muted-foreground mb-2">
-                        <span>Envío</span><span>${deliveryFeeNum.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
-                    </div>
-                )}
-                <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-bold text-foreground">Total</span>
-                    <span className="text-2xl font-black text-[#FF7A00]">${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
-                </div>
-                {(modoEdicion || tipo === 'mesa') && (
-                    <div className="mb-2 flex items-center justify-end gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                        {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                        <span>
-                            {cart.length === 0 && !modoEdicion
-                                ? 'Agregá un producto para abrir la mesa'
-                                : submitting
-                                    ? 'Guardando…'
-                                    : hasChanges
-                                        ? 'Guardado pendiente…'
-                                        : 'Guardado'}
-                        </span>
-                    </div>
-                )}
-                <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                        {modoEdicion || tipo === 'mesa' ? (
-                            <Button
-                                type="button"
-                                onClick={() => void handleSubmit()}
-                                disabled={submitting || !hasChanges || cart.length === 0}
-                                className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base disabled:opacity-50"
-                            >
-                                {submitting ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando…
-                                    </>
-                                ) : (
-                                    'Guardar cambios'
-                                )}
-                            </Button>
-                        ) : (
-                            <Button
-                                onClick={() => void handleSubmit()}
-                                disabled={submitting || cart.length === 0}
-                                className="flex-1 h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold text-base"
-                            >
-                                {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Anotar pedido'}
-                            </Button>
-                        )}
-                        {modoEdicion && tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
-                            <button
-                                type="button"
-                                onClick={() => void onDispatchMesa()}
-                                disabled={cart.length === 0 || submitting}
-                                aria-label="Despachar mesa"
-                                title="Despachar mesa"
-                                className="h-12 w-12 shrink-0 rounded-xl bg-[#FF7A00] text-white transition-colors hover:bg-[#E66E00] disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center"
-                            >
-                                <Armchair className="h-5 w-5" />
-                            </button>
-                        )}
-                    </div>
-                    {modoEdicion && (
-                        <div className="grid grid-cols-2 gap-2">
-                            <Button type="button" variant="outline" className="h-10 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintNewMesa?.()}>
-                                <Printer className="mr-1.5 h-4 w-4" /> Imprimir productos nuevos
-                            </Button>
-                            <Button type="button" variant="outline" className="h-10 rounded-xl px-2 text-xs font-bold" disabled={submitting} onClick={() => void onPrintAllMesa?.()}>
-                                <Printer className="mr-1.5 h-4 w-4" /> Reimprimir comanda entera
-                            </Button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
+    const tiposMovil = tiposHabilitados.filter((t): t is 'delivery' | 'takeaway' => t !== 'mesa')
+    const nombreMesa = mesaAsignada?.nombre ?? initialPedido?.mesaNombre ?? null
+
+    const datosPedido: PosPedidoDatos = {
+        tipo,
+        tiposHabilitados: tiposMovil,
+        mesaNombre: nombreMesa,
+        modoEdicion,
+        nombre,
+        telefono,
+        direccion,
+        costoEnvio: deliveryFee,
+        notas,
+        metodoPago,
+        metodos: metodosHabilitados,
+        campos: config.camposCliente,
+        mostrarNotas: config.notas,
+        direccionSoloTexto,
+        direccionFaltante,
+        guardando: submitting,
+        hayCambios: hasChanges,
+        confirmaCobro: requiereConfirmarCobro({ config, modoEdicion, tipo, conMesa: mesaAsignada != null }),
+        subtotal: cartTotal,
+        envio: deliveryFeeNum,
+        descuento: Number(initialPedido?.montoDescuento) || 0,
+        total: totalFinal,
+    }
+
+    const accionesPedido: PosPedidoAcciones = {
+        onCantidad: changeQty,
+        onQuitar: removeItem,
+        onEditar: editItem,
+        onVaciar: requestVaciar,
+        onTipo: (nuevoTipo) => { onClearMesa?.(); setTipo(nuevoTipo); setDireccionFaltante(false) },
+        onCliente: updateDraft,
+        onDireccion: (texto, latitud, longitud) => { setDireccion(texto); setLat(latitud); setLng(longitud); setDireccionFaltante(false) },
+        onCostoEnvio: setDeliveryFee,
+        onNotas: setNotas,
+        onMetodoPago: setMetodoPago,
+        onConfirmar: () => void handleSubmit(),
+        onDespacharMesa: onDispatchMesa ? () => void onDispatchMesa() : undefined,
+        onImprimirNuevos: onPrintNewMesa ? () => void onPrintNewMesa() : undefined,
+        onReimprimirTodo: onPrintAllMesa ? () => void onPrintAllMesa() : undefined,
+    }
+
+    const tituloMovil = modoEdicion
+        ? (initialPedido.tipo === 'mesa' ? (nombreMesa || 'Mesa') : `Editando pedido #${initialPedido.id}`)
+        : (mesaAsignada ? mesaAsignada.nombre : 'Nuevo pedido')
+
+    const volverMovil = modoEdicion && onViewPedido
+        ? { etiqueta: 'Volver', onClick: requestViewPedido }
+        : onVerPedidos
+            ? { etiqueta: 'Pedidos', contador: pedidosActivos, onClick: requestVerPedidos }
+            : mostrarBotonCerrar ? { etiqueta: 'Cerrar', onClick: requestClose } : undefined
+
+    const dialogosCobro = (
+        <>
+            {cobro?.modo === 'manual' && (
+                <PosCobroManualDialog
+                    total={totalFinal}
+                    tipoLabel={tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                    metodoLabel={METODOS_PAGO.find((metodo) => metodo.id === metodoPago)?.label ?? metodoPago}
+                    onCobrado={confirmarCobroManual}
+                    onVolver={cerrarCobro}
+                />
+            )}
+            {cobro?.modo === 'qr' && token && (
+                <PosCobroQrDialog
+                    total={totalFinal}
+                    tipoLabel={tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
+                    token={token}
+                    online={online && !navegadorOffline()}
+                    cajaElegidaId={config.cajaMpQrId}
+                    crearPedido={crearPedidoParaCobroQr}
+                    pedidoIdInicial={cobro.pedidoIdInicial}
+                    onPagado={finalizarCobroQr}
+                    onCajaElegida={(cajaId) => setPosConfig({ ...getPosConfig(), cajaMpQrId: cajaId })}
+                    onConfigurarCajas={() => { cerrarCobro(); setConfigurandoPos(true) }}
+                    onCerrar={cerrarCobro}
+                />
+            )}
+        </>
     )
 
     if (catalogoCompacto) {
@@ -1524,238 +1517,73 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                         } : undefined}
                     />
                 )}
+
+                {dialogosCobro}
+                {/* La comanda de escritorio tiene su propio diálogo; éste sólo se abre desde "Configurar QR" del cobro. */}
+                <PosConfigDialog open={configurandoPos} onOpenChange={setConfigurandoPos} />
             </>
         )
     }
 
     return (
-        <div className="flex-1 flex flex-col overflow-hidden bg-background">
-            <div className="relative shrink-0 flex items-center justify-between gap-2 px-4 pt-2 bg-background">
-                <span className="min-w-0 truncate text-xs font-bold text-muted-foreground">{modoEdicion ? `Editando pedido #${initialPedido.id}` : 'Nuevo pedido'}</span>
-                <div className="flex items-center gap-2 shrink-0">
-                    {modoEdicion && onViewPedido && (
-                        <Button tabIndex={-1} variant="ghost" size="sm" className="h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground" onClick={requestViewPedido}>
-                            Cancelar edición
-                        </Button>
-                    )}
-                    {!modoEdicion && (
-                        <Button tabIndex={-1} variant="ghost" size="sm" className="h-8 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground" onClick={requestClearDraft}>
-                            Limpiar
-                        </Button>
-                    )}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                        onClick={() => setConfigurandoPos(true)}
-                        aria-label="Configurar punto de venta"
-                        tabIndex={-1}
-                        title="Configurar punto de venta"
-                    >
-                        <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                    {/* Sin conexión: el POS sigue anotando pedidos en la cola local. */}
-                    {!online && (
-                        <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded-full px-2.5 py-1">
-                            <WifiOff className="h-3.5 w-3.5" /> Sin conexión
-                        </span>
-                    )}
-                    {/* Pedidos guardados sin conexión: pendientes de sincronizar. */}
-                    {pendientes.length > 0 && (
-                        <button
-                            onClick={() => setShowPendientes((s) => !s)}
-                            title="Pedidos guardados sin conexión"
-                            className={cn(
-                                'flex items-center gap-1.5 text-[11px] font-bold rounded-full px-2.5 py-1 border transition-colors',
-                                showPendientes
-                                    ? 'bg-[#FF7A00]/20 border-[#FF7A00]/40 text-[#FF7A00]'
-                                    : 'bg-[#FF7A00]/10 border-[#FF7A00]/30 text-[#FF7A00] hover:bg-[#FF7A00]/20'
-                            )}
-                        >
-                            {sincronizando
-                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                : <WifiOff className="h-3.5 w-3.5" />}
-                            {pendientes.length} pendiente{pendientes.length === 1 ? '' : 's'}
-                        </button>
-                    )}
-                    {/* En el modo siempre abierto (módulo POS activo en desktop) no hay
-                        cierre posible: la "x" sólo se muestra cuando el padre la habilita. */}
-                    {mostrarBotonCerrar && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={requestClose}>
-                            <X className="h-4 w-4" />
-                        </Button>
-                    )}
-                </div>
+        <>
+            <PosMovil
+                titulo={tituloMovil}
+                subtitulo={sucursalNombre || undefined}
+                contexto={modoEdicion ? 'edicion' : mesaAsignada ? 'mesa' : 'nuevo'}
+                volver={volverMovil}
+                estado={{
+                    online,
+                    pendientes: pendientes.length,
+                    sincronizando,
+                    onPendientes: () => setShowPendientes((abierto) => !abierto),
+                }}
+                panelPendientes={showPendientes ? (
+                    <PosPendientes
+                        pendientes={pendientes}
+                        sincronizando={sincronizando}
+                        onCerrar={() => setShowPendientes(false)}
+                        onReintentar={(pendiente) => void usePosOfflineStore.getState()
+                            .guardarPendiente({ ...pendiente, estado: 'pendiente', leaseHasta: 0, errorMessage: undefined })
+                            .then(intentarSincronizar).catch(() => toast.error('No se pudo preparar el reintento'))}
+                        onImprimir={(pendiente) => void reimprimirPendiente(pendiente)}
+                        onEliminar={(pendiente) => void eliminarPendiente(pendiente).catch(() => toast.error('No se pudo eliminar el pendiente'))}
+                    />
+                ) : null}
+                onCerrarPendientes={() => setShowPendientes(false)}
+                menu={{
+                    onConfigurar: () => setConfigurandoPos(true),
+                    onLimpiar: modoEdicion ? undefined : requestClearDraft,
+                    onCancelarEdicion: modoEdicion && onViewPedido ? requestViewPedido : undefined,
+                    extras: accionesExtra,
+                }}
+                catalogo={{
+                    productos: productosActivos,
+                    ordenCategorias,
+                    consulta: query,
+                    onConsulta: setQuery,
+                    inputRef: searchInputRef,
+                    categoria: categoriaMovil,
+                    onCategoria: setCategoriaMovil,
+                    cantidades: cantidadesPorProducto,
+                    onProducto: handleProductClick,
+                    cargando: cargandoMenu,
+                }}
+                items={itemsVista}
+                datos={datosPedido}
+                acciones={accionesPedido}
+                hojaAbierta={hojaAbierta}
+                onHoja={setHojaAbierta}
+                bloqueado={configProducto != null}
+            />
 
-                {/* ── Panel de pedidos sin conexión ── */}
-                <PosConfigDialog open={configurandoPos} onOpenChange={setConfigurandoPos} />
+            <PosConfigDialog open={configurandoPos} onOpenChange={setConfigurandoPos} />
+            {dialogosCobro}
 
-                {showPendientes && (
-                    <div className="absolute right-0 top-full mt-1 w-[340px] max-h-[65vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl z-[1001] p-2 space-y-1.5">
-                        <div className="flex items-center justify-between px-2 pt-1.5 pb-1">
-                            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Pedidos sin conexión</p>
-                            <button onClick={() => setShowPendientes(false)} className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted">
-                                <X className="h-3.5 w-3.5" />
-                            </button>
-                        </div>
-                        {pendientes.length === 0 ? (
-                            <p className="text-sm text-muted-foreground/60 py-6 text-center">No hay pedidos sin conexión.</p>
-                        ) : (
-                            pendientes.map((p) => {
-                                const hora = new Date(p.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-                                const tipoLabel = p.tipo === 'delivery' ? 'Delivery' : p.tipo === 'mesa' ? 'Mesa' : 'Takeaway'
-                                return (
-                                    <div key={p.localId} className="rounded-xl border border-border p-2.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <span className="text-sm font-bold">#LOCAL-{p.localNumero}</span>
-                                            <span className={cn('text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5', p.estado === 'pendiente' ? 'bg-amber-500/10 text-amber-600' : 'bg-red-500/10 text-red-600')}>
-                                                {p.estado === 'pendiente' ? 'Pendiente' : p.estado === 'sincronizando' ? 'Confirmando' : 'Revisar'}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                            {hora} · {tipoLabel} · ${p.draft.total.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                            {p.draft.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(', ')}
-                                        </p>
-                                        {(p.impresion === 'revisar' || p.impresion === 'iniciada') && <p className="text-xs text-amber-600 mt-1">Verificá si la comanda salió antes de reimprimir.</p>}
-                                        {Date.now() - Date.parse(p.creadoEn) > 3_600_000 && <p className="text-xs text-amber-600 mt-1">Este pedido lleva más de una hora sin confirmar.</p>}
-                                        {p.estado === 'error_bloqueante' && p.errorMessage && (
-                                            <p className="text-[11px] text-red-600 mt-1">{p.errorMessage}</p>
-                                        )}
-                                        <div className="flex items-center gap-1.5 mt-2">
-                                            {p.estado === 'error_bloqueante' && <button className="h-8 px-2 rounded-lg bg-muted text-xs font-semibold"
-                                                onClick={() => void usePosOfflineStore.getState().guardarPendiente({ ...p, estado: 'pendiente', leaseHasta: 0, errorMessage: undefined })
-                                                    .then(intentarSincronizar).catch(() => toast.error('No se pudo preparar el reintento'))}>
-                                                Reintentar
-                                            </button>}
-                                            <button
-                                                onClick={() => void reimprimirPendiente(p)}
-                                                className="flex-1 h-8 rounded-lg bg-muted hover:bg-accent text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                                            >
-                                                <Printer className="h-3.5 w-3.5" /> Imprimir
-                                            </button>
-                                            <button
-                                                onClick={() => void eliminarPendiente(p).catch(() => toast.error('No se pudo eliminar el pendiente'))}
-                                                title="Eliminar pedido sin conexión"
-                                                className="h-8 px-2.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 text-xs font-semibold flex items-center justify-center transition-colors"
-                                            >
-                                                <Trash2 className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                )
-                            })
-                        )}
-                        {sincronizando && (
-                            <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-muted-foreground py-2">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Sincronizando…
-                            </p>
-                        )}
-                    </div>
-                )}
-            </div>
-
-            <div className="flex-1 flex overflow-hidden">
-                {/* ── Productos ── */}
-                <div className={cn('flex-1 flex-col overflow-hidden', mobileStep === 'productos' ? 'flex' : 'hidden lg:flex')}>
-                    <div className="p-3">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
-                            <Input
-                                ref={searchInputRef}
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                onKeyDown={(e) => {
-                                    // Las flechitas recorren el resultado: el producto destacado
-                                    // (el del marquito) es el que Enter agrega al pedido.
-                                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-                                        if (!mostrarListado || productosOrdenados.length === 0) return
-                                        e.preventDefault()
-                                        setIndiceSeleccionado((prev) => {
-                                            const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
-                                            const columnas = horizontal ? 1 : calcularColumnas()
-                                            const direccion = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1
-                                            return (prev + direccion * columnas + productosOrdenados.length) % productosOrdenados.length
-                                        })
-                                        return
-                                    }
-                                    // Enter agrega el primer producto visible del resultado filtrado
-                                    // (primera categoría del listado), no el primero del store.
-                                    // Con el listado oculto se exige una búsqueda: no se agrega algo invisible.
-                                    if (e.key === 'Enter' && mostrarListado && productosOrdenados.length > 0) {
-                                        e.preventDefault()
-                                        const producto = productosOrdenados[Math.min(indiceSeleccionado, productosOrdenados.length - 1)] ?? productosOrdenados[0]
-                                        handleProductClick(producto, e.currentTarget.getBoundingClientRect())
-                                    }
-                                }}
-                                placeholder="Buscar producto o tag..."
-                                className="h-10 pl-10 pr-10 rounded-xl border-0 shadow-sm"
-                            />
-                        </div>
-                    </div>
-                    {/* Scroll con scrollbar nunca visible: el scroll entre productos sigue funcionando. */}
-                    <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                        {!mostrarListado ? (
-                            <p className="text-sm text-muted-foreground/60 py-12 text-center">Escribí para buscar un producto.</p>
-                        ) : productosFiltrados.length === 0 ? (
-                            <p className="text-sm text-muted-foreground/60 py-12 text-center">No se encontraron productos.</p>
-                        ) : (
-                            porCategoria.map(([cat, items]) => (
-                                <div key={cat} className="mb-5">
-                                    <h4 className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-foreground mb-2">{cat}</h4>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                                        {items.map((p) => {
-                                            const flatIndex = indicePorId.get(p.id)
-                                            return (
-                                                <button
-                                                    key={p.id}
-                                                    tabIndex={-1}
-                                                    data-flat-index={flatIndex}
-                                                    onClick={(event) => handleProductClick(p, event.currentTarget.getBoundingClientRect())}
-                                                    className={cn(
-                                                        'group min-h-28 text-left rounded-2xl bg-card p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00] active:translate-y-0 active:scale-[0.98]',
-                                                        flatIndex === indiceSeleccionado && 'ring-2 ring-[#FF7A00]'
-                                                    )}
-                                                >
-                                                    <p className="min-h-[3.5rem] text-base font-semibold leading-snug text-foreground line-clamp-3">{p.nombre}</p>
-                                                    <div className="flex items-center justify-between mt-3">
-                                                        <span className="text-base font-bold text-[#FF7A00]">
-                                                            ${parseFloat(p.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                                                        </span>
-                                                    </div>
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                    {/* Botón flotante mobile para ir al checkout */}
-                    <div className="lg:hidden shrink-0 p-3">
-                        <Button onClick={() => setMobileStep('checkout')} className="w-full h-12 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold">
-                            Ver pedido ({totalItems}) · ${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 0 })}
-                        </Button>
-                    </div>
-                </div>
-
-                {/* ── Checkout (solo paso mobile) ──
-                    En desktop la comanda del Dashboard concentra el borrador y la acción. */}
-                <div className={cn('w-full shrink-0 bg-muted/10 lg:hidden',
-                    mobileStep === 'checkout' ? 'flex flex-col' : 'hidden')}>
-                    <div className="lg:hidden shrink-0 p-2">
-                        <button onClick={() => setMobileStep('productos')} className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground px-2 py-1">
-                            <ChevronRight className="h-4 w-4 rotate-180" /> Seguir agregando
-                        </button>
-                    </div>
-                    {CheckoutPanel}
-                </div>
-            </div>
-
-            {/* ── Overlay configuración de producto (variantes / agregados) ── */}
+            {/* ── Configuración de producto (variantes / ingredientes / extras) ── */}
             {configProducto && (
                 <ProductConfigOverlay
+                    modo="hoja"
                     producto={configProducto.producto}
                     anchor={configProducto.anchor}
                     onClose={() => setConfigProducto(null)}
@@ -1772,7 +1600,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                     } : undefined}
                 />
             )}
-        </div>
+        </>
     )
 })
 
@@ -1780,9 +1608,11 @@ export default PuntoDeVenta
 
 // ─────────────────────────────────────────────
 // Popover de configuración: queda anclado a la card en desktop y pasa a hoja inferior
-// en touch/viewport chico para que nunca dependa de hover.
+// en touch/viewport chico para que nunca dependa de hover. En el POS móvil ("hoja") es siempre
+// una hoja (celular) o un diálogo centrado (tablet): no hay tarjeta a la que anclarse.
 // ─────────────────────────────────────────────
 function ProductConfigOverlay({
+    modo = 'popover',
     producto,
     anchor,
     onClose,
@@ -1790,6 +1620,9 @@ function ProductConfigOverlay({
     onConfirm,
     onChange,
 }: {
+    /** "popover": anclado a la tarjeta (escritorio). "hoja": hoja inferior en celular y
+     *  diálogo centrado en tablet, con filas más grandes para el dedo. */
+    modo?: 'popover' | 'hoja'
     producto: Producto
     anchor: DOMRect
     onClose: () => void
@@ -1892,13 +1725,30 @@ function ProductConfigOverlay({
             : 360
     const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12))
     const top = Math.max(12, Math.min(anchor.bottom + 10, window.innerHeight - 480))
+    const tactil = modo === 'hoja'
+    const centrado = tactil && !isCompact
+    const anclado = !isCompact && !centrado
     const panelClass = isCompact
-        ? 'fixed inset-x-0 bottom-0 max-h-[82vh] rounded-t-3xl border-x border-t'
-        : 'fixed max-h-[min(480px,calc(100vh-24px))] rounded-2xl border'
-    const panelStyle = isCompact ? undefined : { left, top, width }
+        ? cn('fixed inset-x-0 bottom-0 rounded-t-3xl border-x border-t', tactil ? 'max-h-[88dvh] pb-[env(safe-area-inset-bottom)]' : 'max-h-[82vh]')
+        : centrado
+            ? cn('relative max-h-[min(680px,calc(100dvh-32px))] rounded-3xl border', columnasConfiguracion >= 3 ? 'max-w-[min(920px,100%)]' : 'max-w-md')
+            : 'fixed max-h-[min(480px,calc(100vh-24px))] rounded-2xl border'
+    const panelStyle = anclado ? { left, top, width } : undefined
+    // Filas de opciones: más altas en pantallas táctiles.
+    const fila = tactil ? 'px-4 py-3.5 text-[15px]' : 'px-3 py-2.5 text-sm'
+    // Con un toque la variante se agrega sola: resaltar una "por defecto" sólo confundiría al dedo.
+    // El teclado (Enter sobre la resaltada) y los pasos que exigen elegir sí la necesitan.
+    const resaltarVariante = !tactil || !!initialItem || variantesSecundarias.length > 0
 
     return (
-        <div className={cn('fixed inset-0 z-[1002]', isCompact && 'bg-background/60 backdrop-blur-sm')} onClick={onClose}>
+        <div
+            className={cn(
+                'fixed inset-0 z-[1002]',
+                tactil ? 'bg-black/45' : isCompact && 'bg-background/60 backdrop-blur-sm',
+                centrado && 'flex items-center justify-center p-4',
+            )}
+            onClick={onClose}
+        >
             <div
                 ref={dialogRef}
                 role="dialog"
@@ -1909,13 +1759,19 @@ function ProductConfigOverlay({
                 style={panelStyle}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                    <span className="min-w-0 block font-bold text-sm truncate">{producto.nombre}</span>
-                    <button onClick={onClose} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground">
+                {tactil && isCompact && <div aria-hidden className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/25" />}
+                <div className={cn('flex items-center justify-between gap-2 border-b border-border px-4', tactil ? 'py-3' : 'py-3')}>
+                    <span className={cn('min-w-0 block truncate font-bold', tactil ? 'text-base' : 'text-sm')}>{producto.nombre}</span>
+                    <button
+                        type="button"
+                        aria-label="Cerrar"
+                        onClick={onClose}
+                        className={cn('flex shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent', tactil ? 'h-10 w-10 rounded-xl' : 'h-7 w-7')}
+                    >
                         <X className="h-4 w-4" />
                     </button>
                 </div>
-                <div className="p-4 space-y-4 max-h-[55vh] overflow-y-auto">
+                <div className={cn('space-y-4 overflow-y-auto overscroll-contain p-4', tactil ? 'min-h-0 flex-1' : 'max-h-[55vh]')}>
                     <div className={cn(
                         columnasConfiguracion >= 4
                             ? 'grid grid-cols-1 gap-4 sm:grid-cols-4'
@@ -1933,8 +1789,8 @@ function ProductConfigOverlay({
                                     <button
                                         key={v.id}
                                         onClick={() => { setVarianteId(v.id); confirmarVariante(v) }}
-                                        className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors',
-                                            varianteId === v.id ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] font-semibold' : 'border-border hover:bg-accent')}
+                                        className={cn(`w-full flex items-center justify-between rounded-xl border transition-colors ${fila}`,
+                                            resaltarVariante && varianteId === v.id ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] font-semibold' : 'border-border hover:bg-accent')}
                                     >
                                         <span>{v.nombre}</span>
                                         <span className="font-bold">${parseFloat(v.precio).toLocaleString('es-AR', { minimumFractionDigits: 0 })}</span>
@@ -1954,7 +1810,7 @@ function ProductConfigOverlay({
                                             setVarianteSecundariaId(v.id)
                                             if (initialItem && onChange) onChange(variante, v, agregadosObj, ingredientesExcluidos)
                                         }}
-                                        className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors',
+                                        className={cn(`w-full flex items-center justify-between rounded-xl border transition-colors ${fila}`,
                                             varianteSecundariaId === v.id ? 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] font-semibold' : 'border-border hover:bg-accent')}
                                     >
                                         <span>{v.nombre}</span>
@@ -1977,7 +1833,7 @@ function ProductConfigOverlay({
                                             setIngredientesExcluidos(next)
                                             if (initialItem && onChange) onChange(variante, varianteSecundaria, agregadosObj, next)
                                         }}
-                                        className={cn('w-full flex items-center px-3 py-2.5 rounded-xl border text-sm transition-colors', excluido ? 'border-transparent bg-transparent text-muted-foreground/50 line-through hover:bg-muted/40' : 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] hover:bg-[#FF7A00]/20')}
+                                        className={cn(`w-full flex items-center rounded-xl border transition-colors ${fila}`, excluido ? 'border-transparent bg-transparent text-muted-foreground/50 line-through hover:bg-muted/40' : 'border-[#FF7A00] bg-[#FF7A00]/10 text-[#FF7A00] hover:bg-[#FF7A00]/20')}
                                     >
                                         <span>{ingrediente.nombre}</span>
                                     </button>
@@ -1999,7 +1855,7 @@ function ProductConfigOverlay({
                                                 setAgregadosSel(next)
                                                 if (initialItem && onChange) onChange(variante, varianteSecundaria, agregadosDisp.filter((item) => next.includes(item.id)), ingredientesExcluidos)
                                             }}
-                                            className={cn('w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors',
+                                            className={cn(`w-full flex items-center justify-between rounded-xl border transition-colors ${fila}`,
                                                 sel ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold' : 'border-border hover:bg-accent')}
                                         >
                                             <span className="flex items-center gap-2">
@@ -2020,10 +1876,19 @@ function ProductConfigOverlay({
                 {(!initialItem && (variantes.length === 0 || variantesSecundarias.length > 0)) && (
                     <div className="p-4 border-t border-border">
                         <div className="flex gap-2">
-                            <Button onClick={() => onConfirm(variante, varianteSecundaria, agregadosObj, ingredientesExcluidos)} className="flex-1 h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold">
+                            <Button onClick={() => onConfirm(variante, varianteSecundaria, agregadosObj, ingredientesExcluidos)} className={cn('flex-1 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-bold', tactil ? 'h-12 text-base' : 'h-11')}>
                                 Agregar
                             </Button>
                         </div>
+                    </div>
+                )}
+                {/* Al ajustar un ítem ya cargado los cambios se aplican en vivo: en pantallas táctiles
+                    un botón visible cierra el ajuste sin tener que adivinar que se toca afuera. */}
+                {tactil && initialItem && (
+                    <div className="border-t border-border p-4">
+                        <Button onClick={onClose} className="h-12 w-full rounded-xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00]">
+                            Listo
+                        </Button>
                     </div>
                 )}
             </div>

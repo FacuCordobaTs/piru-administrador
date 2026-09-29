@@ -1,5 +1,13 @@
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
+import type {
+  CajaMpDto,
+  CajaQrDto,
+  CobroQrDto,
+  EstadoPosQrDto,
+  ResultadoCancelacionQrDto,
+  TiendaMpDto,
+} from './posCobro'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -1894,6 +1902,43 @@ export const mercadopagoApi = {
       },
     })
   },
+}
+
+// POS · cobro con el QR estático de Mercado Pago (cajas y cobro de un pedido). Ver docs/WHATSAPP_AND_PAYMENTS.md.
+// El monto nunca viaja desde acá: el servidor cobra el total del pedido persistido.
+const conToken = (token: string) => ({ Authorization: `Bearer ${token}` })
+
+export const posQrApi = {
+  estado: (token: string) =>
+    fetchApi<{ success: boolean; data: EstadoPosQrDto }>('/pos-qr/estado', { headers: conToken(token), signal: AbortSignal.timeout(15_000) }),
+  cajasMp: (token: string) =>
+    fetchApi<{ success: boolean; data: CajaMpDto[] }>('/pos-qr/mp/cajas', { headers: conToken(token), signal: AbortSignal.timeout(20_000) }),
+  tiendasMp: (token: string) =>
+    fetchApi<{ success: boolean; data: TiendaMpDto[] }>('/pos-qr/mp/tiendas', { headers: conToken(token), signal: AbortSignal.timeout(20_000) }),
+  vincularCaja: (token: string, mpPosId: string) =>
+    fetchApi<{ success: boolean; data: CajaQrDto }>('/pos-qr/cajas', {
+      method: 'POST', headers: conToken(token), body: JSON.stringify({ mpPosId }), signal: AbortSignal.timeout(20_000),
+    }),
+  crearCaja: (token: string, datos: { nombre: string; tiendaId: string }) =>
+    fetchApi<{ success: boolean; data: CajaQrDto }>('/pos-qr/cajas/nueva', {
+      method: 'POST', headers: conToken(token), body: JSON.stringify(datos), signal: AbortSignal.timeout(30_000),
+    }),
+  desvincularCaja: (token: string, cajaId: number) =>
+    fetchApi<{ success: boolean }>(`/pos-qr/cajas/${cajaId}`, { method: 'DELETE', headers: conToken(token) }),
+  /** Crea (o retoma) el cobro QR del pedido en la caja: idempotente por pedido y caja. */
+  iniciarCobro: (token: string, pedidoId: number, cajaId: number) =>
+    fetchApi<{ success: boolean; data: CobroQrDto }>(`/pos-qr/pedidos/${pedidoId}/cobro`, {
+      method: 'POST', headers: conToken(token), body: JSON.stringify({ cajaId }), signal: AbortSignal.timeout(30_000),
+    }),
+  /** Último cobro del pedido; el servidor lo sincroniza con Mercado Pago si sigue pendiente. */
+  consultar: (token: string, pedidoId: number) =>
+    fetchApi<{ success: boolean; data: CobroQrDto | null }>(`/pos-qr/pedidos/${pedidoId}/cobro`, {
+      headers: conToken(token), signal: AbortSignal.timeout(15_000),
+    }),
+  cancelar: (token: string, pedidoId: number, cancelarPedido: boolean) =>
+    fetchApi<{ success: boolean; data: ResultadoCancelacionQrDto }>(`/pos-qr/pedidos/${pedidoId}/cobro/cancelar`, {
+      method: 'POST', headers: conToken(token), body: JSON.stringify({ cancelarPedido }), signal: AbortSignal.timeout(30_000),
+    }),
 }
 
 // Mesas API

@@ -1,0 +1,34 @@
+// Settings del módulo para compilarlo *suelto* (por ejemplo con Android Studio).
+//
+// Cuando el plugin se compila como parte de la app, este archivo no se lee: Gradle sólo usa el
+// settings.gradle del proyecto raíz, y `tauri-android` lo aporta el `tauri.settings.gradle`
+// generado por el build script de la app.
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+        google()
+    }
+    resolutionStrategy {
+        eachPlugin {
+            switch (requested.id.id) {
+                case "com.android.library":
+                    useVersion("8.11.0")
+                    break
+                case "org.jetbrains.kotlin.android":
+                    useVersion("1.9.25")
+                    break
+            }
+        }
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+        google()
+    }
+}
+include ':tauri-android'
+// `mobile::setup` de `tauri-plugin` copia las fuentes de tauri-android acá en cada build.
+project(':tauri-android').projectDir = new File('./.tauri/tauri-api')

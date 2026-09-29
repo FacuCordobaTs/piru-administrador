@@ -1,4 +1,4 @@
-name: Release Tauri (Windows)
+name: Release Tauri (Windows + Android)
 on:
   workflow_dispatch:
 
@@ -43,4 +43,144 @@ jobs:
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.sig
+          retention-days: 7
+
+  # APK firmado para sideload en tablets. Android NO tiene updater de Tauri: la
+  # app se actualiza reinstalando el APK, así que lo que importa es dejar el
+  # archivo en una URL estable (ver comandos_tauri.txt).
+  build-android:
+    # Fijado a 24.04 a propósito: es la imagen cuyo inventario de SDK/NDK está
+    # verificado (NDK r27/r28/r29 side-by-side, platforms;android-36). Con
+    # `ubuntu-latest` ese inventario puede cambiar sin que nos enteremos.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend deps
+        run: bun install
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # El proyecto Gradle (AGP 8.11 + Gradle 8.14.3) se configuró y compiló
+          # con Temurin 21 en la máquina de desarrollo; en Linux es indiferente.
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # `packages` se separa por espacios (src/main.ts del action) y exporta
+          # ANDROID_HOME / ANDROID_SDK_ROOT y pone el `sdkmanager` en el PATH.
+          # compileSdk del proyecto es 36, así que hace falta platforms;android-36.
+          packages: "platform-tools platforms;android-36"
+
+      - name: Select Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          # tauri-cli lee NDK_HOME — NO le sirve ANDROID_NDK_HOME, que es el que
+          # define la imagen del runner. Exige además un NDK mínimo; tauri-cli 2.10
+          # instala r29 por su cuenta, así que usamos el NDK más nuevo que traiga la
+          # imagen y, si no hay ninguno, instalamos r29 a mano.
+          ndk_home="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -n 1 || true)"
+          if [ -z "$ndk_home" ]; then
+            sdkmanager --install "ndk;29.0.13846066"
+            ndk_home="$ANDROID_HOME/ndk/29.0.13846066"
+          fi
+          echo "NDK_HOME=$ndk_home" >> "$GITHUB_ENV"
+          echo "NDK seleccionado: $ndk_home"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # arm64-v8a + armeabi-v7a cubren todas las tablets reales. Los ABI x86
+          # son sólo para emuladores: no se compilan.
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: android
+
+      - name: Restore signing keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Falta el secreto ANDROID_KEYSTORE_BASE64 (ver comandos_tauri.txt)."
+            exit 1
+          fi
+          # Los dos archivos están en src-tauri/.gitignore: nunca se commitean.
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > src-tauri/gen/android/piru-release.jks
+          {
+            printf 'storeFile=%s\n' "piru-release.jks"
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+          } > src-tauri/gen/android/keystore.properties
+          echo "keystore.properties y piru-release.jks escritos en gen/android/ (ignorados por git)."
+
+      - name: Build APK
+        env:
+          # Android no genera artefactos de updater y este comando no usa el
+          # updater, pero `createUpdaterArtifacts` está en true en tauri.conf.json
+          # y el build falla si hay pubkey y no hay clave privada. Se la pasamos
+          # (mismo secreto que usa el job de Windows) para que no quede en rojo.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_OLD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        # --apk: un único APK universal (sin --split-per-abi) para que el sideload
+        # sea un solo archivo. --target acepta varios valores separados por espacio.
+        run: bunx tauri android build --apk --target aarch64 armv7
+
+      - name: Check APK is signed
+        shell: bash
+        run: |
+          set -euo pipefail
+          # -print -quit en vez de | head para no depender de SIGPIPE con pipefail.
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          if [ -z "$apk" ]; then
+            echo "::error::No se generó ningún APK en app/build/outputs/apk."
+            exit 1
+          fi
+          # AGP le pone el sufijo -unsigned al APK de release cuando NO hay
+          # signingConfig: es exactamente el bug que este job tiene que evitar.
+          case "$apk" in
+            *-unsigned.apk)
+              echo "::error::El APK salió sin firmar ($apk). Revisá keystore.properties y signingConfigs en gen/android/app/build.gradle.kts."
+              exit 1
+              ;;
+          esac
+          echo "APK: $apk"
+          # En Linux build-tools trae el script `apksigner` (en Windows es
+          # apksigner.bat, por eso esto no se puede probar en la máquina de dev).
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
+          "$apksigner" verify --print-certs "$apk"
+
+      - name: Stage APK for distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(bun -e "console.log(JSON.parse(require('node:fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version)")"
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          mkdir -p "$RUNNER_TEMP/dist"
+          cp "$apk" "$RUNNER_TEMP/dist/piru-admin-$version.apk"
+          # Nombre estable: es el que se publica siempre en la misma URL.
+          cp "$apk" "$RUNNER_TEMP/dist/piru-admin.apk"
+          ls -la "$RUNNER_TEMP/dist"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: piru-android-apk
+          path: ${{ runner.temp }}/dist/*.apk
           retention-days: 7

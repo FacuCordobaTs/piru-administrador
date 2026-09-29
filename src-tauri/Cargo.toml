@@ -24,14 +24,40 @@ log = "0.4"
 tauri = { version = "2.10.0", features = ["devtools"] }
 tauri-plugin-log = "2"
 tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
+
+# Los transportes de Android (TCP, Bluetooth RFCOMM y USB Host) son APIs del sistema que la NDK no
+# expone: los implementa un plugin local en Kotlin (`plugins/tauri-plugin-printing`).
+#
+# La dependencia está gateada por target y no es incondicional: el crate del plugin declara
+# `#![cfg(target_os = "android")]`, así que en cualquier otro target es un crate vacío, y en desktop
+# no agrega nada al árbol (ni una compilación de Kotlin, porque su `android/` sólo lo mira Gradle
+# cuando el target es Android). El registro del plugin en `lib.rs` está bajo el mismo cfg.
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-printing = { path = "plugins/tauri-plugin-printing" }
+
+# Los dos van sólo en desktop, por motivos distintos.
+#
+# `serialport` enumera los puertos del sistema (el registro en Windows, `/dev/tty*` en Linux), que
+# en Android son inaccesibles sin root: en móvil no sirve y además rompe la compilación. Los
+# transportes de Android los implementa el plugin Kotlin.
+#
+# `tauri-plugin-updater` declarado como dependencia incondicional rompía el `cargo check` de
+# Android: arrastra `rustls`/`ring`, que compilan C, y eso exige el toolchain del NDK (CC/AR por
+# target) que un `cargo check --target aarch64-linux-android` a mano no tiene. El crate ya declara
+# Android/iOS como no soportados y su registro en `lib.rs` está bajo `#[cfg(desktop)]`.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 serialport = "4.3"
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Graphics_Printing",
     "Win32_Foundation",
     "Win32_Security",
+    # Spooler RAW (arriba) + los transportes nuevos: TCP sin spooler y Bluetooth RFCOMM nativo
+    # (`WSASocketW`, `AF_BTH`, `BTHPROTO_RFCOMM`, `SOCKADDR_BTH`).
+    "Win32_Networking_WinSock",
+    "Win32_Devices_Bluetooth",
 ] }
 widestring = "1"
 

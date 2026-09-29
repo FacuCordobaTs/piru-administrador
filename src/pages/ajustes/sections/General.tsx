@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
 import { restauranteApi } from '@/lib/api'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
@@ -9,6 +10,7 @@ import { ToggleConExplicacion } from '../components/ToggleConExplicacion'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import { useAjuste } from '../hooks/useAjuste'
 import { usePrinter } from '@/context/PrinterContext'
+import { esAndroid, pedirExcepcionDeBateria } from '@/utils/piruAndroid'
 import {
   DireccionField,
   SucursalJustInTime,
@@ -153,6 +155,7 @@ export default function General() {
             aria-label="Productos grandes en mayúsculas"
           />
         </div>
+        {esAndroid() && <AjusteBateriaAndroid />}
       </div>
 
       <AjusteEditor
@@ -316,6 +319,47 @@ function AvisosToggle() {
         </p>
       </div>
       <Switch checked={checked} onCheckedChange={toggle} />
+    </div>
+  )
+}
+
+/**
+ * Excepción de optimización de batería (sólo Android, o sea la tablet del local).
+ *
+ * Android duerme las apps en segundo plano para ahorrar batería, y una app dormida puede cortar
+ * una comanda a mitad de camino. Se pide la excepción del sistema en vez de un foreground service
+ * —que dejaría una notificación permanente—: con la excepción, la app sigue viva sin que nadie la
+ * mire. El puente no devuelve nada, así que no hay estado que guardar: se avisa que se abrió el
+ * diálogo y el usuario decide ahí.
+ */
+function AjusteBateriaAndroid() {
+  const [aviso, setAviso] = useState<string | null>(null)
+
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-border py-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">Que Android no duerma la app</p>
+        <p className="mt-0.5 text-[13px] font-normal text-muted-foreground">
+          Para ahorrar batería, Android suspende las apps en segundo plano y eso puede cortar una
+          impresión a mitad de camino. Con la excepción de batería la app sigue viva aunque nadie
+          la esté mirando. Se abre el ajuste del sistema: elegí «No optimizar» o
+          «Sin restricciones» para Piru.
+        </p>
+        {aviso && <p className="mt-1 text-xs font-normal text-muted-foreground">{aviso}</p>}
+      </div>
+      <Button
+        variant="outline"
+        className="h-11 min-h-[44px] shrink-0 font-medium"
+        onClick={() =>
+          setAviso(
+            pedirExcepcionDeBateria()
+              ? 'Listo: elegí «No optimizar» en el diálogo de Android.'
+              : 'Esta versión de la app no lo incluye. Actualizá Piru para configurarlo.',
+          )
+        }
+      >
+        Abrir ajuste
+      </Button>
     </div>
   )
 }
