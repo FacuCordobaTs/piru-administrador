@@ -208,6 +208,12 @@ export function FiltrosDialog({
               {tab === 'campanas' && (
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                   <SortPill
+                    active={sortCampana === 'ventas'}
+                    onClick={() => onSortCampanaChange('ventas')}
+                    label="Más ventas"
+                    desc="Ventas cobradas que entraron por el link"
+                  />
+                  <SortPill
                     active={sortCampana === 'recent'}
                     onClick={() => onSortCampanaChange('recent')}
                     label="Más recientes"

@@ -190,6 +190,11 @@ export default function GrowthAssetsPanel(props: Props) {
   const irAlMotor = () => navigate('/dashboard/clientes?tab=retencion&vista=motor')
   const [resultadoCampana, setResultadoCampana] = useState<ResultadoCampana | null>(null)
   const [resultadoCupon, setResultadoCupon] = useState<ResultadoCupon | null>(null)
+  // La lista de Campañas es un ranking (diseño de la landing): visitas, pedidos y ventas de
+  // cada link para comparar de un vistazo. Es un dato aparte del detalle, que sigue cargando
+  // lo suyo al seleccionar: sin esto la fila no tiene nada que mostrar.
+  const [metricasPorCampana, setMetricasPorCampana] = useState<Record<number, ResultadoCampana['metricas']>>({})
+  const [metricasOrganico, setMetricasOrganico] = useState<ResultadoCampana['metricas'] | null>(null)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [campanaDialog, setCampanaDialog] = useState(false)
   const [campanaEditando, setCampanaEditando] = useState<CampanaCrecimiento | null>(null)
@@ -217,7 +222,12 @@ export default function GrowthAssetsPanel(props: Props) {
     }
   }
 
-  const filtrosApi = useMemo(() => ({ from: filtros.from, to: normalizarHasta(filtros.to), sucursalId: filtros.sucursalId }), [filtros])
+  // Depende de los valores y no del objeto `filtros`: el padre lo rearma en cada render, así que
+  // una identidad nueva dispararía los resultados —y el ranking— en cada tecla del buscador.
+  const filtrosApi = useMemo(
+    () => ({ from: filtros.from, to: normalizarHasta(filtros.to), sucursalId: filtros.sucursalId }),
+    [filtros.from, filtros.to, filtros.sucursalId],
+  )
 
   useEffect(() => {
     if (tab !== 'campanas' || campanaSeleccionada == null || !props.crecimientoActivo) { setResultadoCampana(null); return }
@@ -240,6 +250,36 @@ export default function GrowthAssetsPanel(props: Props) {
     }).finally(() => setLoadingDetalle(false))
   }, [tab, cuponSeleccionado, token, filtrosApi, props.cuponesActivos])
 
+  // El ranking de la lista se carga con el período ya aplicado: `resumen` devuelve las métricas
+  // de todas las campañas en una sola llamada, y el orgánico es una vista virtual sin fila
+  // propia en el catálogo, así que tiene su endpoint. Un fallo deja la lista utilizable
+  // (sin números) en vez de vaciarla, y se avisa una sola vez.
+  useEffect(() => {
+    if (tab !== 'campanas' || !props.crecimientoActivo) {
+      setMetricasPorCampana({})
+      setMetricasOrganico(null)
+      return
+    }
+    let vigente = true
+    void Promise.allSettled([
+      crecimientoApi.resumen(token, filtrosApi),
+      crecimientoApi.resultadosOrganico(token, filtrosApi),
+    ]).then(([resumen, organico]) => {
+      if (!vigente) return
+      if (resumen.status === 'fulfilled') {
+        const filas = resumen.value?.data?.campanas
+        setMetricasPorCampana(Object.fromEntries(
+          (Array.isArray(filas) ? filas : []).map((fila) => [fila.id, fila.metricas]),
+        ))
+      }
+      if (organico.status === 'fulfilled') setMetricasOrganico(organico.value?.data?.metricas ?? null)
+      if (resumen.status === 'rejected' || organico.status === 'rejected') {
+        toast.error('No se pudieron cargar los resultados por link.')
+      }
+    })
+    return () => { vigente = false }
+  }, [tab, token, filtrosApi, props.crecimientoActivo])
+
   const campanasFiltradas = useMemo(() => {
     const q = query.trim().toLowerCase()
     let lista = campanas.filter((item) => {
@@ -252,7 +292,13 @@ export default function GrowthAssetsPanel(props: Props) {
       return true
     })
 
+    // Las maestras del motor no compiten en el ranking: su link se arma por cliente, así que
+    // sus ventas no son de un link. Van al final, después de todos los links.
+    const ventasDelLink = (campana: CampanaCrecimiento) =>
+      esCampanaDelMotor(campana) ? -1 : (metricasPorCampana[campana.id]?.ventas ?? 0)
+
     lista = [...lista].sort((a, b) => {
+      if (props.sortCampana === 'ventas') return ventasDelLink(b) - ventasDelLink(a)
       if (props.sortCampana === 'conversions') return b.usosActuales - a.usosActuales
       if (props.sortCampana === 'visits') return b.visitas - a.visitas
       if (props.sortCampana === 'alphabetical') return a.nombre.localeCompare(b.nombre)
@@ -260,7 +306,19 @@ export default function GrowthAssetsPanel(props: Props) {
       return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
     })
     return lista
-  }, [campanas, query, props.estadoCampana, props.tipoCampana, props.sortCampana])
+  }, [campanas, query, props.estadoCampana, props.tipoCampana, props.sortCampana, metricasPorCampana])
+
+  // La barra de cada fila se mide contra el link que más vendió en el período (diseño de la
+  // landing). Las maestras del motor quedan afuera: no se comparten por link ni se rankean.
+  const maxVentasRanking = useMemo(
+    () => Math.max(0, ...campanasFiltradas.filter((campana) => !esCampanaDelMotor(campana)).map((campana) => metricasPorCampana[campana.id]?.ventas ?? 0)),
+    [campanasFiltradas, metricasPorCampana],
+  )
+
+  // El período del ranking, con el mismo vocabulario que los chips de filtros activos.
+  const periodoRanking = filtros.from || filtros.to
+    ? `${filtros.from ? formatDate(filtros.from) : 'Inicio'} — ${filtros.to ? formatDate(filtros.to) : 'Hoy'}`
+    : 'Todo el historial'
 
   const cuponesFiltrados = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -435,6 +493,14 @@ export default function GrowthAssetsPanel(props: Props) {
         } min-h-[520px] flex-col overflow-hidden xl:flex xl:min-h-0`}
       >
         <div className="space-y-2 p-3">
+          {/* El encabezado del ranking (diseño de la landing): la lista dejó de ser un índice
+              de nombres y compara los resultados de cada link. */}
+          {tab === 'campanas' && (
+            <div className="px-1 pt-0.5">
+              <p className="text-sm font-bold tracking-tight text-foreground">¿Qué publicación te trae ventas?</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{periodoRanking} · ventas cobradas por link</p>
+            </div>
+          )}
           {/* La mitad (Campañas / Cupones) se elige en el header del workspace;
               en mobile lo hace la barra de 4 slots. */}
           <div className="flex items-center justify-between gap-3">
@@ -487,22 +553,17 @@ export default function GrowthAssetsPanel(props: Props) {
                   />
                 )}
                 {props.crecimientoActivo &&
-                  (!query.trim() || 'orgánico sin campaña directo'.includes(query.trim().toLowerCase())) && (
-                    <AssetButton
-                      active={campanaSeleccionada === 'organico'}
-                      onClick={() => props.onSelectCampana(campanaSeleccionada === 'organico' ? null : 'organico')}
-                      icon={<Globe2 className="h-4 w-4" />}
-                      title="Orgánico · sin campaña"
-                      subtitle="Visitas directas y compras sin touch de campaña"
-                      badge="Siempre disponible"
-                    />
-                  )}
-                {props.crecimientoActivo &&
                   campanasFiltradas.map((campana) => {
                     const catMeta = getCategoriaMeta(campana.categoria)
                     const esDelMotor = esCampanaDelMotor(campana)
+                    const modalidad =
+                      campana.destinoTipo === 'producto' && campana.productoId != null
+                        ? 'Promoción de producto'
+                        : campana.destinoTipo === 'carrito'
+                          ? 'Carrito prearmado'
+                          : 'Link de seguimiento'
                     return (
-                      <AssetButton
+                      <RankingAssetButton
                         key={campana.id}
                         active={campanaSeleccionada === campana.id}
                         onClick={() => props.onSelectCampana(campanaSeleccionada === campana.id ? null : campana.id)}
@@ -511,20 +572,36 @@ export default function GrowthAssetsPanel(props: Props) {
                         // Las maestras no anuncian slug: su link no se comparte, lo arma el motor.
                         subtitle={esDelMotor
                           ? 'La usa el motor de recompra · no se comparte por link'
-                          : `${
-                            catMeta ? `${catMeta.label} · ` : ''
-                          }${
-                            campana.destinoTipo === 'producto' && campana.productoId != null
-                              ? 'Promoción de producto'
-                              : campana.destinoTipo === 'carrito'
-                                ? 'Carrito prearmado'
-                                : 'Link de seguimiento'
-                          } · /c/${campana.slug}`}
-                        badge={campana.estado}
+                          : [
+                              // El estado sólo se nombra cuando no es "activa": en el ranking
+                              // manda el número, y una campaña pausada con ventas tiene que
+                              // notarse sin ocupar una columna propia.
+                              campana.estado === 'activa' ? null : campana.estado,
+                              catMeta ? catMeta.label : null,
+                              modalidad,
+                              `/c/${campana.slug}`,
+                            ].filter(Boolean).join(' · ')}
                         motor={esDelMotor}
+                        metricas={esDelMotor ? null : metricasPorCampana[campana.id]}
+                        maxVentas={maxVentasRanking}
                       />
                     )
                   })}
+                {/* El orgánico cierra el ranking como línea de base (diseño de la landing):
+                    es lo que entró sin link, contra lo que se comparan las campañas. */}
+                {props.crecimientoActivo &&
+                  (!query.trim() || 'orgánico sin campaña directo'.includes(query.trim().toLowerCase())) && (
+                    <RankingAssetButton
+                      active={campanaSeleccionada === 'organico'}
+                      onClick={() => props.onSelectCampana(campanaSeleccionada === 'organico' ? null : 'organico')}
+                      icon={<Globe2 className="h-4 w-4" />}
+                      title="Orgánico · sin campaña"
+                      subtitle="Visitas directas y compras sin touch de campaña"
+                      organico
+                      metricas={metricasOrganico}
+                      maxVentas={maxVentasRanking}
+                    />
+                  )}
                 {props.crecimientoActivo && campanasFiltradas.length === 0 && query.trim() && (
                   <Empty label="No hay campañas que coincidan." />
                 )}
@@ -810,39 +887,61 @@ function EmptySelection({ tab }: { tab: AssetTab }) {
   )
 }
 
-function AssetButton({
+/**
+ * La fila del ranking de Campañas. El diseño viene de la landing
+ * (`landing/src/components/replicas/panel/CampanasMovil.astro`, cambio deliberado nº 8): la
+ * lista dejó de mostrar sólo nombre y canal, y ahora trae visitas, pedidos y ventas de cada
+ * link —con la barra medida contra el que más vendió— para comparar de un vistazo.
+ */
+function RankingAssetButton({
   active,
   onClick,
   icon,
   title,
   subtitle,
-  badge,
   motor = false,
+  organico = false,
+  metricas,
+  maxVentas,
 }: {
   active: boolean
   onClick: () => void
   icon: React.ReactNode
   title: string
   subtitle: string
-  badge: string
-  /** Campaña maestra del motor de recompra: se ve apagada y su badge no es un estado comercial. */
+  /** Campaña maestra del motor de recompra: se ve apagada y no entra en el ranking. */
   motor?: boolean
+  /** Línea de base del ranking: el tráfico que no vino de ningún link. */
+  organico?: boolean
+  /** Resultados del período. Sin datos —cargando o si falló— la fila se muestra igual. */
+  metricas?: ResultadoCampana['metricas'] | null
+  /** Ventas del link que más vendió en el período: contra eso se mide cada barra. */
+  maxVentas: number
 }) {
+  const ventas = metricas?.ventas ?? null
+  const proporcion = maxVentas > 0 && ventas ? Math.min(1, ventas / maxVentas) : 0
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-2xl border-0 p-3.5 text-left transition-all ${
+      className={`w-full rounded-2xl border-0 p-3 text-left transition-all ${
         active
           ? 'border-l-[3px] border-l-[#FF7A00] bg-muted/40 shadow-2xs'
-          : motor
+          : motor || organico
             ? 'bg-muted/30 hover:bg-muted/50'
             : 'bg-white hover:bg-muted/40 dark:bg-muted/20'
       }`}
     >
       <div className="flex items-start gap-3">
-        <span className={`mt-0.5 shrink-0 ${active ? 'text-[#FF7A00]' : 'text-muted-foreground'}`}>{icon}</span>
-        <span className="min-w-0 flex-1">
+        <span
+          className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${
+            active ? 'bg-[#FF7A00]/10 text-[#FF7A00]' : 'bg-muted/70 text-muted-foreground'
+          }`}
+        >
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1 pt-0.5">
           <span className={`block truncate text-sm font-semibold tracking-tight ${motor ? 'text-muted-foreground' : 'text-foreground'}`}>
             {title}
           </span>
@@ -854,11 +953,23 @@ function AssetButton({
             Solo motor
           </span>
         ) : (
-          <span className="shrink-0 rounded-full border border-border/40 bg-muted/50 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
-            {badge}
-          </span>
+          ventas != null && (
+            <span className="shrink-0 pt-0.5 text-sm font-bold tabular-nums text-foreground">{formatCurrency(ventas)}</span>
+          )
         )}
       </div>
+      {metricas && !motor && (
+        <div className={`mt-2.5 flex items-center gap-3 text-[11px] text-muted-foreground ${organico ? 'justify-end' : ''}`}>
+          {/* El orgánico no lleva barra: no compite con los links, es la línea de base. */}
+          {!organico && (
+            <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+              <span className="block h-full rounded-full bg-[#FF7A00]" style={{ width: `${Math.round(proporcion * 100)}%` }} />
+            </span>
+          )}
+          <span className="tabular-nums">{(metricas.visitas ?? 0).toLocaleString('es-AR')} visitas</span>
+          <span className="font-semibold tabular-nums text-foreground">{metricas.pedidos} pedidos</span>
+        </div>
+      )}
     </button>
   )
 }

@@ -87,7 +87,9 @@ export default function Clientes() {
   const [to, setTo] = useState<string>()
   const [sort, setSort] = useState<SortKey>('recent')
   const [filtrosDialogOpen, setFiltrosDialogOpen] = useState(false)
-  const [sortCampana, setSortCampana] = useState<SortCampanaKey>('recent')
+  // La lista de Campañas es un ranking: el orden por defecto es el que responde
+  // "¿qué publicación me trae ventas?" (ver GrowthAssetsPanel).
+  const [sortCampana, setSortCampana] = useState<SortCampanaKey>('ventas')
   const [estadoCampana, setEstadoCampana] = useState<EstadoCampanaFilter>('todas')
   const [tipoCampana, setTipoCampana] = useState<TipoCampanaFilter>('todos')
   const [sortCupon, setSortCupon] = useState<SortCuponKey>('recent')
@@ -298,7 +300,7 @@ export default function Clientes() {
     if (tipoCampana !== 'todos') count++
     if (sucursalId != null) count++
     if (from || to) count++
-    if (sortCampana !== 'recent') count++
+    if (sortCampana !== 'ventas') count++
     return count
   }, [estadoCampana, tipoCampana, sucursalId, from, to, sortCampana])
 
@@ -579,10 +581,10 @@ export default function Clientes() {
             )}
 
             {/* Campañas: Orden */}
-            {assetTab === 'campanas' && sortCampana !== 'recent' && (
+            {assetTab === 'campanas' && sortCampana !== 'ventas' && (
               <ActiveFilterBadge
                 label={`Orden: ${SORT_CAMPANA_LABELS[sortCampana]}`}
-                onRemove={() => setSortCampana('recent')}
+                onRemove={() => setSortCampana('ventas')}
               />
             )}
 

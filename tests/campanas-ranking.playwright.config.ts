@@ -1,0 +1,2 @@
+import { defineConfig } from '@playwright/test'
+export default defineConfig({ testDir: '.', testMatch: 'campanas-ranking.spec.ts', workers: 1, timeout: 90000, globalSetup: './campanas-ranking.warmup.ts', outputDir: '../node_modules/.cache/campanas-ranking-results', use: { baseURL: 'http://127.0.0.1:4185', viewport: { width: 1440, height: 1100 }, channel: process.env.CAMPANAS_TEST_BROWSER_CHANNEL ?? 'msedge' }, webServer: { command: 'bun run dev --host 127.0.0.1 --port 4185 --strictPort', url: 'http://127.0.0.1:4185/tests/campanas-ranking.html', timeout: 30000 } })

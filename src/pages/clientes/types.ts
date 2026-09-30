@@ -220,7 +220,7 @@ export const normalizarHasta = (fecha?: string) => fecha ? `${fecha}T23:59:59.99
 // Tipos para Filtrado y Ordenamiento
 export type SortClienteKey = 'recent' | 'orders' | 'spend' | 'alphabetical'
 
-export type SortCampanaKey = 'recent' | 'conversions' | 'visits' | 'alphabetical'
+export type SortCampanaKey = 'recent' | 'conversions' | 'visits' | 'ventas' | 'alphabetical'
 export type EstadoCampanaFilter = 'todas' | 'activa' | 'inactiva'
 export type TipoCampanaFilter = 'todos' | 'producto' | 'carrito' | 'link'
 
@@ -236,6 +236,7 @@ export const SORT_CLIENTE_LABELS: Record<SortClienteKey, string> = {
 }
 
 export const SORT_CAMPANA_LABELS: Record<SortCampanaKey, string> = {
+  ventas: 'Más ventas',
   recent: 'Más recientes',
   conversions: 'Más compras',
   visits: 'Más visitas',
