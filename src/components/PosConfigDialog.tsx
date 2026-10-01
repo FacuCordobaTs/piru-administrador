@@ -72,7 +72,11 @@ function FilaConfig({
   )
 }
 
-function PosConfigForm({ onSaved }: { onSaved: () => void }) {
+/**
+ * Formulario de la configuración local del POS. Lo comparten este diálogo (punto de venta) y Ajustes → Módulos,
+ * que lo muestra dentro de su propia vista: no debe haber otra copia, o las opciones nuevas no llegan a ese camino.
+ */
+export function PosConfigForm({ onSaved }: { onSaved: () => void }) {
   const [config, setConfig] = useState<PosConfig>(getPosConfig)
   const restauranteId = useAuthStore(s => s.restaurante?.id)
   const token = useAuthStore(s => s.token)

@@ -132,6 +132,22 @@ for (const width of [1440, 390]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     })
 
+    test('Módulos abre la misma configuración del POS que el punto de venta (cobro manual y QR incluidos)', async ({ page }) => {
+      await section(page, 'Ventas en el local')
+      await row(page, 'Punto de venta').click()
+      await page.getByRole('button', { name: 'Configurar', exact: true }).click()
+      const configuracion = page.getByRole('region', { name: 'Configurar punto de venta', exact: true })
+      await expect(configuracion).toBeVisible()
+      // Es el formulario compartido, no una copia: trae lo agregado después (copias de la comanda, cobro manual).
+      await expect(configuracion.getByRole('switch', { name: 'Imprimir cada comanda dos veces' })).toBeVisible()
+      const cobroManual = configuracion.getByRole('switch', { name: 'Confirmar cobros manualmente' })
+      await expect(cobroManual).toHaveAttribute('aria-checked', 'false')
+      // La conexión de Mercado Pago para QR aparece recién con la opción encendida.
+      await expect(configuracion.getByTestId('pos-cajas-qr')).toHaveCount(0)
+      await cobroManual.click()
+      await expect(configuracion.getByTestId('pos-cajas-qr')).toBeVisible()
+    })
+
     test('Meta Pixel se configura aparte de GTM', async ({ page }) => {
       await section(page, 'General')
       // Son dos filas separadas: la vieja prometía las dos integraciones y sólo gobernaba GTM.
