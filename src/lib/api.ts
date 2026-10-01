@@ -1909,6 +1909,11 @@ export const mercadopagoApi = {
 const conToken = (token: string) => ({ Authorization: `Bearer ${token}` })
 
 export const posQrApi = {
+  /** URL de Mercado Pago a la que se lleva al vendedor para autorizar la aplicación de QR (state firmado por el servidor). */
+  iniciarConexion: (token: string) =>
+    fetchApi<{ success: boolean; data: { url: string } }>('/pos-qr/conexion/iniciar', { method: 'POST', headers: conToken(token), signal: AbortSignal.timeout(15_000) }),
+  desconectar: (token: string) =>
+    fetchApi<{ success: boolean }>('/pos-qr/conexion', { method: 'DELETE', headers: conToken(token), signal: AbortSignal.timeout(15_000) }),
   estado: (token: string) =>
     fetchApi<{ success: boolean; data: EstadoPosQrDto }>('/pos-qr/estado', { headers: conToken(token), signal: AbortSignal.timeout(15_000) }),
   cajasMp: (token: string) =>

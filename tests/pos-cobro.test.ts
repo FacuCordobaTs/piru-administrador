@@ -15,7 +15,7 @@ Object.defineProperty(globalThis, 'window', {
 })
 
 const {
-    METODO_COBRO_QR, cajaParaCobrar, cobroFinalizado, formatoCuentaRegresiva, formatoMonto, mensajeFalloCobro,
+    METODO_COBRO_QR, cajaParaCobrar, cobroFinalizado, formatoCuentaRegresiva, formatoMonto, mensajeConexionQr, mensajeFalloCobro,
     modoDeCobro, requiereConfirmarCobro, segundosRestantes,
 } = await import('../src/lib/posCobro')
 const { DEFAULT_POS_CONFIG, POS_CONFIG_KEY, getPosConfig, setPosConfig } = await import('../src/lib/posConfig')
@@ -141,6 +141,18 @@ describe('estado y textos del cobro', () => {
         expect(mensajeFalloCobro({ estado: 'reembolsado', mensaje: null })).toContain('reembolsó')
         expect(mensajeFalloCobro({ estado: 'error', mensaje: 'Mercado Pago acreditó menos que el total del pedido' })).toBe('Mercado Pago acreditó menos que el total del pedido')
         expect(mensajeFalloCobro({ estado: 'error', mensaje: null })).toContain('no pudo procesar')
+    })
+
+    test('el motivo con el que vuelve la autorización de Mercado Pago se explica en castellano', () => {
+        expect(mensajeConexionQr('denegado')).toContain('No autorizaste')
+        expect(mensajeConexionQr('estado_invalido')).toContain('venció')
+        expect(mensajeConexionQr('faltan_parametros')).toBe(mensajeConexionQr('estado_invalido'))
+        expect(mensajeConexionQr('sin_configurar')).toContain('todavía no está habilitado')
+        expect(mensajeConexionQr('modulo')).toContain('módulo Mercado Pago')
+        expect(mensajeConexionQr('oauth_fallido')).toContain('rechazó')
+        expect(mensajeConexionQr('cuenta_invalida')).toContain('datos de tu cuenta')
+        // Lo que no se reconoce (o falta) no filtra códigos internos: cae en un mensaje genérico.
+        for (const raro of ['servidor', 'algo_nuevo', '', null]) expect(mensajeConexionQr(raro)).toContain('problema de nuestro lado')
     })
 
     test('formato de importes en pesos argentinos', () => {

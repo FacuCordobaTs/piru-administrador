@@ -236,7 +236,7 @@ function PosConfigForm({ onSaved }: { onSaved: () => void }) {
             onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, confirmarCobrosManualmente: checked }))}
           />
           {config.confirmarCobrosManualmente && config.metodosPago.mercadopago && (
-            <PosCajasQrSection cajaElegidaId={config.cajaMpQrId} onElegir={elegirCajaMpQr} />
+            <PosCajasQrSection cajaElegidaId={config.cajaMpQrId} onElegir={elegirCajaMpQr} antesDeConectar={() => setPosConfig(config)} />
           )}
         </div>
       </div>

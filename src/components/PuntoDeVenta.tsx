@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 import { POS_TIPOS_ORDER, getPosConfig, posDraftStorageKey, setPosConfig, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
 import { PosConfigDialog } from '@/components/PosConfigDialog'
 import { PosCobroManualDialog, PosCobroQrDialog } from '@/components/PosCobroDialog'
-import { modoDeCobro, requiereConfirmarCobro } from '@/lib/posCobro'
+import { mensajeConexionQr, modoDeCobro, requiereConfirmarCobro } from '@/lib/posCobro'
 import { PosMovil } from '@/components/pos-movil/PosMovil'
 import { PosPendientes } from '@/components/pos-movil/PosPendientes'
 import {
@@ -1220,6 +1220,22 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         setCobroQrPedidoId(null)
         setCobro(null)
     }
+
+    // Vuelta de la autorización de Mercado Pago para QR (el servidor redirige a /dashboard?mp_qr_status=…).
+    // Se avisa, se limpia la URL y, si salió bien, se abre la configuración para vincular o crear la caja.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search)
+        const resultado = params.get('mp_qr_status')
+        if (!resultado) return
+        const motivo = params.get('mp_qr_error')
+        try { window.history.replaceState({}, '', window.location.pathname + window.location.hash) } catch { /* noop */ }
+        if (resultado === 'success') {
+            toast.success('Mercado Pago conectado para cobros con QR', { description: 'Ahora vinculá o creá la caja con la que cobrás.' })
+            setConfigurandoPos(true)
+        } else {
+            toast.error('No se pudo conectar Mercado Pago', { description: mensajeConexionQr(motivo) })
+        }
+    }, [])
 
     // "Cobrado": el pedido se anota ya cobrado, por el mismo camino de siempre (cola offline incluida).
     const confirmarCobroManual = () => {

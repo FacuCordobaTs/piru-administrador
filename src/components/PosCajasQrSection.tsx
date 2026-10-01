@@ -145,13 +145,13 @@ function AgregarCajaDialog({ onAgregada, onCerrar }: { onAgregada: (caja: CajaQr
                         ) : (
                             <ul className="space-y-2">
                                 {cajasMp.map((caja) => {
-                                    const usable = !!caja.externalId
+                                    const usable = !!caja.externalId && caja.activa
                                     return (
                                         <li key={caja.mpPosId} className="flex items-center justify-between gap-3 rounded-2xl border p-3">
                                             <div className="min-w-0">
                                                 <p className="truncate text-sm font-medium">{caja.nombre}</p>
                                                 <p className="text-xs text-muted-foreground">
-                                                    {!usable ? 'Sin ID externo: Mercado Pago no permite cobrarla por API. Creá una nueva.' : caja.vinculada ? 'Ya vinculada' : `ID ${caja.externalId}`}
+                                                    {!caja.activa ? 'Inactiva en Mercado Pago: activala allá para poder cobrar.' : !caja.externalId ? 'Sin ID externo: Mercado Pago no permite cobrarla por API. Creá una nueva.' : caja.vinculada ? 'Ya vinculada' : `ID ${caja.externalId}`}
                                                 </p>
                                             </div>
                                             <Button
@@ -222,10 +222,12 @@ interface PropsSeccion {
     /** Caja que usa este dispositivo (se guarda con el resto de la configuración del POS). */
     cajaElegidaId: number | null
     onElegir: (cajaId: number | null) => void
+    /** Se llama justo antes de salir a autorizar en Mercado Pago: la pantalla se abandona, así que lo sin guardar se guarda. */
+    antesDeConectar?: () => void
 }
 
 /** Cajas de Mercado Pago (QR estático) con las que se cobra: vincular, crear, elegir la de este equipo. */
-export function PosCajasQrSection({ cajaElegidaId, onElegir }: PropsSeccion) {
+export function PosCajasQrSection({ cajaElegidaId, onElegir, antesDeConectar }: PropsSeccion) {
     const token = useAuthStore((s) => s.token)
     const [estado, setEstado] = useState<EstadoPosQrDto | null>(null)
     const [cargando, setCargando] = useState(true)
@@ -233,6 +235,8 @@ export function PosCajasQrSection({ cajaElegidaId, onElegir }: PropsSeccion) {
     const [agregando, setAgregando] = useState(false)
     const [verQr, setVerQr] = useState<CajaQrDto | null>(null)
     const [quitando, setQuitando] = useState<number | null>(null)
+    const [conectando, setConectando] = useState(false)
+    const [desconectando, setDesconectando] = useState(false)
 
     const cargar = useCallback(async () => {
         if (!token) return
@@ -272,6 +276,39 @@ export function PosCajasQrSection({ cajaElegidaId, onElegir }: PropsSeccion) {
         }
     }
 
+    // Los cobros con QR usan su propia aplicación de Mercado Pago (pagos presenciales): el vendedor la autoriza
+    // una vez en Mercado Pago y vuelve al admin. El servidor genera la URL con un `state` que sólo él puede firmar.
+    const conectar = async () => {
+        if (!token || conectando) return
+        setConectando(true)
+        setError(null)
+        try {
+            const { url } = (await posQrApi.iniciarConexion(token)).data
+            // La opción "Confirmar cobros manualmente" suele encenderse justo antes de conectar: sin guardarla,
+            // al volver la sección de cajas no aparecería hasta volver a encenderla.
+            antesDeConectar?.()
+            window.location.assign(url)
+        } catch (e) {
+            setError(mensajeDe(e, 'No se pudo iniciar la conexión con Mercado Pago'))
+            setConectando(false)
+        }
+    }
+
+    const desconectar = async () => {
+        if (!token || desconectando) return
+        if (!window.confirm('¿Desconectar Mercado Pago de los cobros con QR? Las cajas dejarán de usarse en Piru; seguirán existiendo en tu cuenta de Mercado Pago.')) return
+        setDesconectando(true)
+        try {
+            await posQrApi.desconectar(token)
+            onElegir(null)
+            await cargar()
+        } catch (e) {
+            toast.error(mensajeDe(e, 'No se pudo desconectar Mercado Pago'))
+        } finally {
+            setDesconectando(false)
+        }
+    }
+
     const alAgregar = async (caja: CajaQrDto) => {
         setAgregando(false)
         await cargar()
@@ -307,9 +344,22 @@ export function PosCajasQrSection({ cajaElegidaId, onElegir }: PropsSeccion) {
             )}
 
             {!cargando && !error && estado && estado.moduloMercadoPago && !estado.mpConectado && (
-                <p className="rounded-xl bg-muted/60 p-3 text-xs text-muted-foreground">
-                    Conectá tu cuenta de Mercado Pago en Ajustes → Métodos de pago para poder cobrar con QR.
-                </p>
+                estado.appConfigurada ? (
+                    <div className="space-y-2.5">
+                        <p className="rounded-xl bg-muted/60 p-3 text-xs text-muted-foreground">
+                            Los cobros con QR usan una conexión propia con Mercado Pago, aparte de la de pagos online. Se autoriza una sola
+                            vez y volvés acá.
+                        </p>
+                        <Button type="button" size="sm" className="w-full" onClick={() => void conectar()} disabled={conectando}>
+                            {conectando ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1.5 h-3.5 w-3.5" />}
+                            Conectar Mercado Pago
+                        </Button>
+                    </div>
+                ) : (
+                    <p className="rounded-xl bg-muted/60 p-3 text-xs text-muted-foreground">
+                        El cobro con QR todavía no está habilitado en Piru. Avisanos para activarlo.
+                    </p>
+                )
             )}
 
             {!cargando && !error && estado && estado.moduloMercadoPago && estado.mpConectado && (
@@ -350,6 +400,14 @@ export function PosCajasQrSection({ cajaElegidaId, onElegir }: PropsSeccion) {
                     <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setAgregando(true)}>
                         <Store className="mr-1.5 h-3.5 w-3.5" /> {cajas.length === 0 ? 'Vincular o crear una caja' : 'Agregar otra caja'}
                     </Button>
+                    <button
+                        type="button"
+                        onClick={() => void desconectar()}
+                        disabled={desconectando}
+                        className="block w-full text-center text-xs text-muted-foreground underline underline-offset-2 hover:text-destructive disabled:opacity-50"
+                    >
+                        {desconectando ? 'Desconectando…' : 'Desconectar Mercado Pago de los cobros con QR'}
+                    </button>
                 </>
             )}
 

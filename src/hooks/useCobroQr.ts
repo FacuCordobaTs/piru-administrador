@@ -14,7 +14,8 @@ export type FaseCobroQr =
     | { fase: 'esperando'; cobro: CobroQrDto }
     /** `cobro` es `null` si el pedido ya figuraba como pagado al pedir el cobro. */
     | { fase: 'pagado'; cobro: CobroQrDto | null }
-    | { fase: 'fallido'; mensaje: string; reintentable: boolean }
+    /** `configurar`: el motivo se resuelve en «Configurar punto de venta» (conectar Mercado Pago). */
+    | { fase: 'fallido'; mensaje: string; reintentable: boolean; configurar?: boolean }
 
 export interface OpcionesCobroQr {
     token: string
@@ -30,7 +31,8 @@ export interface OpcionesCobroQr {
     onCajaElegida: (cajaId: number) => void
 }
 
-const CODIGOS_SIN_REINTENTO = new Set(['MODULO_MP_INACTIVO', 'MP_NO_CONECTADO', 'PEDIDO_NO_COBRABLE', 'MONTO_INVALIDO', 'PEDIDO_NO_ENCONTRADO'])
+const CODIGOS_SIN_REINTENTO = new Set(['MODULO_MP_INACTIVO', 'MP_NO_CONECTADO', 'APP_QR_NO_CONFIGURADA', 'PEDIDO_NO_COBRABLE', 'MONTO_INVALIDO', 'PEDIDO_NO_ENCONTRADO'])
+const CODIGOS_PARA_CONFIGURAR = new Set(['MP_NO_CONECTADO', 'CAJA_NO_ENCONTRADA'])
 
 function mensajeDeError(error: unknown): string {
     if (error instanceof ApiError) {
@@ -105,8 +107,8 @@ export function useCobroQr(opciones: OpcionesCobroQr) {
         setSinRed(false)
         setErrorAlCancelar(null)
         setEstado({ fase: 'preparando' })
-        const fallar = (mensaje: string, reintentable: boolean) => {
-            if (vigente()) setEstado({ fase: 'fallido', mensaje, reintentable })
+        const fallar = (mensaje: string, reintentable: boolean, configurar = false) => {
+            if (vigente()) setEstado({ fase: 'fallido', mensaje, reintentable, ...(configurar ? { configurar: true } : {}) })
         }
 
         const { token, online } = actuales.current
@@ -119,7 +121,8 @@ export function useCobroQr(opciones: OpcionesCobroQr) {
             const configuracion = (await posQrApi.estado(token)).data
             if (!vigente()) return
             if (!configuracion.moduloMercadoPago) return fallar('El módulo Mercado Pago no está activo en este local.', false)
-            if (!configuracion.mpConectado) return fallar('Conectá tu cuenta de Mercado Pago en Ajustes → Métodos de pago.', false)
+            if (!configuracion.appConfigurada) return fallar('El cobro con QR todavía no está habilitado en Piru. Elegí otro método de pago.', false)
+            if (!configuracion.mpConectado) return fallar('Falta conectar Mercado Pago para cobrar con QR. Se hace una vez en «Configurar punto de venta».', false, true)
 
             // Retomar tras una recarga: si el cobro anterior sigue vivo (o ya se pagó) se sigue con
             // ese; si terminó sin pago se muestra cómo terminó y el cajero decide qué hacer.
@@ -166,7 +169,7 @@ export function useCobroQr(opciones: OpcionesCobroQr) {
             }
             // La caja elegida ya no existe: en el próximo intento se vuelve a elegir.
             if (codigo === 'CAJA_NO_ENCONTRADA') cajaRef.current = null
-            fallar(mensajeDeError(error), esReintentable(error))
+            fallar(mensajeDeError(error), esReintentable(error), CODIGOS_PARA_CONFIGURAR.has(codigo ?? ''))
         }
     }, [aplicarCobro])
 

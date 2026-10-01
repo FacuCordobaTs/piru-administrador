@@ -22,7 +22,7 @@ type Cuerpo = {
     nombre?: string; mpPosId?: string; tiendaId?: string; cajaId?: number; cancelarPedido?: boolean
 }
 type CajaFixture = { id: number; nombre: string; externalPosId: string; qrUrl: string | null; plantillaUrl: string | null }
-type CajaMpFixture = { mpPosId: string; nombre: string; externalId: string | null; storeId: string | null; qrUrl: string | null; vinculada: boolean }
+type CajaMpFixture = { mpPosId: string; nombre: string; externalId: string | null; storeId: string | null; qrUrl: string | null; activa: boolean; vinculada: boolean }
 type TiendaFixture = { id: string; nombre: string; direccion: string | null }
 
 interface Api {
@@ -33,7 +33,9 @@ interface Api {
     cobro: Cobro | null
     monto: string
     cajas: CajaFixture[]
-    estado: { moduloMercadoPago: boolean; mpConectado: boolean }
+    estado: { moduloMercadoPago: boolean; mpConectado: boolean; appConfigurada: boolean }
+    /** Llamadas a la conexión con la aplicación de Mercado Pago para QR. */
+    conexion: { inicios: number; desconexiones: number }
     cajasMp: CajaMpFixture[]
     tiendas: TiendaFixture[]
     vinculaciones: Cuerpo[]
@@ -69,10 +71,13 @@ async function preparar(page: Page, opciones: Opciones = {}): Promise<Api> {
         creaciones: [], iniciosCobro: [], cancelaciones: [], consultas: 0, cobro: null,
         monto: opciones.monto ?? '2800.00',
         cajas: opciones.cajas ?? [CAJA_BARRA],
-        estado: { moduloMercadoPago: true, mpConectado: true, ...opciones.estado },
+        estado: { moduloMercadoPago: true, mpConectado: true, appConfigurada: true, ...opciones.estado },
+        conexion: { inicios: 0, desconexiones: 0 },
         cajasMp: [], tiendas: [], vinculaciones: [], creacionesCaja: [], desvinculadas: [], falloInicio: null,
     }
     await page.routeWebSocket(/.*/, (socket) => socket.close())
+    // Pantalla de autorización de Mercado Pago (la que se abre al conectar): sólo se comprueba a dónde se llega.
+    await page.route('https://auth.mercadopago.test/**', (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Autorizar Piru</h1>' }))
     await page.route('https://mp.example/**', (route) => route.fulfill({
         contentType: 'image/svg+xml',
         body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#009EE3"/></svg>',
@@ -101,6 +106,16 @@ async function preparar(page: Page, opciones: Opciones = {}): Promise<Api> {
         if (path.endsWith('/cliente-contexto')) return route.fulfill({ json: { success: true, data: null } })
 
         // ── POS · QR estático de Mercado Pago ──
+        if (path.endsWith('/pos-qr/conexion/iniciar') && metodo === 'POST') {
+            api.conexion.inicios++
+            return route.fulfill({ json: { success: true, data: { url: 'https://auth.mercadopago.test/authorization?client_id=7364289770550796&response_type=code&platform_id=mp&state=42.1.ab.cd' } } })
+        }
+        if (path.endsWith('/pos-qr/conexion') && metodo === 'DELETE') {
+            api.conexion.desconexiones++
+            api.estado.mpConectado = false
+            api.cajas = []
+            return route.fulfill({ json: { success: true } })
+        }
         if (path.endsWith('/pos-qr/estado')) return route.fulfill({ json: { success: true, data: { ...api.estado, cajas: api.cajas } } })
         if (path.endsWith('/pos-qr/mp/cajas')) return route.fulfill({ json: { success: true, data: api.cajasMp } })
         if (path.endsWith('/pos-qr/mp/tiendas')) return route.fulfill({ json: { success: true, data: api.tiendas } })
@@ -171,9 +186,9 @@ async function preparar(page: Page, opciones: Opciones = {}): Promise<Api> {
 
 const CONFIRMAR = { confirmarCobrosManualmente: true, cajaMpQrId: CAJA_BARRA.id }
 
-async function abrirPos(page: Page, opciones: Opciones = {}) {
+async function abrirPos(page: Page, opciones: Opciones = {}, consulta = '') {
     const api = await preparar(page, opciones)
-    await page.goto('/tests/pos-cobro.html')
+    await page.goto(`/tests/pos-cobro.html${consulta}`)
     await expect(page.getByPlaceholder('Buscar producto o tag...')).toBeVisible({ timeout: 20_000 })
     return api
 }
@@ -217,8 +232,8 @@ test.describe('celular', () => {
     test('la caja se puede vincular desde la configuración (sólo cajas con ID externo) y ver su QR', async ({ page }) => {
         const api = await abrirPos(page, { config: CONFIRMAR, cajas: [] })
         api.cajasMp = [
-            { mpPosId: '111', nombre: 'Caja del evento', externalId: 'EVENTO1', storeId: '9', qrUrl: 'https://mp.example/qr-evento.png', vinculada: false },
-            { mpPosId: '222', nombre: 'Caja sin id', externalId: null, storeId: '9', qrUrl: null, vinculada: false },
+            { mpPosId: '111', nombre: 'Caja del evento', externalId: 'EVENTO1', storeId: '9', qrUrl: 'https://mp.example/qr-evento.png', activa: true, vinculada: false },
+            { mpPosId: '222', nombre: 'Caja sin id', externalId: null, storeId: '9', qrUrl: null, activa: true, vinculada: false },
         ]
         await page.getByRole('button', { name: 'Más opciones del punto de venta' }).click()
         await page.getByRole('menuitem', { name: 'Configurar punto de venta' }).click()
@@ -255,6 +270,87 @@ test.describe('celular', () => {
         await expect(agregar).toHaveCount(0)
         expect(api.creacionesCaja).toEqual([{ nombre: 'Barra del evento', tiendaId: '10' }])
         await expect(configuracion.getByRole('radio', { name: 'Barra del evento' })).toHaveAttribute('aria-checked', 'true')
+    })
+
+    test('sin la conexión de QR la configuración ofrece conectarla y lleva a autorizar la aplicación de Mercado Pago', async ({ page }) => {
+        const api = await abrirPos(page, { config: CONFIRMAR, estado: { mpConectado: false }, cajas: [] })
+        await page.getByRole('button', { name: 'Más opciones del punto de venta' }).click()
+        await page.getByRole('menuitem', { name: 'Configurar punto de venta' }).click()
+        const configuracion = page.getByRole('dialog', { name: 'Configurar punto de venta' })
+        const cajas = configuracion.getByTestId('pos-cajas-qr')
+        // Los cobros con QR tienen su conexión propia: no se manda a la de pagos online.
+        await expect(cajas.getByText(/conexión propia con Mercado Pago/)).toBeVisible()
+        await expect(cajas.getByText(/Ajustes → Métodos de pago/)).toHaveCount(0)
+        await expect(cajas.getByRole('button', { name: 'Vincular o crear una caja' })).toHaveCount(0)
+
+        await cajas.getByRole('button', { name: 'Conectar Mercado Pago', exact: true }).click()
+        await expect(page).toHaveURL(/^https:\/\/auth\.mercadopago\.test\/authorization\?client_id=7364289770550796/)
+        expect(api.conexion.inicios).toBe(1)
+    })
+
+    test('conectar guarda antes lo que se acaba de encender, para que al volver la sección de cajas siga ahí', async ({ page }) => {
+        await abrirPos(page, { estado: { mpConectado: false }, cajas: [] })
+        await page.getByRole('button', { name: 'Más opciones del punto de venta' }).click()
+        await page.getByRole('menuitem', { name: 'Configurar punto de venta' }).click()
+        const configuracion = page.getByRole('dialog', { name: 'Configurar punto de venta' })
+        // Sin guardar: la opción se enciende en el formulario y se va directo a autorizar.
+        await configuracion.getByRole('switch', { name: 'Confirmar cobros manualmente' }).click()
+        await configuracion.getByRole('button', { name: 'Conectar Mercado Pago', exact: true }).click()
+        await expect(page).toHaveURL(/^https:\/\/auth\.mercadopago\.test\//)
+        const almacenado = (await page.context().storageState()).origins.find((o) => o.origin === ORIGEN)?.localStorage
+            .find((entrada) => entrada.name === 'piru:pos-config')?.value
+        expect(JSON.parse(almacenado ?? 'null')).toMatchObject({ confirmarCobrosManualmente: true })
+    })
+
+    test('si el servidor no tiene configurada la aplicación de QR no se ofrece conectar', async ({ page }) => {
+        await abrirPos(page, { config: CONFIRMAR, estado: { mpConectado: false, appConfigurada: false }, cajas: [] })
+        await page.getByRole('button', { name: 'Más opciones del punto de venta' }).click()
+        await page.getByRole('menuitem', { name: 'Configurar punto de venta' }).click()
+        const cajas = page.getByRole('dialog', { name: 'Configurar punto de venta' }).getByTestId('pos-cajas-qr')
+        await expect(cajas.getByText(/todavía no está habilitado en Piru/)).toBeVisible()
+        await expect(cajas.getByRole('button', { name: /Conectar Mercado Pago/ })).toHaveCount(0)
+    })
+
+    test('al volver de autorizar con éxito se avisa, se limpia la URL y se abre la configuración para vincular la caja', async ({ page }) => {
+        await abrirPos(page, { config: CONFIRMAR }, '?mp_qr_status=success')
+        await expect(page.getByText('Mercado Pago conectado para cobros con QR')).toBeVisible()
+        await expect(page.getByRole('dialog', { name: 'Configurar punto de venta' })).toBeVisible()
+        expect(new URL(page.url()).search).toBe('')
+    })
+
+    test('al volver sin haber autorizado se explica el motivo y no se abre nada', async ({ page }) => {
+        await abrirPos(page, { config: CONFIRMAR }, '?mp_qr_status=error&mp_qr_error=denegado')
+        await expect(page.getByText('No se pudo conectar Mercado Pago')).toBeVisible()
+        await expect(page.getByText('No autorizaste la conexión')).toBeVisible()
+        await expect(page.getByRole('dialog', { name: 'Configurar punto de venta' })).toHaveCount(0)
+        expect(new URL(page.url()).search).toBe('')
+    })
+
+    test('se puede desconectar Mercado Pago de los cobros con QR', async ({ page }) => {
+        const api = await abrirPos(page, { config: CONFIRMAR })
+        page.on('dialog', (dialogo) => void dialogo.accept())
+        await page.getByRole('button', { name: 'Más opciones del punto de venta' }).click()
+        await page.getByRole('menuitem', { name: 'Configurar punto de venta' }).click()
+        const cajas = page.getByRole('dialog', { name: 'Configurar punto de venta' }).getByTestId('pos-cajas-qr')
+        await cajas.getByRole('button', { name: 'Desconectar Mercado Pago de los cobros con QR' }).click()
+        await expect(cajas.getByRole('button', { name: 'Conectar Mercado Pago', exact: true })).toBeVisible()
+        expect(api.conexion.desconexiones).toBe(1)
+        expect(api.cajas).toEqual([])
+    })
+
+    test('sin la conexión de QR, cobrar con Mercado Pago no anota nada y lleva a configurarla', async ({ page }) => {
+        const api = await abrirPos(page, { config: CONFIRMAR, estado: { mpConectado: false }, cajas: [] })
+        const hoja = await abrirPedidoMovil(page)
+        await hoja.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
+        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
+        const cobro = dialogoMp(page)
+        await expect(cobro.getByRole('alert')).toContainText('Falta conectar Mercado Pago para cobrar con QR')
+        expect(api.creaciones).toEqual([])
+
+        await cobro.getByRole('button', { name: 'Configurar QR' }).click()
+        await expect(cobro).toHaveCount(0)
+        await expect(page.getByRole('dialog', { name: 'Configurar punto de venta' })).toBeVisible()
+        expect(api.creaciones).toEqual([])
     })
 
     test('sin la opción, "Anotar pedido" sigue creando el pedido ya cobrado (nada cambia)', async ({ page }) => {

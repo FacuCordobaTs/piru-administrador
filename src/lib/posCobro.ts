@@ -34,7 +34,10 @@ export interface CobroQrDto {
 
 export interface EstadoPosQrDto {
     moduloMercadoPago: boolean
+    /** El local autorizó la aplicación de Mercado Pago para QR (distinta de la de pagos online). */
     mpConectado: boolean
+    /** El servidor tiene configurada esa aplicación; sin ella no hay a dónde mandar al vendedor. */
+    appConfigurada: boolean
     cajas: CajaQrDto[]
 }
 
@@ -45,6 +48,8 @@ export interface CajaMpDto {
     storeId: string | null
     qrUrl: string | null
     vinculada: boolean
+    /** `false`: Mercado Pago la tiene inactiva y no puede recibir pagos. */
+    activa: boolean
 }
 
 export interface TiendaMpDto {
@@ -57,6 +62,23 @@ export interface ResultadoCancelacionQrDto {
     cobro: CobroQrDto | null
     /** El pedido impago quedó cancelado por esta llamada. */
     pedidoCancelado: boolean
+}
+
+/**
+ * Texto para cuando Mercado Pago devuelve al vendedor al admin con `?mp_qr_error=`. Los motivos los define
+ * el backend (`MotivoFalloConexion`); lo desconocido cae en un mensaje genérico.
+ */
+export function mensajeConexionQr(motivo: string | null): string {
+    switch (motivo) {
+        case 'denegado': return 'No autorizaste la conexión. Cuando quieras, volvé a intentarlo.'
+        case 'faltan_parametros':
+        case 'estado_invalido': return 'El enlace de autorización venció o no es válido. Volvé a intentarlo desde «Configurar punto de venta».'
+        case 'sin_configurar': return 'El cobro con QR todavía no está habilitado en Piru.'
+        case 'modulo': return 'Activá el módulo Mercado Pago para cobrar con QR.'
+        case 'oauth_fallido': return 'Mercado Pago rechazó la autorización. Volvé a intentarlo.'
+        case 'cuenta_invalida': return 'Mercado Pago no devolvió los datos de tu cuenta. Volvé a intentarlo.'
+        default: return 'Hubo un problema de nuestro lado. Probá de nuevo en unos minutos.'
+    }
 }
 
 /** Cada cuánto consulta el POS el estado del cobro mientras espera al cliente. */

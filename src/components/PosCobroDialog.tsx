@@ -113,6 +113,11 @@ export function PosCobroQrDialog({
         if ((await cancelar()) === 'cancelado') cerrar.current()
     }
 
+    // Si ya se había anotado el pedido impago se cancela antes de salir a configurar: no queda huérfano.
+    const cancelarYConfigurar = async () => {
+        if ((await cancelar()) === 'cancelado') onConfigurarCajas()
+    }
+
     const cobro = estado.fase === 'esperando' || estado.fase === 'pagado' ? estado.cobro : null
     const restantes = estado.fase === 'esperando' ? segundosRestantes(estado.cobro.expiraAt, ahora) : null
 
@@ -232,6 +237,9 @@ export function PosCobroQrDialog({
                             </Button>
                             {estado.reintentable && (
                                 <Button type="button" className={BOTON_PRIMARIO} onClick={reintentar} disabled={cancelando}>Reintentar</Button>
+                            )}
+                            {!estado.reintentable && estado.configurar && (
+                                <Button type="button" className={BOTON_PRIMARIO} onClick={() => void cancelarYConfigurar()} disabled={cancelando}>Configurar QR</Button>
                             )}
                         </Pie>
                     </div>
