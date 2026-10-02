@@ -36,6 +36,9 @@ const CODIGOS_PARA_CONFIGURAR = new Set(['MP_NO_CONECTADO', 'CAJA_NO_ENCONTRADA'
 
 function mensajeDeError(error: unknown): string {
     if (error instanceof ApiError) {
+        if (error.status === 0 && error.response?.name === 'TimeoutError') {
+            return 'El servidor tardó demasiado en responder. Reintentá para retomar el mismo cobro.'
+        }
         return error.status === 0 ? 'Sin conexión con el servidor. Revisá internet y reintentá.' : error.message
     }
     return error instanceof Error ? error.message : 'No se pudo completar el cobro'
@@ -44,6 +47,7 @@ function mensajeDeError(error: unknown): string {
 const codigoDe = (error: unknown): string | null => (error instanceof ApiError ? error.response?.code ?? null : null)
 
 const esReintentable = (error: unknown): boolean => {
+    if (error instanceof ApiError && error.response?.reintentable === false) return false
     const codigo = codigoDe(error)
     return !(codigo && CODIGOS_SIN_REINTENTO.has(codigo))
 }
@@ -96,7 +100,7 @@ export function useCobroQr(opciones: OpcionesCobroQr) {
             return
         }
         terminado.current = true
-        setEstado({ fase: 'fallido', mensaje: mensajeFalloCobro(cobro), reintentable: true })
+        setEstado({ fase: 'fallido', mensaje: mensajeFalloCobro(cobro), reintentable: cobro.reintentable !== false })
     }, [])
 
     const iniciar = useCallback(async (opcionesInicio: { reintento?: boolean } = {}) => {
@@ -181,10 +185,12 @@ export function useCobroQr(opciones: OpcionesCobroQr) {
 
     const consultarUnaVez = useCallback(async () => {
         const id = pedidoIdRef.current
+        const mia = generacion.current
+        const vigente = () => vivo.current && generacion.current === mia && !terminado.current
         if (id == null || terminado.current) return
         try {
             const cobro = (await posQrApi.consultar(actuales.current.token, id)).data
-            if (!vivo.current || terminado.current) return
+            if (!vigente()) return
             setSinRed(false)
             if (cobro) aplicarCobro(cobro)
             else {
@@ -192,7 +198,7 @@ export function useCobroQr(opciones: OpcionesCobroQr) {
                 setEstado({ fase: 'fallido', mensaje: 'No se encontró el cobro. Generalo de nuevo.', reintentable: true })
             }
         } catch {
-            if (vivo.current) setSinRed(true)
+            if (vigente()) setSinRed(true)
         }
     }, [aplicarCobro])
 

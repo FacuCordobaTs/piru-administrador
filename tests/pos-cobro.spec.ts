@@ -13,7 +13,7 @@ const CAJA_SALIDA = { id: 6, nombre: 'Salida', externalPosId: 'PIRU1SALIDA', qrU
 
 type Cobro = {
     id: number; pedidoId: number; cajaId: number; cajaNombre: string | null; qrUrl: string | null; monto: string
-    estado: string; mpStatus: string | null; mensaje: string | null; expiraAt: string | null; pagadoAt: string | null
+    estado: string; mpStatus: string | null; mensaje: string | null; expiraAt: string | null; pagadoAt: string | null; reintentable?: boolean
 }
 
 /** Lo que el POS manda en el cuerpo de cada llamada simulada (sólo lo que las pruebas leen). */
@@ -522,6 +522,88 @@ test.describe('celular', () => {
         await cobro.getByRole('button', { name: 'Cancelar', exact: true }).click()
         await expect(cobro).toHaveCount(0)
         expect(api.cancelaciones).toEqual([{ pedidoId: PEDIDO_ID, cancelarPedido: true }])
+    })
+
+    test('un rechazo definitivo de MP no ofrece repetir los mismos datos ni muestra el QR', async ({ page }) => {
+        const api = await abrirPos(page, { config: CONFIRMAR })
+        api.falloInicio = { status: 502, body: { code: 'MP_ERROR', reintentable: false,
+            message: 'Mercado Pago rechazó los datos del cobro: config.qr.external_pos_id: Invalid POS value' } }
+        const hoja = await abrirPedidoMovil(page)
+        await hoja.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
+        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
+        const cobro = dialogoMp(page)
+        await expect(cobro.getByRole('alert')).toContainText('config.qr.external_pos_id')
+        await expect(cobro.getByRole('button', { name: 'Reintentar' })).toHaveCount(0)
+        await expect(cobro.getByRole('img')).toHaveCount(0)
+        await cobro.getByRole('button', { name: 'Cerrar', exact: true }).click()
+        expect(api.creaciones).toHaveLength(1)
+        expect(api.creaciones[0].pagado).toBe(false)
+    })
+
+    test('al retomar una creación pendiente espera la aceptación de MP antes de mostrar el QR', async ({ page }) => {
+        const api = await abrirPos(page, { config: CONFIRMAR })
+        const hoja = await abrirPedidoMovil(page)
+        await hoja.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
+        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
+        await expect(dialogoMp(page).getByText('Esperando el pago…')).toBeVisible()
+        api.cobro = { ...api.cobro!, estado: 'creando', expiraAt: null }
+        await page.reload()
+        const cobro = dialogoMp(page)
+        await expect(cobro.getByText('Preparando el cobro…')).toBeVisible()
+        await expect(cobro.getByRole('img')).toHaveCount(0)
+        api.cobro = { ...api.cobro!, estado: 'error', mensaje: 'Mercado Pago rechazó los datos del cobro: total_amount', reintentable: false }
+        await expect(cobro.getByRole('alert')).toContainText('total_amount')
+        await expect(cobro.getByRole('button', { name: 'Reintentar' })).toHaveCount(0)
+        expect(api.creaciones).toHaveLength(1)
+    })
+
+    test('una consulta vieja no reemplaza el nuevo cobro después de reintentar', async ({ page }) => {
+        const api = await abrirPos(page, { config: CONFIRMAR })
+        const hoja = await abrirPedidoMovil(page)
+        await hoja.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
+        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
+        const cobro = dialogoMp(page)
+        await expect(cobro.getByText('Esperando el pago…')).toBeVisible()
+        const viejo = { ...api.cobro!, estado: 'vencido' }
+        let liberar!: () => void
+        let recibida!: () => void
+        const pendiente = new Promise<void>((resolve) => { liberar = resolve })
+        const llegada = new Promise<void>((resolve) => { recibida = resolve })
+        let interceptada = false
+        await page.route('**/pos-qr/pedidos/*/cobro', async (route) => {
+            if (route.request().method() !== 'GET' || interceptada) return route.fallback()
+            interceptada = true
+            recibida()
+            await pendiente
+            await route.fulfill({ json: { success: true, data: viejo } })
+        })
+        await cobro.getByRole('button', { name: 'Verificar ahora' }).click()
+        await llegada
+        api.cobro = viejo
+        await cobro.getByRole('button', { name: 'Verificar ahora' }).click()
+        await expect(cobro.getByRole('button', { name: 'Reintentar' })).toBeVisible()
+        await cobro.getByRole('button', { name: 'Reintentar' }).click()
+        await expect(cobro.getByText('Esperando el pago…')).toBeVisible()
+        const respondida = page.waitForResponse((response) => response.url().endsWith(`/pos-qr/pedidos/${PEDIDO_ID}/cobro`) && response.request().method() === 'GET')
+        liberar()
+        await (await respondida).finished()
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+        await expect(cobro.getByText('Esperando el pago…')).toBeVisible()
+        await expect(cobro.getByRole('button', { name: 'Reintentar' })).toHaveCount(0)
+        expect(api.creaciones).toHaveLength(1)
+    })
+
+    test('un timeout del servidor se distingue de un corte de internet', async ({ page }) => {
+        await abrirPos(page, { config: CONFIRMAR })
+        const hoja = await abrirPedidoMovil(page)
+        await page.evaluate(() => {
+            const enviar = window.fetch
+            window.fetch = (input, init) => String(input).includes('/pos-qr/estado')
+                ? Promise.reject(new DOMException('timed out', 'TimeoutError')) : enviar(input, init)
+        })
+        await hoja.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
+        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
+        await expect(dialogoMp(page).getByRole('alert')).toHaveText('El servidor tardó demasiado en responder. Reintentá para retomar el mismo cobro.')
     })
 
     test('Mercado Pago sin cajas vinculadas: no anota nada y lleva a configurar el QR', async ({ page }) => {

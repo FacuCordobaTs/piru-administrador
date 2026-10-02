@@ -182,17 +182,21 @@ export function PosCobroQrDialog({
                 {estado.fase === 'esperando' && cobro && (
                     <div className="space-y-4">
                         <Total total={total} />
-                        <div className="mx-auto flex h-56 w-56 items-center justify-center rounded-2xl border border-border bg-white p-3">
-                            {cobro.qrUrl
-                                ? <img src={cobro.qrUrl} alt={`QR de la caja ${cobro.cajaNombre ?? ''}`.trim()} className="h-full w-full object-contain" />
-                                : <QrCode className="h-16 w-16 text-muted-foreground/50" />}
-                        </div>
-                        <p className="text-center text-sm text-muted-foreground">
-                            Pedile al cliente que escanee el QR{cobro.cajaNombre ? <> de la caja <strong className="text-foreground">{cobro.cajaNombre}</strong></> : null} con la app de Mercado Pago.
-                        </p>
+                        {cobro.estado === 'creado' && (
+                            <>
+                                <div className="mx-auto flex h-56 w-56 items-center justify-center rounded-2xl border border-border bg-white p-3">
+                                    {cobro.qrUrl
+                                        ? <img src={cobro.qrUrl} alt={`QR de la caja ${cobro.cajaNombre ?? ''}`.trim()} className="h-full w-full object-contain" />
+                                        : <QrCode className="h-16 w-16 text-muted-foreground/50" />}
+                                </div>
+                                <p className="text-center text-sm text-muted-foreground">
+                                    Pedile al cliente que escanee el QR{cobro.cajaNombre ? <> de la caja <strong className="text-foreground">{cobro.cajaNombre}</strong></> : null} con la app de Mercado Pago.
+                                </p>
+                            </>
+                        )}
                         <div role="status" className="flex items-center justify-center gap-2 text-sm font-medium text-foreground">
                             <Loader2 className="h-4 w-4 animate-spin text-[#FF7A00]" />
-                            <span>Esperando el pago…</span>
+                            <span>{cobro.estado === 'creando' ? 'Preparando el cobro…' : 'Esperando el pago…'}</span>
                             {restantes != null && (
                                 <span className="tabular-nums text-muted-foreground">
                                     · {restantes > 0 ? `vence en ${formatoCuentaRegresiva(restantes)}` : 'confirmando el vencimiento'}
@@ -206,8 +210,8 @@ export function PosCobroQrDialog({
                         )}
                         {errorAlCancelar && <p role="alert" className="text-center text-xs font-medium text-destructive">{errorAlCancelar}</p>}
                         <Pie>
-                            <Button type="button" variant="outline" className="h-12 rounded-xl" onClick={() => void verificarAhora()} disabled={cancelando}>
-                                <RefreshCw className="mr-2 h-4 w-4" /> Verificar ahora
+                            <Button type="button" variant="outline" className="h-12 rounded-xl" onClick={() => cobro.estado === 'creando' ? reintentar() : void verificarAhora()} disabled={cancelando}>
+                                <RefreshCw className="mr-2 h-4 w-4" /> {cobro.estado === 'creando' ? 'Reintentar' : 'Verificar ahora'}
                             </Button>
                             <Button type="button" variant="outline" className="h-12 rounded-xl text-destructive hover:text-destructive" onClick={cancelarYCerrar} disabled={cancelando}>
                                 {cancelando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Cancelar cobro

@@ -30,6 +30,8 @@ export interface CobroQrDto {
     /** ISO 8601; `null` mientras la orden todavía no se creó en Mercado Pago. */
     expiraAt: string | null
     pagadoAt: string | null
+    /** Un rechazo definitivo no se resuelve repitiendo el mismo cobro. */
+    reintentable?: boolean
 }
 
 export interface EstadoPosQrDto {
