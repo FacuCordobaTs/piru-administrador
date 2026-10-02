@@ -318,12 +318,21 @@ test.describe('celular', () => {
         expect(new URL(page.url()).search).toBe('')
     })
 
-    test('al volver sin haber autorizado se explica el motivo y no se abre nada', async ({ page }) => {
-        await abrirPos(page, { config: CONFIRMAR }, '?mp_qr_status=error&mp_qr_error=denegado')
+    test('al volver sin haber autorizado se explica el motivo y se permite reintentar desde la configuración', async ({ page }) => {
+        await abrirPos(page, { config: CONFIRMAR, estado: { mpConectado: false }, cajas: [] }, '?mp_qr_status=error&mp_qr_error=denegado')
         await expect(page.getByText('No se pudo conectar Mercado Pago')).toBeVisible()
         await expect(page.getByText('No autorizaste la conexión')).toBeVisible()
-        await expect(page.getByRole('dialog', { name: 'Configurar punto de venta' })).toHaveCount(0)
+        await expect(page.getByRole('dialog', { name: 'Configurar punto de venta' }).getByRole('button', { name: 'Conectar Mercado Pago', exact: true })).toBeVisible()
         expect(new URL(page.url()).search).toBe('')
+    })
+
+    test('un fallo del servidor vuelve a la configuración y permite iniciar una autorización nueva', async ({ page }) => {
+        const api = await abrirPos(page, { config: CONFIRMAR, estado: { mpConectado: false }, cajas: [] }, '?mp_qr_status=error&mp_qr_error=servidor')
+        await expect(page.getByText('No se pudo conectar Mercado Pago')).toBeVisible()
+        const configuracion = page.getByRole('dialog', { name: 'Configurar punto de venta' })
+        await configuracion.getByRole('button', { name: 'Conectar Mercado Pago', exact: true }).click()
+        await expect(page).toHaveURL(/^https:\/\/auth\.mercadopago\.test\/authorization/)
+        expect(api.conexion.inicios).toBe(1)
     })
 
     test('se puede desconectar Mercado Pago de los cobros con QR', async ({ page }) => {

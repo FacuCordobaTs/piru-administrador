@@ -1222,7 +1222,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     }
 
     // Vuelta de la autorización de Mercado Pago para QR (el servidor redirige a /dashboard?mp_qr_status=…).
-    // Se avisa, se limpia la URL y, si salió bien, se abre la configuración para vincular o crear la caja.
+    // Se avisa, se limpia la URL y se abre la configuración para continuar o reintentar la conexión.
     useEffect(() => {
         const params = new URLSearchParams(window.location.search)
         const resultado = params.get('mp_qr_status')
@@ -1231,10 +1231,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         try { window.history.replaceState({}, '', window.location.pathname + window.location.hash) } catch { /* noop */ }
         if (resultado === 'success') {
             toast.success('Mercado Pago conectado para cobros con QR', { description: 'Ahora vinculá o creá la caja con la que cobrás.' })
-            setConfigurandoPos(true)
         } else {
             toast.error('No se pudo conectar Mercado Pago', { description: mensajeConexionQr(motivo) })
         }
+        setConfigurandoPos(true)
     }, [])
 
     // "Cobrado": el pedido se anota ya cobrado, por el mismo camino de siempre (cola offline incluida).
