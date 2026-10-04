@@ -1,10 +1,13 @@
-import { useLayoutEffect, useState, type ElementType, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useState, type ElementType, type ReactNode, type RefObject } from 'react'
 import type { useRestauranteStore } from '@/store/restauranteStore'
 
 /** Producto tal como lo entrega el store (misma forma que usa el POS de escritorio). */
 export type ProductoPos = ReturnType<typeof useRestauranteStore.getState>['productos'][number]
 
 export type TipoPedidoPos = 'delivery' | 'takeaway' | 'mesa'
+
+/** Pasos del panel de pedido en tablet: primero los productos, después cliente, entrega y pago. */
+export type PasoPedidoPos = 'productos' | 'datos'
 
 /** Acción del Dashboard que el menú del POS móvil ofrece (caja, mapa, mesas…). */
 export interface PosAccionExtra {
@@ -58,12 +61,14 @@ export interface PosPedidoDatos {
     direccionFaltante: boolean
     guardando: boolean
     hayCambios: boolean
-    /** "Confirmar cobros manualmente": confirmar el alta pasa por el cobro y el botón se llama "Cobrar". */
+    /** El alta con Mercado Pago pasa por el cobro con QR y el botón se llama "Cobrar". */
     confirmaCobro?: boolean
     subtotal: number
     envio: number
     descuento: number
     total: number
+    /** Tablet: paso visible del panel. La hoja del celular lo ignora y muestra todo junto. */
+    paso: PasoPedidoPos
 }
 
 export interface PosPedidoAcciones {
@@ -77,6 +82,7 @@ export interface PosPedidoAcciones {
     onCostoEnvio: (valor: string) => void
     onNotas: (valor: string) => void
     onMetodoPago: (id: string) => void
+    onPaso: (paso: PasoPedidoPos) => void
     onConfirmar: () => void
     onDespacharMesa?: () => void
     onImprimirNuevos?: () => void
@@ -177,6 +183,72 @@ export const guardarVerFotos = (ver: boolean) => {
 /** El producto abre un selector antes de sumarse (tiene variantes). */
 export const productoTieneOpciones = (producto: ProductoPos) =>
     (producto.variantes?.length ?? 0) > 0 || (producto.variantesSecundarias?.length ?? 0) > 0
+
+// ─────────────────────────────────────────────
+// Selector de producto en tablet: extras y bebida junto a la variante
+// ─────────────────────────────────────────────
+export type VariantePos = NonNullable<ProductoPos['variantes']>[number]
+export type AgregadoPos = NonNullable<ProductoPos['agregados']>[number]
+
+/** Una bebida que se suma junto a otro producto. Las que tienen variantes se abren en una opción por
+ *  variante, así elegirla sigue siendo un solo toque. */
+export interface OpcionBebida {
+    clave: string
+    producto: ProductoPos
+    variante?: VariantePos
+    /** Con segunda variante va la primera, la misma que el selector común deja elegida de entrada. */
+    varianteSecundaria?: VariantePos
+    /** Variante (y segunda variante) a la vista: "1 litro". */
+    detalle: string
+    precio: number
+}
+
+/** Lo que el selector de tablet suma al pedido de una vez: el producto con su variante y sus extras,
+ *  y la bebida elegida como una fila aparte. */
+export interface SeleccionProductoPos {
+    variante?: VariantePos
+    varianteSecundaria?: VariantePos
+    agregados: AgregadoPos[]
+    bebida?: OpcionBebida
+}
+
+const aNumero = (precio: string | undefined) => parseFloat(precio ?? '') || 0
+
+/** Bebidas activas (de categorías marcadas como bebida) en el orden del catálogo. Sin ninguna, el
+ *  selector no ofrece la columna de bebida. */
+export function opcionesDeBebida(productos: ProductoPos[], ordenCategorias: Map<string, number>): OpcionBebida[] {
+    const bebidas = productos.filter((producto) => producto.categoriaEsBebida === true)
+    return agruparCatalogo(bebidas, ordenCategorias).flatMap((grupo) => grupo.productos.flatMap((producto): OpcionBebida[] => {
+        const varianteSecundaria = producto.variantesSecundarias?.[0]
+        const recargo = aNumero(varianteSecundaria?.precio)
+        const variantes = producto.variantes ?? []
+        if (variantes.length === 0) {
+            return [{ clave: `${producto.id}`, producto, varianteSecundaria, detalle: varianteSecundaria?.nombre ?? '', precio: aNumero(producto.precio) + recargo }]
+        }
+        return variantes.map((variante) => ({
+            clave: `${producto.id}-${variante.id}`,
+            producto,
+            variante,
+            varianteSecundaria,
+            detalle: [variante.nombre, varianteSecundaria?.nombre].filter(Boolean).join(' · '),
+            precio: aNumero(variante.precio) + recargo,
+        }))
+    }))
+}
+
+/** Desde este ancho de ventana el selector de producto es un diálogo centrado (debajo, una hoja). */
+export const ANCHO_SELECTOR_CENTRADO = 640
+
+/** Celular en vertical: el selector de producto va como hoja inferior, sin columnas extra. */
+export function useVentanaCompacta(): boolean {
+    const [compacta, setCompacta] = useState(() => typeof window !== 'undefined' && window.innerWidth < ANCHO_SELECTOR_CENTRADO)
+    useEffect(() => {
+        const medir = () => setCompacta(window.innerWidth < ANCHO_SELECTOR_CENTRADO)
+        window.addEventListener('resize', medir)
+        return () => window.removeEventListener('resize', medir)
+    }, [])
+    return compacta
+}
 
 // ─────────────────────────────────────────────
 // Contrato de la pantalla completa (PosMovil)

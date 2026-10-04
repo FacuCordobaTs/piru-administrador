@@ -13,8 +13,8 @@ export interface PosConfig {
     soloProductosEvento: boolean
     imprimirComandaDosVeces: boolean
     /**
-     * Los pedidos nuevos no nacen cobrados: Mercado Pago se verifica solo con el QR de la caja y el
-     * resto de los métodos se confirma con "Cobrado". Ver `lib/posCobro.ts`.
+     * Los pedidos nuevos con Mercado Pago se cobran con el QR de la caja y esperan la confirmación
+     * del servidor. El resto de los métodos se anota directamente. Ver `lib/posCobro.ts`.
      */
     confirmarCobrosManualmente: boolean
     /** Caja de Mercado Pago (QR estático) con la que cobra ESTE dispositivo; `null` = sin elegir. */

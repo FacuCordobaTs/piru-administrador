@@ -235,7 +235,7 @@ export function PosConfigForm({ onSaved }: { onSaved: () => void }) {
           <FilaConfig
             icon={HandCoins}
             label="Confirmar cobros manualmente"
-            descripcion="Al anotar un pedido se confirma el cobro: con Mercado Pago se verifica solo con el QR de la caja; con efectivo, tarjeta o transferencia, tocás «Cobrado»."
+            descripcion="Con Mercado Pago se abre el cobro con el QR de la caja y se espera la confirmación del pago. Efectivo, tarjeta y transferencia se anotan directamente."
             checked={config.confirmarCobrosManualmente}
             onCheckedChange={(checked) => setConfig((prev) => ({ ...prev, confirmarCobrosManualmente: checked }))}
           />

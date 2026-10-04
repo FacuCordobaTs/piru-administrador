@@ -34,6 +34,7 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean }
 
 const SECTIONS: SectionDef[] = [
+  { id: 'marketer', label: 'Tu marketer', descripcion: 'Quién maneja tus clientes, campañas y mensajes.', Icon: User, Component: lazy(() => import('./sections/Marketer')) },
   {
     id: 'monetizacion',
     label: 'Métodos de pago',
@@ -136,7 +137,7 @@ const REQUISITOS: Record<string, string[]> = {
 
 const GROUPS = [
   { label: 'Operación', ids: ['whatsapp', 'entregas', 'horarios', 'ventas'] },
-  { label: 'Tu negocio', ids: ['general', 'monetizacion', 'modulos', 'suscripcion', 'cuenta'] },
+  { label: 'Tu negocio', ids: ['general', 'monetizacion', 'marketer', 'modulos', 'suscripcion', 'cuenta'] },
 ]
 
 // Un único destino canónico por módulo que sí se configura dentro de Ajustes.

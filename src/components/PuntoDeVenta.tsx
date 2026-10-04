@@ -20,13 +20,14 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { POS_TIPOS_ORDER, getPosConfig, posDraftStorageKey, setPosConfig, usePosConfig, type PosMetodoPago } from '@/lib/posConfig'
 import { PosConfigDialog } from '@/components/PosConfigDialog'
-import { PosCobroManualDialog, PosCobroQrDialog } from '@/components/PosCobroDialog'
-import { mensajeConexionQr, modoDeCobro, requiereConfirmarCobro } from '@/lib/posCobro'
+import { PosCobroQrDialog } from '@/components/PosCobroDialog'
+import { mensajeConexionQr, requiereConfirmarCobro } from '@/lib/posCobro'
 import { PosMovil } from '@/components/pos-movil/PosMovil'
 import { PosPendientes } from '@/components/pos-movil/PosPendientes'
+import { PosSelectorProducto } from '@/components/pos-movil/PosSelectorProducto'
 import {
-    esPantallaTactil, filtrarProductos, productoTieneOpciones,
-    type PosAccionExtra, type PosItemVista, type PosPedidoAcciones, type PosPedidoDatos,
+    esPantallaTactil, filtrarProductos, opcionesDeBebida, productoTieneOpciones, useVentanaCompacta,
+    type OpcionBebida, type PasoPedidoPos, type PosAccionExtra, type PosItemVista, type PosPedidoAcciones, type PosPedidoDatos,
 } from '@/components/pos-movil/posMovilLib'
 import { X, Search, Plus, Banknote, CreditCard, Landmark, Smartphone } from 'lucide-react'
 
@@ -299,8 +300,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const [query, setQuery] = useState('')
     const [configurandoPos, setConfigurandoPos] = useState(false)
-    // Cobro en curso ("Confirmar cobros manualmente"): confirmación manual o cobro con QR de Mercado Pago.
-    const [cobro, setCobro] = useState<{ modo: 'manual' } | { modo: 'qr'; pedidoIdInicial: number | null } | null>(null)
+    // Cobro en curso con el QR de Mercado Pago.
+    const [cobro, setCobro] = useState<{ modo: 'qr'; pedidoIdInicial: number | null } | null>(null)
     // Pedido impago ya anotado para el cobro con QR. Se persiste en el borrador (`cobroQr`).
     const [cobroQrPedidoId, setCobroQrPedidoId] = useState<number | null>(null)
     const cobroQrRef = useRef<{ clientRequestId: string; pedidoId: number | null; datos: (PosEditablePedido & { id?: number }) | null } | null>(null)
@@ -319,7 +320,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // Celular: el pedido vive en una hoja que sube sobre el catálogo (en tablet es una columna fija).
     // Al abrir un pedido existente para editarlo, lo que se quiere ver primero es el pedido.
     const [hojaAbierta, setHojaAbierta] = useState(() => initialPedido != null)
+    // Tablet: el panel del pedido muestra primero los productos y después cliente, entrega y pago.
+    const [pasoPedido, setPasoPedido] = useState<PasoPedidoPos>('productos')
     const [categoriaMovil, setCategoriaMovil] = useState<string | null>(null)
+    // Celular en vertical: el selector de un producto es una hoja inferior sin columnas de extras ni bebida.
+    const ventanaCompacta = useVentanaCompacta()
     // El último intento de anotar un delivery falló por falta de dirección.
     const [direccionFaltante, setDireccionFaltante] = useState(false)
     // Producto destacado del resultado: es el que Enter agrega al pedido y el
@@ -522,8 +527,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         setHydratedPedidoId(null)
         setHydratedStorageKey(null)
         // Al volver de una edición a un borrador (p. ej. tras despachar una mesa) el POS móvil no se
-        // remonta: la hoja, la categoría y la búsqueda de la edición anterior no deben quedar puestas.
-        setHojaAbierta(false); setCategoriaMovil(null); setQuery(''); setDireccionFaltante(false)
+        // remonta: la hoja, la categoría, el paso y la búsqueda de la edición anterior no deben quedar puestas.
+        setHojaAbierta(false); setCategoriaMovil(null); setPasoPedido('productos'); setQuery(''); setDireccionFaltante(false)
         let cancelado = false
         let hidratado = false
         void (async () => {
@@ -633,6 +638,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         () => new Map(categoriasStore.map((categoria) => [categoria.nombre, categoria.orden ?? 0])),
         [categoriasStore],
     )
+    // Tablet: bebidas activas que el selector de un producto ofrece sumar en el mismo toque.
+    const bebidasActivas = useMemo(() => opcionesDeBebida(productosActivos, ordenCategorias), [productosActivos, ordenCategorias])
 
     const catalogoEnColumna = catalogoCompacto && config.catalogoEnColumna
     const mostrarListado = catalogoEnColumna || query.trim() !== ''
@@ -794,26 +801,35 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         variante?: { id: number; nombre: string; precio: string },
         varianteSecundaria?: { id: number; nombre: string; precio: string },
         agregados: CartItem['agregados'] = [],
-        ingredientesExcluidos: number[] = []
+        ingredientesExcluidos: number[] = [],
+        /** Tablet: bebida elegida junto al producto. Entra como una fila propia, justo después. */
+        bebida?: OpcionBebida,
     ) => {
         if (submitting) return
-        const precioBase = (variante ? parseFloat(variante.precio) : parseFloat(producto.precio)) + (varianteSecundaria ? parseFloat(varianteSecundaria.precio) : 0)
         // Cada toque es una fila independiente: dos pedidos iguales pueden requerir
         // cambios distintos después y no deben fusionarse silenciosamente.
-        const key = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
-        setCart((prev) => [...prev, {
-            key,
-            productoId: producto.id,
-            nombre: producto.nombre,
-            varianteId: variante?.id,
-            varianteNombre: variante?.nombre,
-            varianteSecundariaId: varianteSecundaria?.id,
-            varianteSecundariaNombre: varianteSecundaria?.nombre,
-            precioBase,
-            ingredientesExcluidos,
-            agregados,
+        const nuevaFila = (
+            productoFila: Producto,
+            varianteFila?: { id: number; nombre: string; precio: string },
+            secundariaFila?: { id: number; nombre: string; precio: string },
+            agregadosFila: CartItem['agregados'] = [],
+            excluidosFila: number[] = [],
+        ): CartItem => ({
+            key: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+            productoId: productoFila.id,
+            nombre: productoFila.nombre,
+            varianteId: varianteFila?.id,
+            varianteNombre: varianteFila?.nombre,
+            varianteSecundariaId: secundariaFila?.id,
+            varianteSecundariaNombre: secundariaFila?.nombre,
+            precioBase: (varianteFila ? parseFloat(varianteFila.precio) : parseFloat(productoFila.precio)) + (secundariaFila ? parseFloat(secundariaFila.precio) : 0),
+            ingredientesExcluidos: excluidosFila,
+            agregados: agregadosFila,
             cantidad: 1,
-        }])
+        })
+        const filas = [nuevaFila(producto, variante, varianteSecundaria, agregados, ingredientesExcluidos)]
+        if (bebida) filas.push(nuevaFila(bebida.producto, bebida.variante, bebida.varianteSecundaria))
+        setCart((prev) => [...prev, ...filas])
         // Al agregar al borrador se limpia el buscador: el próximo producto
         // se escribe directo, sin borrar el término anterior.
         setQuery('')
@@ -889,7 +905,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         setCart([]); setNombre(''); setTelefono(''); setDireccion(''); setLat(null); setLng(null)
         setNotas(''); setMetodoPago('cash'); setDeliveryFee(''); setTipo(mesaAsignada ? 'mesa' : 'takeaway')
         setQuery(''); setDireccionFaltante(false)
-        if (!conservarVista) { setHojaAbierta(false); setCategoriaMovil(null) }
+        if (!conservarVista) { setHojaAbierta(false); setCategoriaMovil(null); setPasoPedido('productos') }
         if (!modoEdicion) {
             try { sessionStorage.removeItem(storageKey) } catch { /* noop */ }
         }
@@ -1019,8 +1035,8 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // La comanda del Dashboard (panel derecho) opera el borrador a través de este handle.
     useImperativeHandle(ref, () => ({ removeItem, editItem, updateDraft, requestClose, submitDraft: handleSubmit, clearDraft: () => resetForm(), focusProductSearch, getCartItems }))
 
-    // Datos del alta tal como viajan al backend. `pagadoAlta` es lo único que cambia entre un alta común,
-    // una confirmada con "Cobrado" (nace cobrada) y el pedido impago de un cobro con QR.
+    // Datos del alta tal como viajan al backend. `pagadoAlta` distingue el alta común (nace cobrada)
+    // del pedido impago de un cobro con QR.
     const armarAlta = (pagadoAlta: boolean) => {
         const items: PedidoUnificadoItemInput[] = cart.map((it) => ({
             id: it.serverItemId,
@@ -1059,7 +1075,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         return { items, data }
     }
 
-    const handleSubmit = async (automatico = false, opciones: { cobroConfirmado?: boolean } = {}): Promise<number | null> => {
+    const handleSubmit = async (automatico = false): Promise<number | null> => {
         if (!token || enviandoRef.current) return null
         // Despachar una mesa ya guardada no exige introducir un cambio artificial.
         if (modoEdicion && !hasChanges) return initialPedido.id
@@ -1074,10 +1090,10 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             return null
         }
 
-        // "Confirmar cobros manualmente": el pedido nuevo no se anota hasta que el cobro se confirma.
-        if (!automatico && !opciones.cobroConfirmado
-            && requiereConfirmarCobro({ config, modoEdicion, tipo, conMesa: mesaAsignada != null })) {
-            setCobro(modoDeCobro(metodoPago) === 'qr' ? { modo: 'qr', pedidoIdInicial: null } : { modo: 'manual' })
+        // Sólo Mercado Pago pasa por el cobro con QR; los demás métodos se anotan directamente.
+        if (!automatico
+            && requiereConfirmarCobro({ config, modoEdicion, tipo, conMesa: mesaAsignada != null, metodoPago })) {
+            setCobro({ modo: 'qr', pedidoIdInicial: null })
             return null
         }
 
@@ -1237,12 +1253,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         setConfigurandoPos(true)
     }, [])
 
-    // "Cobrado": el pedido se anota ya cobrado, por el mismo camino de siempre (cola offline incluida).
-    const confirmarCobroManual = () => {
-        setCobro(null)
-        void handleSubmit(false, { cobroConfirmado: true })
-    }
-
     // Cobro con QR: el pedido se anota impago (sin cola offline: sin red no hay cobro posible) y el servidor
     // lo acredita cuando Mercado Pago confirma. El borrador se conserva hasta entonces, así un cobro
     // cancelado o vencido no hace perder lo cargado. Reintentar reutiliza el mismo `clientRequestId`.
@@ -1355,11 +1365,12 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         direccionFaltante,
         guardando: submitting,
         hayCambios: hasChanges,
-        confirmaCobro: requiereConfirmarCobro({ config, modoEdicion, tipo, conMesa: mesaAsignada != null }),
+        confirmaCobro: requiereConfirmarCobro({ config, modoEdicion, tipo, conMesa: mesaAsignada != null, metodoPago }),
         subtotal: cartTotal,
         envio: deliveryFeeNum,
         descuento: Number(initialPedido?.montoDescuento) || 0,
         total: totalFinal,
+        paso: pasoPedido,
     }
 
     const accionesPedido: PosPedidoAcciones = {
@@ -1373,6 +1384,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
         onCostoEnvio: setDeliveryFee,
         onNotas: setNotas,
         onMetodoPago: setMetodoPago,
+        onPaso: setPasoPedido,
         onConfirmar: () => void handleSubmit(),
         onDespacharMesa: onDispatchMesa ? () => void onDispatchMesa() : undefined,
         onImprimirNuevos: onPrintNewMesa ? () => void onPrintNewMesa() : undefined,
@@ -1391,15 +1403,6 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
 
     const dialogosCobro = (
         <>
-            {cobro?.modo === 'manual' && (
-                <PosCobroManualDialog
-                    total={totalFinal}
-                    tipoLabel={tipo === 'delivery' ? 'Delivery' : 'Takeaway'}
-                    metodoLabel={METODOS_PAGO.find((metodo) => metodo.id === metodoPago)?.label ?? metodoPago}
-                    onCobrado={confirmarCobroManual}
-                    onVolver={cerrarCobro}
-                />
-            )}
             {cobro?.modo === 'qr' && token && (
                 <PosCobroQrDialog
                     total={totalFinal}
@@ -1596,8 +1599,21 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             <PosConfigDialog open={configurandoPos} onOpenChange={setConfigurandoPos} />
             {dialogosCobro}
 
+            {/* ── Alta de un producto con variantes en tablet: extras y bebida en el mismo diálogo ── */}
+            {configProducto && !configProducto.editKey && !ventanaCompacta && (
+                <PosSelectorProducto
+                    producto={configProducto.producto}
+                    bebidas={bebidasActivas}
+                    onCerrar={() => setConfigProducto(null)}
+                    onAgregar={({ variante, varianteSecundaria, agregados, bebida }) => {
+                        addToCart(configProducto.producto, variante, varianteSecundaria, agregados, [], bebida)
+                        setConfigProducto(null)
+                    }}
+                />
+            )}
+
             {/* ── Configuración de producto (variantes / ingredientes / extras) ── */}
-            {configProducto && (
+            {configProducto && (configProducto.editKey || ventanaCompacta) && (
                 <ProductConfigOverlay
                     modo="hoja"
                     producto={configProducto.producto}

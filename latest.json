@@ -1,11 +1,11 @@
 {
-    "version": "1.4.1",
-    "notes": "Metodos de pago usado en comanda",
-    "pub_date": "2026-03-29T16:00:00Z",
+    "version": "3.4.9",
+    "notes": "POS: efectivo, tarjeta y transferencia se anotan directamente; Mercado Pago mantiene el cobro con QR.",
+    "pub_date": "2026-10-02T19:55:29.672Z",
     "platforms": {
         "windows-x86_64": {
-            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNXdEQnNJNTczRjlLRGFpNU1JMzhNMUk4WFlyS1cvN3RMeHc2Tzc0L1BKZkdrcWRKa0tiZDd6b3pZalpvYUlIT0ZsenRZQVZyOFNFT1B1ditEUk43QVFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc1MjQ2MTU3CWZpbGU6cGlydV8xLjQuMV94NjQtc2V0dXAuZXhlCjZCOUVyeFcxSStGYmRDY0JocmhrZkRoQ1J0Y2Nva25zTVgzd0gwWGtFUUdnTzVVNnBRSGRJZ2pNenp6eVl4V0hZUnhRemdkWi8zYkpvZFBMUGZaUUJBPT0K",
-            "url": "https://api.piru.app/public/updates/piru_1.4.2_x64-setup.exe"
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNTNwMkJuRXpwSGJFU2xCbkg5ak9WZzFFemtwcXpNWVpsclU5VFExRjVvUWVmTHNKQzJQdHp0a1lObWJycTNsd01UT2wyYkx3bTdqTUo0aU5yRFdWTEFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTcwOTE4CWZpbGU6cGlydV8zLjQuOV94NjQtc2V0dXAuZXhlClpUSXZJUnZRMk5XQ1hkUU1WczNPSnBPSjdnUVgyMjJTZEhuN1NKSXRtTUhtbFpvNy9CVHBKejBKdjRaYmdEUTd6Q3I0Sjk3Z3F4Wk5NTWFoc05Nc0RRPT0K",
+            "url": "https://api.piru.app/public/updates/piru_3.4.9_x64-setup.exe"
         }
     }
 }

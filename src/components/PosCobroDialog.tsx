@@ -25,41 +25,6 @@ function Pie({ children }: { children: ReactNode }) {
     return <div className="grid gap-2 sm:grid-cols-2 [&>*:only-child]:sm:col-span-2">{children}</div>
 }
 
-interface PropsCobroManual {
-    total: number
-    metodoLabel: string
-    tipoLabel: string
-    /** El cajero confirma que recibió el pago: el pedido se anota ya cobrado. */
-    onCobrado: () => void
-    onVolver: () => void
-}
-
-/** Efectivo, tarjeta y transferencia: no hay cómo verificarlos solos, así que se confirman a mano. */
-export function PosCobroManualDialog({ total, metodoLabel, tipoLabel, onCobrado, onVolver }: PropsCobroManual) {
-    return (
-        <Dialog open onOpenChange={(abierto) => { if (!abierto) onVolver() }}>
-            <DialogContent className="sm:max-w-sm" aria-describedby="cobro-manual-descripcion">
-                <DialogHeader>
-                    <DialogTitle>Confirmar cobro</DialogTitle>
-                    <DialogDescription id="cobro-manual-descripcion">{tipoLabel} · {metodoLabel}</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-3 py-1">
-                    <Total total={total} />
-                    <p className="text-center text-sm text-muted-foreground">
-                        Confirmá cuando hayas recibido el pago. El pedido se anota y la comanda se imprime recién ahí.
-                    </p>
-                </div>
-                <Pie>
-                    <Button type="button" variant="outline" className="h-12 rounded-xl" onClick={onVolver}>Volver</Button>
-                    <Button type="button" autoFocus className={BOTON_PRIMARIO} onClick={onCobrado}>
-                        <CheckCircle className="mr-2 h-5 w-5" /> Cobrado
-                    </Button>
-                </Pie>
-            </DialogContent>
-        </Dialog>
-    )
-}
-
 interface PropsCobroQr {
     total: number
     tipoLabel: string

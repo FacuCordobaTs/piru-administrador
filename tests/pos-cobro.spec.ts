@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
-// Cobro del POS con "Confirmar cobros manualmente": "Cobrado" para efectivo/tarjeta/transferencia y
-// cobro con el QR estático de Mercado Pago, cuyo pago confirma el servidor. La API se intercepta.
+// Con "Confirmar cobros manualmente", sólo Mercado Pago abre el cobro con QR verificado por el servidor.
+// Efectivo, tarjeta y transferencia se anotan directamente. La API se intercepta.
 test.use({ hasTouch: true })
 
 const ORIGEN = 'http://127.0.0.1:4191'
@@ -373,25 +373,11 @@ test.describe('celular', () => {
         expect(api.iniciosCobro).toEqual([])
     })
 
-    test('efectivo: "Cobrar" pide confirmar; Volver conserva el pedido y Cobrado lo anota cobrado', async ({ page }) => {
+    test('efectivo: se anota directamente sin mostrar el diálogo de cobro', async ({ page }) => {
         const api = await abrirPos(page, { config: CONFIRMAR })
         const hoja = await abrirPedidoMovil(page)
-        await expect(hoja.getByRole('button', { name: 'Anotar pedido', exact: true })).toHaveCount(0)
-        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
-
-        const confirmacion = dialogoManual(page)
-        await expect(confirmacion).toBeVisible()
-        await expect(confirmacion.getByTestId('cobro-total')).toHaveText('$2.800')
-        await expect(confirmacion.getByText('Takeaway · Efectivo')).toBeVisible()
-        // Todavía no se anotó nada.
-        expect(api.creaciones).toEqual([])
-        await confirmacion.getByRole('button', { name: 'Volver' }).click()
-        await expect(confirmacion).toHaveCount(0)
-        expect(api.creaciones).toEqual([])
-        await expect(hoja.getByText('1 ítem')).toBeVisible()
-
-        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
-        await dialogoManual(page).getByRole('button', { name: 'Cobrado' }).click()
+        await expect(hoja.getByRole('button', { name: 'Cobrar', exact: true })).toHaveCount(0)
+        await hoja.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
         await expect.poll(() => api.creaciones.length).toBe(1)
         expect(api.creaciones[0]).toMatchObject({ tipo: 'takeaway', pagado: true, metodoPago: 'cash', anotadoManualmente: true })
         await expect(dialogoManual(page)).toHaveCount(0)
@@ -400,15 +386,14 @@ test.describe('celular', () => {
     })
 
     for (const [boton, metodoPago] of [['Tarjeta', 'tarjeta'], ['Transferencia', 'manual_transfer']] as const) {
-        test(`${boton.toLowerCase()}: también se confirma con "Cobrado", sin tocar Mercado Pago`, async ({ page }) => {
+        test(`${boton.toLowerCase()}: se anota directamente sin diálogo ni cobro de Mercado Pago`, async ({ page }) => {
             const api = await abrirPos(page, { config: CONFIRMAR })
             const hoja = await abrirPedidoMovil(page)
             await hoja.getByRole('button', { name: boton, exact: true }).click()
-            await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
-            await expect(dialogoManual(page).getByText(`Takeaway · ${boton}`)).toBeVisible()
-            await dialogoManual(page).getByRole('button', { name: 'Cobrado' }).click()
+            await hoja.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
             await expect.poll(() => api.creaciones.length).toBe(1)
             expect(api.creaciones[0]).toMatchObject({ pagado: true, metodoPago })
+            await expect(dialogoManual(page)).toHaveCount(0)
             expect(api.iniciosCobro).toEqual([])
         })
     }
@@ -417,6 +402,7 @@ test.describe('celular', () => {
         const api = await abrirPos(page, { config: CONFIRMAR })
         const hoja = await abrirPedidoMovil(page)
         await hoja.getByRole('button', { name: 'Delivery', exact: true }).click()
+        await hoja.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
         await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
         await expect(hoja.getByRole('alert')).toHaveText('Ingresá la dirección de entrega')
         await expect(dialogoManual(page)).toHaveCount(0)
@@ -485,8 +471,8 @@ test.describe('celular', () => {
         // El borrador sigue ahí: se puede cobrar de otra forma sin volver a cargar todo.
         await expect(hoja.getByText('2 ítems')).toBeVisible()
         await hoja.getByRole('button', { name: 'Efectivo', exact: true }).click()
-        await hoja.getByRole('button', { name: 'Cobrar', exact: true }).click()
-        await dialogoManual(page).getByRole('button', { name: 'Cobrado' }).click()
+        await hoja.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
+        await expect(dialogoManual(page)).toHaveCount(0)
         await expect.poll(() => api.creaciones.length).toBe(2)
         expect(api.creaciones[1]).toMatchObject({ pagado: true, metodoPago: 'cash' })
         // Dos altas distintas: la del cobro cancelado y la nueva en efectivo.
@@ -685,9 +671,10 @@ test.describe('escritorio', () => {
         await buscador.fill('coca')
         await buscador.press('Enter')
         await expect(page.getByText('Comanda · 1 ítems')).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Anotar pedido', exact: true })).toHaveCount(0)
+        await expect(page.getByRole('button', { name: 'Anotar pedido', exact: true })).toBeVisible()
 
         await page.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
+        await expect(page.getByRole('button', { name: 'Anotar pedido', exact: true })).toHaveCount(0)
         await page.getByRole('button', { name: 'Cobrar', exact: true }).click()
         const cobro = dialogoMp(page)
         await expect(cobro.getByText('Esperando el pago…')).toBeVisible({ timeout: 15_000 })
@@ -701,17 +688,17 @@ test.describe('escritorio', () => {
         await expect(page.getByText('Comanda en blanco').or(page.getByText('Comanda · 0 ítems'))).toBeVisible()
     })
 
-    test('efectivo: "Cobrado" anota el pedido cobrado y el pedido nuevo arranca vacío', async ({ page }) => {
+    test('efectivo: anota directamente el pedido cobrado y el pedido nuevo arranca vacío', async ({ page }) => {
         const api = await abrirPos(page, { config: CONFIRMAR })
         const buscador = page.getByPlaceholder('Buscar producto o tag...')
         await buscador.fill('empanada')
         await buscador.press('Enter')
-        await page.getByRole('button', { name: 'Cobrar', exact: true }).click()
-        const confirmacion = dialogoManual(page)
-        await expect(confirmacion.getByTestId('cobro-total')).toHaveText('$1.800')
-        await confirmacion.getByRole('button', { name: 'Cobrado' }).click()
+        await expect(page.getByRole('button', { name: 'Cobrar', exact: true })).toHaveCount(0)
+        await page.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
         await expect.poll(() => api.creaciones.length).toBe(1)
         expect(api.creaciones[0]).toMatchObject({ pagado: true, metodoPago: 'cash' })
-        await expect(confirmacion).toHaveCount(0)
+        await expect(dialogoManual(page)).toHaveCount(0)
+        expect(api.iniciosCobro).toEqual([])
+        await expect(page.getByText('Comanda en blanco').or(page.getByText('Comanda · 0 ítems'))).toBeVisible()
     })
 })

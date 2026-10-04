@@ -71,11 +71,12 @@ const SUBTITULOS: Record<PasoId, string> = {
 export default function FlujoEnvioTanda({ config, onCancelar, onTerminado }: Props) {
     const token = useAuthStore(state => state.token)
 
-    const [paso, setPaso] = useState(0)
+    const permiteAutomatico = config.automaticoDisponible === true
+    const [paso, setPaso] = useState(permiteAutomatico ? 0 : 1)
     const pasoId = PASOS[paso].id
 
     // Paso 1 — el modo del local. Arranca en el que ya tiene y no se guarda hasta confirmar.
-    const [modo, setModo] = useState<ModoRecompra>(config.modo)
+    const [modo, setModo] = useState<ModoRecompra>(permiteAutomatico ? config.modo : 'manual')
     const copy = copyEnvio(modo)
 
     // Paso 2 — el cupo diario. Es del LOCAL: protege el número y se reparte entre las tandas vivas.
@@ -144,9 +145,9 @@ export default function FlujoEnvioTanda({ config, onCancelar, onTerminado }: Pro
     const seleccion = useMemo(() => {
         const manualesClientes = [...manuales]
             .map(id => vistos.current.get(id))
-            .filter((c): c is CandidatoLote => !!c)
+            .filter((c): c is CandidatoLote => !!c && c.elegible)
 
-        const resto = pool.filter(c => !excluidos.has(c.clienteId) && !manuales.has(c.clienteId))
+        const resto = pool.filter(c => c.elegible && !excluidos.has(c.clienteId) && !manuales.has(c.clienteId))
         const automaticos = resto.slice(0, cantidad)
         const contactar = [...manualesClientes, ...automaticos]
         // El control sale de los SIGUIENTES de la misma lista: no descuenta de la cantidad pedida ni
@@ -231,7 +232,7 @@ export default function FlujoEnvioTanda({ config, onCancelar, onTerminado }: Pro
     const configCambia = hayCambios(valores, config)
 
     const avanzar = () => setPaso(p => Math.min(PASOS.length - 1, p + 1))
-    const atras = () => setPaso(p => Math.max(0, p - 1))
+    const atras = () => setPaso(p => Math.max(permiteAutomatico ? 0 : 1, p - 1))
 
     // El único paso que puede quedar sin con qué seguir: la lista vacía. Los demás tienen un valor
     // puesto por defecto, así que trabar el avance ahí sería un botón muerto sin explicación.
@@ -285,7 +286,7 @@ export default function FlujoEnvioTanda({ config, onCancelar, onTerminado }: Pro
     return (
         <div data-testid="asistente-envio" data-paso={pasoId} className="rounded-2xl border border-border/40 bg-white/80 p-5 shadow-2xs backdrop-blur-xs dark:bg-muted/30">
             <div className="space-y-1.5">
-                <IndicadorPasos actual={paso} />
+                <IndicadorPasos actual={paso} omitirModo={!permiteAutomatico} />
                 <p className="text-xs leading-relaxed text-muted-foreground">{SUBTITULOS[pasoId]}</p>
             </div>
 
@@ -538,6 +539,7 @@ export default function FlujoEnvioTanda({ config, onCancelar, onTerminado }: Pro
             </div>
 
             <PiePasos
+                omitirModo={!permiteAutomatico}
                 actual={paso}
                 etiquetaFinal={copy.final(seleccion.contactar.length)}
                 iconoFinal={<Send className="h-4 w-4" />}
@@ -626,4 +628,3 @@ function Resumen({
         </div>
     )
 }
-

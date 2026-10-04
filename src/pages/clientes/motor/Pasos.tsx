@@ -24,7 +24,8 @@ import { PASOS } from './comun'
  * El título del paso ("Días entre toques") y el riel de segmentos debajo. Sin el "Paso 3 de 8": el
  * riel ya dice dónde se está y cuánto falta, y el contador competía con el nombre del paso.
  */
-export function IndicadorPasos({ actual }: { actual: number }) {
+export function IndicadorPasos({ actual, omitirModo = false }: { actual: number; omitirModo?: boolean }) {
+    const visibles = omitirModo ? PASOS.slice(1) : PASOS
     const paso = PASOS[actual]
     return (
         <div className="space-y-2">
@@ -35,17 +36,17 @@ export function IndicadorPasos({ actual }: { actual: number }) {
                 role="progressbar"
                 aria-label="Progreso del asistente"
                 aria-valuemin={1}
-                aria-valuemax={PASOS.length}
-                aria-valuenow={actual + 1}
+                aria-valuemax={visibles.length}
+                aria-valuenow={actual + 1 - (omitirModo ? 1 : 0)}
                 aria-valuetext={paso.titulo}
                 className="flex gap-1"
             >
-                {PASOS.map((p, i) => (
+                {visibles.map((p, i) => (
                     <span
                         key={p.id}
                         className={cn(
                             "h-1 flex-1 rounded-full transition-colors",
-                            i <= actual ? "bg-foreground/70" : "bg-muted",
+                            i + (omitirModo ? 1 : 0) <= actual ? "bg-foreground/70" : "bg-muted",
                         )}
                     />
                 ))}
@@ -62,7 +63,8 @@ export function IndicadorPasos({ actual }: { actual: number }) {
  * tarjeta NO puede llevar `overflow-hidden` —el `overflow` crea un scrollport propio y el `sticky`
  * dejaría de seguir a la pantalla que scrollea—.
  */
-export function PiePasos({ actual, etiquetaFinal, iconoFinal, onAtras, onCancelar, onAvanzar, deshabilitado, ocupado }: {
+export function PiePasos({ actual, etiquetaFinal, iconoFinal, onAtras, onCancelar, onAvanzar, deshabilitado, ocupado, omitirModo = false }: {
+    omitirModo?: boolean
     actual: number
     /** El copy del último paso: "Programar 6 mensajes". */
     etiquetaFinal: string
@@ -89,7 +91,7 @@ export function PiePasos({ actual, etiquetaFinal, iconoFinal, onAtras, onCancela
                     Cancelar
                 </Button>
             )}
-            {actual > 0 && (
+            {actual > (omitirModo ? 1 : 0) && (
                 <Button variant="ghost" onClick={onAtras} disabled={ocupado} className="h-9 gap-1.5 rounded-full px-3 text-xs">
                     <ArrowLeft className="h-3.5 w-3.5" /> Atrás
                 </Button>

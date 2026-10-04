@@ -11,6 +11,14 @@ import type {
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
+export interface MiMarketer { marketer: { nombre: string; codigo: string }; desde: string; origen: string }
+export const miMarketerApi = {
+  get: (token: string) => fetchApi<MiMarketer | null>('/mi-marketer/', { headers: { Authorization: `Bearer ${token}` } }),
+  buscar: (token: string, codigo: string) => fetchApi<{ nombre: string }>(`/mi-marketer/buscar?codigo=${encodeURIComponent(codigo)}`, { headers: { Authorization: `Bearer ${token}` } }),
+  darAcceso: (token: string, codigo: string, reemplazar = false) => fetchApi('/mi-marketer/', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ codigo, reemplazar }) }),
+  quitar: (token: string) => fetchApi('/mi-marketer/', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }),
+}
+
 export class ApiError extends Error {
   status: number
   response?: any
@@ -335,6 +343,16 @@ export interface MensajeColaData {
   texto: string
   waMeUrl: string | null
   horarioSugerido?: string | null
+  /** Si se puede mandar ahora y, si no, por qué. Sin permiso no viene `waMeUrl`. */
+  envio?: PermisoEnvioManual
+}
+
+/** Si un mensaje manual puede salir ahora: se decide antes de abrir WhatsApp, no al registrarlo. */
+export interface PermisoEnvioManual {
+  puedeEnviar: boolean
+  motivo: string | null
+  /** Si sólo falta que llegue su hora: desde cuándo puede salir. */
+  desde?: string
 }
 
 /** Lo que el backend registró al marcar una fila como enviada: es la auditoría del envío manual. */
@@ -386,9 +404,10 @@ export interface ClienteMotorRecompra {
 
 export type EstadoMotorLocal = 'activa' | 'pausada_sin_saldo' | 'pausada_manual'
 export type EstadoProgramacion = 'activa' | 'completada' | 'pausada_sin_saldo' | 'pausada_manual' | 'cancelada'
-export type OrigenProgramacion = 'goteo' | 'programada'
+export type OrigenProgramacion = 'goteo' | 'programada' | 'dia_flojo'
 
 export interface ConfigMotorRecompra {
+  automaticoDisponible?: boolean
   restauranteId: number
   estado: EstadoMotorLocal
   modo: ModoRecompra
@@ -404,6 +423,10 @@ export interface ConfigMotorRecompra {
 export interface ProgramacionResumen {
   id: number
   origen: OrigenProgramacion
+  fechaObjetivo?: string | null
+  horaObjetivo?: number | null
+  mensaje?: string | null
+  descuentoPorcentaje?: number | null
   estado: EstadoProgramacion
   segmento: SegmentoRecompra | null
   /** N que pidió el dueño (mensajes a enviar). Null en las campañas legacy. */
@@ -428,6 +451,11 @@ export interface ProgramacionResumen {
 }
 
 export interface CandidatoLote {
+  motivo?: string | null
+  optOut?: boolean
+  topeAlcanzado?: boolean
+  cooldownHasta?: string | null
+  yaEnTanda?: boolean
   clienteId: number; nombre: string; telefono: string; segmento: SegmentoRecompra
   diasDesdeUltimo: number | null; totalGastado: number; ticketPromedio: number
   toquesDesdeUltimoPedido: number; proximoNivel: number
@@ -460,6 +488,11 @@ export interface PreviewProgramacion {
 
 /** Lo que el dueño elige en el asistente. Todo opcional salvo la cantidad. */
 export interface EspecificacionProgramacion {
+  soloIncluidos?: boolean
+  fechaObjetivo?: string | null
+  horaObjetivo?: number | null
+  mensaje?: string | null
+  descuentoPorcentaje?: number | null
   segmento?: SegmentoRecompra | null
   cantidad?: number | null
   toqueHasta?: number | null
@@ -3169,6 +3202,7 @@ export const claimApi = {
 }
 
 export interface ConfiguracionPuntosData {
+  modoAcumulacion?: 'monto' | 'producto' | 'ambos'
   id?: number
   restauranteId?: number
   activo: boolean

@@ -122,9 +122,21 @@ test('capturas del POS en celular y tablet', async ({ browser }) => {
         await page.getByRole('button', { name: /^Muzzarella/ }).click()
         await foto('4-variantes')
         await page.getByRole('button', { name: /Grande/ }).click()
+        // Tablet: extras y bebida junto a la variante (en celular sigue la hoja con las variantes).
+        await page.getByRole('button', { name: /^Clásica/ }).click()
+        const selector = page.getByRole('dialog', { name: 'Configurar Clásica' })
+        if (await selector.getByRole('region', { name: 'Bebida' }).count()) {
+            await selector.getByRole('button', { name: /^Huevo/ }).click()
+            await selector.getByRole('button', { name: /^Coca-Cola 500ml/ }).click()
+            await foto('4b-extras-y-bebida')
+        }
+        await selector.getByRole('button', { name: /^Doble/ }).click()
         const barra = page.getByRole('button', { name: /^Ver pedido/ })
         if (await barra.count()) await barra.click()
         await foto('5-pedido')
+        // Tablet: cliente, entrega y pago están en el segundo paso.
+        const siguiente = page.getByRole('button', { name: 'Siguiente', exact: true })
+        if (await siguiente.count()) await siguiente.click()
         await page.getByRole('button', { name: 'Delivery', exact: true }).click()
         await foto('6-delivery')
         const cerrar = page.getByRole('button', { name: 'Volver al menú' })
@@ -238,6 +250,8 @@ test('celular: variantes, ajuste de ingredientes y extras desde el pedido', asyn
     await page.getByRole('button', { name: /^Muzzarella/ }).click()
     const selector = page.getByRole('dialog', { name: 'Configurar Muzzarella' })
     await expect(selector).toBeVisible()
+    // En celular el selector sigue siendo una hoja sólo con las variantes: no ofrece bebida.
+    await expect(selector.getByText('Bebida')).toHaveCount(0)
     await selector.getByRole('button', { name: /Grande/ }).click()
     await expect(selector).toHaveCount(0)
 
@@ -322,10 +336,186 @@ test('tablet: con el menú lateral colapsado el catálogo y el pedido conviven e
     await page.getByRole('button', { name: /^Sprite 500ml/ }).click()
     await expect(panel.getByText('2 ítems')).toBeVisible()
     await expect(panel.getByText('Takeaway · Efectivo')).toBeVisible()
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).click()
     await panel.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
     await expect.poll(() => estado.creaciones.length).toBe(1)
     expect(estado.creaciones[0]).toMatchObject({ tipo: 'takeaway', metodoPago: 'cash' })
+    // El POS vuelve al primer paso, listo para el próximo pedido.
     await expect(panel.getByText('Tocá productos del menú para agregarlos')).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Siguiente', exact: true })).toBeDisabled()
+})
+
+test('tablet: el pedido va en dos pasos y el cliente y el pago no quedan debajo de los productos', async ({ page }) => {
+    await page.setViewportSize(TABLET)
+    await conMenuColapsado(page)
+    const estado = await abrirPos(page)
+    const panel = page.getByRole('region', { name: 'Pedido' })
+    const pasos = panel.getByRole('navigation', { name: 'Pasos del pedido' })
+    // Suficientes productos como para que, en una sola columna, el pago quedara fuera de la pantalla.
+    for (const producto of [/^Combo Clásico/, /^Combo Doble/, /^Doble cheddar/, /^Veggie/, /^Pollo crispy/, /^Flan casero/, /^Coca-Cola 500ml/]) {
+        await page.getByRole('button', { name: producto }).click()
+    }
+
+    // Paso 1: sólo los productos. Cliente, entrega y pago esperan al paso siguiente.
+    await expect(pasos.getByRole('button', { name: 'Productos' })).toHaveAttribute('aria-current', 'step')
+    await expect(panel.getByRole('button', { name: 'Eliminar Combo Clásico' })).toBeVisible()
+    await expect(panel.getByPlaceholder('Nombre del cliente')).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Delivery', exact: true })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Anotar pedido', exact: true })).toHaveCount(0)
+
+    // Paso 2: tipo, entrega, cliente y pago, a la vista sin scrollear y sin los ítems encima.
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await expect(pasos.getByRole('button', { name: 'Cliente y pago' })).toHaveAttribute('aria-current', 'step')
+    await expect(panel.getByRole('button', { name: 'Eliminar Combo Clásico' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Mercado Pago', exact: true })).toBeInViewport({ ratio: 1 })
+    await panel.getByRole('button', { name: 'Delivery', exact: true }).click()
+    await expect(panel.getByLabel('Costo de envío')).toHaveValue('1500')
+    // También un delivery (dirección y envío de más) entra entero: la nota se abre a pedido.
+    await expect(panel.getByRole('button', { name: 'Mercado Pago', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(panel.getByLabel('Nota del pedido')).toHaveCount(0)
+    // Un delivery sin dirección no se anota: se marca el campo.
+    await panel.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
+    await expect(panel.getByRole('alert')).toHaveText('Ingresá la dirección de entrega')
+    expect(estado.creaciones).toEqual([])
+    await panel.getByPlaceholder('Calle y número...').fill('San Martín 500')
+    await panel.getByPlaceholder('Nombre del cliente').fill('Lucía')
+    await panel.getByPlaceholder('Celular').fill('341 555-1234')
+    await panel.getByRole('button', { name: 'Transferencia', exact: true }).click()
+    await expect(panel.getByText('Delivery · Transferencia')).toBeVisible()
+    await panel.getByRole('button', { name: 'Agregar nota' }).click()
+    await expect(panel.getByLabel('Nota del pedido')).toBeFocused()
+    await panel.getByLabel('Nota del pedido').fill('Tocar timbre')
+
+    // Volver a los productos no pierde lo cargado.
+    await panel.getByRole('button', { name: 'Volver a los productos' }).click()
+    await panel.getByRole('button', { name: 'Sumar una unidad de Coca-Cola 500ml' }).click()
+    await expect(panel.getByText('8 ítems')).toBeVisible()
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await expect(panel.getByPlaceholder('Nombre del cliente')).toHaveValue('Lucía')
+    await expect(panel.getByPlaceholder('Calle y número...')).toHaveValue('San Martín 500')
+    // Una nota con texto queda a la vista.
+    await expect(panel.getByLabel('Nota del pedido')).toHaveValue('Tocar timbre')
+    await panel.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
+
+    await expect.poll(() => estado.creaciones.length).toBe(1)
+    const pedido = estado.creaciones[0] as { items: Array<{ productoId: number; cantidad: number }> }
+    expect(pedido).toMatchObject({
+        tipo: 'delivery', direccion: 'San Martín 500', deliveryFee: 1500, nombreCliente: 'Lucía',
+        telefono: '3415551234', metodoPago: 'manual_transfer', notas: 'Tocar timbre', anotadoManualmente: true,
+    })
+    expect(pedido.items.map((item) => [item.productoId, item.cantidad])).toEqual([[1, 1], [2, 1], [4, 1], [6, 1], [7, 1], [17, 1], [20, 2]])
+    // El pedido siguiente arranca otra vez por los productos.
+    await expect(pasos.getByRole('button', { name: 'Productos' })).toHaveAttribute('aria-current', 'step')
+    await expect(panel.getByText('Tocá productos del menú para agregarlos')).toBeVisible()
+})
+
+test('tablet: un doble toque en "Siguiente" no anota el pedido', async ({ page }) => {
+    await page.setViewportSize(TABLET)
+    await conMenuColapsado(page)
+    const estado = await abrirPos(page)
+    const panel = page.getByRole('region', { name: 'Pedido' })
+    await page.getByRole('button', { name: /^Veggie/ }).click()
+    // "Anotar pedido" aparece donde estaba "Siguiente": el segundo toque no debe confirmarlo.
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).dblclick()
+    await expect(panel.getByRole('button', { name: 'Anotar pedido', exact: true })).toBeVisible()
+    await page.waitForTimeout(800)
+    expect(estado.creaciones).toEqual([])
+    await panel.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
+    await expect.poll(() => estado.creaciones.length).toBe(1)
+})
+
+test('tablet: al tocar la variante se suman, sin confirmar, los extras y la bebida marcados', async ({ page }) => {
+    await page.setViewportSize(TABLET)
+    await conMenuColapsado(page)
+    const estado = await abrirPos(page)
+    const panel = page.getByRole('region', { name: 'Pedido' })
+
+    await page.getByRole('button', { name: /^Clásica/ }).click()
+    const selector = page.getByRole('dialog', { name: 'Configurar Clásica' })
+    const extras = selector.getByRole('region', { name: 'Extras' })
+    const bebidas = selector.getByRole('region', { name: 'Bebida' })
+    const variantes = selector.getByRole('region', { name: 'Variante' })
+    // Lo opcional primero y, al final, la variante: la que agrega.
+    const izquierda = async (columna: typeof extras) => (await columna.boundingBox())!.x
+    expect(await izquierda(extras)).toBeLessThan(await izquierda(bebidas))
+    expect(await izquierda(bebidas)).toBeLessThan(await izquierda(variantes))
+    // Una opción por variante de bebida, y ningún botón de confirmar.
+    await expect(bebidas.getByRole('button', { name: /^Limonada de la casa/ })).toHaveCount(2)
+    await expect(selector.getByRole('button', { name: 'Agregar', exact: true })).toHaveCount(0)
+
+    await extras.getByRole('button', { name: /^Huevo/ }).click()
+    await extras.getByRole('button', { name: /^Bacon/ }).click()
+    await extras.getByRole('button', { name: /^Bacon/ }).click()
+    await expect(extras.getByRole('button', { name: /^Bacon/ })).toHaveAttribute('aria-pressed', 'false')
+    // La bebida es una sola: elegir otra reemplaza la anterior.
+    await bebidas.getByRole('button', { name: /^Sprite 500ml/ }).click()
+    await bebidas.getByRole('button', { name: /^Coca-Cola 500ml/ }).click()
+    await expect(bebidas.getByRole('button', { name: /^Sprite 500ml/ })).toHaveAttribute('aria-pressed', 'false')
+    await expect(selector).toContainText('Se agrega con Huevo, Coca-Cola 500ml')
+    await expect(selector).toContainText('+$4.000')
+    await variantes.getByRole('button', { name: /^Doble/ }).click()
+    await expect(selector).toHaveCount(0)
+
+    // El producto con su extra y, en otra fila, la bebida.
+    await expect(panel.getByText('2 ítems')).toBeVisible()
+    await expect(panel.getByText('(Doble)')).toBeVisible()
+    await expect(panel.getByText('Extras: Huevo')).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Coca-Cola 500ml.*1 en el pedido/ })).toBeVisible()
+    // 11.200 (doble) + 1.200 (huevo) + 2.800 (gaseosa).
+    await expect(panel.getByText('$15.200')).toBeVisible()
+
+    // Sin marcar nada, la variante agrega sólo el producto, como siempre. Sin extras, sólo se ofrece la bebida.
+    await page.getByRole('button', { name: /^Muzzarella/ }).click()
+    const pizza = page.getByRole('dialog', { name: 'Configurar Muzzarella' })
+    await expect(pizza.getByRole('region', { name: 'Extras' })).toHaveCount(0)
+    await expect(pizza).toContainText('Marcá una bebida si la pide y tocá la variante')
+    await pizza.getByRole('button', { name: /^Grande/ }).click()
+    await expect(panel.getByText('3 ítems')).toBeVisible()
+
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await panel.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
+    await expect.poll(() => estado.creaciones.length).toBe(1)
+    const pedido = estado.creaciones[0] as { items: Array<{ productoId: number; varianteId?: number; agregados?: Array<{ id: number }> }> }
+    expect(pedido.items.map((item) => [item.productoId, item.varianteId ?? null, item.agregados?.map((agregado) => agregado.id) ?? []]))
+        .toEqual([[3, 31, [1]], [20, null, []], [9, 92, []]])
+})
+
+test('tablet: una bebida no ofrece otra bebida, y cerrar el selector no agrega nada', async ({ page }) => {
+    await page.setViewportSize(TABLET)
+    await conMenuColapsado(page)
+    await abrirPos(page)
+    const panel = page.getByRole('region', { name: 'Pedido' })
+    await page.getByRole('button', { name: /^Limonada de la casa/ }).click()
+    const selector = page.getByRole('dialog', { name: 'Configurar Limonada de la casa' })
+    await expect(selector.getByRole('region', { name: 'Variante' })).toBeVisible()
+    await expect(selector.getByRole('region', { name: 'Bebida' })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(selector).toHaveCount(0)
+    await expect(panel.getByText('Tocá productos del menú para agregarlos')).toBeVisible()
+    await page.getByRole('button', { name: /^Limonada de la casa/ }).click()
+    await selector.getByRole('button', { name: /^1 litro/ }).click()
+    await expect(selector).toHaveCount(0)
+    await expect(panel.getByText('(1 litro)')).toBeVisible()
+})
+
+test('tablet: al editar un pedido los pasos separan productos y datos, y el guardado sigue siendo automático', async ({ page }) => {
+    await page.setViewportSize(TABLET)
+    await conMenuColapsado(page)
+    const estado = await abrirPos(page)
+    await page.getByRole('button', { name: /^Pedidos/ }).click()
+    await page.getByText('#900', { exact: true }).click()
+    await page.getByRole('button', { name: 'Editar pedido', exact: true }).click()
+    const panel = page.getByRole('region', { name: 'Pedido' })
+    await expect(panel.getByText('Doble cheddar')).toBeVisible()
+    // Una edición no se "anota": no hay "Siguiente" y "Guardar cambios" queda en los dos pasos.
+    await expect(panel.getByRole('button', { name: 'Siguiente', exact: true })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Guardar cambios' })).toBeVisible()
+    await panel.getByRole('button', { name: 'Cliente y pago' }).click()
+    await expect(panel.getByRole('button', { name: 'Guardar cambios' })).toBeVisible()
+    await expect(panel.getByPlaceholder('Calle y número...')).toHaveValue('Córdoba 1234, Rosario')
+    await panel.getByPlaceholder('Nombre del cliente').fill('Cliente editado')
+    await expect.poll(() => estado.ediciones.length, { timeout: 10_000 }).toBe(1)
+    expect(estado.ediciones[0]).toMatchObject({ version: 3, tipo: 'delivery', nombreCliente: 'Cliente editado' })
 })
 
 test('tablet: el POS cubre el menú lateral y muestra dos paneles aunque el menú esté abierto', async ({ page }) => {
@@ -364,12 +554,19 @@ test('ningún tamaño desborda: sin scroll horizontal y con las acciones a la vi
         const etiqueta = `${t.ancho}x${t.alto}`
         const desborde = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
         expect(desborde, `scroll horizontal a ${etiqueta}`).toBeLessThanOrEqual(0)
-        // La acción principal (barra o botón del panel) queda dentro de la pantalla.
-        const accion = page.getByRole('button', { name: /^Ver pedido|^Anotar pedido$/ }).first()
+        // La acción principal (la barra en celular, "Siguiente" del panel en tablet) queda dentro de la pantalla.
+        const accion = page.getByRole('button', { name: /^Ver pedido|^Siguiente$/ }).first()
         await expect(accion, `acción principal a ${etiqueta}`).toBeVisible()
         const caja = (await accion.boundingBox())!
         expect(caja.y + caja.height, `acción dentro de la pantalla a ${etiqueta}`).toBeLessThanOrEqual(t.alto + 1)
         expect(caja.x + caja.width, `acción dentro del ancho a ${etiqueta}`).toBeLessThanOrEqual(t.ancho + 1)
+        // En tablet, "Anotar pedido" del segundo paso también.
+        if ((await accion.textContent())?.startsWith('Siguiente')) {
+            await accion.click()
+            const anotar = (await page.getByRole('button', { name: 'Anotar pedido', exact: true }).boundingBox())!
+            expect(anotar.y + anotar.height, `"Anotar pedido" dentro de la pantalla a ${etiqueta}`).toBeLessThanOrEqual(t.alto + 1)
+            expect(anotar.x + anotar.width, `"Anotar pedido" dentro del ancho a ${etiqueta}`).toBeLessThanOrEqual(t.ancho + 1)
+        }
         await contexto.close()
     }
 })
@@ -414,10 +611,13 @@ test('celular apaisado: el pedido queda a la derecha y la acción principal sigu
     await abrirPos(page)
     await page.getByRole('button', { name: /^Coca-Cola 500ml/ }).click()
     const panel = page.getByRole('region', { name: 'Pedido' })
-    await expect(panel.getByRole('button', { name: 'Anotar pedido', exact: true })).toBeInViewport()
+    await expect(panel.getByRole('button', { name: 'Siguiente', exact: true })).toBeInViewport()
     // Los ítems conservan un alto útil aun con la pantalla baja.
     const lista = await panel.getByRole('list').boundingBox()
     expect(lista!.height).toBeGreaterThan(60)
+    // En el segundo paso la acción sigue a la vista.
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await expect(panel.getByRole('button', { name: 'Anotar pedido', exact: true })).toBeInViewport()
     await contexto.close()
 })
 

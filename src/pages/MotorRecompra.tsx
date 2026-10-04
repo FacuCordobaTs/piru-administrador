@@ -349,6 +349,21 @@ function PantallaEncendido({ campana, programaciones, onCambio, onRecargar }: {
         return () => { mounted = false }
     }, [token, tab, selectedColaId, decisionesPorFila, mensajeCache])
 
+    // Un mensaje programado se vuelve a pedir cuando llega su hora: recién ahí el backend arma el
+    // cupón que promete el link y devuelve el link para abrir WhatsApp.
+    useEffect(() => {
+        if (!selectedColaId) return
+        const desde = Date.parse(mensajeCache[selectedColaId]?.data?.envio?.desde ?? '')
+        if (!Number.isFinite(desde)) return
+        const espera = Math.min(Math.max(15_000, desde - Date.now() + 1_000), 2_000_000_000)
+        const timer = window.setTimeout(() => setMensajeCache(prev => {
+            const siguiente = { ...prev }
+            delete siguiente[selectedColaId]
+            return siguiente
+        }), espera)
+        return () => window.clearTimeout(timer)
+    }, [selectedColaId, mensajeCache])
+
     const cambiarTab = (siguiente: ObservabilidadTab) => {
         setTab(siguiente)
         setPagina(1)
@@ -404,8 +419,8 @@ function PantallaEncendido({ campana, programaciones, onCambio, onRecargar }: {
                 void cargarObservabilidad(true)
                 onCambio()
             }
-        } catch {
-            toast.error('No se pudo marcar como enviado')
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : 'No se pudo marcar como enviado')
         } finally {
             setMarcandoId(null)
         }
@@ -481,6 +496,8 @@ function PantallaEncendido({ campana, programaciones, onCambio, onRecargar }: {
                                     <RefreshCw className={cn("h-3.5 w-3.5", loadingObservabilidad && "animate-spin")} />
                                 </Button>
                             </div>
+
+                            <p className="text-xs text-muted-foreground">Para mandar hoy: los mensajes salen desde el WhatsApp de tu local; abrilos desde el celular o la compu donde está ese WhatsApp.</p>
 
                             {/* Buscador redondeado Apple */}
                             <div className="relative">
@@ -561,7 +578,7 @@ function PantallaEncendido({ campana, programaciones, onCambio, onRecargar }: {
                                     </div>
                                 ) : tab === 'cola' ? (
                                     colaFiltrada.length === 0 ? (
-                                        <EmptyList texto="No hay clientes en cola" subtexto="Cuando alguno se enfríe, el motor lo incorporará." />
+                                        <EmptyList texto="No hay clientes en cola" subtexto="Prepará una tanda para dejar listos los próximos mensajes." />
                                     ) : (
                                         colaFiltrada.map((item) => (
                                             <RowCola
@@ -1486,6 +1503,12 @@ function DetalleColaCliente({
                 )}
             </div>
 
+            {/* Si todavía no puede salir (su hora, el silencio de 22 a 9, el cupo, las 48 hs), el
+                backend no da link para abrir WhatsApp y acá se dice por qué. */}
+            {listo && mensaje?.envio && !mensaje.envio.puedeEnviar && (
+                <p className="text-xs text-muted-foreground">{mensaje.envio.motivo}</p>
+            )}
+
             {/* Acciones operativas estilo Apple */}
             <div className="flex flex-wrap items-center gap-2 pt-2">
                 {listo && mensaje?.waMeUrl && (
@@ -1513,7 +1536,7 @@ function DetalleColaCliente({
 
                 <Button
                     type="button"
-                    disabled={marcandoId === item.id || !listo}
+                    disabled={marcandoId === item.id || !listo || mensaje?.envio?.puedeEnviar === false}
                     onClick={onMarcarEnviado}
                     className="ml-auto h-9 rounded-full bg-orange-500 px-4 text-xs font-medium text-white shadow-2xs gap-1.5 hover:bg-orange-600"
                 >

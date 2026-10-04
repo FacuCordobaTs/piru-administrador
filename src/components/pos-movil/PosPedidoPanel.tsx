@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ElementType, type FocusEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ElementType, type FocusEvent, type ReactNode } from 'react'
 import {
-    Armchair, CheckCircle, ChevronDown, Loader2, MapPin, Minus, Pencil, Plus, Printer, ShoppingBag,
+    Armchair, ArrowRight, Check, CheckCircle, ChevronDown, ChevronLeft, Loader2, MapPin, Minus, Pencil, Plus, Printer, ShoppingBag,
     ShoppingCart, StickyNote, Trash2, Truck, User,
 } from 'lucide-react'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
@@ -9,10 +9,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { formatoPesos, type PosItemVista, type PosPedidoAcciones, type PosPedidoDatos } from './posMovilLib'
+import { formatoPesos, type PasoPedidoPos, type PosItemVista, type PosPedidoAcciones, type PosPedidoDatos } from './posMovilLib'
 
 // En un celular apaisado sobra ancho y falta alto: el panel se compacta para dejar lugar a los ítems.
 const BAJO = '[@media(max-height:480px)]'
+
+// Un doble toque en "Siguiente" no debe anotar el pedido: "Anotar pedido" aparece en el mismo lugar,
+// así que durante este lapso no recibe toques.
+const RESGUARDO_DOBLE_TOQUE_MS = 400
 
 interface PosPedidoPanelProps {
     /** "hoja": ocupa la hoja inferior del celular. "lateral": columna fija de la tablet. */
@@ -26,12 +30,59 @@ interface PosPedidoPanelProps {
 
 function Seccion({ titulo, icono: Icono, children }: { titulo: string; icono: ElementType; children: ReactNode }) {
     return (
-        <section className="mt-5">
+        <section className="mt-5 first:mt-0">
             <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                 <Icono className="h-3.5 w-3.5" /> {titulo}
             </h3>
             {children}
         </section>
+    )
+}
+
+/** Tablet: los dos pasos del pedido. Cada paso es un botón, así se puede volver (o adelantarse a cargar
+ *  el cliente mientras se arma el pedido) sin perder nada. */
+function PasosPedido({ paso, productosListos, onPaso }: { paso: PasoPedidoPos; productosListos: boolean; onPaso: (paso: PasoPedidoPos) => void }) {
+    const pasos: Array<{ id: PasoPedidoPos; numero: number; etiqueta: string }> = [
+        { id: 'productos', numero: 1, etiqueta: 'Productos' },
+        { id: 'datos', numero: 2, etiqueta: 'Cliente y pago' },
+    ]
+    return (
+        <nav aria-label="Pasos del pedido" className={cn('flex shrink-0 items-center gap-2 px-3 pb-2', `${BAJO}:pb-1`)}>
+            {pasos.map(({ id, numero, etiqueta }, indice) => {
+                const actual = paso === id
+                const hecho = id === 'productos' && paso === 'datos' && productosListos
+                return (
+                    <div key={id} className={cn('flex min-w-0 items-center gap-2', indice === 0 && 'flex-1')}>
+                        <button
+                            type="button"
+                            aria-current={actual ? 'step' : undefined}
+                            onClick={() => onPaso(id)}
+                            className={cn(
+                                'flex h-10 min-w-0 touch-manipulation items-center gap-2 rounded-xl px-1.5 text-sm font-bold transition-colors',
+                                `${BAJO}:h-8`,
+                                actual ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                            )}
+                        >
+                            <span
+                                aria-hidden
+                                className={cn(
+                                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black tabular-nums transition-colors',
+                                    actual
+                                        ? 'bg-[#FF7A00] text-white'
+                                        : hecho
+                                            ? 'bg-[#FF7A00]/15 text-[#C45F00] dark:text-orange-300'
+                                            : 'bg-muted text-muted-foreground',
+                                )}
+                            >
+                                {hecho ? <Check className="h-3.5 w-3.5" /> : numero}
+                            </span>
+                            <span className="truncate">{etiqueta}</span>
+                        </button>
+                        {indice === 0 && <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />}
+                    </div>
+                )
+            })}
+        </nav>
     )
 }
 
@@ -110,12 +161,32 @@ function FilaPedido({ item, acciones, deshabilitado }: { item: PosItemVista; acc
 
 export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: PosPedidoPanelProps) {
     const direccionRef = useRef<HTMLDivElement>(null)
+    const cuerpoRef = useRef<HTMLDivElement>(null)
+    const notaRef = useRef<HTMLTextAreaElement>(null)
+    const [recienLlegado, setRecienLlegado] = useState(false)
     const unidades = items.reduce((suma, item) => suma + item.cantidad, 0)
     const guardadoAutomatico = datos.modoEdicion || datos.tipo === 'mesa'
     const conDatosDeCliente = datos.campos.nombre || datos.campos.telefono
     const entrega = datos.tipo === 'delivery'
     const columnasPago = datos.metodos.length === 3 ? 3 : 2
     const lateral = variante === 'lateral'
+    // En tablet el pedido va en dos pasos: primero los productos y después cliente, entrega y pago,
+    // sin scrollear por encima de los ítems para llegar a los datos. La hoja del celular muestra todo
+    // junto; también la tablet si la configuración del POS no deja nada para completar en el segundo paso.
+    const hayDatosParaCompletar = (datos.tipo !== 'mesa' && datos.tiposHabilitados.length > 1)
+        || entrega || conDatosDeCliente || datos.mostrarNotas || datos.metodos.length > 1
+    const vista: PasoPedidoPos | 'todo' = lateral && hayDatosParaCompletar ? datos.paso : 'todo'
+    const verProductos = vista !== 'datos'
+    const verDatos = vista !== 'productos'
+    // En el segundo paso la nota (ocasional) se abre a pedido: así tipo, entrega, cliente y pago entran
+    // sin scrollear en una tablet vertical. Con texto se muestra siempre; al cambiar de paso se vuelve a plegar.
+    const [notaAbierta, setNotaAbierta] = useState(false)
+    const [vistaAnterior, setVistaAnterior] = useState(vista)
+    if (vista !== vistaAnterior) {
+        setVistaAnterior(vista)
+        setNotaAbierta(false)
+    }
+    const notaPlegada = vista === 'datos' && !notaAbierta && datos.notas.trim() === ''
     // Recordatorio pasivo de lo que se va a confirmar: el tipo de pedido y cómo se cobra.
     const etiquetaTipo = datos.tipo === 'delivery' ? 'Delivery' : datos.tipo === 'mesa' ? (datos.mesaNombre || 'Mesa') : 'Takeaway'
     const etiquetaPago = datos.metodos.find((metodo) => metodo.id === datos.metodoPago)?.label
@@ -141,12 +212,33 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
         if (datos.direccionFaltante) direccionRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }, [datos.direccionFaltante])
 
+    // Cada paso arranca desde arriba.
+    useEffect(() => { cuerpoRef.current?.scrollTo({ top: 0 }) }, [vista])
+
+    useEffect(() => {
+        if (!recienLlegado) return
+        const espera = window.setTimeout(() => setRecienLlegado(false), RESGUARDO_DOBLE_TOQUE_MS)
+        return () => window.clearTimeout(espera)
+    }, [recienLlegado])
+
+    const irAPaso = (paso: PasoPedidoPos) => {
+        if (paso === 'datos') setRecienLlegado(true)
+        acciones.onPaso(paso)
+    }
+
+    const abrirNota = () => {
+        setNotaAbierta(true)
+        window.requestAnimationFrame(() => notaRef.current?.focus())
+    }
+
     // Con el teclado en pantalla abierto, el campo enfocado no debe quedar tapado.
     const traerCampoALaVista = (event: FocusEvent<HTMLElement>) => {
         const campo = event.target
         if (!(campo instanceof HTMLInputElement || campo instanceof HTMLTextAreaElement)) return
         window.setTimeout(() => campo.scrollIntoView({ block: 'center', behavior: 'smooth' }), 280)
     }
+
+    const botonPrincipal = cn('h-14 flex-1 touch-manipulation rounded-2xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00] disabled:opacity-50', `${BAJO}:h-11`)
 
     return (
         <div
@@ -168,7 +260,7 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                     </span>
                 </div>
                 <div className="flex items-center gap-1">
-                    {items.length > 0 && !guardadoAutomatico && (
+                    {items.length > 0 && !guardadoAutomatico && verProductos && (
                         <button
                             type="button"
                             disabled={datos.guardando}
@@ -191,8 +283,10 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                 </div>
             </div>
 
-            <div onFocusCapture={traerCampoALaVista} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
-                {datos.tipo === 'mesa' ? (
+            {vista !== 'todo' && <PasosPedido paso={vista} productosListos={items.length > 0} onPaso={irAPaso} />}
+
+            <div ref={cuerpoRef} onFocusCapture={traerCampoALaVista} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+                {verDatos && (datos.tipo === 'mesa' ? (
                     <div className="flex items-center gap-2.5 rounded-2xl bg-[#FF7A00]/10 px-4 py-3 text-[15px] font-bold text-foreground">
                         <Armchair className="h-5 w-5 text-[#FF7A00]" /> {datos.mesaNombre || 'Mesa'}
                     </div>
@@ -218,9 +312,9 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                             )
                         })}
                     </div>
-                )}
+                ))}
 
-                {entrega && (
+                {verDatos && entrega && (
                     <Seccion titulo="Entrega" icono={MapPin}>
                         <div className="space-y-3">
                             {datos.campos.direccion && (
@@ -266,7 +360,7 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                     </Seccion>
                 )}
 
-                {items.length === 0 ? (
+                {verProductos && (items.length === 0 ? (
                     <div className="mt-4 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-9 text-center text-muted-foreground">
                         <ShoppingCart className="h-7 w-7 opacity-40" />
                         <p className="text-sm font-medium">Tocá productos del menú para agregarlos</p>
@@ -277,9 +371,9 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                             <FilaPedido key={item.key} item={item} acciones={acciones} deshabilitado={datos.guardando} />
                         ))}
                     </ul>
-                )}
+                ))}
 
-                {conDatosDeCliente && (
+                {verDatos && conDatosDeCliente && (
                     <Seccion titulo="Cliente" icono={User}>
                         <ClienteAutocomplete
                             nombre={datos.nombre}
@@ -291,9 +385,18 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                     </Seccion>
                 )}
 
-                {datos.mostrarNotas && (
+                {verDatos && datos.mostrarNotas && (notaPlegada ? (
+                    <button
+                        type="button"
+                        onClick={abrirNota}
+                        className="mt-3 flex h-10 touch-manipulation items-center gap-1.5 rounded-xl px-1 text-[13px] font-semibold text-muted-foreground transition-colors first:mt-0 hover:text-foreground"
+                    >
+                        <Plus className="h-4 w-4" /> Agregar nota
+                    </button>
+                ) : (
                     <Seccion titulo="Nota" icono={StickyNote}>
                         <Textarea
+                            ref={notaRef}
                             aria-label="Nota del pedido"
                             value={datos.notas}
                             onChange={(event) => acciones.onNotas(event.target.value)}
@@ -302,11 +405,11 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                             className="min-h-[64px] resize-none rounded-xl bg-transparent dark:bg-transparent"
                         />
                     </Seccion>
-                )}
+                ))}
 
                 {/* Con un único método habilitado no hay nada para elegir: se guarda directo con ése. */}
-                {datos.metodos.length > 1 && (
-                    <section className="mt-5">
+                {verDatos && datos.metodos.length > 1 && (
+                    <section className="mt-5 first:mt-0">
                         <h3 className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Método de pago</h3>
                         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columnasPago}, minmax(0, 1fr))` }}>
                             {datos.metodos.map((metodo) => {
@@ -363,19 +466,42 @@ export function PosPedidoPanel({ variante, items, datos, acciones, onCerrar }: P
                             type="button"
                             onClick={acciones.onConfirmar}
                             disabled={datos.guardando || !datos.hayCambios || items.length === 0}
-                            className={cn('h-14 flex-1 rounded-2xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00] disabled:opacity-50', `${BAJO}:h-11`)}
+                            className={botonPrincipal}
                         >
                             {datos.guardando ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Guardando…</> : 'Guardar cambios'}
                         </Button>
-                    ) : (
+                    ) : vista === 'productos' ? (
                         <Button
                             type="button"
-                            onClick={acciones.onConfirmar}
+                            onClick={() => irAPaso('datos')}
                             disabled={datos.guardando || items.length === 0}
-                            className={cn('h-14 flex-1 rounded-2xl bg-[#FF7A00] text-base font-bold text-white hover:bg-[#E66E00] disabled:opacity-50', `${BAJO}:h-11`)}
+                            className={botonPrincipal}
                         >
-                            {datos.guardando ? <Loader2 className="h-5 w-5 animate-spin" /> : (datos.confirmaCobro ? 'Cobrar' : 'Anotar pedido')}
+                            Siguiente <ArrowRight className="ml-1.5 h-5 w-5" />
                         </Button>
+                    ) : (
+                        <>
+                            {vista === 'datos' && (
+                                <button
+                                    type="button"
+                                    onClick={() => irAPaso('productos')}
+                                    disabled={datos.guardando}
+                                    aria-label="Volver a los productos"
+                                    title="Volver a los productos"
+                                    className={cn('flex h-14 w-14 shrink-0 touch-manipulation items-center justify-center rounded-2xl border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-50', `${BAJO}:h-11 ${BAJO}:w-11`)}
+                                >
+                                    <ChevronLeft className="h-5 w-5" />
+                                </button>
+                            )}
+                            <Button
+                                type="button"
+                                onClick={acciones.onConfirmar}
+                                disabled={datos.guardando || items.length === 0}
+                                className={cn(botonPrincipal, recienLlegado && 'pointer-events-none')}
+                            >
+                                {datos.guardando ? <Loader2 className="h-5 w-5 animate-spin" /> : (datos.confirmaCobro ? 'Cobrar' : 'Anotar pedido')}
+                            </Button>
+                        </>
                     )}
                     {datos.modoEdicion && datos.tipo === 'mesa' && acciones.onDespacharMesa && (
                         <button

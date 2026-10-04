@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.0"
+version = "3.4.10"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -60,5 +60,4 @@ windows-sys = { version = "0.59", features = [
     "Win32_Devices_Bluetooth",
 ] }
 widestring = "1"
-
 

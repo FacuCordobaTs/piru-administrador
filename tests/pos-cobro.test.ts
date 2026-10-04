@@ -16,7 +16,7 @@ Object.defineProperty(globalThis, 'window', {
 
 const {
     METODO_COBRO_QR, cajaParaCobrar, cobroFinalizado, formatoCuentaRegresiva, formatoMonto, mensajeConexionQr, mensajeFalloCobro,
-    modoDeCobro, requiereConfirmarCobro, segundosRestantes,
+    requiereConfirmarCobro, segundosRestantes,
 } = await import('../src/lib/posCobro')
 const { DEFAULT_POS_CONFIG, POS_CONFIG_KEY, getPosConfig, setPosConfig } = await import('../src/lib/posConfig')
 
@@ -70,30 +70,30 @@ describe('configuración del POS', () => {
 
 describe('cuándo se pide confirmar el cobro', () => {
     const activo = { confirmarCobrosManualmente: true }
-    const nuevo = { modoEdicion: false, conMesa: false }
+    const nuevo = { modoEdicion: false, conMesa: false, metodoPago: METODO_COBRO_QR }
 
     test('con la opción apagada nada cambia', () => {
         expect(requiereConfirmarCobro({ config: { confirmarCobrosManualmente: false }, ...nuevo, tipo: 'takeaway' })).toBe(false)
     })
 
-    test('un pedido nuevo de delivery o takeaway pasa por el cobro', () => {
+    test('un pedido nuevo con Mercado Pago de delivery o takeaway pasa por el cobro', () => {
         expect(requiereConfirmarCobro({ config: activo, ...nuevo, tipo: 'takeaway' })).toBe(true)
         expect(requiereConfirmarCobro({ config: activo, ...nuevo, tipo: 'delivery' })).toBe(true)
     })
 
-    test('editar un pedido conserva su estado de pago y las mesas se cobran al cerrarlas', () => {
-        expect(requiereConfirmarCobro({ config: activo, modoEdicion: true, conMesa: false, tipo: 'takeaway' })).toBe(false)
-        expect(requiereConfirmarCobro({ config: activo, modoEdicion: false, conMesa: true, tipo: 'mesa' })).toBe(false)
-        expect(requiereConfirmarCobro({ config: activo, modoEdicion: false, conMesa: false, tipo: 'mesa' })).toBe(false)
-        expect(requiereConfirmarCobro({ config: activo, modoEdicion: false, conMesa: true, tipo: 'takeaway' })).toBe(false)
+    test('efectivo, tarjeta y transferencia se anotan directamente con la opción encendida', () => {
+        for (const metodoPago of ['cash', 'tarjeta', 'manual_transfer', '', 'otro']) {
+            for (const tipo of ['delivery', 'takeaway'] as const) {
+                expect(requiereConfirmarCobro({ config: activo, ...nuevo, metodoPago, tipo })).toBe(false)
+            }
+        }
     })
-})
 
-describe('cómo se cobra cada método', () => {
-    test('sólo Mercado Pago se verifica solo; efectivo, tarjeta y transferencia se confirman a mano', () => {
-        expect(METODO_COBRO_QR).toBe('mercadopago')
-        expect(modoDeCobro('mercadopago')).toBe('qr')
-        for (const metodo of ['cash', 'tarjeta', 'manual_transfer', '', 'otro']) expect(modoDeCobro(metodo)).toBe('manual')
+    test('editar un pedido conserva su estado de pago y las mesas se cobran al cerrarlas', () => {
+        expect(requiereConfirmarCobro({ config: activo, ...nuevo, modoEdicion: true, tipo: 'takeaway' })).toBe(false)
+        expect(requiereConfirmarCobro({ config: activo, ...nuevo, conMesa: true, tipo: 'mesa' })).toBe(false)
+        expect(requiereConfirmarCobro({ config: activo, ...nuevo, tipo: 'mesa' })).toBe(false)
+        expect(requiereConfirmarCobro({ config: activo, ...nuevo, conMesa: true, tipo: 'takeaway' })).toBe(false)
     })
 })
 

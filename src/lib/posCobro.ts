@@ -91,10 +91,8 @@ export const ESPERA_CIERRE_COBRO_PAGADO_MS = 1_600
 /** Único método que se verifica solo con Mercado Pago cuando se confirman los cobros. */
 export const METODO_COBRO_QR = 'mercadopago'
 
-export type ModoCobro = 'manual' | 'qr'
-
 /**
- * ¿Este alta pasa por la pantalla de cobro? Sólo los pedidos nuevos de delivery/takeaway: al editar
+ * ¿Este alta pasa por la pantalla de cobro? Sólo Mercado Pago en pedidos nuevos de delivery/takeaway: al editar
  * un pedido se conserva su estado de pago, y las mesas se guardan solas y se cobran al cerrarlas.
  */
 export function requiereConfirmarCobro(entrada: {
@@ -102,15 +100,14 @@ export function requiereConfirmarCobro(entrada: {
     modoEdicion: boolean
     tipo: 'delivery' | 'takeaway' | 'mesa'
     conMesa: boolean
+    metodoPago: string
 }): boolean {
     return entrada.config.confirmarCobrosManualmente
+        && entrada.metodoPago === METODO_COBRO_QR
         && !entrada.modoEdicion
         && !entrada.conMesa
         && entrada.tipo !== 'mesa'
 }
-
-/** Mercado Pago se verifica solo (QR); efectivo, tarjeta y transferencia se confirman con "Cobrado". */
-export const modoDeCobro = (metodoPago: string): ModoCobro => (metodoPago === METODO_COBRO_QR ? 'qr' : 'manual')
 
 export type EleccionCaja =
     | { motivo: 'ok'; caja: CajaQrDto }

@@ -46,6 +46,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { POS_METODOS_ORDER, POS_TIPOS_ORDER, posDraftStorageKey, unidadesBorradorGuardado, usePosConfig, getPosConfig, setPosConfig } from '@/lib/posConfig'
 import { PosConfigDialog } from '@/components/PosConfigDialog'
+import { requiereConfirmarCobro } from '@/lib/posCobro'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
 import { SuscripcionVencimientoBanner } from '@/components/SuscripcionVencimientoBanner'
@@ -1317,7 +1318,7 @@ const PosComandaPreview = ({
                                         disabled={draft.items.length === 0 || draft.submitting}
                                         className="flex-1 h-14 rounded-2xl bg-[#FF7A00] text-lg font-bold text-white hover:bg-[#E66E00]"
                                     >
-                                        {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : (config.confirmarCobrosManualmente ? 'Cobrar' : 'Anotar pedido')}
+                                        {draft.submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : (requiereConfirmarCobro({ config, modoEdicion: !!editingPedidoId, tipo: draft.tipo, conMesa: mesaAsignada != null, metodoPago: draft.metodoPago }) ? 'Cobrar' : 'Anotar pedido')}
                                     </Button>
                                 )}
                                 {editingPedidoId && draft.tipo === 'mesa' && mesaAsignada && onDispatchMesa && (
