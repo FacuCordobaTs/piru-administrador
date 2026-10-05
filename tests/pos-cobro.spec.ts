@@ -436,7 +436,7 @@ test.describe('celular', () => {
         expect(await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith('piru:pos-draft')))).toEqual([])
     })
 
-    test('Mercado Pago en la primera venta del día: el Dashboard remonta el POS al refrescar la lista y el cobro igual queda cerrado', async ({ page }) => {
+    test('Mercado Pago en la primera venta del día: refrescar la lista vacía no desmonta el POS y el cobro queda cerrado', async ({ page }) => {
         const api = await abrirPos(page, { config: CONFIRMAR, pedidosPrevios: 0 })
         const hoja = await abrirPedidoMovil(page)
         await hoja.getByRole('button', { name: 'Mercado Pago', exact: true }).click()
@@ -444,8 +444,9 @@ test.describe('celular', () => {
         await expect(dialogoMp(page).getByText('Esperando el pago…')).toBeVisible({ timeout: 15_000 })
 
         api.cobro = { ...api.cobro!, estado: 'pagado', mpStatus: 'processed', pagadoAt: new Date().toISOString() }
-        // Con la lista vacía el Dashboard reemplaza todo por un spinner al refrescar: no hay pantalla de éxito, pero el
-        // aviso queda, el POS vuelve vacío, el borrador se limpia y no se anota ni se cobra dos veces.
+        // Con la lista todavía vacía el refresco es silencioso (antes cambiaba toda la pantalla por un spinner y
+        // desmontaba el POS): el aviso queda, el diálogo se cierra solo, el POS vuelve vacío, el borrador se limpia y
+        // no se anota ni se cobra dos veces.
         await expect(page.getByText('Pago recibido: pedido anotado')).toBeVisible({ timeout: 10_000 })
         await expect(dialogoMp(page)).toHaveCount(0)
         await expect(page.getByRole('button', { name: /^Pedido vacío/ })).toBeVisible()

@@ -409,6 +409,49 @@ test('tablet: el pedido va en dos pasos y el cliente y el pago no quedan debajo 
     await expect(panel.getByText('Tocá productos del menú para agregarlos')).toBeVisible()
 })
 
+test('tablet: anotar no recarga nada, aunque la lista de pedidos del día esté vacía', async ({ page }) => {
+    await page.setViewportSize(TABLET)
+    await conMenuColapsado(page)
+    // Primera venta del día: el refresco de la lista vuelve vacío (el mock no suma el pedido nuevo).
+    const estado = await abrirPos(page, { pedidos: 0 })
+    const panel = page.getByRole('region', { name: 'Pedido' })
+    await page.getByRole('button', { name: /^Sprite 500ml/ }).click()
+    // Marca en el DOM: si el Dashboard desmonta el POS para mostrar un spinner, se pierde.
+    await panel.evaluate((nodo) => { (nodo as HTMLElement).dataset.marca = 'antes-de-anotar' })
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await panel.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
+    await expect(page.getByText('Pedido anotado correctamente')).toBeVisible()
+    expect(estado.creaciones).toHaveLength(1)
+    // Pasa el refresco de la lista que dispara el alta: el POS sigue montado y listo para el próximo.
+    await page.waitForTimeout(1_000)
+    await expect(panel).toHaveAttribute('data-marca', 'antes-de-anotar')
+    await expect(panel.getByText('Tocá productos del menú para agregarlos')).toBeVisible()
+    await page.getByRole('button', { name: /^Coca-Cola 500ml/ }).click()
+    await expect(panel.getByText('1 ítem', { exact: true })).toBeVisible()
+})
+
+test('tablet: mientras se envía el pedido no aparece el aviso de pedidos guardados sin conexión', async ({ page }) => {
+    await page.setViewportSize(TABLET)
+    await conMenuColapsado(page)
+    const estado = await abrirPos(page)
+    let responder!: () => void
+    const respuesta = new Promise<void>((resolve) => { responder = resolve })
+    // El alta tarda: mientras viaja, el pedido vive en la cola local, pero no es un "pendiente" para el cajero.
+    await page.route('**/pedido-unificado/create', async (route) => { await respuesta; await route.fallback() })
+    const panel = page.getByRole('region', { name: 'Pedido' })
+    await page.getByRole('button', { name: /^Sprite 500ml/ }).click()
+    await panel.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await panel.getByRole('button', { name: 'Anotar pedido', exact: true }).click()
+    // El formulario ya quedó libre para el próximo pedido mientras el alta viaja.
+    await expect(panel.getByText('Tocá productos del menú para agregarlos')).toBeVisible()
+    await page.waitForTimeout(500)
+    await expect(page.getByRole('button', { name: /pendiente/ })).toHaveCount(0)
+    responder()
+    await expect(page.getByText('Pedido anotado correctamente')).toBeVisible()
+    expect(estado.creaciones).toHaveLength(1)
+    await expect(page.getByRole('button', { name: /pendiente/ })).toHaveCount(0)
+})
+
 test('tablet: un doble toque en "Siguiente" no anota el pedido', async ({ page }) => {
     await page.setViewportSize(TABLET)
     await conMenuColapsado(page)

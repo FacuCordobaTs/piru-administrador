@@ -372,7 +372,11 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     const [showPendientes, setShowPendientes] = useState(false)
     const restauranteId = useAuthStore((s) => s.restaurante?.id ?? null)
     const todosPendientes = usePosOfflineStore((s) => s.pendientes)
-    const pendientes = useMemo(() => todosPendientes.filter(p => (p.payload.sucursalId ?? null) === sucursalActivaId), [todosPendientes, sucursalActivaId])
+    // El alta que está viajando vive en la cola local (por si se corta la conexión a mitad de camino),
+    // pero no es un pendiente para el cajero: contarla hacía aparecer y desaparecer el aviso de pedidos
+    // sin conexión en cada venta. Si el envío falla, deja de estar en curso y se ve como cualquier otro.
+    const [altaEnCurso, setAltaEnCurso] = useState<string | null>(null)
+    const pendientes = useMemo(() => todosPendientes.filter(p => (p.payload.sucursalId ?? null) === sucursalActivaId && p.localId !== altaEnCurso), [todosPendientes, sucursalActivaId, altaEnCurso])
     const sincronizando = usePosOfflineStore((s) => s.sincronizando)
 
     useEffect(() => {
@@ -1169,6 +1173,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
                 sessionStorage.setItem(storageKey, JSON.stringify({ ...saved, encolado: clientRequestId }))
             } catch { /* El pedido se conserva igualmente en la cola durable. */ }
             // Si falla IndexedDB, el carrito permanece y no se envía ni imprime.
+            setAltaEnCurso(clientRequestId)
             await usePosOfflineStore.getState().guardarPendiente(pendiente)
             if (useAuthStore.getState().restaurante?.id !== restauranteId) return null
             resetForm(data.tipo === 'mesa')
@@ -1226,6 +1231,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
             return null
         } finally {
             enviandoRef.current = false
+            setAltaEnCurso(null)
             setSubmitting(false)
         }
     }

@@ -19,6 +19,11 @@ export const miMarketerApi = {
   quitar: (token: string) => fetchApi('/mi-marketer/', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }),
 }
 
+/** Pase de dos minutos para abrir la app de marketing en modo dueño, sin login (Clientes). */
+export const marketingDuenioApi = {
+  entrada: (token: string) => fetchApi<{ success: boolean; data: { url: string; expira: string } }>('/marketing-duenio/entrada', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
+}
+
 export class ApiError extends Error {
   status: number
   response?: any

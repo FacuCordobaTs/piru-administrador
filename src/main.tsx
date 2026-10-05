@@ -17,7 +17,7 @@ import Pedidos from './pages/Pedidos'
 import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
 import AjustesPage from './pages/ajustes'
-import Clientes from './pages/Clientes'
+import ClientesMarketing from './pages/ClientesMarketing'
 import Mensajes from './pages/Mensajes'
 import Repartidores from './pages/Repartidores'
 import CodigosDescuento from './pages/CodigosDescuento'
@@ -162,8 +162,10 @@ const router = createBrowserRouter([
             element: <Ropa />,
           },
           {
+            // Clientes, campañas, cupones, puntos y recompra viven en la app de marketing:
+            // esta pantalla la abre en modo dueño, sin login.
             path: "clientes",
-            element: <Clientes />,
+            element: <ClientesMarketing />,
           },
           {
             path: "mensajes",

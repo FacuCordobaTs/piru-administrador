@@ -1727,8 +1727,10 @@ const Dashboard = () => {
     // ─────────────────────────────────────────────
     const fetchPedidos = useCallback(async (pageNum = 1, append = false) => {
         if (!token) return
-        if (!append) setIsLoading(true)
-        else setIsLoadingMore(true)
+        // Los refrescos son silenciosos: `isLoading` sólo cubre la primera carga (nace en true). Volver a
+        // encenderlo con la lista todavía vacía (la primera venta del día) cambiaba toda la pantalla por
+        // el spinner y desmontaba el POS después de cada alta, como si la página se recargara.
+        if (append) setIsLoadingMore(true)
 
         try {
             const response = await pedidoUnificadoApi.getByDia(
