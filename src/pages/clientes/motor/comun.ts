@@ -17,11 +17,13 @@ import type { ConfigMotorRecompra, ModoRecompra, SegmentoRecompra } from '@/lib/
 
 export type Segmento = SegmentoRecompra
 
-export const SEG_META: Record<Segmento, { label: string; dot: string }> = {
+export const SEG_META: Record<Segmento | 'activo' | 'vip', { label: string; dot: string }> = {
     primer_pedido: { label: 'Primer pedido', dot: 'bg-emerald-500' },
     en_riesgo: { label: 'En riesgo', dot: 'bg-orange-500' },
     dormido: { label: 'Dormidos', dot: 'bg-violet-500' },
     perdido: { label: 'Perdidos', dot: 'bg-rose-500' },
+    activo: { label: 'Activos', dot: 'bg-blue-500' },
+    vip: { label: 'VIP', dot: 'bg-amber-500' },
 }
 
 /** Los segmentos que se pueden programar, en el orden en que se ofrecen. */

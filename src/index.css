@@ -46,6 +46,18 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* La paleta de la app de marketing (marketers/src/index.css), para la guía (pages/Guia.tsx). */
+@theme {
+  --color-brand-deep: #e66e00;
+  --color-brand-soft: #fff2e3;
+  --color-ink: #191512;
+  --color-ink-2: #4a433c;
+  --color-ink-3: #80776e;
+  --color-paper: #fffcf7;
+  --color-sand: #f6f0e6;
+  --color-line: #ece4d8;
+}
+
 :root {
   --radius: 0.625rem;
   --background: #FFFBF0;

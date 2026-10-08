@@ -312,6 +312,9 @@ export interface DecisionesRecompra {
 }
 
 export interface MensajeColaData {
+  toqueHasta?: number;
+  tipoMensaje?: string;
+  segmentoCliente?: string;
   clienteId: number
   clienteNombre: string
   telefono: string
@@ -370,8 +373,11 @@ export interface EnvioManualRecompra {
 }
 export interface PaginadoRecompra<T> { items: T[]; pagina: number; limite: number; total: number; paginas: number }
 export interface ColaRecompraItem {
+  diaSemana: number;
+  minutoDia: number;
+  tipoMensaje?: string;
   id: number; clienteId: number; clienteNombre: string; telefono: string | null
-  segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; rol: 'contactado'
+  segmento: SegmentoRecompra | 'activo' | 'vip'; poblacion: 'flujo' | 'stock'; rol: 'contactado'
   /** Toque que le toca a esta fila (1..3). Null sólo en las filas de control. */
   toque: number | null
   prioridad: number; dueDate: string | null; fechaProyectada: string; posicionPrioridad: number
@@ -379,8 +385,10 @@ export interface ColaRecompraItem {
   totalGastado: number; ultimoPedidoAt: string | null; createdAt: string | null
 }
 export interface HistorialRecompraItem {
+  tipoMensaje?: string
+
   id: number; clienteId: number; clienteNombre: string; telefono: string | null
-  segmento: SegmentoRecompra; poblacion: 'flujo' | 'stock'; origenContacto: 'automatico' | 'manual'
+  segmento: SegmentoRecompra | 'activo' | 'vip'; poblacion: 'flujo' | 'stock'; origenContacto: 'automatico' | 'manual'
   estadoDespacho: 'entregado' | 'fallido'; plantillaWhatsapp: string; codigoDescuento: string | null
   nivel: number | null; fechaHora: string | null; errorEnvio: string | null
   /** Toque que salió en este despacho. */
@@ -402,16 +410,15 @@ export interface ClienteMotorRecompra {
   protecciones: { horarioSilencioActivo: boolean; cooldownHasta: string | null; topeFrecuenciaAlcanzado: boolean; toques30Dias: number; maximoToques30Dias: number; optOut: boolean }
 }
 
-// ── Motor de Recompra · PROGRAMACIONES ───────────────────────────────────────
-// El motor ya no se enciende una vez y gotea solo: el dueño programa una tanda (a quiénes, cuántos,
-// hasta qué toque y cada cuánto) y el backend agenda los envíos concretos. Estos tipos son el
-// contrato del asistente de programación y del panel de tandas.
+// ── Motor de Recompra · agenda continua e historial ──
+// Los tipos de programaciones se conservan para el historial anterior.
 
 export type EstadoMotorLocal = 'activa' | 'pausada_sin_saldo' | 'pausada_manual'
 export type EstadoProgramacion = 'activa' | 'completada' | 'pausada_sin_saldo' | 'pausada_manual' | 'cancelada'
-export type OrigenProgramacion = 'goteo' | 'programada' | 'dia_flojo'
+export type OrigenProgramacion = 'goteo' | 'programada' | 'dia_flojo' | 'semanal'
 
 export interface ConfigMotorRecompra {
+  toqueHasta: number;
   automaticoDisponible?: boolean
   restauranteId: number
   estado: EstadoMotorLocal
@@ -748,6 +755,7 @@ export type CategoriaCampana =
   | 'influencers_colaboraciones'
 
 export interface CampanaCrecimiento {
+  diaSemana?: number | null;
   id: number
   slug: string
   nombre: string
@@ -834,6 +842,7 @@ export interface PrepararEnlaceCrecimiento {
 }
 export interface ContactarEnlaceCrecimiento { token: string; idempotenciaClave: string }
 export interface CrearCampanaCrecimiento {
+  diaSemana?: number | null;
   slug: string; nombre: string; tipo: 'adquisicion' | 'recompra' | 'retencion' | 'lo_mismo' | 'reactivacion'; recetaCodigo?: RecetaCrecimiento | null
   categoria?: CategoriaCampana | null
   estado?: CampanaCrecimiento['estado']; destinoTipo: DestinoCrecimiento['tipo']; productoId?: number | null

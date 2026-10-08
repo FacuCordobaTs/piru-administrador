@@ -11,6 +11,7 @@ import {
   MessageSquare,
   TrendingUp,
   Settings,
+  BookOpen,
   Shirt,
   Menu,
   PanelLeftClose,
@@ -151,8 +152,22 @@ const DashboardLayout = () => {
       {/* Botón de plan: muestra el plan actual y lleva a "Tu plan" (ver / mejorar) */}
 
 
-      {/* Footer: ajustes */}
+      {/* Footer: guía y ajustes */}
       <div className="p-3 space-y-1 shrink-0">
+        {/* La guía ocupa toda la pantalla; "Volver al panel" trae de vuelta a esta pantalla. */}
+        <button
+          onClick={() => {
+            navigate('/dashboard/guia', { state: { volver: location.pathname + location.search } })
+            setMenuOpen(false)
+          }}
+          title={compact ? 'Guía' : undefined}
+          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer text-muted-foreground hover:bg-accent hover:text-foreground ${
+            compact ? 'justify-center px-0' : 'px-3'
+          }`}
+        >
+          <BookOpen className="h-[18px] w-[18px] text-muted-foreground group-hover:text-foreground" />
+          {!compact && 'Guía'}
+        </button>
         <button
           onClick={() => handleNavigation('/dashboard/ajustes')}
           title={compact ? 'Configuración' : undefined}

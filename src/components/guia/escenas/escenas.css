@@ -1,0 +1,329 @@
+/*
+ * Escenas ilustradas de la guía (components/guia/escenas/), con las mismas piezas que las de la
+ * app de marketing (marketers/src/components/escenas/escenas.css).
+ *
+ * Regla de oro: el estado final de cada pieza es su estilo normal y la animación sólo dice de dónde
+ * viene (`from`, con `both`). Con `prefers-reduced-motion`, guia.css apaga todas las animaciones de
+ * la guía y queda la ilustración completa y quieta. Los colores van como literales: Tailwind 4 sólo
+ * emite las variables del tema que usa alguna clase, y este archivo no pasa por Tailwind.
+ */
+
+/* Una escena se diseña a tamaño fijo (`--escala-w` × `--escala-h`, en px) y se achica o agranda al
+   ancho disponible sólo con CSS. */
+.escena {
+  position: relative;
+  width: min(100%, calc(var(--alto-max, 100000px) * var(--escala-w) / var(--escala-h)));
+  margin-inline: auto;
+  aspect-ratio: var(--escala-w) / var(--escala-h);
+  container-type: inline-size;
+}
+.escena-lienzo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--escala-w) * 1px);
+  height: calc(var(--escala-h) * 1px);
+  transform-origin: 0 0;
+  transform: scale(tan(atan2(100cqw, calc(var(--escala-w) * 1px))));
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Fuera de pantalla la escena queda congelada en su primer cuadro hasta que se ve. */
+.escena[data-pausada] *,
+.escena[data-pausada] *::before,
+.escena[data-pausada] *::after {
+  animation-play-state: paused !important;
+}
+
+/* El fondo donde se apoyan: arena cálida con una trama de puntos. */
+.escenario {
+  background-color: #f7efe3;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgb(25 21 18 / 0.075) 1px, transparent 0),
+    radial-gradient(85% 70% at 50% 0%, rgb(255 122 0 / 0.13), transparent 70%),
+    linear-gradient(180deg, #fff8ee, #f3eadd);
+  background-size:
+    20px 20px,
+    100% 100%,
+    100% 100%;
+}
+
+/* Piezas comunes */
+.e-tarjeta {
+  border-radius: 18px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px #ece4d8,
+    0 1px 2px rgb(40 24 8 / 0.05),
+    0 16px 32px -20px rgb(40 24 8 / 0.4);
+}
+.e-burbuja {
+  border-radius: 12px;
+  border-top-right-radius: 3px;
+  background: #d9fdd3;
+  color: #111b21;
+  box-shadow: 0 1px 0.5px rgb(11 20 26 / 0.13);
+}
+.e-burbuja-entra {
+  border-radius: 12px;
+  border-top-left-radius: 3px;
+  background: #fff;
+  color: #111b21;
+  box-shadow: 0 1px 0.5px rgb(11 20 26 / 0.13);
+}
+/* Un celular: marco oscuro con la pantalla adentro. */
+.e-celular {
+  border-radius: 26px;
+  background: #1c1714;
+  padding: 6px;
+  box-shadow:
+    0 0 0 1px rgb(25 21 18 / 0.25),
+    0 22px 40px -22px rgb(40 24 8 / 0.65);
+}
+.e-celular-pantalla {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #fffcf7;
+}
+/* El papel térmico de una comanda. */
+.e-ticket {
+  background: #fffefb;
+  color: #2b2520;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  box-shadow:
+    0 0 0 1px rgb(25 21 18 / 0.06),
+    0 14px 26px -16px rgb(40 24 8 / 0.45);
+}
+.e-ticket-corte {
+  height: 8px;
+  background:
+    linear-gradient(-45deg, transparent 4px, #fffefb 0) 0 0 / 8px 8px repeat-x,
+    linear-gradient(45deg, transparent 4px, #fffefb 0) 0 0 / 8px 8px repeat-x;
+}
+
+/* ── Entradas ─────────────────────────────────────────────────────────────────────────────── */
+.e-aparece {
+  animation: e-aparece 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.e-sube {
+  animation: e-sube 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.e-baja {
+  animation: e-baja 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.e-izquierda {
+  animation: e-izquierda 0.65s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.e-derecha {
+  animation: e-derecha 0.65s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.e-pop {
+  animation: e-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d, 0ms) both;
+}
+.e-barra {
+  transform-origin: left center;
+  animation: e-barra 0.9s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.e-dibuja {
+  stroke-dasharray: var(--largo);
+  animation: e-dibuja 1.2s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+/* El papel que sale de la impresora, a los saltos como una térmica. */
+.e-imprime {
+  animation: e-imprime var(--t, 2.4s) steps(16, end) var(--d, 0ms) both;
+}
+/* Un pin que cae sobre el mapa y rebota. */
+.e-cae {
+  transform-origin: 50% 100%;
+  animation: e-cae 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d, 0ms) both;
+}
+
+/* ── Bucles ───────────────────────────────────────────────────────────────────────────────── */
+/* Línea punteada que "corre" en la dirección del flujo. */
+.e-hormigas {
+  stroke-dasharray: 5 7;
+  animation: e-hormigas 1.1s linear infinite;
+}
+/* Un punto que recorre `--ruta` (un `path()` en px del lienzo) una y otra vez. */
+.e-viaja {
+  offset-path: var(--ruta);
+  offset-rotate: 0deg;
+  offset-anchor: center;
+  animation: e-viaja var(--t, 2.6s) cubic-bezier(0.45, 0, 0.25, 1) var(--d, 0ms) infinite both;
+}
+/* Una sola vez por `--ruta`, y se apaga al llegar: queda invisible, igual que sin movimiento. */
+.e-vuela {
+  offset-path: var(--ruta);
+  offset-rotate: 0deg;
+  offset-anchor: center;
+  opacity: 0;
+  animation: e-vuela 1.1s cubic-bezier(0.45, 0, 0.25, 1) var(--d, 0ms) both;
+}
+.e-latido {
+  animation: e-latido 2.2s ease-out var(--d, 0ms) infinite;
+}
+.e-tecleo > span {
+  animation: e-tecleo 1.2s ease-in-out infinite;
+}
+.e-tecleo > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.e-tecleo > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+/* La línea de un lector que recorre el QR de arriba abajo. */
+.e-escanea {
+  animation: e-escanea 1.6s ease-in-out var(--d, 0ms) infinite alternate;
+}
+/* El toque de un dedo sobre un botón. */
+.e-onda {
+  animation: e-onda 0.9s ease-out var(--d, 0ms) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .e-viaja,
+  .e-vuela,
+  .e-escanea,
+  .e-onda {
+    display: none;
+  }
+}
+
+@keyframes e-aparece {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes e-sube {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes e-baja {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}
+@keyframes e-izquierda {
+  from {
+    opacity: 0;
+    transform: translateX(-26px);
+  }
+}
+@keyframes e-derecha {
+  from {
+    opacity: 0;
+    transform: translateX(26px);
+  }
+}
+@keyframes e-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@keyframes e-barra {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes e-dibuja {
+  from {
+    stroke-dashoffset: var(--largo);
+  }
+}
+@keyframes e-imprime {
+  from {
+    transform: translateY(-100%);
+  }
+}
+@keyframes e-cae {
+  0% {
+    opacity: 0;
+    transform: translateY(-34px) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+  }
+}
+@keyframes e-hormigas {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+@keyframes e-viaja {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  92%,
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+@keyframes e-vuela {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  15%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+@keyframes e-latido {
+  0% {
+    box-shadow: 0 0 0 0 rgb(255 122 0 / 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgb(255 122 0 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(255 122 0 / 0);
+  }
+}
+@keyframes e-tecleo {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@keyframes e-escanea {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(var(--recorrido, 120px));
+  }
+}
+@keyframes e-onda {
+  from {
+    opacity: 0.55;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}

@@ -1,0 +1,171 @@
+/*
+ * La guía (pages/Guia.tsx), con el estilo de la de la app de marketing (marketers/src/components/
+ * guia/guia.css). Colores como literales: este archivo no pasa por Tailwind. Las reglas van en las
+ * capas `base` y `components` (las de index.css), así cualquier clase de Tailwind les gana, y las
+ * de texto sólo tocan a los hijos directos del cuerpo: las escenas quedan como se diseñaron.
+ */
+
+/* El panel usa los tokens de shadcn (y modo oscuro); la guía, siempre la paleta clara de marketing. */
+@layer base {
+  .guia {
+    color-scheme: light;
+  }
+  .guia :is(a, button) {
+    touch-action: manipulation;
+    transition:
+      background-color 0.18s,
+      color 0.18s;
+  }
+  .guia button {
+    cursor: pointer;
+  }
+  .guia :is(a, button, summary):focus-visible {
+    outline: 2px solid #e66e00;
+    outline-offset: 3px;
+  }
+  .guia summary {
+    cursor: pointer;
+    min-height: 44px;
+  }
+}
+
+@layer components {
+  .guia-prosa > * + * {
+    margin-top: 1rem;
+  }
+  .guia-prosa > p,
+  .guia-prosa > ul > li,
+  .guia-prosa > ol > li {
+    font-size: 16px;
+    line-height: 1.7;
+    color: #4a433c;
+    text-wrap: pretty;
+  }
+  .guia-prosa > p strong,
+  .guia-prosa > ul > li strong {
+    color: #191512;
+    font-weight: 600;
+  }
+  .guia-prosa > h3 {
+    margin-top: 2.25rem;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -0.012em;
+    color: #191512;
+  }
+  .guia-prosa > h3 + * {
+    margin-top: 0.5rem;
+  }
+}
+ul.guia-puntos > li {
+  position: relative;
+  padding-left: 1.25rem;
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: #4a433c;
+}
+ul.guia-puntos > li strong {
+  color: #191512;
+  font-weight: 600;
+}
+ul.guia-puntos > li + li {
+  margin-top: 0.4rem;
+}
+ul.guia-puntos > li::before {
+  content: '';
+  position: absolute;
+  left: 0.2rem;
+  top: 0.72em;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ff7a00;
+}
+
+/* Los pasos numerados: una línea que los une y un pulso que la recorre hacia abajo. */
+.guia-pasos {
+  position: relative;
+}
+.guia-pasos::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 24px;
+  bottom: 24px;
+  width: 2px;
+  border-radius: 2px;
+  background: #ece4d8;
+}
+.guia-pasos::after {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 24px;
+  width: 2px;
+  height: 48px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgb(255 122 0 / 0), #ff7a00);
+  animation: guia-pulso 3.2s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+@keyframes guia-pulso {
+  0% {
+    top: 24px;
+    opacity: 0;
+  }
+  15%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% - 72px);
+    opacity: 0;
+  }
+}
+
+/* Las preguntas frecuentes: el + gira al abrir. */
+.guia-pregunta summary {
+  list-style: none;
+}
+.guia-pregunta summary::-webkit-details-marker {
+  display: none;
+}
+.guia-pregunta .guia-mas {
+  transition: transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.guia-pregunta[open] .guia-mas {
+  transform: rotate(45deg);
+}
+.guia-pregunta[open] .guia-respuesta {
+  animation: guia-respuesta 0.35s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes guia-respuesta {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* Al saltar a una sección, el título se ilumina un momento. */
+.guia-seccion:target h2,
+.guia-seccion[data-resaltada] h2 {
+  animation: guia-resalta 1.6s ease both;
+}
+@keyframes guia-resalta {
+  0%,
+  35% {
+    color: #e66e00;
+  }
+}
+
+/* Con movimiento reducido, todo quieto: las escenas quedan completas (ver escenas.css). */
+@media (prefers-reduced-motion: reduce) {
+  .guia *,
+  .guia *::before,
+  .guia *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .guia-pasos::after {
+    display: none;
+  }
+}

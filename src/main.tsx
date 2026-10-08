@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { createBrowserRouter, Navigate, useLocation } from "react-router";
@@ -35,6 +35,9 @@ import Ropa from './pages/Ropa';
 import AccesoInterno from './pages/AccesoInterno';
 import { initializeDesktopZoom } from './utils/desktopZoom';
 
+// La guía se carga aparte: el uso de todos los días no la descarga.
+const Guia = lazy(() => import('./pages/Guia'))
+const GuiaPublica = lazy(() => import('./pages/Guia').then((m) => ({ default: m.GuiaPublica })))
 
 
 const router = createBrowserRouter([
@@ -54,6 +57,15 @@ const router = createBrowserRouter([
     // armó verificando su WhatsApp. Fuera de ProtectedLayout, igual que /pago/:token.
     path: "/mi-tienda/:token",
     element: <ClaimTienda />,
+  },
+  {
+    // La guía pública, para compartir. Con sesión lleva a /dashboard/guia.
+    path: "/guia",
+    element: (
+      <Suspense fallback={null}>
+        <GuiaPublica />
+      </Suspense>
+    ),
   },
   {
     path: "/",
@@ -212,6 +224,16 @@ const router = createBrowserRouter([
             element: <PerfilRedirect />,
           },
         ],
+      },
+      {
+        // La guía ocupa toda la pantalla, sin el menú, pero sigue adentro de la sesión: mientras se
+        // lee, el panel sigue recibiendo e imprimiendo pedidos.
+        path: "guia",
+        element: (
+          <Suspense fallback={null}>
+            <Guia />
+          </Suspense>
+        ),
       },
     ],
   },
