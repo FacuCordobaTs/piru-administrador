@@ -1,0 +1,130 @@
+/*
+ * El recorrido de bienvenida del panel (RecorridoPanel.tsx), con el movimiento del de la app de
+ * marketing (marketers/src/components/recorrido/recorrido.css). Como en las escenas, cada animación
+ * dice de dónde viene la pieza y el estado final es el normal: con movimiento reducido se apagan
+ * todas y queda cada paso completo y quieto. Colores como literales: este archivo no pasa por Tailwind.
+ */
+.rp-fondo[data-state='open'] {
+  animation: rp-fundido-entra 0.3s ease both;
+}
+.rp-fondo[data-state='closed'] {
+  animation: rp-fundido-sale 0.22s ease both;
+}
+.rp-caja[data-state='open'] {
+  animation: rp-caja-entra 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.rp-caja[data-state='closed'] {
+  animation: rp-caja-sale 0.22s ease both;
+}
+
+/* El escenario limita el alto de la escena: la escena entra entera, sea cual sea la pantalla. */
+.rp-marco {
+  container-type: size;
+  --alto-max: 100cqh;
+}
+.rp-escena {
+  animation: rp-escena 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* El texto entra desde el lado hacia el que se avanza. */
+.rp-texto[data-dir='1'] {
+  animation: rp-desde-derecha 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.rp-texto[data-dir='-1'] {
+  animation: rp-desde-izquierda 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.rp-texto > * {
+  animation: rp-sube 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.rp-texto > :nth-child(2) {
+  animation-delay: 50ms;
+}
+.rp-texto > :nth-child(3) {
+  animation-delay: 100ms;
+}
+.rp-texto > :nth-child(4) {
+  animation-delay: 150ms;
+}
+
+.rp-progreso {
+  transform-origin: left center;
+  animation: rp-llena 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* El panel puede estar en modo oscuro: el recorrido y sus ilustraciones, siempre con la paleta clara. */
+.rp-caja {
+  color-scheme: light;
+}
+.rp-caja :is(a, button) {
+  touch-action: manipulation;
+}
+.rp-caja :is(a, button):focus-visible {
+  outline: 2px solid #e66e00;
+  outline-offset: 3px;
+}
+.rp-caja .escenario .bg-ink {
+  color: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-fondo,
+  .rp-caja,
+  .rp-caja *,
+  .rp-caja *::before,
+  .rp-caja *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@keyframes rp-fundido-entra {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rp-fundido-sale {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rp-caja-entra {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.97);
+  }
+}
+@keyframes rp-caja-sale {
+  to {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+}
+@keyframes rp-escena {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes rp-desde-derecha {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@keyframes rp-desde-izquierda {
+  from {
+    opacity: 0;
+    transform: translateX(-32px);
+  }
+}
+@keyframes rp-sube {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes rp-llena {
+  from {
+    transform: scaleX(0);
+  }
+}

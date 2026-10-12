@@ -1,0 +1,2 @@
+import { defineConfig } from '@playwright/test'
+export default defineConfig({ testDir: '.', testMatch: 'cierre-turno.spec.ts', workers: 1, timeout: 90000, globalSetup: './cierre-turno.warmup.ts', outputDir: '../node_modules/.cache/cierre-turno-results', use: { baseURL: 'http://127.0.0.1:4205', viewport: { width: 1440, height: 1000 }, channel: process.env.CIERRE_TURNO_TEST_BROWSER_CHANNEL ?? 'msedge' }, webServer: { command: 'bun run dev --host 127.0.0.1 --port 4205 --strictPort', url: 'http://127.0.0.1:4205/tests/cierre-turno.html', timeout: 30000 } })

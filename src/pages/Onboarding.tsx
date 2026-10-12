@@ -13,7 +13,7 @@ import {
   ArrowRight, ArrowLeft, Check, Camera, FileText, Link2,
   Clock, Plus, Trash2, MapPin, Sparkles, Loader2,
   Banknote, ArrowDownToLine, Store, Utensils, Target, PencilRuler, Save, X,
-  ImagePlus, Lock, RefreshCw, Pencil, CircleDashed,
+  ImagePlus, Lock, RefreshCw, CircleDashed,
   Printer, MonitorSmartphone, Armchair, ChevronDown, CircleCheck, Maximize2, Download,
   ShoppingBag, Settings, Minus, MessageCircle,
   type LucideIcon
@@ -24,12 +24,16 @@ import { toast } from 'sonner'
 import {
   onboardingApi, productosApi, pedidoUnificadoApi, zonasDeliveryApi, cartaIaApi, restauranteApi,
   modulosApi, sucursalesApi, mesasLocalesApi, suscripcionApi,
+  esConstructorInterno,
   type ClaimInventario, type MiSuscripcion
 } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
-import { TiendaPreview } from '@/components/TiendaPreview'
+import { TiendaPreview, type PreviewItem, type PreviewProduct } from '@/components/TiendaPreview'
+import { ProductoEditor } from './onboarding/components/ProductoEditor'
+import { ColoresTienda } from './onboarding/components/ColoresTienda'
+import { crearGuardadorCarta, prepararCarta, type CartaEditable, type ProductoCarta } from './onboarding/carta'
 import { ExplainerTienda } from './onboarding/components/ExplainerTienda'
 import { ExplainerActivacion } from './onboarding/components/ExplainerActivacion'
 import { ExplainerMonetizacion } from './onboarding/components/ExplainerMonetizacion'
@@ -366,7 +370,7 @@ function Confetti() {
 }
 
 type DetectedProduct = { nombre: string; descripcion: string; precio: number; ambiguo?: string | null; conPapas?: boolean }
-type StoreProduct = { id: number; nombre: string; descripcion: string; precio: string }
+type StoreProduct = PreviewProduct
 
 type ModalidadSucursales = 'unica' | 'multiple'
 type PagosDraft = { efectivo: boolean; transferenciaManual: boolean; transferenciaAlias: string }
@@ -395,259 +399,28 @@ const normalizarTelefono = (raw: string): string | null => {
 }
 
 // ── Estructura de la carta detectada por la IA (coincide con el backend carta-ia) ──
-type VarianteExtraida = { nombre: string; precio: number }
-type ExtraExtraido = { nombre: string; precio: number }
-type ProductoExtraido = {
-  nombre: string
-  descripcion?: string | null
-  precio?: number | null
-  ingredientes?: string[]
-  variantes?: VarianteExtraida[]
-  extras?: ExtraExtraido[]
-}
-type CategoriaExtraida = { nombre: string; productos: ProductoExtraido[] }
-type CartaExtraida = { categorias: CategoriaExtraida[] }
+type ProductoExtraido = ProductoCarta
+type CategoriaExtraida = CartaEditable['categorias'][number]
+type CartaExtraida = CartaEditable
 
 // Formatea un número a pesos con separador de miles (es-AR), sin decimales.
 const fmtPrecio = (n: number | null | undefined) => (n ?? 0).toLocaleString('es-AR')
 
-// ── Etiqueta discreta para los campos del editor ──
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-1.5">{children}</p>
-}
-
-// ── Input de precio sin flechas de spinner: acepta sólo dígitos y muestra el $ como prefijo ──
-function MoneyInput({ value, onChange, placeholder, className }: {
-  value: number | null | undefined; onChange: (n: number) => void; placeholder?: string; className?: string
-}) {
-  return (
-    <div className={cn("flex items-center rounded-xl bg-zinc-100 dark:bg-zinc-800 px-3 h-10 focus-within:ring-2 focus-within:ring-[#FF7A00]/30 transition-shadow", className)}>
-      <span className="text-muted-foreground text-sm">$</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        value={value ?? ''}
-        onChange={(e) => { const d = e.target.value.replace(/[^\d]/g, ''); onChange(d ? Number(d) : 0) }}
-        placeholder={placeholder}
-        className="flex-1 bg-transparent outline-none text-sm font-semibold text-right px-1 min-w-0"
-      />
-    </div>
-  )
-}
-
-// ── Tarjeta de un producto detectado por la IA, con dos vistas: lectura (default) y edición ──
-function ProductoRevisionCard({ p, onChange, onRemove }: {
-  p: ProductoExtraido; onChange: (patch: Partial<ProductoExtraido>) => void; onRemove: () => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [nuevoIng, setNuevoIng] = useState('')
-
-  const variantes = p.variantes ?? []
-  const ingredientes = p.ingredientes ?? []
-  const extras = p.extras ?? []
-  const tieneVariantes = variantes.length > 0
-
-  const setVariante = (i: number, patch: Partial<VarianteExtraida>) =>
-    onChange({ variantes: variantes.map((v, k) => k === i ? { ...v, ...patch } : v) })
-  const removeVariante = (i: number) => onChange({ variantes: variantes.filter((_, k) => k !== i) })
-
-  const setExtra = (i: number, patch: Partial<ExtraExtraido>) =>
-    onChange({ extras: extras.map((e, k) => k === i ? { ...e, ...patch } : e) })
-  const removeExtra = (i: number) => onChange({ extras: extras.filter((_, k) => k !== i) })
-
-  const addIngrediente = () => {
-    const v = nuevoIng.trim()
-    if (!v) return
-    onChange({ ingredientes: [...ingredientes, v] })
-    setNuevoIng('')
-  }
-  const removeIngrediente = (i: number) => onChange({ ingredientes: ingredientes.filter((_, k) => k !== i) })
-
-  // ─────────────── Vista de lectura (default) ───────────────
-  if (!editing) {
-    const hr = <div className="h-px bg-black/[0.06] dark:bg-white/[0.08] my-4" />
-    return (
-      <div className="relative rounded-2xl bg-white dark:bg-zinc-900 px-5 py-5 text-center shadow-sm transition-colors">
-        <button
-          onClick={() => setEditing(true)}
-          aria-label="Editar producto"
-          className="absolute top-3 right-3 h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white dark:hover:bg-zinc-800 transition-colors"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-
-        {/* Encabezado protagonista: nombre grande + precio como acento de marca */}
-        <h3 className="text-[21px] font-semibold leading-tight tracking-tight px-6">{p.nombre}</h3>
-
-        {!tieneVariantes && (
-          <p className="mt-2 text-[17px] font-semibold tabular-nums tracking-tight text-[#FF7A00]">${fmtPrecio(p.precio)}</p>
-        )}
-
-        {p.descripcion && (
-          <p className="text-[13.5px] text-muted-foreground mt-2 leading-relaxed max-w-[44ch] mx-auto">{p.descripcion}</p>
-        )}
-
-        {/* Variantes al estilo carta: nombre … precio con línea de puntos */}
-        {tieneVariantes && (
-          <div className="mt-4 max-w-xs mx-auto space-y-2 text-left">
-            {variantes.map((v, vi) => (
-              <div key={vi} className="flex items-baseline gap-2">
-                <span className="text-[13.5px] text-foreground/80 truncate">{v.nombre}</span>
-                <span className="flex-1 border-b border-dotted border-black/20 dark:border-white/20 -translate-y-[3px]" />
-                <span className="text-[13.5px] font-semibold tabular-nums shrink-0">${fmtPrecio(v.precio)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {ingredientes.length > 0 && (
-          <>
-            {hr}
-            <FieldLabel>Ingredientes</FieldLabel>
-            <p className="text-[13px] text-muted-foreground leading-relaxed max-w-[44ch] mx-auto">{ingredientes.join(' · ')}</p>
-          </>
-        )}
-
-        {extras.length > 0 && (
-          <>
-            {hr}
-            <FieldLabel>Para agregar</FieldLabel>
-            <div className="max-w-xs mx-auto space-y-1.5 text-left">
-              {extras.map((ex, k) => (
-                <div key={k} className="flex items-baseline gap-2">
-                  <span className="text-[13.5px] text-foreground/80 truncate">{ex.nombre}</span>
-                  <span className="flex-1 border-b border-dotted border-black/20 dark:border-white/20 -translate-y-[3px]" />
-                  <span className="text-[13.5px] font-medium tabular-nums shrink-0 text-[#FF7A00]">+${fmtPrecio(ex.precio)}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    )
-  }
-
-  // ─────────────── Vista de edición ───────────────
-  return (
-    <div className="rounded-2xl bg-white dark:bg-zinc-900 p-4 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-sm space-y-4 animate-in fade-in duration-200">
-      <div>
-        <FieldLabel>Nombre</FieldLabel>
-        <input
-          value={p.nombre}
-          onChange={(e) => onChange({ nombre: e.target.value })}
-          className="w-full h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-0 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow"
-        />
-      </div>
-
-      <div>
-        <FieldLabel>Descripción</FieldLabel>
-        <textarea
-          value={p.descripcion ?? ''}
-          onChange={(e) => onChange({ descripcion: e.target.value })}
-          rows={2}
-          placeholder="Sin descripción"
-          className="w-full rounded-xl bg-zinc-100 dark:bg-zinc-800 border-0 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#FF7A00]/30 resize-none leading-relaxed transition-shadow"
-        />
-      </div>
-
-      {tieneVariantes ? (
-        <div>
-          <FieldLabel>Variantes</FieldLabel>
-          <div className="space-y-2">
-            {variantes.map((v, vi) => (
-              <div key={vi} className="flex items-center gap-2">
-                <input
-                  value={v.nombre}
-                  onChange={(e) => setVariante(vi, { nombre: e.target.value })}
-                  className="flex-1 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-0 px-3 text-sm outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow min-w-0"
-                />
-                <MoneyInput value={v.precio} onChange={(n) => setVariante(vi, { precio: n })} className="w-28 shrink-0" />
-                <button onClick={() => removeVariante(vi)} aria-label="Quitar variante"
-                  className="h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 shrink-0 transition-colors">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div>
-          <FieldLabel>Precio</FieldLabel>
-          <MoneyInput value={p.precio} onChange={(n) => onChange({ precio: n })} placeholder="0" />
-        </div>
-      )}
-
-      <div>
-        <FieldLabel>Ingredientes</FieldLabel>
-        {ingredientes.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {ingredientes.map((ing, i) => (
-              <span key={i} className="inline-flex items-center gap-1 text-[13px] pl-2.5 pr-1.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-foreground">
-                {ing}
-                <button onClick={() => removeIngrediente(i)} aria-label={`Quitar ${ing}`}
-                  className="h-4 w-4 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 transition-colors">
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <input
-          value={nuevoIng}
-          onChange={(e) => setNuevoIng(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIngrediente() } }}
-          onBlur={addIngrediente}
-          placeholder="Escribí y Enter para sumar un ingrediente"
-          className="w-full h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-0 px-3 text-[13px] outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow"
-        />
-      </div>
-
-      {extras.length > 0 && (
-        <div>
-          <FieldLabel>Para agregar</FieldLabel>
-          <div className="space-y-2">
-            {extras.map((ex, ei) => (
-              <div key={ei} className="flex items-center gap-2">
-                <input
-                  value={ex.nombre}
-                  onChange={(e) => setExtra(ei, { nombre: e.target.value })}
-                  className="flex-1 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-0 px-3 text-sm outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow min-w-0"
-                />
-                <MoneyInput value={ex.precio} onChange={(n) => setExtra(ei, { precio: n })} className="w-28 shrink-0" />
-                <button onClick={() => removeExtra(ei)} aria-label="Quitar extra"
-                  className="h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 shrink-0 transition-colors">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between pt-1">
-        <button onClick={onRemove}
-          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-red-500 transition-colors">
-          <Trash2 className="h-3.5 w-3.5" /> Eliminar
-        </button>
-        <button onClick={() => setEditing(false)}
-          className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white text-sm font-semibold active:scale-[0.97] transition-all">
-          <Check className="h-4 w-4" /> Listo
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── Flujo self-serve (build): el dueño construye su tienda paso a paso desde cero. ──
+// Construcción asistida: conserva todos los pasos del recorrido.
 const SelfServeOnboarding = () => {
   const navigate = useNavigate()
   const { token } = useAuthStore()
   const restauranteStore = useRestauranteStore()
   const restaurante = restauranteStore.restaurante as any
 
-  const [phase, setPhase] = useState<Phase>('explainer-tienda')
+  const draftKey = `piru_onboarding_data:${restaurante?.id}`
+  const phaseKey = `${draftKey}:phase`
+  const [phase, setPhase] = useState<Phase>(() => {
+    const saved = localStorage.getItem(phaseKey) as Phase | null
+    return saved && PHASES.includes(saved) ? saved : 'explainer-tienda'
+  })
   const [busy, setBusy] = useState(false)
-  const persistedRef = useRef(false)
+  const persistedRef = useRef(localStorage.getItem(`${draftKey}:configurada`) === 'true')
 
   // Flujo "Sacale una foto": imágenes subidas + modo del paso "carta" (opciones vs uploader).
   // Las imágenes NO se persisten en localStorage (son pesadas); viven sólo en memoria.
@@ -676,7 +449,10 @@ const SelfServeOnboarding = () => {
       deliveryMode: 'radio' as 'radio' | 'zonas',
       deliveryRadius: 2500,
       deliveryPrice: restaurante?.deliveryFee || '0',
-      logo: null as string | null,
+      logo: restaurante?.imagenLightUrl || restaurante?.imagenUrl || null as string | null,
+      colorPrimario: restaurante?.colorPrimario || '#FF7A00',
+      colorSecundario: restaurante?.colorSecundario || '#FFFFFF',
+      usarColorUnico: restaurante?.usarColorUnico ?? true,
       turnos: [{ horaApertura: '19:00', horaCierre: '23:30' }],
       proveedorPago: restaurante?.proveedorPago || 'manual',
       metodosPago: { transferenciaManual: true, efectivo: true },
@@ -691,7 +467,7 @@ const SelfServeOnboarding = () => {
     }
     // Mergeamos sobre los defaults para tolerar datos guardados con formato viejo
     try {
-      const saved = localStorage.getItem('piru_onboarding_data')
+      const saved = localStorage.getItem(draftKey)
       if (saved) {
         const parsed = JSON.parse(saved)
         return {
@@ -733,7 +509,7 @@ const SelfServeOnboarding = () => {
     const mpStatus = params.get('mp_status')
     if (mpStatus === 'success') {
       toast.success('¡MercadoPago conectado!')
-      const saved = localStorage.getItem('piru_onboarding_data')
+      const saved = localStorage.getItem(draftKey)
       if (saved) setFormData((prev: any) => ({ ...prev, ...JSON.parse(saved), proveedorPago: 'mercadopago' }))
       setPhase('pagos')
       window.history.replaceState({}, '', window.location.pathname)
@@ -745,8 +521,16 @@ const SelfServeOnboarding = () => {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('piru_onboarding_data', JSON.stringify(formData))
-  }, [formData])
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(formData))
+      localStorage.setItem(phaseKey, phase)
+    } catch {
+      // Las imágenes nuevas viven en memoria si exceden el cupo del navegador.
+      const liviano = { ...formData, logo: formData.logo?.startsWith('data:') ? null : formData.logo,
+        cartaDetectada: formData.cartaDetectada ? { categorias: formData.cartaDetectada.categorias.map((cat: CategoriaExtraida) => ({ ...cat, productos: cat.productos.map(p => ({ ...p, image: null })) })) } : null }
+      try { localStorage.setItem(draftKey, JSON.stringify(liviano)); localStorage.setItem(phaseKey, phase) } catch { /* No impide guardar en servidor. */ }
+    }
+  }, [formData, phase, draftKey, phaseKey])
 
   // Al llegar a la prueba (p. ej. tras recargar por el redirect de MercadoPago) nos
   // aseguramos de tener los productos reales cargados en la tienda.
@@ -759,6 +543,44 @@ const SelfServeOnboarding = () => {
   }, [phase, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (p: Partial<typeof formData>) => setFormData((prev: any) => ({ ...prev, ...p }))
+  const guardarProducto = useMemo(() => token ? crearGuardadorCarta(token) : null, [token])
+  const [guardandoProductos, setGuardandoProductos] = useState<Set<string>>(new Set())
+  const guardandoRef = useRef(new Set<string>())
+  const [eventosCarta, setEventosCarta] = useState<{ id: number; nombre: string }[]>([])
+  useEffect(() => {
+    if (phase === 'revision' && token) sucursalesApi.list(token).then((res: any) => setEventosCarta((res.data || []).filter((s: any) => s.soloPos))).catch(() => {})
+  }, [phase, token])
+  const cambiarProducto = (localId: string, change: Partial<ProductoExtraido>) => setFormData((prev: any) => ({ ...prev,
+    cartaDetectada: { categorias: prev.cartaDetectada.categorias.map((cat: CategoriaExtraida) => ({ ...cat,
+      productos: cat.productos.map(p => p.localId === localId ? { ...p, ...change } : p),
+    })) },
+  }))
+  const salvarProducto = async (p: ProductoExtraido) => {
+    if (!guardarProducto || guardandoRef.current.has(p.localId)) return false
+    guardandoRef.current.add(p.localId)
+    setGuardandoProductos(new Set(guardandoRef.current))
+    try {
+      const guardado = await guardarProducto(p)
+      cambiarProducto(p.localId, guardado)
+      toast.success(`${p.nombre} guardado`)
+      return true
+    } catch (error) {
+      toast.error(`No se pudo guardar ${p.nombre}`, { description: error instanceof Error ? error.message : 'Reintentá' })
+      return false
+    } finally {
+      guardandoRef.current.delete(p.localId)
+      setGuardandoProductos(new Set(guardandoRef.current))
+    }
+  }
+  const eliminarProducto = async (p: ProductoExtraido) => {
+    if (!token || guardandoRef.current.has(p.localId)) return
+    guardandoRef.current.add(p.localId); setGuardandoProductos(new Set(guardandoRef.current))
+    try {
+      if (p.id) await productosApi.delete(token, p.id)
+      setFormData((prev: any) => ({ ...prev, cartaDetectada: { categorias: prev.cartaDetectada.categorias.map((cat: CategoriaExtraida) => ({ ...cat, productos: cat.productos.filter(item => item.localId !== p.localId) })).filter((cat: CategoriaExtraida) => cat.productos.length) } }))
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo eliminar') }
+    finally { guardandoRef.current.delete(p.localId); setGuardandoProductos(new Set(guardandoRef.current)) }
+  }
 
   // ── Lanza (o relanza) la lectura de la carta con IA en segundo plano. El usuario sigue
   //    configurando mientras esto corre; el resultado se guarda en formData.cartaDetectada. ──
@@ -768,7 +590,7 @@ const SelfServeOnboarding = () => {
     try {
       const res = await cartaIaApi.extraer(token, cartaImagenes) as { success: boolean; carta?: CartaExtraida; totalProductos?: number; message?: string }
       if (!res.success || !res.carta) throw new Error(res.message || 'No se pudo leer la carta')
-      patch({ cartaDetectada: res.carta })
+      patch({ cartaDetectada: prepararCarta(res.carta) })
       setIaTotal(res.totalProductos ?? 0)
       setIaProgress(100)
       setIaEstado('listo')
@@ -826,7 +648,10 @@ const SelfServeOnboarding = () => {
     }
   }, [phase, token])
 
-  const goTo = (p: Phase) => { setPhase(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const goTo = (p: Phase) => {
+    try { localStorage.setItem(phaseKey, p) } catch { /* Continúa en memoria si no hay espacio. */ }
+    setPhase(p); window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
   const next = () => {
     switch (phase) {
       case 'explainer-tienda': return goTo('nombre')
@@ -907,11 +732,13 @@ const SelfServeOnboarding = () => {
     }
     setBusy(true)
     try {
-      const res = await cartaIaApi.crear(token, carta) as { success: boolean; productosCreados?: number; message?: string }
-      if (!res.success) throw new Error(res.message || 'No se pudo crear la carta')
+      for (const cat of carta.categorias) {
+        for (const p of cat.productos) {
+          if (!p.guardado && !await salvarProducto(p)) return
+        }
+      }
       const prods = await productosApi.getAll(token) as { productos: StoreProduct[] }
       setStoreProducts(prods.productos || [])
-      toast.success('Menú cargado', { description: `${res.productosCreados ?? prods.productos?.length ?? 0} productos listos` })
       goTo('explainer-crecimiento')
     } catch (e: any) {
       toast.error('No se pudo cargar el menú', { description: e?.message })
@@ -922,7 +749,7 @@ const SelfServeOnboarding = () => {
 
   // ── Persistir todo el onboarding (username, dirección, logo, horarios, pago) + zona ──
   const persistOnboarding = async () => {
-    if (!token || persistedRef.current) return true
+    if (!token) return false
     setBusy(true)
     try {
       const waNumber = (formData.whatsappNumber || restaurante?.whatsappNumber || restaurante?.telefono || '').toString().replace(/\D/g, '')
@@ -938,20 +765,21 @@ const SelfServeOnboarding = () => {
         friendsOrdering: true,
         imageLight: formData.logo,
         imageDark: formData.logo,
+        colorPrimario: formData.colorPrimario,
+        colorSecundario: formData.colorSecundario,
+        usarColorUnico: formData.usarColorUnico,
+        finalizar: false,
+        deliveryEnabled: formData.tiposPedido.delivery,
+        takeawayEnabled: formData.tiposPedido.takeaway,
         proveedorPago: formData.proveedorPago,
         metodosPago: formData.metodosPago,
         // Alias/CBU solo si la transferencia manual quedó activada.
         transferenciaAlias: formData.metodosPago.transferenciaManual ? formData.transferenciaAlias : '',
       })
 
-      // Tipos de pedido: toggles si difieren
-      if (formData.tiposPedido.delivery === false) {
-        try { await restauranteApi.toggleDeliveryEnabled(token) } catch { /* ignore */ }
-      }
-      if (formData.tiposPedido.takeaway === false) {
-        try { await restauranteApi.toggleTakeawayEnabled(token) } catch { /* ignore */ }
-      }
-
+      // Crear sucursales/zonas sólo una vez. Volver a pasos previos sí actualiza
+      // identidad, logo, colores, horarios y pagos, sin duplicar la estructura.
+      if (!persistedRef.current) {
       // Multisucursal
       if (formData.modalidadSucursales === 'multiple' && formData.sucursales.length > 0) {
         try { await modulosApi.activar(token, 'multisucursal') } catch { /* ignore */ }
@@ -987,7 +815,9 @@ const SelfServeOnboarding = () => {
         } catch { /* no bloqueamos el onboarding si falla la zona */ }
       }
 
+      }
       persistedRef.current = true
+      localStorage.setItem(`${draftKey}:configurada`, 'true')
       return true
     } catch (e: any) {
       toast.error('No se pudo guardar', { description: e?.message })
@@ -1120,8 +950,11 @@ const SelfServeOnboarding = () => {
   const terminarOnboarding = async () => {
     setBusy(true)
     try {
-      localStorage.removeItem('piru_onboarding_data')
-      if (token) await onboardingApi.marcarCompletado(token)
+      if (!token) throw new Error('La sesión venció. Volvé a entrar desde el alta interna.')
+      await onboardingApi.terminarAlta(token)
+      localStorage.removeItem(draftKey)
+      localStorage.removeItem(phaseKey)
+      localStorage.removeItem(`${draftKey}:configurada`)
       await restauranteStore.fetchData()
       navigate('/dashboard', { replace: true })
     } catch (e: any) {
@@ -1218,7 +1051,7 @@ const SelfServeOnboarding = () => {
   }
 
   const renderExplainerTienda = () => {
-    const slug = toSlug(formData.nombre) || 'tulocal'
+    const slug = formData.username || toSlug(formData.nombre) || 'tulocal'
     return (
       <ExplainerTienda
         slug={slug}
@@ -1391,24 +1224,7 @@ const SelfServeOnboarding = () => {
 
   const renderRevision = () => {
     const carta = (formData.cartaDetectada as CartaExtraida | null) ?? { categorias: [] }
-    const setCarta = (next: CartaExtraida) => patch({ cartaDetectada: next })
     const totalProductos = carta.categorias.reduce((acc, c) => acc + c.productos.length, 0)
-
-    // Actualiza un producto de forma inmutable
-    const updateProducto = (ci: number, pi: number, p: Partial<ProductoExtraido>) => {
-      const categorias = carta.categorias.map((cat, i) => i !== ci ? cat : {
-        ...cat,
-        productos: cat.productos.map((prod, j) => j !== pi ? prod : { ...prod, ...p }),
-      })
-      setCarta({ categorias })
-    }
-    // Elimina un producto (y su categoría si queda vacía)
-    const removeProducto = (ci: number, pi: number) => {
-      const categorias = carta.categorias
-        .map((cat, i) => i !== ci ? cat : { ...cat, productos: cat.productos.filter((_, j) => j !== pi) })
-        .filter(cat => cat.productos.length > 0)
-      setCarta({ categorias })
-    }
 
     // La IA todavía está leyendo (o falló): mostramos el indicador en vez de los productos.
     // Cuando pase a 'listo', este render se reemplaza solo por la lista editable.
@@ -1442,7 +1258,7 @@ const SelfServeOnboarding = () => {
         </div>
         <p className="text-[15px] text-muted-foreground mt-3">
           {totalProductos > 0
-            ? 'Revisá nombres y precios. Después podés ajustar todo desde el panel.'
+            ? 'Editá cada producto y guardalo acá. Podés configurar fotos, variantes, extras y el resto de la carta.'
             : 'No quedaron productos. Volvé y probá con otras fotos.'}
         </p>
 
@@ -1454,22 +1270,25 @@ const SelfServeOnboarding = () => {
                 <span className="text-[10px] font-semibold text-muted-foreground/70 bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 rounded-full">{cat.productos.length}</span>
               </div>
               <div className="space-y-3">
-                {cat.productos.map((p, pi) => (
-                  <ProductoRevisionCard
-                    key={pi}
-                    p={p}
-                    onChange={(patch) => updateProducto(ci, pi, patch)}
-                    onRemove={() => removeProducto(ci, pi)}
-                  />
+                {cat.productos.map((p) => (
+                  <ProductoEditor key={p.localId} p={p} saving={guardandoProductos.has(p.localId)} disabled={busy}
+                    sucursales={eventosCarta}
+                    onChange={change => cambiarProducto(p.localId, { ...change, guardado: false })}
+                    onSave={() => void salvarProducto(p)} onRemove={() => void eliminarProducto(p)} />
                 ))}
               </div>
             </div>
           ))}
         </div>
 
-        <Button onClick={confirmarMenu} disabled={busy || totalProductos === 0}
+        <Button variant="outline" className="w-full mt-5" disabled={busy || guardandoProductos.size > 0} onClick={() => {
+          const cat = carta.categorias[0] ?? { nombre: 'General', productos: [] }
+          const nuevo = { localId: crypto.randomUUID(), nombre: '', descripcion: '', precio: 0, categoria: cat.nombre }
+          patch({ cartaDetectada: { categorias: carta.categorias.length ? carta.categorias.map((c, i) => i === 0 ? { ...c, productos: [...c.productos, nuevo] } : c) : [{ ...cat, productos: [nuevo] }] } })
+        }}><Plus className="mr-2 h-4 w-4" />Agregar producto</Button>
+        <Button onClick={confirmarMenu} disabled={busy || guardandoProductos.size > 0 || totalProductos === 0}
           className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
-          {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creando tu menú…</> : <>Confirmar menú <ArrowRight className="ml-2 h-4 w-4" /></>}
+          {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando el menú…</> : <>Guardar pendientes y continuar <ArrowRight className="ml-2 h-4 w-4" /></>}
         </Button>
       </div>
     )
@@ -1886,7 +1705,7 @@ const SelfServeOnboarding = () => {
 
   // Crea el pedido de prueba real a partir de los items del preview de tienda.
   const hacerPedidoPrueba = async (
-    items: { productoId: number; cantidad: number }[],
+    items: PreviewItem[],
     meta: { nombreCliente: string; notas: string },
   ) => {
     if (!token || items.length === 0) return
@@ -1938,6 +1757,7 @@ const SelfServeOnboarding = () => {
         <TiendaPreview
           nombre={formData.nombre}
           logo={formData.logo}
+          colorPrimario={formData.colorPrimario} colorSecundario={formData.colorSecundario} usarColorUnico={formData.usarColorUnico}
           slug={toSlug(formData.nombre) || 'tulocal'}
           direccion={formData.address}
           deliveryPrice={formData.deliveryPrice || '0'}
@@ -2153,26 +1973,22 @@ const SelfServeOnboarding = () => {
   )
 
   const renderPlan = () => {
+    const claimUrl = sessionStorage.getItem(`piru:alta-claim:${restaurante?.id}`)
+    const tiendaUrl = restaurante?.baseTienda?.replace(/\/$/, '') || `${(import.meta.env.VITE_WEB_URL || 'https://my.piru.app').replace(/\/$/, '')}/${formData.username}`
     const precioBase = miSusc?.suscripcionBase?.precioMensual
       ?? miSusc?.cotizacionProximaFactura?.montoBaseMensual
       ?? miSusc?.precioBaseMensual
       ?? miSusc?.precioMensual
     const precio = precioBase != null ? `$${fmtPrecio(Number(precioBase))}` : null
-    const trialDias = miSusc?.trialFin
-      ? Math.max(0, Math.ceil((new Date(miSusc.trialFin).getTime() - Date.now()) / 86_400_000))
-      : null
-
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
         <div className="text-center flex flex-col items-center">
           <div className="w-16 h-16 rounded-2xl bg-[#FF7A00] flex items-center justify-center mb-6">
             <Sparkles className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">
-            {trialDias != null ? `Tenés ${trialDias} días de prueba gratis` : 'Empezás con tu prueba gratis'}
-          </h1>
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">La tienda quedó lista</h1>
           <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-            Usá toda la operación base sin pagar nada. {trialDias != null ? 'Cuando termine' : 'Cuando termine la prueba'}, activás tu suscripción y seguís ofreciendo la mejor experiencia de compra.
+            Mandale el link de la demo para que la vea. La prueba gratis todavía no corre: arranca cuando el dueño verifica su WhatsApp con el link de reclamo.
           </p>
 
           {precio && (
@@ -2186,12 +2002,19 @@ const SelfServeOnboarding = () => {
           )}
         </div>
 
+        <div className="mt-6 space-y-3 rounded-2xl border border-border p-4">
+          <h2 className="font-semibold">Links para entregar la tienda</h2>
+          <p className="text-sm text-muted-foreground">La demo muestra el recorrido de prospección. El reclamo le permite al dueño entrar a su panel.</p>
+          <Button variant="outline" className="w-full" onClick={() => navigator.clipboard.writeText(`${tiendaUrl}?demo`).then(() => toast.success('Link de demo copiado')).catch(() => toast.error('No se pudo copiar el link'))}>Copiar link de demo</Button>
+          {claimUrl && <Button variant="outline" className="w-full" onClick={() => navigator.clipboard.writeText(claimUrl).then(() => toast.success('Link de reclamo copiado')).catch(() => toast.error('No se pudo copiar el link'))}>Copiar link de reclamo</Button>}
+        </div>
+
         <Button
           onClick={terminarOnboarding}
           disabled={busy}
           className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
         >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Empezar la prueba gratis <ArrowRight className="ml-2 h-4 w-4" /></>}
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Terminar y dejar la tienda lista <ArrowRight className="ml-2 h-4 w-4" /></>}
         </Button>
 
         {precio && (
@@ -2251,7 +2074,7 @@ const SelfServeOnboarding = () => {
 
       {/* El bloque (logo + barra + contenido) queda centrado verticalmente en toda
           pantalla, con la barra de progreso justo encima del título. */}
-      <div className="w-full max-w-lg mx-auto">
+      <div className={cn("w-full mx-auto", phase === 'revision' ? "max-w-3xl" : "max-w-lg")}>
         {/* Header: logo Piru + barra de progreso continua (sin enumerar pasos) */}
         <header className="pb-3">
           <div className="flex items-center gap-3">
@@ -2269,7 +2092,7 @@ const SelfServeOnboarding = () => {
           {renderPhase()}
         </main>
       </div>
-      <WhatsAppHelpButton help={whatsappHelp} />
+      {!esConstructorInterno(token) && <WhatsAppHelpButton help={whatsappHelp} />}
     </div>
   )
 }
@@ -2411,6 +2234,8 @@ function PreparativosScreen({ formData, patch, indicator, onContinue }: {
             <ImageUpload square onImageChange={(b64) => patch({ logo: b64 })} currentImage={formData.logo} />
           </div>
         </div>
+
+        <ColoresTienda logo={formData.logo} colores={formData} onChange={patch} />
 
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -2751,7 +2576,7 @@ const ClaimOnboarding = () => {
   // Crea el pedido de prueba real (mismo mecanismo que el self-serve): notifica al WhatsApp del
   // dueño y deja el primer pedidoUnificado, que es el gate para entrar al panel.
   const hacerPedidoPrueba = async (
-    items: { productoId: number; cantidad: number }[],
+    items: PreviewItem[],
     meta: { nombreCliente: string; notas: string },
   ) => {
     if (!token || items.length === 0) return
@@ -2870,6 +2695,7 @@ const ClaimOnboarding = () => {
         <TiendaPreview
           nombre={nombre}
           logo={logo}
+          colorPrimario={restaurante?.colorPrimario || undefined} colorSecundario={restaurante?.colorSecundario || undefined} usarColorUnico={restaurante?.usarColorUnico ?? true}
           slug={slug}
           baseTienda={restaurante?.baseTienda}
           direccion={restaurante?.direccion || ''}
@@ -2933,16 +2759,11 @@ const ClaimOnboarding = () => {
   )
 }
 
-// ── Selector de flujo: outbound (tienda ya construida → reclamo) vs. self-serve (construir). ──
-// Un dueño outbound que aún no cerró su reclamo (origen='outbound' && !completedOnboarding) va al
-// flujo de claim; el resto, al build de siempre. Necesitamos el `origen` para decidir: si el store
-// aún no está hidratado (p. ej. refresh directo en /onboarding, que no pasa por DashboardLayout),
-// lo traemos acá. Mientras tanto, loader (no flashear el flujo equivocado). Si el fetch falla,
-// caemos al build self-serve (comportamiento previo).
+// El fundador construye con su sesión firmada; el dueño recibe el recorrido de reclamo.
 const Onboarding = () => {
   const restaurante = useRestauranteStore((s) => s.restaurante) as any
-  const isLoading = useRestauranteStore((s) => s.isLoading)
   const fetchData = useRestauranteStore((s) => s.fetchData)
+  const error = useRestauranteStore((s) => s.error)
   const triedRef = useRef(false)
 
   useEffect(() => {
@@ -2952,7 +2773,8 @@ const Onboarding = () => {
     }
   }, [restaurante, fetchData])
 
-  if (!restaurante && (isLoading || !triedRef.current)) {
+  if (!restaurante && error) return <div className="min-h-dvh flex flex-col items-center justify-center gap-4 px-6"><p>{error}</p><Button onClick={() => void fetchData()}>Reintentar</Button></div>
+  if (!restaurante) {
     return (
       <div className="min-h-dvh bg-background flex items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2960,10 +2782,11 @@ const Onboarding = () => {
     )
   }
 
-  if (restaurante?.origen === 'outbound' && !restaurante?.completedOnboarding) {
+  if (restaurante?.origen === 'outbound' && !restaurante?.completedOnboarding && !esConstructorInterno(useAuthStore.getState().token)) {
     return <ClaimOnboarding />
   }
 
+  if (!esConstructorInterno(useAuthStore.getState().token)) return <ClaimOnboarding />
   return <SelfServeOnboarding />
 }
 

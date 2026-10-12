@@ -1,10 +1,15 @@
-import { useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { useAuthStore } from '@/store/authStore'
+import { useDatosEjemplo } from '@/store/datosEjemploStore'
+import { esSesionDemo } from '@/lib/api'
+import { recorridoVisto, useRecorridoPanel } from '@/lib/recorridoPanel'
+import { DemoBanner } from '@/components/DemoBanner'
 import {
+  Compass,
   LayoutDashboard,
   Package,
   Users,
@@ -18,6 +23,9 @@ import {
   PanelLeftOpen,
   X,
 } from 'lucide-react'
+
+// El recorrido de bienvenida se carga aparte: el uso de todos los días no lo descarga.
+const RecorridoPanel = lazy(() => import('@/components/recorrido/RecorridoPanel'))
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
@@ -43,6 +51,12 @@ const DashboardLayout = () => {
   const restauranteId = useAuthStore((s) => s.restaurante?.id)
   const avisosAutomaticosActivos = useModuloActivo('avisos_automaticos_whatsapp')
   const crecimientoActivo = useModuloActivo('crecimiento')
+  const token = useAuthStore((s) => s.token)
+  const esDemo = esSesionDemo(token)
+  const abrirRecorrido = useRecorridoPanel((s) => s.abrir)
+  const recorridoMontado = useRecorridoPanel((s) => s.vez > 0)
+  // Sube cuando se borran o se vuelven a cargar los datos de ejemplo: la pantalla pide sus datos de nuevo.
+  const versionDatos = useDatosEjemplo((s) => s.version)
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('piru-sidebar-collapsed') === '1')
 
@@ -59,6 +73,11 @@ const DashboardLayout = () => {
       document.documentElement.classList.remove('dark')
     }
   }, [])
+
+  // La primera vez que alguien entra por la demo de prospección, el recorrido se abre solo.
+  useEffect(() => {
+    if (esDemo && restauranteId != null && !recorridoVisto(restauranteId)) abrirRecorrido()
+  }, [esDemo, restauranteId, abrirRecorrido])
 
   // Persist collapse state
   useEffect(() => {
@@ -154,6 +173,19 @@ const DashboardLayout = () => {
 
       {/* Footer: guía y ajustes */}
       <div className="p-3 space-y-1 shrink-0">
+        <button
+          onClick={() => {
+            abrirRecorrido()
+            setMenuOpen(false)
+          }}
+          title={compact ? 'Ver recorrido' : undefined}
+          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer text-muted-foreground hover:bg-accent hover:text-foreground ${
+            compact ? 'justify-center px-0' : 'px-3'
+          }`}
+        >
+          <Compass className="h-[18px] w-[18px] text-muted-foreground group-hover:text-foreground" />
+          {!compact && 'Ver recorrido'}
+        </button>
         {/* La guía ocupa toda la pantalla; "Volver al panel" trae de vuelta a esta pantalla. */}
         <button
           onClick={() => {
@@ -217,14 +249,23 @@ const DashboardLayout = () => {
           </Button>
         </div>
 
+        {/* Los datos de ejemplo (y la demo de prospección) se avisan arriba de cualquier pantalla. */}
+        <DemoBanner />
+
         {/* Tocar el contenido cierra el drawer (sin scrim: el contenido queda visible). */}
         <main
           className="flex-1 min-h-0 overflow-y-auto"
           onClick={() => menuOpen && setMenuOpen(false)}
         >
-          <Outlet />
+          <Outlet key={versionDatos} />
         </main>
       </div>
+
+      {recorridoMontado && (
+        <Suspense fallback={null}>
+          <RecorridoPanel />
+        </Suspense>
+      )}
     </div>
   )
 }

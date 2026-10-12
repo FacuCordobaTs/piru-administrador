@@ -1,7 +1,7 @@
 import { Navigate, Outlet } from 'react-router'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
-import { isTokenExpired } from '@/lib/api'
+import { esConstructorInterno, esSesionDemo, isTokenExpired } from '@/lib/api'
 import { useEffect } from 'react'
 import { AdminProvider } from '@/context/AdminContext'
 import NotificationOverlay from '@/components/NotificationOverlay'
@@ -47,8 +47,10 @@ const ProtectedLayout = () => {
   // (accesoPanel === false) no entra al panel — sólo a /suscribir. Cuentas grandfathered
   // (requiereSuscripcion=false) traen accesoPanel=true, así que nunca caen acá.
   const suscripcion = restauranteStore.suscripcion as any
+  // No aplica a la demo de prospección ni al fundador (alta o acceso temporal de interno): una tienda
+  // recién armada no tiene suscripción hasta que el dueño la reclama y ahí arranca la prueba.
   const bloqueadoPorPaywall =
-    restaurante && restaurante.completedOnboarding && suscripcion?.accesoPanel === false
+    restaurante && restaurante.completedOnboarding && suscripcion?.accesoPanel === false && !esSesionDemo(token) && !esConstructorInterno(token)
 
   if (bloqueadoPorPaywall && currentPath !== '/suscribir') {
     return <Navigate to="/suscribir" replace />

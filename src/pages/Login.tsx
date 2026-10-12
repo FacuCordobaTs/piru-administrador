@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -83,7 +83,7 @@ const Login = () => {
       const response = await authApi.login(email, password)
 
       if (typeof response === 'object' && response !== null && 'token' in response && 'restaurante' in response) {
-        const { token, restaurante, message } = response as { token: string; restaurante: any; message?: string }
+        const { token, restaurante, message } = response as { token: string; restaurante: NonNullable<ReturnType<typeof useAuthStore.getState>['restaurante']>; message?: string }
         setAuth(token, restaurante)
         toast.success('¡Bienvenido de vuelta!', { description: message || 'Sesión iniciada correctamente' })
         navigate('/dashboard')
@@ -103,13 +103,10 @@ const Login = () => {
 
   return (
     <div className="min-h-dvh flex flex-col w-full bg-background px-6 selection:bg-orange-500/10 selection:text-[#FF7A00]">
-      {/* Barra superior: logo + acceso a crear cuenta */}
+      {/* Barra superior: logo Piru */}
       <header className="w-full max-w-md mx-auto flex items-center justify-between pt-7">
         <img src="/logopiru.jpeg" alt="Piru" className="h-9 w-auto rounded-xl" />
-        <Link to="/register" className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          Crear cuenta
-          <span className="inline-block transition-transform group-hover:translate-x-0.5">→</span>
-        </Link>
+
       </header>
 
       <main className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto pb-16">

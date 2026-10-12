@@ -1,6 +1,6 @@
 import { CheckCheck, LayoutDashboard, MessageCircle, SendHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Escena, Toque } from './Escena'
+import { Escena, type PropsEscena, Toque } from './Escena'
 import { d, useSecuencia } from './animacion'
 import { COLOR_LOCAL, LOCAL_EJEMPLO, PEDIDO_EJEMPLO as P, pesos } from './ejemplo'
 
@@ -56,13 +56,14 @@ function Fila({
  * La tienda manda el pedido al WhatsApp del local. Fases: 0 el carrito · 1 toca "Confirmar
  * pedido" · 2 se abre WhatsApp con el pedido escrito · 3 enviado: llega al chat y al panel.
  */
-export function PedidoWhatsapp() {
+export function PedidoWhatsapp({ siempreActiva }: PropsEscena) {
   const n = useSecuencia(1900, 3)
   const fase = n % 4
   const enWhatsapp = fase >= 2
   const enviado = fase === 3
   return (
     <Escena
+      siempreActiva={siempreActiva}
       ancho={460}
       alto={340}
       etiqueta={`${P.corto} confirma el pedido en la tienda, se le abre WhatsApp con el pedido escrito y lo envía: llega al WhatsApp de ${LOCAL_EJEMPLO} y aparece en el panel.`}

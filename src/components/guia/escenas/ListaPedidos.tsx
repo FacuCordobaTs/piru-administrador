@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Bike, Check, Clock, MapPin, Receipt, ShoppingBag, UserRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Escena, Toque } from './Escena'
+import { Escena, type PropsEscena, Toque } from './Escena'
 import { d, useSecuencia } from './animacion'
 import { OTROS_PEDIDOS, PEDIDO_EJEMPLO as P, pesos } from './ejemplo'
 
@@ -67,7 +67,7 @@ function Tarjeta({
  * Inicio, pedido por pedido. Fases: 0 la lista · 1 entra el #1284 · 2 se abre su detalle ·
  * 3 toca "Despachar pedido" · 4 pasó al historial.
  */
-export function ListaPedidos() {
+export function ListaPedidos({ siempreActiva }: PropsEscena) {
   const n = useSecuencia(1800, 2)
   const fase = n % 5
   const entro = fase >= 1 && fase <= 3
@@ -75,6 +75,7 @@ export function ListaPedidos() {
   const despachado = fase === 4
   return (
     <Escena
+      siempreActiva={siempreActiva}
       ancho={460}
       alto={340}
       etiqueta={`Inicio del panel: entra el pedido #${P.id} de ${P.corto}, se abre su detalle con la comanda y se despacha; pasa al historial.`}

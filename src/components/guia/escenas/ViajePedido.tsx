@@ -1,6 +1,6 @@
 import { Bike, LayoutDashboard, MessageCircle, Printer, Receipt, Store } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Escena } from './Escena'
+import { Escena, type PropsEscena } from './Escena'
 import { d, useSecuencia } from './animacion'
 import { PEDIDO_EJEMPLO } from './ejemplo'
 
@@ -21,12 +21,13 @@ const posicion = (i: number) => {
   return { x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) }
 }
 
-export function ViajePedido() {
+export function ViajePedido({ siempreActiva }: PropsEscena) {
   const n = useSecuencia(2600)
   const fase = n % NODOS.length
   const actual = NODOS[fase]
   return (
     <Escena
+      siempreActiva={siempreActiva}
       ancho={460}
       alto={340}
       etiqueta="El viaje de un pedido: el cliente pide desde tu link, te llega a tu WhatsApp, entra al panel, la comanda sale por la impresora de la cocina y lo despachás."

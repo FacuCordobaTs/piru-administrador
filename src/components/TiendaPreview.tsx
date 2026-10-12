@@ -3,22 +3,31 @@ import {
   Store, Utensils, Plus, Receipt, Trash2, Package, ChevronLeft,
   MapPin, Truck, Banknote, Wallet, ArrowDownToLine, Check,
   Loader2, UtensilsCrossed, Users, ChevronRight, ShoppingBag,
+  type LucideIcon,
 } from 'lucide-react'
+import type { CSSProperties } from 'react'
+import type { PedidoUnificadoItemInput } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
-// ── Tipos livianos: los productos del onboarding son simples (sin imagen, variantes ni agregados) ──
-export type PreviewProduct = { id: number; nombre: string; descripcion?: string | null; precio: string | number }
+type OpcionPreview = { id: number; nombre: string; precio: string | number }
+export type PreviewProduct = { id: number; nombre: string; descripcion?: string | null; precio: string | number; imagenUrl?: string | null; activo?: boolean; eventoSucursalId?: number | null;
+  variantes?: OpcionPreview[]; variantesSecundarias?: OpcionPreview[]; agregadosPrimarios?: OpcionPreview[]; agregadosSecundarios?: OpcionPreview[];
+  ingredientes?: { id: number; nombre: string }[]; permiteNota?: boolean; tituloNota?: string;
+  tituloVariantesPrimarias?: string; tituloVariantesSecundarias?: string; tituloExtrasPrimarios?: string; tituloExtrasSecundarios?: string;
+}
+export type PreviewItem = PedidoUnificadoItemInput
+type CartLine = { uid: string; item: PreviewItem; precio: number; detalle: string }
 
-// Cada línea del carrito es un item independiente (no se stackean por cantidad)
-type CartLine = { uid: string; productoId: number }
-
-type MetodoPreview = { id: string; label: string; desc: string; icon: any }
+type MetodoPreview = { id: string; label: string; desc: string; icon: LucideIcon }
 
 type PasoCheckout = 'tipo' | 'datos' | 'ubicacion' | 'extras'
 const PASOS: PasoCheckout[] = ['tipo', 'datos', 'ubicacion', 'extras']
 
 interface TiendaPreviewProps {
+  colorPrimario?: string
+  colorSecundario?: string
+  usarColorUnico?: boolean
   nombre: string
   logo: string | null
   slug: string
@@ -34,7 +43,7 @@ interface TiendaPreviewProps {
   proveedorPago: string
   productos: PreviewProduct[]
   /** Crea el pedido de prueba real. Recibe los items agregados. Devuelve una promesa. */
-  onConfirmar: (items: { productoId: number; cantidad: number }[], meta: { nombreCliente: string; notas: string }) => Promise<void>
+  onConfirmar: (items: PreviewItem[], meta: { nombreCliente: string; notas: string }) => Promise<void>
 }
 
 // ── Espejo minimalista de la tienda del cliente (MenuDelivery + CheckoutDeliveryGrupal).
@@ -42,10 +51,15 @@ interface TiendaPreviewProps {
 //    y cómo funciona su tienda antes de publicarla. Se le ahorran pasos (datos precargados,
 //    takeaway por defecto) sin perder la fidelidad visual. ──
 export function TiendaPreview({
-  nombre, logo, slug, baseTienda, direccion, deliveryPrice, metodosPago, proveedorPago, productos, onConfirmar,
+  colorPrimario = '#FF7A00', colorSecundario = '#FFFFFF', usarColorUnico = true, nombre, logo, slug, baseTienda, direccion, deliveryPrice, metodosPago, proveedorPago, productos, onConfirmar,
 }: TiendaPreviewProps) {
   const [cart, setCart] = useState<CartLine[]>([])
   const [detalle, setDetalle] = useState<PreviewProduct | null>(null)
+  const [varianteId, setVarianteId] = useState<number | undefined>()
+  const [varianteSecundariaId, setVarianteSecundariaId] = useState<number | undefined>()
+  const [extras, setExtras] = useState<OpcionPreview[]>([])
+  const [excluidos, setExcluidos] = useState<number[]>([])
+  const [notaProducto, setNotaProducto] = useState('')
   const [addCount, setAddCount] = useState(0) // veces que se agregó el producto abierto (para "Agregar otro igual")
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [enCheckout, setEnCheckout] = useState(false)
@@ -71,21 +85,27 @@ export function TiendaPreview({
 
   const findProducto = (id: number) => productos.find(p => p.id === id)
   const cartCount = cart.length
-  const itemsTotal = cart.reduce((sum, l) => sum + Number(findProducto(l.productoId)?.precio || 0), 0)
+  const itemsTotal = cart.reduce((sum, l) => sum + l.precio, 0)
   const envio = tipoPedido === 'delivery' ? (parseInt(deliveryPrice) || 0) : 0
   const total = itemsTotal + envio
 
   const money = (n: number) => `$${n.toLocaleString('es-AR')}`
 
-  const addLine = (productoId: number) =>
-    setCart(c => [...c, { uid: Math.random().toString(36).slice(2), productoId }])
+  const precioDetalle = detalle ? Number(detalle.variantes?.find(v => v.id === varianteId)?.precio ?? detalle.precio)
+    + Number(detalle.variantesSecundarias?.find(v => v.id === varianteSecundariaId)?.precio ?? 0)
+    + extras.reduce((sum, ex) => sum + Number(ex.precio), 0) : 0
   const removeLine = (uid: string) => setCart(c => c.filter(l => l.uid !== uid))
-
-  const abrirDetalle = (p: PreviewProduct) => { setDetalle(p); setAddCount(0) }
+  const abrirDetalle = (p: PreviewProduct) => {
+    setDetalle(p); setAddCount(0); setVarianteId(p.variantes?.[0]?.id); setVarianteSecundariaId(p.variantesSecundarias?.[0]?.id)
+    setExtras([]); setExcluidos([]); setNotaProducto('')
+  }
   const cerrarDetalle = () => setDetalle(null)
   const agregarDesdeDetalle = () => {
     if (!detalle) return
-    addLine(detalle.id)
+    const item: PreviewItem = { productoId: detalle.id, cantidad: 1, varianteId, varianteSecundariaId,
+      agregados: extras, ingredientesExcluidos: excluidos, nota: notaProducto || undefined }
+    const resumen = [detalle.variantes?.find(v => v.id === varianteId)?.nombre, detalle.variantesSecundarias?.find(v => v.id === varianteSecundariaId)?.nombre, ...extras.map(ex => ex.nombre)].filter(Boolean).join(' · ')
+    setCart(c => [...c, { uid: crypto.randomUUID(), item, precio: precioDetalle, detalle: resumen }])
     setAddCount(c => c + 1)
   }
 
@@ -105,12 +125,7 @@ export function TiendaPreview({
     if (cartCount === 0 || enviando) return
     setEnviando(true)
     try {
-      // Agregamos las líneas por producto para el pedido real
-      const agrupado = cart.reduce<Record<number, number>>((acc, l) => {
-        acc[l.productoId] = (acc[l.productoId] || 0) + 1
-        return acc
-      }, {})
-      const items = Object.entries(agrupado).map(([id, cantidad]) => ({ productoId: Number(id), cantidad }))
+      const items = cart.map(line => line.item)
       const nombreFinal = nombreCliente.trim() || 'Pedido de prueba'
       const notasPref = tipoPedido === 'delivery' ? 'Delivery' : 'Take away'
       const notasFinal = [notasPref, notas.trim()].filter(Boolean).join(' · ')
@@ -121,7 +136,7 @@ export function TiendaPreview({
     }
   }
 
-  const inputCls = "w-full h-11 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-0 outline-none focus:ring-2 focus:ring-[#FF7A00]/30 text-sm px-4 transition-all"
+  const inputCls = "w-full h-11 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-0 outline-none focus:ring-2 focus:ring-[color:var(--preview-primary)]/30 text-sm px-4 transition-all"
 
   const tituloPaso: Record<PasoCheckout, string> = {
     tipo: '¿Cómo lo querés?',
@@ -131,7 +146,7 @@ export function TiendaPreview({
   }
 
   return (
-    <div className="mt-6 rounded-[24px] border border-zinc-200 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-950 shadow-lg shadow-zinc-200/40 dark:shadow-none">
+    <div style={{ '--preview-primary': colorPrimario, '--preview-secondary': usarColorUnico ? '#FFFFFF' : colorSecundario } as CSSProperties} className="mt-6 rounded-[24px] border border-zinc-200 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-950 shadow-lg shadow-zinc-200/40 dark:shadow-none">
       {/* Chrome del "navegador" */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
         <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
@@ -152,7 +167,7 @@ export function TiendaPreview({
               </span>
               <button
                 onClick={() => toast.info('Acá tus clientes ven el historial de sus pedidos')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-[#FF7A00] border border-[#FF7A00]/20 hover:bg-[#FF7A00]/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-[color:var(--preview-primary)] border border-[color:var(--preview-primary)]/20 hover:bg-[color:var(--preview-primary)]/10 transition-colors"
               >
                 <Package className="h-3.5 w-3.5" /> Mis Pedidos
               </button>
@@ -162,8 +177,8 @@ export function TiendaPreview({
           <div className="px-4 pt-4 pb-28 space-y-5">
             {/* Cabecera del local */}
             <div className="flex flex-col items-center gap-2 pt-1">
-              <div className="h-24 w-24 rounded-2xl bg-[#FF7A00]/10 flex items-center justify-center overflow-hidden">
-                {logo ? <img src={logo} alt="" className="h-full w-full object-cover" /> : <Store className="h-9 w-9 text-[#FF7A00]" />}
+              <div className="h-24 w-24 rounded-2xl bg-[color:var(--preview-primary)]/10 flex items-center justify-center overflow-hidden">
+                {logo ? <img src={logo} alt="" className="h-full w-full object-cover" /> : <Store className="h-9 w-9 text-[color:var(--preview-primary)]" />}
               </div>
               <p className="text-base font-bold leading-tight text-center">{nombre || 'Tu local'}</p>
               <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
@@ -193,7 +208,7 @@ export function TiendaPreview({
               <div className="space-y-4">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Menú</h3>
                 <div className="grid grid-cols-1 gap-3">
-                  {productos.map(p => (
+                  {productos.filter(p => p.activo !== false && !p.eventoSucursalId).map(p => (
                     <ProductoCard key={p.id} producto={p} onClick={() => abrirDetalle(p)} />
                   ))}
                 </div>
@@ -237,16 +252,17 @@ export function TiendaPreview({
           detalle ? "translate-y-0" : "translate-y-full pointer-events-none"
         )}>
           {detalle && (
-            <div className="bg-white dark:bg-zinc-950 rounded-t-3xl overflow-hidden shadow-[0_-12px_40px_rgba(0,0,0,0.28)]">
+            <div className="bg-white dark:bg-zinc-950 rounded-t-3xl overflow-y-auto max-h-[524px] shadow-[0_-12px_40px_rgba(0,0,0,0.28)]">
               {/* Imagen/placeholder */}
-              <div className="relative h-40 w-full bg-gradient-to-br from-[#FF7A00]/25 via-[#FF7A00]/10 to-transparent flex items-center justify-center">
-                <span className="text-[90px] font-black leading-none text-[#FF7A00]/20 select-none">
+              <div className="relative h-40 w-full bg-gradient-to-br from-[color:var(--preview-primary)]/25 via-[color:var(--preview-primary)]/10 to-transparent flex items-center justify-center">
+                {detalle.imagenUrl && <img src={detalle.imagenUrl} alt={detalle.nombre} className="absolute inset-0 w-full h-full object-cover" />}
+                <span className="text-[90px] font-black leading-none text-[color:var(--preview-primary)]/20 select-none">
                   {(detalle.nombre || '?').charAt(0).toUpperCase()}
                 </span>
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/70 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 px-5 pb-4 flex items-end justify-between">
                   <h3 className="text-xl font-bold text-white drop-shadow">{detalle.nombre}</h3>
-                  <p className="text-lg font-bold text-white drop-shadow">{money(Number(detalle.precio))}</p>
+                  <p className="text-lg font-bold text-white drop-shadow">{money(precioDetalle)}</p>
                 </div>
                 <div className="pointer-events-none absolute inset-x-0 top-2.5 flex justify-center">
                   <span className="h-1.5 w-10 rounded-full bg-white/60" />
@@ -256,12 +272,29 @@ export function TiendaPreview({
               <div className="px-5 pt-4 pb-6 space-y-4">
                 <p className="text-sm leading-relaxed text-muted-foreground">{detalle.descripcion || 'Sin descripción.'}</p>
 
+                {([['variantes', 'Elegí una opción', varianteId, setVarianteId], ['variantesSecundarias', 'Elegí también una segunda opción', varianteSecundariaId, setVarianteSecundariaId]] as const).map(([key, fallback, value, setter]) => detalle[key]?.length ? (
+                  <label key={key} className="block text-sm font-medium space-y-2">
+                    <span>{key === 'variantes' ? detalle.tituloVariantesPrimarias || fallback : detalle.tituloVariantesSecundarias || fallback}</span>
+                    <select aria-label={key === 'variantes' ? 'Variante principal' : 'Variante secundaria'} value={value} onChange={e => { setter(Number(e.target.value)); setAddCount(0) }} className="w-full rounded-xl border border-zinc-200 h-11 px-3 bg-white dark:bg-zinc-900">
+                      {detalle[key]!.map(v => <option key={v.id} value={v.id}>{v.nombre} · {key === 'variantesSecundarias' ? '+' : ''}{money(Number(v.precio))}</option>)}
+                    </select>
+                  </label>
+                ) : null)}
+                {(['agregadosPrimarios', 'agregadosSecundarios'] as const).map((key) => detalle[key]?.length ? <div key={key} className="space-y-2">
+                  <p className="text-sm font-semibold">{key === 'agregadosPrimarios' ? detalle.tituloExtrasPrimarios || 'Extras' : detalle.tituloExtrasSecundarios || 'Extras'}</p>
+                  {detalle[key]!.map(ex => <label key={ex.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex gap-2 items-center"><input type="checkbox" checked={extras.some(e => e.id === ex.id)} onChange={e => { setExtras(actual => e.target.checked ? [...actual, ex] : actual.filter(v => v.id !== ex.id)); setAddCount(0) }} />{ex.nombre}</span><span>+{money(Number(ex.precio))}</span>
+                  </label>)}
+                </div> : null)}
+                {detalle.ingredientes?.length ? <div className="space-y-2"><p className="text-sm font-semibold">Sin estos ingredientes</p>{detalle.ingredientes.map(ing => <label key={ing.id} className="flex gap-2 items-center text-sm"><input type="checkbox" checked={excluidos.includes(ing.id)} onChange={e => { setExcluidos(actual => e.target.checked ? [...actual, ing.id] : actual.filter(id => id !== ing.id)); setAddCount(0) }} />{ing.nombre}</label>)}</div> : null}
+                {detalle.permiteNota && <label className="block text-sm space-y-2"><span>{detalle.tituloNota || '¿Querés aclarar algo?'}</span><input className={inputCls} maxLength={500} value={notaProducto} onChange={e => { setNotaProducto(e.target.value); setAddCount(0) }} /></label>}
+
                 {addCount === 0 ? (
                   <button
                     onClick={agregarDesdeDetalle}
-                    className="w-full h-14 rounded-2xl bg-[#FF7A00] text-white font-semibold text-[15px] active:scale-[0.98] transition-all"
+                    className="w-full h-14 rounded-2xl bg-[color:var(--preview-primary)] text-white font-semibold text-[15px] active:scale-[0.98] transition-all"
                   >
-                    Agregar · {money(Number(detalle.precio))}
+                    Agregar · {money(precioDetalle)}
                   </button>
                 ) : (
                   <div className="space-y-2 animate-in fade-in">
@@ -296,7 +329,7 @@ export function TiendaPreview({
             {enviando && (
               <div className="absolute inset-0 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-sm z-20 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="h-7 w-7 animate-spin text-[#FF7A00]" />
+                  <Loader2 className="h-7 w-7 animate-spin text-[color:var(--preview-primary)]" />
                   <p className="text-sm font-medium">Enviando pedido…</p>
                 </div>
               </div>
@@ -325,17 +358,17 @@ export function TiendaPreview({
                   <>
                     <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 min-h-0">
                       {cart.map(line => {
-                        const p = findProducto(line.productoId)
+                        const p = findProducto(line.item.productoId)
                         if (!p) return null
                         return (
-                          <div key={line.uid} className="flex gap-3 p-3 rounded-2xl border border-[#FF7A00]/20 bg-zinc-50 dark:bg-zinc-900">
+                          <div key={line.uid} className="flex gap-3 p-3 rounded-2xl border border-[color:var(--preview-primary)]/20 bg-zinc-50 dark:bg-zinc-900">
                             <div className="h-16 w-16 shrink-0 rounded-xl bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
-                              <Utensils className="h-5 w-5 text-[#FF7A00]" />
+                              <Utensils className="h-5 w-5 text-[color:var(--preview-primary)]" />
                             </div>
                             <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
                               <div className="flex justify-between items-start gap-2">
-                                <p className="font-bold text-sm truncate">{p.nombre}</p>
-                                <p className="font-bold text-sm shrink-0">{money(Number(p.precio))}</p>
+                                <div><p className="font-bold text-sm truncate">{p.nombre}</p>{line.detalle && <p className="text-xs text-muted-foreground">{line.detalle}</p>}</div>
+                                <p className="font-bold text-sm shrink-0">{money(line.precio)}</p>
                               </div>
                               <div className="flex items-center justify-end mt-2">
                                 <button onClick={() => removeLine(line.uid)} className="h-8 w-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
@@ -352,7 +385,7 @@ export function TiendaPreview({
                         <span className="text-muted-foreground text-sm">Total a pagar</span>
                         <span className="text-2xl font-black tracking-tight">{money(itemsTotal)}</span>
                       </div>
-                      <button onClick={irACheckout} className="w-full h-12 rounded-xl bg-[#FF7A00] text-white font-bold text-[15px] active:scale-[0.98] transition-all">
+                      <button onClick={irACheckout} className="w-full h-12 rounded-xl bg-[color:var(--preview-primary)] text-white font-bold text-[15px] active:scale-[0.98] transition-all">
                         Continuar
                       </button>
                     </div>
@@ -373,7 +406,7 @@ export function TiendaPreview({
                   </div>
                   <div className="flex items-center gap-1.5 px-4 pb-3">
                     {PASOS.map((_, i) => (
-                      <div key={i} className={cn("h-1 rounded-full flex-1 transition-all duration-300", i <= paso ? "bg-[#FF7A00]" : "bg-zinc-200 dark:bg-zinc-800")} />
+                      <div key={i} className={cn("h-1 rounded-full flex-1 transition-all duration-300", i <= paso ? "bg-[color:var(--preview-primary)]" : "bg-zinc-200 dark:bg-zinc-800")} />
                     ))}
                   </div>
                 </div>
@@ -394,7 +427,7 @@ export function TiendaPreview({
                             tipoPedido === t.id ? "bg-white dark:bg-zinc-800 shadow-sm" : ""
                           )}
                         >
-                          <t.icon className={cn("h-4 w-4", tipoPedido === t.id ? "text-[#FF7A00]" : "text-muted-foreground")} />
+                          <t.icon className={cn("h-4 w-4", tipoPedido === t.id ? "text-[color:var(--preview-primary)]" : "text-muted-foreground")} />
                           <span className={cn("text-sm font-semibold", tipoPedido === t.id ? "text-foreground" : "text-muted-foreground")}>{t.label}</span>
                         </button>
                       ))}
@@ -450,7 +483,7 @@ export function TiendaPreview({
                       <div className="space-y-1.5">
                         <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-1">Notas <span className="normal-case font-normal">(opcional)</span></label>
                         <textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Ej: El timbre no anda…" rows={2}
-                          className="w-full rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-0 outline-none focus:ring-2 focus:ring-[#FF7A00]/30 resize-none text-sm px-4 py-3 transition-all" />
+                          className="w-full rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-0 outline-none focus:ring-2 focus:ring-[color:var(--preview-primary)]/30 resize-none text-sm px-4 py-3 transition-all" />
                       </div>
 
                       <div className="space-y-1.5">
@@ -460,15 +493,15 @@ export function TiendaPreview({
                             const sel = metodoPago === m.id
                             return (
                               <button key={m.id} onClick={() => setMetodoPago(m.id)}
-                                className={cn("w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all", sel ? "bg-[#FF7A00]/10" : "bg-zinc-100 dark:bg-zinc-900")}>
+                                className={cn("w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all", sel ? "bg-[color:var(--preview-primary)]/10" : "bg-zinc-100 dark:bg-zinc-900")}>
                                 <span className="flex items-center gap-3">
-                                  <m.icon className={cn("h-4 w-4", sel ? "text-[#FF7A00]" : "text-muted-foreground")} />
+                                  <m.icon className={cn("h-4 w-4", sel ? "text-[color:var(--preview-primary)]" : "text-muted-foreground")} />
                                   <span className="text-left">
                                     <span className="block text-sm font-semibold">{m.label}</span>
                                     <span className="block text-[11px] text-muted-foreground">{m.desc}</span>
                                   </span>
                                 </span>
-                                {sel && <Check className="h-4 w-4 text-[#FF7A00] shrink-0" />}
+                                {sel && <Check className="h-4 w-4 text-[color:var(--preview-primary)] shrink-0" />}
                               </button>
                             )
                           })}
@@ -502,7 +535,7 @@ export function TiendaPreview({
                     <span className="text-2xl font-black tracking-tight">{money(total)}</span>
                   </div>
                   <button onClick={handleSiguiente} disabled={enviando}
-                    className="w-full h-12 rounded-xl bg-[#FF7A00] text-white font-bold text-[15px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50">
+                    className="w-full h-12 rounded-xl bg-[color:var(--preview-primary)] text-white font-bold text-[15px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50">
                     {paso < PASOS.length - 1 ? (
                       'Continuar'
                     ) : enviando ? (
@@ -526,8 +559,9 @@ function ProductoCard({ producto, onClick }: { producto: PreviewProduct; onClick
   return (
     <button
       onClick={onClick}
-      className="group text-left w-full flex flex-col justify-between min-h-[92px] p-4 rounded-[22px] bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 hover:border-[#FF7A00]/40 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/60 transition-all active:scale-[0.98]"
+      className="group text-left w-full flex flex-col justify-between min-h-[92px] p-4 rounded-[22px] bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 hover:border-[color:var(--preview-primary)]/40 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/60 transition-all active:scale-[0.98]"
     >
+      {producto.imagenUrl && <img src={producto.imagenUrl} alt={producto.nombre} className="w-full h-32 object-cover rounded-xl mb-3" />}
       <div className="flex-1">
         <h3 className="font-bold text-[15px] leading-snug line-clamp-2">{producto.nombre}</h3>
         {producto.descripcion && (
@@ -535,8 +569,8 @@ function ProductoCard({ producto, onClick }: { producto: PreviewProduct; onClick
         )}
       </div>
       <div className="mt-3 flex items-center justify-between">
-        <span className="font-black text-[17px] text-[#FF7A00]">${Number(producto.precio).toLocaleString('es-AR')}</span>
-        <span className="h-8 w-8 rounded-full bg-[#FF7A00] text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+        <span className="font-black text-[17px] text-[color:var(--preview-primary)]">${Number(producto.precio).toLocaleString('es-AR')}</span>
+        <span className="h-8 w-8 rounded-full bg-[color:var(--preview-primary)] text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
           <Plus className="h-4 w-4" />
         </span>
       </div>

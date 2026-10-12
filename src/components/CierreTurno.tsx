@@ -29,7 +29,9 @@ type CierreTurnoPedido = CierreTurnoPedidoMesa | CierreTurnoPedidoDelivery | Cie
 const mesaFueDespachada = (pedido: CierreTurnoPedidoMesa) =>
   ['archived', 'closed', 'served', 'delivered'].includes(pedido.estado)
 
-interface ProductoVendido { nombre: string; cantidad: number; totalVendido: number }
+interface ProductoVendido { nombre: string; cantidad: number; totalVendido: number; categoria?: string | null; categoriaId?: number | null }
+interface CategoriaVendida { nombre: string; cantidad: number; totalVendido: number; productos: ProductoVendido[] }
+type RankingModo = 'ventas' | 'categorias'
 interface CierreTurnoData {
   fecha: string
   pedidosMesa: CierreTurnoPedidoMesa[]
@@ -491,6 +493,91 @@ function HourlyChart({ pedidos }: { pedidos: CierreTurnoPedido[] }) {
 }
 
 /* ==========================================================================
+   RANKING DE PRODUCTOS
+   ========================================================================== */
+const fmtPesos = (n: number) => `$${n.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+
+function RankingFila({ posicion, nombre, cantidad, monto, porcentaje }: {
+  posicion?: number; nombre: string; cantidad: number; monto: number; porcentaje: number
+}) {
+  return (
+    <div className="py-3 border-b border-border/30">
+      <div className="flex items-baseline gap-4">
+        {posicion != null && (
+          <span className="text-xs w-5 shrink-0 text-right tabular-nums text-muted-foreground/60">{posicion}</span>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3 sm:gap-4 mb-2">
+            <span className="min-w-0 text-sm font-medium line-clamp-2 break-words text-foreground" title={nombre}>{nombre}</span>
+            <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+              <span className="text-xs text-muted-foreground">{cantidad} u.</span>
+              <span className="text-sm text-foreground">{fmtPesos(monto)}</span>
+              <span className="text-xs w-10 text-right tabular-nums text-muted-foreground">{porcentaje.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div className="h-0.5 bg-muted rounded-sm">
+            <div
+              className="h-full bg-muted-foreground/50 rounded-sm transition-[width] duration-500 ease-in-out"
+              style={{ width: `${Math.max(2, porcentaje)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CategoriaRanking({ categoria, total, abierta, onToggle }: {
+  categoria: CategoriaVendida; total: number; abierta: boolean; onToggle: () => void
+}) {
+  const porcentaje = total > 0 ? (categoria.totalVendido / total) * 100 : 0
+  const cantidadProductos = categoria.productos.length
+  return (
+    <div className="border-b border-border/30">
+      <button type="button" onClick={onToggle} aria-expanded={abierta} className="w-full py-3 text-left">
+        <div className="flex items-start gap-3">
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 mt-1 shrink-0 text-muted-foreground/60 transition-transform', !abierta && '-rotate-90')}
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-3 sm:gap-4 mb-2">
+              <span className="min-w-0 text-sm font-semibold line-clamp-2 break-words text-foreground" title={categoria.nombre}>{categoria.nombre}</span>
+              <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                <span className="text-xs text-muted-foreground">{categoria.cantidad} u.</span>
+                <span className="text-sm font-semibold text-foreground">{fmtPesos(categoria.totalVendido)}</span>
+                <span className="text-xs w-10 text-right tabular-nums text-muted-foreground">{porcentaje.toFixed(1)}%</span>
+              </div>
+            </div>
+            <div className="h-0.5 bg-muted rounded-sm">
+              <div
+                className="h-full bg-foreground/60 rounded-sm transition-[width] duration-500 ease-in-out"
+                style={{ width: `${Math.max(2, porcentaje)}%` }}
+              />
+            </div>
+            <p className="text-xs mt-1.5 text-muted-foreground/60">
+              {cantidadProductos} {cantidadProductos === 1 ? 'producto' : 'productos'}
+            </p>
+          </div>
+        </div>
+      </button>
+      {abierta && (
+        <div className="pl-6 pb-1">
+          {categoria.productos.map(p => (
+            <RankingFila
+              key={p.nombre}
+              nombre={p.nombre}
+              cantidad={p.cantidad}
+              monto={p.totalVendido}
+              porcentaje={total > 0 ? (p.totalVendido / total) * 100 : 0}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ==========================================================================
    MAIN COMPONENT
    ========================================================================== */
 export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoIdInicial, sucursalId, sucursalNombre }: CierreTurnoProps) {
@@ -507,6 +594,8 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
   const [afipHabilitado, setAfipHabilitado] = useState(false)
   const [activeModal, setActiveModal] = useState<'facturacion' | 'envios' | 'ranking' | null>(null)
   const [showDateModal, setShowDateModal] = useState(false)
+  const [rankingModo, setRankingModo] = useState<RankingModo>('ventas')
+  const [categoriasAbiertas, setCategoriasAbiertas] = useState<Set<string>>(new Set())
 
   const fetchCierreTurno = useCallback(async (fecha?: string, turnoId?: number) => {
     if (!token) return
@@ -526,6 +615,7 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
   useEffect(() => {
     if (!open) return
     setQuery(''); setExpanded(new Set()); setSelectedFecha(fechaInicial || ''); setSelectedTurnoId(turnoIdInicial); setFilterTipos({ mesa: true, delivery: true, takeaway: true }); setFilterOrigen(null)
+    setRankingModo('ventas'); setCategoriasAbiertas(new Set())
     fetchCierreTurno(fechaInicial, turnoIdInicial)
     if (token) {
       facturacionApi.getEstado(token)
@@ -659,6 +749,33 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
     if (!data) return []
     return data.productosVendidos.filter(p => !p.nombre.startsWith('[Extra]') && !p.nombre.startsWith('Envío') && p.nombre !== 'Delivery')
   }, [data])
+
+  // Ranking por categoría: sólo productos reales (sin extras ni envíos), de la que más
+  // factura a la que menos; adentro, sus productos del más vendido al menos vendido.
+  const categoriasRanking = useMemo<CategoriaVendida[]>(() => {
+    const grupos = new Map<string, CategoriaVendida>()
+    topProducts.forEach(p => {
+      const nombre = p.categoria?.trim() || 'Sin categoría'
+      const grupo = grupos.get(nombre) ?? { nombre, cantidad: 0, totalVendido: 0, productos: [] }
+      grupo.cantidad += p.cantidad
+      grupo.totalVendido += p.totalVendido
+      grupo.productos.push(p)
+      grupos.set(nombre, grupo)
+    })
+    return Array.from(grupos.values())
+      .map(g => ({ ...g, productos: [...g.productos].sort((a, b) => b.cantidad - a.cantidad) }))
+      .sort((a, b) => b.totalVendido - a.totalVendido)
+  }, [topProducts])
+
+  const todasLasCategoriasAbiertas =
+    categoriasRanking.length > 0 && categoriasRanking.every(c => categoriasAbiertas.has(c.nombre))
+  const alternarCategoria = (nombre: string) =>
+    setCategoriasAbiertas(prev => {
+      const next = new Set(prev)
+      if (next.has(nombre)) next.delete(nombre)
+      else next.add(nombre)
+      return next
+    })
 
   const repartidorStats = useMemo(() => {
     if (!data) return { totalDeliveryFee: 0, porRepartidor: [] as { nombre: string; cantidad: number; totalFee: number }[], sinAsignar: 0 }
@@ -1018,40 +1135,60 @@ export default function CierreTurnoSimple({ open, onClose, fechaInicial, turnoId
                   <p className="text-sm text-muted-foreground/60">Sin ventas registradas</p>
                 ) : (
                   <div>
-                    {topProducts.map((tp, idx) => {
-                      const percentage = total > 0 ? (tp.totalVendido / total) * 100 : 0
-                      return (
-                        <div key={tp.nombre} className="py-3 border-b border-border/30">
-                          <div className="flex items-baseline gap-4">
-                            <span className="text-xs w-5 shrink-0 text-right tabular-nums text-muted-foreground/60">
-                              {idx + 1}
-                            </span>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-4 mb-2">
-                                <span className="text-sm font-medium truncate text-foreground" title={tp.nombre}>
-                                  {tp.nombre}
-                                </span>
-                                <div className="flex items-center gap-4 shrink-0">
-                                  <span className="text-xs text-muted-foreground">{tp.cantidad} u.</span>
-                                  <span className="text-sm text-foreground">
-                                    ${tp.totalVendido.toLocaleString('es-AR')}
-                                  </span>
-                                  <span className="text-xs w-10 text-right tabular-nums text-muted-foreground">
-                                    {percentage.toFixed(1)}%
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="h-0.5 bg-muted rounded-sm">
-                                <div
-                                  className="h-full bg-muted-foreground/50 rounded-sm transition-[width] duration-500 ease-in-out"
-                                  style={{ width: `${Math.max(2, percentage)}%` }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-4">
+                      <div className="flex items-center gap-2" role="group" aria-label="Ordenar el ranking">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">Ordenar por</span>
+                        {([['ventas', 'Más vendidos'], ['categorias', 'Categorías']] as const).map(([modo, texto]) => (
+                          <button
+                            key={modo}
+                            type="button"
+                            aria-pressed={rankingModo === modo}
+                            onClick={() => setRankingModo(modo)}
+                            className={cn(
+                              'px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
+                              rankingModo === modo
+                                ? 'bg-foreground text-background'
+                                : 'bg-muted text-muted-foreground hover:text-foreground'
+                            )}
+                          >
+                            {texto}
+                          </button>
+                        ))}
+                      </div>
+                      {rankingModo === 'categorias' && categoriasRanking.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCategoriasAbiertas(
+                              todasLasCategoriasAbiertas ? new Set() : new Set(categoriasRanking.map(c => c.nombre))
+                            )
+                          }
+                          className="text-xs shrink-0 ml-auto whitespace-nowrap text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {todasLasCategoriasAbiertas ? 'Contraer todo' : 'Expandir todo'}
+                        </button>
+                      )}
+                    </div>
+                    {rankingModo === 'ventas'
+                      ? topProducts.map((tp, idx) => (
+                          <RankingFila
+                            key={tp.nombre}
+                            posicion={idx + 1}
+                            nombre={tp.nombre}
+                            cantidad={tp.cantidad}
+                            monto={tp.totalVendido}
+                            porcentaje={total > 0 ? (tp.totalVendido / total) * 100 : 0}
+                          />
+                        ))
+                      : categoriasRanking.map(c => (
+                          <CategoriaRanking
+                            key={c.nombre}
+                            categoria={c}
+                            total={total}
+                            abierta={categoriasAbiertas.has(c.nombre)}
+                            onToggle={() => alternarCategoria(c.nombre)}
+                          />
+                        ))}
                   </div>
                 )
               )}

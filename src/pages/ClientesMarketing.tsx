@@ -7,12 +7,12 @@ import { marketingDuenioApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 
 const SECCIONES = [
-  { icono: Users, nombre: 'Clientes', detalle: 'Tu base, con sus hábitos y sus favoritos.' },
+  { icono: Users, nombre: 'Clientes', detalle: 'Tu base, con sus hábitos, sus favoritos y sus puntos.' },
   { icono: Link2, nombre: 'Campañas y cupones', detalle: 'Un link por historia y lo que vendió cada uno.' },
   { icono: MessageCircle, nombre: 'Recompra por WhatsApp', detalle: 'Mensajes que salen del WhatsApp de tu local.' },
-  { icono: Sparkles, nombre: 'Puntos', detalle: 'El club que les da una razón para volver.' },
+  { icono: Sparkles, nombre: 'Club de puntos', detalle: 'Les da una razón para volver, dentro de Clientes.' },
   { icono: CalendarDays, nombre: 'Días flojos', detalle: 'A quién invitar cuando hay menos movimiento.' },
-  { icono: TrendingUp, nombre: 'Estadísticas', detalle: 'Ventas cobradas, pedidos y lo más vendido.' },
+  { icono: TrendingUp, nombre: 'Estadísticas', detalle: 'Ventas, pedidos y lo más vendido, en el Resumen.' },
 ]
 
 /**

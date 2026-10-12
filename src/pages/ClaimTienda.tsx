@@ -1683,7 +1683,7 @@ export default function ClaimTienda() {
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
                 <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Terminá de reclamar tu tienda</h1>
                 <p className="text-[15px] text-muted-foreground mt-3">
-                  Te vamos a mandar un código de seguridad. Al verificarlo, la tienda queda a tu nombre con todos estos cambios aplicados.
+                  Te vamos a mandar un código de seguridad de Piru por WhatsApp. Lo escribís en la pantalla que sigue y no se lo pasás a nadie. Al verificarlo, la tienda queda a tu nombre con todos estos cambios aplicados.
                 </p>
 
                 <form onSubmit={(e) => { e.preventDefault(); iniciarReclamo() }} className="mt-7">
@@ -1732,6 +1732,9 @@ export default function ClaimTienda() {
               <p className="text-sm text-muted-foreground mt-2">
                 Te lo enviamos por WhatsApp
                 {telefonoEnmascarado ? (<>{' '}al <span className="font-medium text-foreground">{telefonoEnmascarado}</span></>) : null}
+              </p>
+              <p className="text-xs text-muted-foreground mt-3 max-w-xs mx-auto">
+                Es un código de Piru: escribilo sólo acá. No se lo pases a nadie, ni a nosotros.
               </p>
             </div>
 

@@ -5,30 +5,35 @@ import './escenas.css'
 
 /**
  * El lienzo de una ilustración: se diseña a `ancho × alto` px y se escala al ancho disponible.
- * Es decorativa (`inert`): lo que muestra va en `etiqueta`. Las animaciones arrancan cuando la
- * escena entra en pantalla y se pausan al salir.
+ * Es decorativa (`inert`): lo que muestra va en `etiqueta`. En la guía las animaciones arrancan
+ * cuando la escena entra en pantalla y se pausan al salir; en el recorrido de bienvenida
+ * (`siempreActiva`) corren desde que se monta.
  */
 export function Escena({
   ancho,
   alto,
   etiqueta,
+  siempreActiva = false,
   children,
 }: {
   ancho: number
   alto: number
   etiqueta: string
+  siempreActiva?: boolean
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
   // Sin IntersectionObserver no hay cómo saber si se ve: queda andando.
-  const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined')
+  const [visible, setVisible] = useState(() => siempreActiva || typeof IntersectionObserver === 'undefined')
   useEffect(() => {
+    // En el recorrido la escena nace activa (ver el valor inicial): no hay nada que observar.
+    if (siempreActiva) return
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.25 })
     io.observe(el)
     return () => io.disconnect()
-  }, [])
+  }, [siempreActiva])
   return (
     <div
       ref={ref}
@@ -43,6 +48,11 @@ export function Escena({
       </div>
     </div>
   )
+}
+
+/** Las props comunes de cada escena. */
+export interface PropsEscena {
+  siempreActiva?: boolean
 }
 
 /** El dedo que toca un botón: la onda se vuelve a disparar con cada `vez` distinta. */

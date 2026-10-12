@@ -1,6 +1,6 @@
 import { Check, CircleMinus, CirclePlus, Hamburger, Layers, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Escena, Toque } from './Escena'
+import { Escena, type PropsEscena, Toque } from './Escena'
 import { d, useSecuencia } from './animacion'
 import { SMASH, pesos } from './ejemplo'
 
@@ -20,7 +20,7 @@ function Etiqueta({ children }: { children: string }) {
  * La Smash burger como la ve el cliente, armada con lo que se carga en Menú. Fases: 0 Simple ·
  * 1 elige Doble · 2 saca la cebolla · 3 suma extra cheddar · 4 la agrega al pedido.
  */
-export function ProductoOpciones() {
+export function ProductoOpciones({ siempreActiva }: PropsEscena) {
   const n = useSecuencia(1500, 3)
   const fase = n % 5
   const variante = SMASH.variantes[fase >= 1 ? 1 : 0]
@@ -28,6 +28,7 @@ export function ProductoOpciones() {
   const precio = variante.precio + (conExtra ? EXTRA.precio : 0)
   return (
     <Escena
+      siempreActiva={siempreActiva}
       ancho={460}
       alto={340}
       etiqueta={`La Smash burger como la ve el cliente: elige la variante Doble, saca la cebolla caramelizada y suma extra cheddar; el precio pasa a ${pesos(SMASH.variantes[1].precio + EXTRA.precio)}.`}

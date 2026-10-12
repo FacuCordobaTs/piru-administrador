@@ -24,6 +24,35 @@ export const marketingDuenioApi = {
   entrada: (token: string) => fetchApi<{ success: boolean; data: { url: string; expira: string } }>('/marketing-duenio/entrada', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
 }
 
+/**
+ * La demo de prospección: el botón "Ver tu panel de administrador" de `piru.app/<local>?demo` abre
+ * `/demo/:username`, que pide acá una sesión sin login. Sólo existe mientras la tienda no tenga dueño.
+ */
+export const demoPanelApi = {
+  sesion: (username: string) =>
+    fetchApi<{ success: boolean; token: string; expira: string; restauranteId: number; nombre: string | null }>(
+      '/demo-panel/sesion',
+      { method: 'POST', body: JSON.stringify({ username }) },
+    ),
+}
+
+/** Los clientes, pedidos y campañas "EJEMPLO" que la demo deja en la tienda. */
+export interface EstadoDatosEjemplo {
+  hay: boolean
+  borrado: boolean
+  clientes: number
+  pedidos: number
+  campanas: number
+}
+export const datosEjemploApi = {
+  estado: (token: string) =>
+    fetchApi<{ success: boolean; data: EstadoDatosEjemplo }>('/datos-ejemplo', { headers: { Authorization: `Bearer ${token}` } }),
+  borrar: (token: string) =>
+    fetchApi<{ success: boolean; borrados: boolean; data: EstadoDatosEjemplo }>('/datos-ejemplo', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }),
+  cargar: (token: string) =>
+    fetchApi<{ success: boolean; data: EstadoDatosEjemplo }>('/datos-ejemplo', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
+}
+
 export class ApiError extends Error {
   status: number
   response?: any
@@ -198,8 +227,36 @@ export const authApi = {
   },
 }
 
+// Sesión de operador separada de la sesión del local. No invalida el login del
+// dueño cuando una credencial interna vence o se escribe mal.
+export const altaInternaApi = {
+  login: (password: string) => fetchApi<{ data: { token: string } }>('/interno/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  crear: (token: string, telefono: string) => fetchApi<{ token: string; restaurante: { id: number; nombre: string; email: string }; claimUrl: string }>('/interno/locales/crear-telefono', {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ telefono }),
+  }),
+}
+
+export function esConstructorInterno(token: string | null): boolean {
+  if (!token || isTokenExpired(token)) return false
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return payload.altaInterna === true || payload.accesoTemporalInterno === true
+  } catch { return false }
+}
+
+/** ¿La sesión es la de la demo de prospección (`/demo/:username`)? */
+export function esSesionDemo(token: string | null): boolean {
+  if (!token || isTokenExpired(token)) return false
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return payload.demo === true
+  } catch { return false }
+}
+
 // Onboarding API
 export const onboardingApi = {
+  // Cierra el alta asistida. No inicia la prueba: arranca cuando el dueño verifica su WhatsApp (claim).
+  terminarAlta: (token: string) => fetchApi('/onboarding/terminar-alta', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
   complete: async (token: string, data: any) => {
     return fetchApi('/onboarding/complete', {
       method: 'PUT',
@@ -1334,6 +1391,7 @@ export const productosApi = {
       descripcion: string
       precio: number
       image?: string // Base64 string
+      activo?: boolean
       categoriaId?: number | null
       ingredienteIds?: number[]
       agregadoIds?: number[]
@@ -1370,6 +1428,7 @@ export const productosApi = {
       descripcion?: string
       precio?: number
       image?: string // Base64 string
+      eliminarImagen?: boolean
       categoriaId?: number | null
       ingredienteIds?: number[]
       agregadoIds?: number[]

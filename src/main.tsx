@@ -6,7 +6,6 @@ import { RouterProvider } from "react-router/dom";
 import { Toaster } from 'sonner'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import RegisterEmail from './pages/RegisterEmail'
 import VerificarCodigo from './pages/VerificarCodigo'
 import CuentaCreada from './pages/CuentaCreada'
 import ProtectedLayout from './components/ProtectedLayout'
@@ -33,6 +32,7 @@ import ClaimTienda from './pages/ClaimTienda';
 import Mesas from './pages/Mesas';
 import Ropa from './pages/Ropa';
 import AccesoInterno from './pages/AccesoInterno';
+import DemoPanel from './pages/DemoPanel';
 import { initializeDesktopZoom } from './utils/desktopZoom';
 
 // La guía se carga aparte: el uso de todos los días no la descarga.
@@ -46,6 +46,12 @@ const router = createBrowserRouter([
     // poder reemplazar una sesión ya abierta en este navegador.
     path: "/acceso-interno",
     element: <AccesoInterno />,
+  },
+  {
+    // La demo de prospección: el botón "Ver tu panel de administrador" de la tienda demo
+    // (piru.app/<local>?demo) entra al panel de ese local sin login, con datos de ejemplo.
+    path: "/demo/:username",
+    element: <DemoPanel />,
   },
   {
     // Página pública de pago por link/QR (sin login): el celular paga lo que la compu muestra.
@@ -68,6 +74,11 @@ const router = createBrowserRouter([
     ),
   },
   {
+    // Herramienta del fundador, accesible también con un local ya abierto.
+    path: "/RegisterInternoFacu-74c183d9-59b1-4bca-9d12-048c8a2eed94",
+    element: <Register />,
+  },
+  {
     path: "/",
     element: <GuestLayout />,
     children: [
@@ -81,13 +92,11 @@ const router = createBrowserRouter([
       },
       {
         path: "/register",
-        element: <Register />,
+        element: <Navigate to="/login" replace />,
       },
       {
-        // Alta por email + contraseña (sin verificar teléfono). Camino secundario para cuentas
-        // de prueba/manuales; reusa /auth/register-restaurante.
         path: "/register-email",
-        element: <RegisterEmail />,
+        element: <Navigate to="/login" replace />,
       },
       {
         path: "/verificar/:id",

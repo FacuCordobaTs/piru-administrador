@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Upload, X, Image as ImageIcon } from 'lucide-react'
@@ -9,12 +9,15 @@ interface ImageUploadProps {
   currentImage?: string | null
   maxSize?: number // in MB
   square?: boolean // preview cuadrado + info de formatos centrada (por defecto: rectángulo 16:9)
+  compact?: boolean
 }
 
-const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false }: ImageUploadProps) => {
+const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false, compact = false }: ImageUploadProps) => {
   const [preview, setPreview] = useState<string | null>(currentImage || null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadRef = useRef<HTMLDivElement>(null)
+  const pasteHintId = useId()
 
   useEffect(() => {
     setPreview(currentImage || null)
@@ -72,6 +75,16 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false 
     }
   }
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (e.currentTarget.closest('fieldset:disabled')) return
+    const item = Array.from(e.clipboardData.items).find(item => item.kind === 'file' && item.type.startsWith('image/'))
+    const file = item?.getAsFile() ?? Array.from(e.clipboardData.files).find(file => file.type.startsWith('image/'))
+    // El texto pegado conserva su comportamiento habitual.
+    if (!file) return
+    e.preventDefault()
+    void handleFileChange(file)
+  }
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(true)
@@ -105,7 +118,16 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false 
   }
 
   return (
-    <div className="space-y-4">
+    <div
+      ref={uploadRef}
+      role="group"
+      aria-label="Cargador de imagen"
+      aria-describedby={pasteHintId}
+      tabIndex={0}
+      onPaste={handlePaste}
+      onPointerDown={() => uploadRef.current?.focus({ preventScroll: true })}
+      className="space-y-4 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-within:ring-2 focus-within:ring-primary/30"
+    >
       <input
         ref={fileInputRef}
         type="file"
@@ -128,6 +150,7 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false 
               type="button"
               size="icon"
               variant="secondary"
+              aria-label="Cambiar imagen"
               className="h-8 w-8 rounded-full shadow-lg"
               onClick={handleClick}
             >
@@ -137,6 +160,7 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false 
               type="button"
               size="icon"
               variant="destructive"
+              aria-label="Quitar imagen"
               className="h-8 w-8 rounded-full shadow-lg"
               onClick={handleRemove}
             >
@@ -156,24 +180,33 @@ const ImageUpload = ({ onImageChange, currentImage, maxSize = 5, square = false 
           onDrop={handleDrop}
           onClick={handleClick}
         >
-          <div className={`flex flex-col items-center justify-center text-center px-4 ${square ? 'h-full py-4' : 'py-12'}`}>
-            <div className={`rounded-full bg-primary/10 ${square ? 'p-3 mb-3' : 'p-4 mb-4'}`}>
+          <div className={`flex flex-col items-center justify-center text-center px-3 ${compact ? 'h-full py-2' : square ? 'h-full py-4' : 'py-12'}`}>
+            <div className={`rounded-full bg-primary/10 ${compact ? 'p-2 mb-2' : square ? 'p-3 mb-3' : 'p-4 mb-4'}`}>
               <ImageIcon className={square ? 'h-6 w-6 text-primary' : 'h-8 w-8 text-primary'} />
             </div>
             <p className={`font-medium mb-1 ${square ? 'text-xs' : 'text-sm'}`}>
-              Haz clic o arrastra una imagen aquí
+              {compact ? 'Subir foto' : 'Tocá o arrastrá una imagen acá'}
             </p>
-            <p className="text-xs text-muted-foreground text-center">
+            {!compact && <p className="text-xs text-muted-foreground text-center">
               JPG, PNG o WebP (máx. {maxSize}MB)
-            </p>
+            </p>}
           </div>
         </Card>
       )}
 
-      <div className={`text-xs text-muted-foreground ${square ? 'flex flex-col items-center text-center gap-0.5' : 'flex items-center justify-between'}`}>
+      <button
+        type="button"
+        id={pasteHintId}
+        onClick={() => uploadRef.current?.focus({ preventScroll: true })}
+        className="block w-full rounded-lg px-1 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        {compact ? 'Pegar: Ctrl + V' : 'Seleccioná este recuadro y pegá con Ctrl + V'}
+      </button>
+
+      {!compact && <div className={`text-xs text-muted-foreground ${square ? 'flex flex-col items-center text-center gap-0.5' : 'flex items-center justify-between'}`}>
         <span>Formatos: JPG, PNG, WebP</span>
         <span>Tamaño máximo: {maxSize}MB</span>
-      </div>
+      </div>}
     </div>
   )
 }

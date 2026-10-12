@@ -1,6 +1,6 @@
 import { Banknote, CheckCircle2, ChevronDown, Clock, Globe, Landmark, ShoppingBag, Smartphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Escena, Toque } from './Escena'
+import { Escena, type PropsEscena, Toque } from './Escena'
 import { d, useContador, useSecuencia } from './animacion'
 import { CAJA_EJEMPLO as CAJA, pesos } from './ejemplo'
 
@@ -11,7 +11,7 @@ const ANTERIORES = ['26 sep, 18:10 a 00:48', '25 sep, 18:05 a 23:59']
  * La caja de un turno. Fases: 0 el resumen del turno actual · 1 toca "Cerrar turno" · 2 el turno
  * queda cerrado con su caja y empieza uno nuevo.
  */
-export function CajaTurno() {
+export function CajaTurno({ siempreActiva }: PropsEscena) {
   const n = useSecuencia(2400)
   const fase = n % 3
   const cerrado = fase === 2
@@ -19,6 +19,7 @@ export function CajaTurno() {
   const maximo = Math.max(...CAJA.pagos.map((p) => p.monto))
   return (
     <Escena
+      siempreActiva={siempreActiva}
       ancho={460}
       alto={330}
       etiqueta={`La caja de un turno: ${pesos(CAJA.total)} en total, separado en efectivo, Mercado Pago y transferencia, lo que entró por la web y lo anotado a mano. Al cerrar el turno empieza uno nuevo.`}
