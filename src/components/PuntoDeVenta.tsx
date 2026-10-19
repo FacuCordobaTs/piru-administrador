@@ -629,7 +629,7 @@ const PuntoDeVenta = forwardRef<PuntoDeVentaHandle, PuntoDeVentaProps>(function 
     // Cada término debe coincidir en algún lado (nombre, descripción, categoría
     // o etiquetas/tags), sin importar el orden: "gratinado milanesa" encuentra un
     // "Sandwich gratinado" de categoría "Milanesa", igual que "gratinado sandwich".
-    const productosActivos = useMemo(() => productos.filter((p) => p.activo !== false && (
+    const productosActivos = useMemo(() => productos.filter((p) => p.activo !== false && !p.soloCanjePuntos && (
         p.eventoSucursalId != null
             ? p.eventoSucursalId === sucursalActivaId
             : !(sedeEvento && config.soloProductosEvento)

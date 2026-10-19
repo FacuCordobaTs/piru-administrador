@@ -1408,6 +1408,7 @@ export const productosApi = {
       etiquetas?: string[]
       puntosGanados?: number
       puntosNecesarios?: number
+      soloCanjePuntos?: boolean
       descuento?: number
     }
   ) => {
@@ -1446,6 +1447,7 @@ export const productosApi = {
       etiquetas?: string[]
       puntosGanados?: number
       puntosNecesarios?: number
+      soloCanjePuntos?: boolean
       descuento?: number
     }
   ) => {

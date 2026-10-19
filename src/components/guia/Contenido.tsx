@@ -754,6 +754,7 @@ function Menu({ c }: { c: ContextoGuia }) {
         </li>
         <li>
           <strong>Puntos</strong>: con el club de puntos activo, cuántos puntos da y cuánto cuesta canjearlo.
+          Con «Sólo canjeable por puntos», aparece únicamente en Canjes y no se vende con dinero.
         </li>
       </ul>
       <Clave>

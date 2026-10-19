@@ -35,6 +35,9 @@ interface Producto {
   categoriaEsBebida?: boolean
   orden?: number | null
   descuento?: number | null
+  puntosGanados?: number | null
+  puntosNecesarios?: number | null
+  soloCanjePuntos?: boolean
   tieneVariantes?: boolean | null
   etiquetas?: Array<{ id: number; nombre: string }>
   ingredientes?: Array<{ id: number; nombre: string }>

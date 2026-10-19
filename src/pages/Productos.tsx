@@ -72,6 +72,7 @@ const Productos = () => {
   const [isTogglingActivo, setIsTogglingActivo] = useState(false)
   const [isEliminando, setIsEliminando] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [puntosEditados, setPuntosEditados] = useState({ puntosGanados: false, puntosNecesarios: false })
 
   // Derived
   const panelProducto = panelProductoId !== null ? productos.find(p => p.id === panelProductoId) ?? null : null
@@ -85,6 +86,7 @@ const Productos = () => {
     categoriaId: string
     puntosGanados: string
     puntosNecesarios: string
+    soloCanjePuntos: boolean
     descuento: string
     descuentoFechaInicio: string
     descuentoFechaFin: string
@@ -104,6 +106,7 @@ const Productos = () => {
     categoriaId: '0',
     puntosGanados: '',
     puntosNecesarios: '',
+    soloCanjePuntos: false,
     descuento: '',
     descuentoFechaInicio: '',
     descuentoFechaFin: '',
@@ -230,11 +233,12 @@ const Productos = () => {
   }
 
   const abrirPanelNuevo = () => {
+    setPuntosEditados({ puntosGanados: false, puntosNecesarios: false })
     setPanelProductoId(null)
     setPanelNuevo(true)
     setActivePanelType('product')
     setPanelModo('edicion')
-    setFormData({ eventoSucursalId: '0', nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras', permiteNota: false, tituloNota: '¿Querés aclarar algo?' })
+    setFormData({ eventoSucursalId: '0', nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', soloCanjePuntos: false, descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras', permiteNota: false, tituloNota: '¿Querés aclarar algo?' })
     setImageBase64(null)
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
@@ -246,14 +250,16 @@ const Productos = () => {
   }
 
   const entrarEdicion = async (producto: typeof productos[0]) => {
+    setPuntosEditados({ puntosGanados: false, puntosNecesarios: false })
     setFormData({
       eventoSucursalId: String(producto.eventoSucursalId ?? 0),
       nombre: producto.nombre,
       descripcion: producto.descripcion || '',
       precio: producto.precio.toString(),
       categoriaId: producto.categoriaId ? producto.categoriaId.toString() : '0',
-      puntosGanados: (producto as any).puntosGanados !== undefined && (producto as any).puntosGanados !== null ? (producto as any).puntosGanados.toString() : '',
-      puntosNecesarios: (producto as any).puntosNecesarios !== undefined && (producto as any).puntosNecesarios !== null ? (producto as any).puntosNecesarios.toString() : '',
+      puntosGanados: producto.puntosGanados?.toString() ?? '',
+      puntosNecesarios: producto.puntosNecesarios?.toString() ?? '',
+      soloCanjePuntos: producto.soloCanjePuntos ?? false,
       descuento: (producto as any).descuento !== undefined && (producto as any).descuento !== null ? (producto as any).descuento.toString() : '',
       descuentoFechaInicio: (producto as any).descuentoFechaInicio ? new Date((producto as any).descuentoFechaInicio).toISOString().slice(0, 16) : '',
       descuentoFechaFin: (producto as any).descuentoFechaFin ? new Date((producto as any).descuentoFechaFin).toISOString().slice(0, 16) : '',
@@ -411,7 +417,8 @@ const Productos = () => {
     if (!formData.nombre.trim()) { toast.error('El nombre es requerido'); return }
     if (!formData.descripcion.trim()) { toast.error('La descripción es requerida'); return }
     const precio = parseFloat(formData.precio)
-    if (isNaN(precio) || precio <= 0) { toast.error('El precio debe ser mayor a 0'); return }
+    if (isNaN(precio) || precio < 0 || (!formData.soloCanjePuntos && precio === 0)) { toast.error('El precio debe ser mayor a 0, salvo productos sólo canjeables por puntos'); return }
+    if (formData.soloCanjePuntos && !(Number(formData.puntosNecesarios) > 0)) { toast.error('Indicá cuántos puntos cuesta el canje'); return }
     const variantesInvalidas = [...formData.variantes, ...formData.variantesSecundarias]
       .some(v => !v.nombre.trim() || !Number.isFinite(Number(v.precio)) || Number(v.precio) < 0)
     if (variantesInvalidas) { toast.error('Completá el nombre y precio de todas las variantes'); return }
@@ -453,9 +460,11 @@ const Productos = () => {
         tituloExtrasSecundarios: formData.tituloExtrasSecundarios.trim(),
         eventoSucursalId: formData.eventoSucursalId === '0' ? null : Number(formData.eventoSucursalId),
         permiteNota: formData.permiteNota,
+        soloCanjePuntos: formData.soloCanjePuntos,
         tituloNota: formData.tituloNota.trim() || '¿Querés aclarar algo?',
-        puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0,
-        puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0,
+        // Sólo escribir los puntos editados: el club también se configura desde marketers.
+        ...(panelNuevo || puntosEditados.puntosGanados ? { puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0 } : {}),
+        ...(panelNuevo || puntosEditados.puntosNecesarios ? { puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0 } : {}),
         descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,
         descuentoFechaInicio: formData.descuentoFechaInicio || null,
         descuentoFechaFin: formData.descuentoFechaFin || null,
@@ -1032,7 +1041,7 @@ const Productos = () => {
                                 </div>
                               )}
                               <span className="flex-1 text-sm font-medium text-zinc-950 dark:text-white truncate">{producto.nombre}</span>
-                              <span className="text-sm font-bold text-muted-foreground dark:text-zinc-400 shrink-0">${parseFloat(producto.precio).toFixed(0)}</span>
+                              <span className="text-sm font-bold text-muted-foreground dark:text-zinc-400 shrink-0">{producto.soloCanjePuntos ? `${producto.puntosNecesarios ?? 0} pts · Sólo canje` : `$${parseFloat(producto.precio).toFixed(0)}`}</span>
                             </div>
                           ))}
                         </div>
@@ -1086,7 +1095,7 @@ const Productos = () => {
                                   <h3 className="text-xs font-semibold leading-tight pt-2 text-zinc-950 dark:text-white truncate pl-2">{producto.nombre}</h3>
                                   {producto.eventoSucursalId != null && <Badge variant="outline" className="ml-2 mt-1 text-[10px]">Sólo evento</Badge>}
                                   <p className="text-sm font-bold text-zinc-950 dark:text-white mt-1 pl-2 pb-2">
-                                    ${precioFinal.toFixed(0)}
+                                    {producto.soloCanjePuntos ? `${producto.puntosNecesarios ?? 0} pts · Sólo canje` : `$${precioFinal.toFixed(0)}`}
                                   </p>
                                 </div>
                               </>
@@ -1117,7 +1126,7 @@ const Productos = () => {
                                     "text-lg font-black",
                                     tieneDescuento ? "text-emerald-600 dark:text-emerald-400" : "text-[#FF7A00]"
                                   )}>
-                                    ${precioFinal.toFixed(0)}
+                                    {producto.soloCanjePuntos ? `${producto.puntosNecesarios ?? 0} pts · Sólo canje` : `$${precioFinal.toFixed(0)}`}
                                   </span>
                                   {tieneDescuento && (
                                     <span className="mb-0.5 text-[11px] font-semibold text-muted-foreground line-through opacity-70">
@@ -1227,7 +1236,7 @@ const Productos = () => {
                   <p className="text-sm text-muted-foreground dark:text-zinc-400 mt-1">{panelProducto.descripcion}</p>
                 )}
                 <p className="text-2xl font-bold text-zinc-950 dark:text-white mt-3">
-                  ${parseFloat(panelProducto.precio).toFixed(0)}
+                  {panelProducto.soloCanjePuntos ? `${panelProducto.puntosNecesarios ?? 0} pts · Sólo canje` : `$${parseFloat(panelProducto.precio).toFixed(0)}`}
                 </p>
               </div>
 
@@ -1860,6 +1869,13 @@ const Productos = () => {
                   </div>
                   {seccionesAbiertas.has('puntos') && (
                     <div className="px-6 py-4 space-y-4 border-b border-zinc-200 dark:border-white/5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <Label htmlFor="solo-canje-puntos" className={panelLabelClass}>Sólo canjeable por puntos</Label>
+                          <p className="text-sm text-muted-foreground">Aparece en Canjes y no se puede comprar con dinero.</p>
+                        </div>
+                        <Switch id="solo-canje-puntos" checked={formData.soloCanjePuntos} onCheckedChange={checked => { setFormData({ ...formData, soloCanjePuntos: checked }); markDirty() }} />
+                      </div>
                       <div>
                         <Label className={panelLabelClass}>Puntos que otorga</Label>
                         <Input
@@ -1867,7 +1883,7 @@ const Productos = () => {
                           min="0"
                           step="1"
                           value={formData.puntosGanados}
-                          onChange={(e) => { setFormData({ ...formData, puntosGanados: e.target.value }); markDirty() }}
+                          onChange={(e) => { setFormData({ ...formData, puntosGanados: e.target.value }); setPuntosEditados(p => ({ ...p, puntosGanados: true })); markDirty() }}
                           placeholder="0"
                           className={panelInputClass}
                         />
@@ -1879,7 +1895,7 @@ const Productos = () => {
                           min="0"
                           step="1"
                           value={formData.puntosNecesarios}
-                          onChange={(e) => { setFormData({ ...formData, puntosNecesarios: e.target.value }); markDirty() }}
+                          onChange={(e) => { setFormData({ ...formData, puntosNecesarios: e.target.value }); setPuntosEditados(p => ({ ...p, puntosNecesarios: true })); markDirty() }}
                           placeholder="0"
                           className={panelInputClass}
                         />
