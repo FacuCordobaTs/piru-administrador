@@ -30,6 +30,8 @@ interface Producto {
   precio: string
   activo: boolean
   imagenUrl: string | null
+  /** Fotos adicionales del detalle, en orden. La portada es `imagenUrl`. */
+  imagenesExtra?: string[]
   createdAt: string
   categoria: string | null
   categoriaEsBebida?: boolean

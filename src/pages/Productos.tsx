@@ -11,7 +11,7 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, agregadosApi, sucursalesApi } from '@/lib/api'
 import { toast } from 'sonner'
-import ImageUpload from '@/components/ImageUpload'
+import FotosProducto from '@/components/FotosProducto'
 import { cn } from '@/lib/utils'
 import {
   Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
@@ -120,6 +120,7 @@ const Productos = () => {
     tituloNota: '¿Querés aclarar algo?'
   })
   const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [imagenesExtra, setImagenesExtra] = useState<string[]>([])
   const [etiquetasProducto, setEtiquetasProducto] = useState<string[]>([])
 
   // ─── Descuentos masivos ───
@@ -240,6 +241,7 @@ const Productos = () => {
     setPanelModo('edicion')
     setFormData({ eventoSucursalId: '0', nombre: '', descripcion: '', precio: '', categoriaId: '0', puntosGanados: '', puntosNecesarios: '', soloCanjePuntos: false, descuento: '', descuentoFechaInicio: '', descuentoFechaFin: '', variantes: [], variantesSecundarias: [], tituloVariantesPrimarias: 'Elegí una opción', tituloVariantesSecundarias: 'Elegí también una segunda opción', tituloExtrasPrimarios: 'Extras', tituloExtrasSecundarios: 'Extras', permiteNota: false, tituloNota: '¿Querés aclarar algo?' })
     setImageBase64(null)
+    setImagenesExtra([])
     setIngredientesSeleccionados([])
     setAgregadosSeleccionados([])
     setAgregadosSecundariosSeleccionados([])
@@ -273,6 +275,7 @@ const Productos = () => {
       tituloNota: (producto as any).tituloNota || '¿Querés aclarar algo?'
     })
     setImageBase64(producto.imagenUrl || null)
+    setImagenesExtra(producto.imagenesExtra ?? [])
     setEtiquetasProducto(producto.etiquetas?.map(e => e.nombre) || [])
     setBusquedaIngrediente('')
 
@@ -442,11 +445,15 @@ const Productos = () => {
     try {
       const parsedCategoriaId = parseInt(formData.categoriaId)
       const categoriaId = (parsedCategoriaId && parsedCategoriaId > 0) ? parsedCategoriaId : undefined
+      const productoGuardado = !panelNuevo && panelProductoId !== null ? productos.find(p => p.id === panelProductoId) : undefined
       const payload = {
         nombre: formData.nombre,
         descripcion: formData.descripcion,
         precio: precio,
-        image: imageBase64 && imageBase64.startsWith('data:') ? imageBase64 : undefined,
+        // Una foto nueva se sube; una URL distinta de la portada guardada es una extra promovida.
+        image: imageBase64 && imageBase64 !== productoGuardado?.imagenUrl ? imageBase64 : undefined,
+        ...(productoGuardado?.imagenUrl && !imageBase64 ? { eliminarImagen: true } : {}),
+        imagenesExtra,
         categoriaId: categoriaId !== undefined ? categoriaId : null,
         ingredienteIds: ingredientesSeleccionados,
         agregadoIds: agregadosSeleccionados,
@@ -855,7 +862,8 @@ const Productos = () => {
   const summaryIngredientes = ingredientesSeleccionados.length > 0 ? `${ingredientesSeleccionados.length} ingrediente${ingredientesSeleccionados.length !== 1 ? 's' : ''}` : 'Sin ingredientes'
   const totalExtrasSeleccionados = agregadosSeleccionados.length + agregadosSecundariosSeleccionados.length
   const summaryExtras = totalExtrasSeleccionados > 0 ? `${agregadosSeleccionados.length} + ${agregadosSecundariosSeleccionados.length} extras` : 'Sin extras'
-  const summaryImagen = (imageBase64 && imageBase64.length > 10) ? 'Con imagen' : 'Sin imagen'
+  const cantidadFotos = (imageBase64 && imageBase64.length > 10 ? 1 : 0) + imagenesExtra.length
+  const summaryImagen = cantidadFotos === 0 ? 'Sin imagen' : cantidadFotos === 1 ? 'Con imagen' : `${cantidadFotos} fotos`
 
   if (isLoading) {
     return (
@@ -1841,7 +1849,7 @@ const Productos = () => {
                 className="px-6 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-white/5 flex items-center justify-between border-b border-zinc-200 dark:border-white/5"
                 onClick={() => toggleSeccion('imagen')}
               >
-                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Imagen</span>
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">Fotos</span>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground dark:text-zinc-500">{summaryImagen}</span>
                   <ChevronDown className={cn("h-4 w-4 text-muted-foreground dark:text-zinc-500 transition-transform", seccionesAbiertas.has('imagen') && "rotate-180")} />
@@ -1849,10 +1857,10 @@ const Productos = () => {
               </div>
               {seccionesAbiertas.has('imagen') && (
                 <div className="px-6 py-4 border-b border-zinc-200 dark:border-white/5">
-                  <ImageUpload
-                    onImageChange={(img) => { setImageBase64(img); markDirty() }}
-                    currentImage={imageBase64}
-                    maxSize={5}
+                  <FotosProducto
+                    portada={imageBase64}
+                    extras={imagenesExtra}
+                    onChange={(portada, extras) => { setImageBase64(portada); setImagenesExtra(extras); markDirty() }}
                   />
                 </div>
               )}

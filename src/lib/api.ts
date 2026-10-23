@@ -1391,6 +1391,8 @@ export const productosApi = {
       descripcion: string
       precio: number
       image?: string // Base64 string
+      /** Fotos adicionales en orden: data URL nueva o URL ya subida (se conserva). */
+      imagenesExtra?: string[]
       activo?: boolean
       categoriaId?: number | null
       ingredienteIds?: number[]
@@ -1428,8 +1430,9 @@ export const productosApi = {
       nombre?: string
       descripcion?: string
       precio?: number
-      image?: string // Base64 string
+      image?: string // Base64 string, o una URL que el producto ya tenía para promoverla a portada
       eliminarImagen?: boolean
+      imagenesExtra?: string[]
       categoriaId?: number | null
       ingredienteIds?: number[]
       agregadoIds?: number[]
