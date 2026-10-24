@@ -1,3 +1,4 @@
+import type { TiendaConfig } from '@/lib/tiendaConfig'
 import { create } from 'zustand'
 import { restauranteApi, categoriasApi } from '@/lib/api'
 import { useAuthStore } from './authStore'
@@ -100,6 +101,7 @@ export interface RestauranteData {
   comprobantesWhatsapp: string | null
   transferenciaAlias: string | null
   sistemaPuntos: boolean | null
+  tienda?: TiendaConfig | null
   colorPrimario: string | null
   colorSecundario: string | null
   usarColorUnico: boolean | null

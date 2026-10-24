@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { restauranteApi } from '@/lib/api'
@@ -189,13 +190,14 @@ export default function General() {
               !v ? 'El alias no puede quedar vacío' : v.length < 3 ? 'Usá al menos 3 caracteres' : null
             }
           />
+          <Button asChild variant="outline"><Link to="/dashboard/ajustes/tienda">Personalizar diseño y contenido</Link></Button>
           <ModoColorField />
           {colorUnico ? (
             <ColorField campo="colorPrimario" label="Color de botones y detalles" fallback="#FF7A00" />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <ColorField campo="colorPrimario" label="Color primario (botones)" fallback="#FF7A00" />
-              <ColorField campo="colorSecundario" label="Color secundario (fondos)" fallback="#FFFFFF" />
+              <ColorField campo="colorSecundario" label="Color secundario (acentos)" fallback="#FFFFFF" />
             </div>
           )}
         </div>
@@ -287,7 +289,7 @@ export default function General() {
   )
 }
 
-function ModoColorField() {
+export function ModoColorField() {
   const { valor, guardar, status } = useAjuste('usarColorUnico')
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
@@ -299,7 +301,7 @@ function ModoColorField() {
           </span>
         </div>
         <p className="text-[13px] font-normal text-muted-foreground">
-          Se aplica a botones y detalles; los fondos y textos siguen en blanco y negro.
+          Se aplica a botones y detalles; cada diseño conserva sus fondos y textos.
         </p>
       </div>
       <Switch checked={valor === true} onCheckedChange={(checked) => void guardar(checked)} />

@@ -1,3 +1,5 @@
+import { TiendaPersonalizacion } from '@/components/TiendaPersonalizacion'
+import { leerTiendaConfig, validarTiendaConfig } from '@/lib/tiendaConfig'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router'
@@ -450,6 +452,7 @@ const SelfServeOnboarding = () => {
       deliveryRadius: 2500,
       deliveryPrice: restaurante?.deliveryFee || '0',
       logo: restaurante?.imagenLightUrl || restaurante?.imagenUrl || null as string | null,
+      tienda: leerTiendaConfig(restaurante?.tienda),
       colorPrimario: restaurante?.colorPrimario || '#FF7A00',
       colorSecundario: restaurante?.colorSecundario || '#FFFFFF',
       usarColorUnico: restaurante?.usarColorUnico ?? true,
@@ -526,7 +529,9 @@ const SelfServeOnboarding = () => {
       localStorage.setItem(phaseKey, phase)
     } catch {
       // Las imágenes nuevas viven en memoria si exceden el cupo del navegador.
-      const liviano = { ...formData, logo: formData.logo?.startsWith('data:') ? null : formData.logo,
+      const liviano = { ...formData, tienda: { ...formData.tienda,
+        portadaUrl: formData.tienda.portadaUrl?.startsWith('data:') ? undefined : formData.tienda.portadaUrl,
+        galeria: formData.tienda.galeria?.filter((u: string) => !u.startsWith('data:')) }, logo: formData.logo?.startsWith('data:') ? null : formData.logo,
         cartaDetectada: formData.cartaDetectada ? { categorias: formData.cartaDetectada.categorias.map((cat: CategoriaExtraida) => ({ ...cat, productos: cat.productos.map(p => ({ ...p, image: null })) })) } : null }
       try { localStorage.setItem(draftKey, JSON.stringify(liviano)); localStorage.setItem(phaseKey, phase) } catch { /* No impide guardar en servidor. */ }
     }
@@ -750,10 +755,12 @@ const SelfServeOnboarding = () => {
   // ── Persistir todo el onboarding (username, dirección, logo, horarios, pago) + zona ──
   const persistOnboarding = async () => {
     if (!token) return false
+    const errorTienda = validarTiendaConfig(formData.tienda)
+    if (errorTienda) { toast.error(errorTienda); return false }
     setBusy(true)
     try {
       const waNumber = (formData.whatsappNumber || restaurante?.whatsappNumber || restaurante?.telefono || '').toString().replace(/\D/g, '')
-      await onboardingApi.complete(token, {
+      const configuracionGuardada = await onboardingApi.complete(token, {
         username: formData.username,
         nombre: formData.nombre,
         address: formData.address,
@@ -765,6 +772,7 @@ const SelfServeOnboarding = () => {
         friendsOrdering: true,
         imageLight: formData.logo,
         imageDark: formData.logo,
+        tienda: formData.tienda,
         colorPrimario: formData.colorPrimario,
         colorSecundario: formData.colorSecundario,
         usarColorUnico: formData.usarColorUnico,
@@ -775,7 +783,9 @@ const SelfServeOnboarding = () => {
         metodosPago: formData.metodosPago,
         // Alias/CBU solo si la transferencia manual quedó activada.
         transferenciaAlias: formData.metodosPago.transferenciaManual ? formData.transferenciaAlias : '',
-      })
+      }) as { tienda?: unknown }
+      // Reemplazar los archivos temporales por las URLs guardadas antes de volver a estos pasos.
+      if ('tienda' in configuracionGuardada) patch({ tienda: leerTiendaConfig(configuracionGuardada.tienda) })
 
       // Crear sucursales/zonas sólo una vez. Volver a pasos previos sí actualiza
       // identidad, logo, colores, horarios y pagos, sin duplicar la estructura.
@@ -2236,6 +2246,11 @@ function PreparativosScreen({ formData, patch, indicator, onContinue }: {
         </div>
 
         <ColoresTienda logo={formData.logo} colores={formData} onChange={patch} />
+
+        <details className="rounded-2xl border p-4">
+          <summary className="cursor-pointer text-sm font-medium">Personalizar diseño y contenido (opcional)</summary>
+          <div className="mt-5"><TiendaPersonalizacion value={formData.tienda} onChange={tienda => patch({ tienda })} /></div>
+        </details>
 
         <div>
           <div className="flex items-center justify-between mb-2">

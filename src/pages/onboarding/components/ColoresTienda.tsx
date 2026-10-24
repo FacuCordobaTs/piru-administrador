@@ -43,7 +43,7 @@ export function ColoresTienda({ logo, colores, onChange }: { logo: string | null
   return <div className="space-y-4">
     <h2 className="text-lg font-semibold">Colores de la tienda</h2>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={colores.usarColorUnico} onChange={e => { onChange({ usarColorUnico: e.target.checked }); if (e.target.checked) setDestino('colorPrimario') }} />Usar un solo color</label>
-    <p className="text-xs text-muted-foreground">{colores.usarColorUnico ? 'Botones y detalles con tu color; fondos en blanco y negro.' : 'Elegí el color de los botones y el de los fondos.'}</p>
+    <p className="text-xs text-muted-foreground">{colores.usarColorUnico ? 'Botones y detalles con tu color; cada diseño conserva sus fondos y textos.' : 'Elegí los colores de tu marca para botones, detalles y acentos.'}</p>
     {campo('colorPrimario', 'Color primario')}
     {!colores.usarColorUnico && campo('colorSecundario', 'Color secundario')}
     {logo && <div className="rounded-xl bg-muted/50 p-4 space-y-3">

@@ -1,3 +1,4 @@
+import type { TiendaConfig } from './tiendaConfig'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import type {
@@ -982,6 +983,7 @@ export const restauranteApi = {
       image?: string // Base64 de la imagen
       imageLight?: string // Base64 del logo modo claro
       username?: string
+      tienda?: TiendaConfig | null
       colorPrimario?: string
       colorSecundario?: string
       usarColorUnico?: boolean
