@@ -1088,15 +1088,6 @@ export const restauranteApi = {
     })
   },
 
-  toggleCodigoDescuentoEnabled: async (token: string) => {
-    return fetchApi('/restaurante/toggle-codigo-descuento-enabled', {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-  },
-
   toggleWhatsappEnabled: async (token: string) => {
     return fetchApi('/restaurante/toggle-whatsapp-enabled', {
       method: 'PUT',
