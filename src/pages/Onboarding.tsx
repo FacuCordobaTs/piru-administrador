@@ -2256,11 +2256,17 @@ function PreparativosScreen({ formData, patch, indicator, productos, onContinue 
           </div>
         </div>
 
-        <ColoresTienda logo={formData.logo} colores={formData} onChange={patch} />
+        <div className="rounded-2xl border p-4 sm:p-5">
+          <h2 className="text-lg font-semibold">Armá tu tienda</h2>
+          <p className="mb-6 mt-1 text-sm text-muted-foreground">Elegí entre las opciones: en un minuto queda lista y la podés cambiar cuando quieras.</p>
+          <TiendaPersonalizacion modo="alta" productos={productos} value={formData.tienda} nombre={formData.nombre}
+            marca={{ colorPrimario: formData.colorPrimario, colorSecundario: formData.colorSecundario, usarColorUnico: formData.usarColorUnico }}
+            onMarca={patch} onChange={tienda => patch({ tienda })} />
+        </div>
 
         <details className="rounded-2xl border p-4">
-          <summary className="cursor-pointer text-sm font-medium">Personalizar diseño y contenido (opcional)</summary>
-          <div className="mt-5"><TiendaPersonalizacion productos={productos} value={formData.tienda} onChange={tienda => patch({ tienda })} /></div>
+          <summary className="cursor-pointer text-sm font-medium">Colores exactos o tomados de tu logo</summary>
+          <div className="mt-5"><ColoresTienda logo={formData.logo} colores={formData} onChange={patch} /></div>
         </details>
 
         <div>

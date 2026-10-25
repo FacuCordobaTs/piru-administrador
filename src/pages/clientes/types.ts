@@ -36,7 +36,7 @@ export interface CampanaCliente {
 export interface CuponCliente {
   id: number
   codigo: string
-  tipo: 'porcentaje' | 'monto_fijo'
+  tipo: 'porcentaje' | 'monto_fijo' | 'envio_gratis'
   valor: number
   usos: number
   facturacion: number
@@ -80,7 +80,7 @@ export interface CodigoDescuentoGrowth {
   id: number
   restauranteId: number
   codigo: string
-  tipo: 'porcentaje' | 'monto_fijo'
+  tipo: 'porcentaje' | 'monto_fijo' | 'envio_gratis'
   valor: string
   limiteUsos: number | null
   usosActuales: number

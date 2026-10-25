@@ -2566,7 +2566,7 @@ export const codigosDescuentoApi = {
     token: string,
     data: {
       codigo: string
-      tipo: 'porcentaje' | 'monto_fijo'
+      tipo: 'porcentaje' | 'monto_fijo' | 'envio_gratis'
       valor: string
       limiteUsos?: number | null
       montoMinimo?: string
@@ -2588,7 +2588,7 @@ export const codigosDescuentoApi = {
     id: number,
     data: {
       codigo?: string
-      tipo?: 'porcentaje' | 'monto_fijo'
+      tipo?: 'porcentaje' | 'monto_fijo' | 'envio_gratis'
       valor?: string
       limiteUsos?: number | null
       montoMinimo?: string
@@ -2628,7 +2628,7 @@ export const codigosDescuentoApi = {
     success: boolean
     data: {
       codigo: {
-        id: number; restauranteId: number; codigo: string; tipo: 'porcentaje' | 'monto_fijo'; valor: string
+        id: number; restauranteId: number; codigo: string; tipo: 'porcentaje' | 'monto_fijo' | 'envio_gratis'; valor: string
         limiteUsos: number | null; usosActuales: number; montoMinimo: string; fechaInicio: string | null
         fechaFin: string | null; activo: boolean; generadoAutomaticamente: boolean; createdAt: string
       }

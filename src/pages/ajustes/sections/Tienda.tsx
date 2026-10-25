@@ -8,6 +8,8 @@ import { leerTiendaConfig, validarTiendaConfig } from '@/lib/tiendaConfig'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore, type RestauranteData } from '@/store/restauranteStore'
 import { AjusteInput } from '../components/AjusteInput'
+import { useAjuste } from '../hooks/useAjuste'
+import type { Marca } from '@/lib/tiendaPresets'
 import { ColorField, LogoField } from './general/campos'
 import { ModoColorField } from './General'
 
@@ -23,6 +25,19 @@ function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
   const error = validarTiendaConfig(config)
+  // Los colores de marca son del local, no de `tienda`: se guardan al elegirlos, como en el resto de Ajustes.
+  const primario = useAjuste('colorPrimario'), secundario = useAjuste('colorSecundario'), unico = useAjuste('usarColorUnico')
+  const marca: Marca = {
+    colorPrimario: restaurante.colorPrimario || '#FF7A00',
+    colorSecundario: restaurante.colorSecundario || '#FFFFFF',
+    usarColorUnico: !!restaurante.usarColorUnico,
+  }
+  const guardarMarca = (m: Partial<Marca>) => {
+    if (m.colorPrimario) void primario.guardar(m.colorPrimario)
+    if (m.colorSecundario) void secundario.guardar(m.colorSecundario)
+    if (m.usarColorUnico !== undefined) void unico.guardar(m.usarColorUnico)
+  }
+  const guardandoMarca = [primario, secundario, unico].some(c => c.status === 'saving')
   const guardar = async () => {
     const token = useAuthStore.getState().token
     if (!token || error) return
@@ -43,7 +58,7 @@ function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
       <p className="text-sm text-muted-foreground">Tu link, tu marca y el diseño que ven tus clientes al comprar o pedir en grupo.</p>
     </header>
     <details className="rounded-xl border p-4">
-      <summary className="cursor-pointer text-sm font-medium">Link, colores de marca y logos</summary>
+      <summary className="cursor-pointer text-sm font-medium">Link, logos y colores exactos</summary>
       <div className="mt-5 space-y-5">
         <p className="text-xs text-muted-foreground">Estos datos se guardan al salir de cada campo; los logos, al subirlos.</p>
         <AjusteInput campo="username" label="Alias de tu link" prefix="piru.app/" mono transform={v => v.toLowerCase().replace(/[^a-z0-9-]/g, '')} validate={v => v.length < 3 ? 'Usá al menos 3 caracteres' : null} />
@@ -56,8 +71,8 @@ function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
         </div>
       </div>
     </details>
-    <p className="text-sm text-muted-foreground">Al terminar de editar el diseño y el contenido, guardá la personalización para publicarla en tu tienda.</p>
-    <TiendaPersonalizacion productos={productos} value={config} disabled={guardando} onChange={v => { setConfig(v); setGuardado(false) }} />
+    <p className="text-sm text-muted-foreground">Elegí entre las opciones y mirá cómo queda. Los colores de marca se guardan al elegirlos{guardandoMarca ? ' (guardando…)' : ''}; el resto, con «Guardar personalización».</p>
+    <TiendaPersonalizacion productos={productos} value={config} disabled={guardando} nombre={restaurante.nombre} marca={marca} onMarca={guardarMarca} onChange={v => { setConfig(v); setGuardado(false) }} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <div className="flex flex-wrap items-center gap-3 border-t pt-5">
       <Button disabled={guardando || !!error} onClick={() => void guardar()}>{guardando && <Loader2 className="mr-2 size-4 animate-spin" />}Guardar personalización</Button>

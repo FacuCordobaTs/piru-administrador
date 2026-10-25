@@ -14,14 +14,18 @@ for (const width of [390, 1440]) {
         return route.fulfill({ json: { success: true, data: { tienda } } })
       })
       await page.goto('/tests/tienda-personalizacion.html')
-      await expect(page.getByRole('radio', { name: 'Sin elegir' })).toBeChecked()
+      await expect(page.getByRole('radio', { name: 'Artesanal', exact: true })).toBeChecked()
       await page.getByRole('radio', { name: 'Moderna' }).check()
       await expect(page.getByLabel('Producto destacado', { exact: true })).toHaveValue('')
       await expect(page.getByLabel('Producto destacado', { exact: true }).locator('option')).toHaveText(['Sin producto destacado', 'Milanesa', 'Ensalada'])
       await page.getByLabel('Producto destacado', { exact: true }).selectOption('11')
       await page.getByLabel('Frase de tu local').fill('Cocina de estación')
       await page.getByLabel('Descripción breve').fill('Desde nuestra cocina a tu mesa.')
-      await page.getByLabel('Frases de la cinta').fill('Hecho en casa\nCon amor')
+      for (const frase of ['Hecho en casa', 'Con amor']) {
+        await page.getByLabel('Agregar una frase a la cinta').fill(frase)
+        await page.getByRole('button', { name: 'Agregar', exact: true }).click()
+      }
+      await expect(page.getByRole('button', { name: 'Con amor', pressed: true })).toBeVisible()
       await page.getByRole('group', { name: 'Foto de portada', exact: true }).locator('input[type=file]').setInputFiles(foto)
       await page.getByRole('group', { name: 'Agregar foto a la galería', exact: true }).locator('input[type=file]').setInputFiles(foto)
       await expect(page.getByRole('group', { name: 'Foto de galería 1', exact: true })).toBeVisible()
@@ -64,7 +68,7 @@ for (const width of [390, 1440]) {
       await page.getByRole('button', { name: 'Guardar personalización', exact: true }).click()
       await expect(page.getByRole('status')).toContainText('Personalización guardada')
       expect(enviado).toEqual({ tienda: {} })
-      await expect(page.getByRole('radio', { name: 'Sin elegir' })).toBeChecked()
+      await expect(page.getByRole('radio', { name: 'Artesanal', exact: true })).toBeChecked()
     })
   })
 }
@@ -79,7 +83,6 @@ test('onboarding conserva y guarda la personalización del borrador por local', 
     return route.fulfill({ json: { success: true, data: [], productos: [], categorias: [] } })
   })
   await page.goto('/tests/tienda-personalizacion.html?onboarding&existente')
-  await page.getByText('Personalizar diseño y contenido (opcional)', { exact: true }).click()
   await expect(page.getByLabel('Frase de tu local')).toHaveValue('La cocina de siempre')
   await page.getByRole('radio', { name: 'Moderna' }).check()
   await page.getByLabel('Producto destacado', { exact: true }).selectOption('10')
@@ -153,4 +156,67 @@ test('la revisión de la carta permite destacar un producto recién guardado', a
   await page.getByLabel('Producto destacado', { exact: true }).selectOption('20')
   await page.getByRole('button', { name: 'Guardar pendientes y continuar' }).click()
   await expect.poll(() => enviado?.tienda?.productoDestacadoId).toBe(20)
+})
+
+
+test('elegir un rubro arma diseño, letra, fondo y textos sin pisar lo escrito a mano', async ({ page }) => {
+  let enviado: any
+  await page.route('**/restaurante/update', route => {
+    enviado = route.request().postDataJSON()
+    return route.fulfill({ json: { success: true, data: { tienda: enviado.tienda } } })
+  })
+  await page.goto('/tests/tienda-personalizacion.html?existente')
+  // "La cocina de siempre" la escribió el local: elegir un rubro no la reemplaza.
+  await page.getByRole('radio', { name: 'Pizzería' }).check({ force: true })
+  await expect(page.getByLabel('Frase de tu local')).toHaveValue('La cocina de siempre')
+  await expect(page.getByLabel('Descripción breve')).toHaveValue(/Masa de fermentación lenta/)
+  await expect(page.getByRole('radio', { name: 'Trattoria' })).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Masa madre', pressed: true })).toBeVisible()
+  // Las propuestas del rubro se eligen con un toque y cambiar de rubro reemplaza lo que vino de otro.
+  await page.getByRole('radiogroup', { name: 'Frases propuestas' }).getByText('Pizza como tiene que ser.').click()
+  await page.getByRole('radio', { name: 'Hamburguesería' }).check({ force: true })
+  await expect(page.getByLabel('Frase de tu local')).toHaveValue('Smash, cheddar y cero vueltas.')
+  await expect(page.getByRole('radio', { name: 'Moderna' })).toBeChecked()
+  await expect(page.getByRole('radio', { name: 'Blanco' })).toBeChecked()
+  await page.getByRole('radio', { name: 'Noche' }).check({ force: true })
+  await page.getByRole('button', { name: 'Guardar personalización', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Personalización guardada')
+  expect(enviado.tienda).toMatchObject({
+    plantilla: 'moderna', frase: 'Smash, cheddar y cero vueltas.',
+    fuentes: { titulos: 'Archivo Black', cuerpo: 'Archivo', pesoTitulos: 400 },
+    colores: { fondo: '#111111', superficie: '#1d1d1d', texto: '#f5f1ea' },
+    historia: { texto: 'Nuestra historia' },
+  })
+  expect(enviado.tienda.cinta).toEqual(['Smash burgers', 'Pan de papa', 'Carne fresca', 'Papas crocantes'])
+})
+
+test('en Ajustes, la paleta y el reparto de colores se guardan en el local', async ({ page }) => {
+  const enviados: any[] = []
+  await page.route('**/restaurante/update', route => {
+    enviados.push(route.request().postDataJSON())
+    return route.fulfill({ json: { success: true, data: {} } })
+  })
+  await page.goto('/tests/tienda-personalizacion.html?existente')
+  await page.getByRole('radio', { name: 'Cafetería' }).check({ force: true })
+  // El local todavía tiene los colores iniciales: el rubro le propone su primera paleta.
+  await expect.poll(() => enviados.find(e => e.colorPrimario)?.colorPrimario).toBe('#6B3E26')
+  await expect(page.getByRole('radio', { name: 'Café con leche' })).toBeChecked()
+  await page.getByRole('radio', { name: 'Verde especialidad' }).check({ force: true })
+  await expect.poll(() => enviados.at(-1)).toEqual({ colorSecundario: '#E9C46A' })
+  await page.getByRole('radio', { name: 'Un solo color' }).check({ force: true })
+  await expect.poll(() => enviados.at(-1)).toEqual({ usarColorUnico: true })
+  if (process.env.TIENDA_ADMIN_SHOTS) await page.screenshot({ path: `${process.env.TIENDA_ADMIN_SHOTS}/decisiones-ajustes.png`, fullPage: true })
+})
+
+test('en el alta, el rubro propone colores y textos y quedan en el borrador', async ({ page }) => {
+  await page.route('**/api/**', route => route.fulfill({ json: { success: true, data: [], productos: [], categorias: [] } }))
+  await page.goto('/tests/tienda-personalizacion.html?onboarding')
+  await page.getByRole('radio', { name: 'Comida saludable' }).check({ force: true })
+  await expect.poll(() => page.evaluate(() => {
+    const d = JSON.parse(localStorage.getItem('piru_onboarding_data:7')!)
+    return [d.colorPrimario, d.usarColorUnico, d.tienda.plantilla, d.tienda.frase]
+  })).toEqual(['#2F9E44', false, 'moderna', 'Rico, fresco y que te hace bien.'])
+  await expect(page.getByText('Fotos, historia y contacto (opcional)', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  if (process.env.TIENDA_ADMIN_SHOTS) await page.screenshot({ path: `${process.env.TIENDA_ADMIN_SHOTS}/decisiones-alta.png`, fullPage: true })
 })
