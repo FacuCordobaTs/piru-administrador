@@ -11,7 +11,13 @@ import '../src/index.css'
 const params = new URLSearchParams(location.search)
 const existente = params.has('existente')
 useAuthStore.setState({ token: `test.${btoa(JSON.stringify({ exp: 9999999999, accesoTemporalInterno: true }))}.test`, isAuthenticated: true })
-useRestauranteStore.setState({ fetchData: async () => {}, restaurante: {
+useRestauranteStore.setState({ productos: [
+  { id: 10, nombre: 'Milanesa', activo: true },
+  { id: 11, nombre: 'Ensalada', activo: true },
+  { id: 12, nombre: 'Premio', activo: true, soloCanjePuntos: true },
+  { id: 13, nombre: 'Producto inactivo', activo: false },
+  { id: 14, nombre: 'Sólo evento', activo: true, eventoSucursalId: 3 },
+] as never, fetchData: async () => {}, restaurante: {
   id: 7, nombre: 'Casa Oliva', username: 'casaoliva', telefono: '5491112345678', whatsappNumber: '5491112345678', usarColorUnico: true,
   tienda: existente ? { plantilla: 'elegante', frase: 'La cocina de siempre', historia: { texto: 'Nuestra historia' }, galeria: ['/logopiru.jpeg', '/logopiru.jpeg?segunda'] } : null,
 } as never })

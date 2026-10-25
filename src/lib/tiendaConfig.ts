@@ -3,6 +3,7 @@ export interface TiendaConfig {
   plantilla?: 'elegante' | 'moderna' | 'artesanal'
   colores?: { fondo?: string; texto?: string; acento?: string; superficie?: string }
   fuentes?: { titulos?: string; cuerpo?: string; cssUrl?: string; pesoTitulos?: number }
+  productoDestacadoId?: number
   frase?: string
   bajada?: string
   portadaUrl?: string

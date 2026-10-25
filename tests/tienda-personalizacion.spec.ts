@@ -16,6 +16,9 @@ for (const width of [390, 1440]) {
       await page.goto('/tests/tienda-personalizacion.html')
       await expect(page.getByRole('radio', { name: 'Sin elegir' })).toBeChecked()
       await page.getByRole('radio', { name: 'Moderna' }).check()
+      await expect(page.getByLabel('Producto destacado', { exact: true })).toHaveValue('')
+      await expect(page.getByLabel('Producto destacado', { exact: true }).locator('option')).toHaveText(['Sin producto destacado', 'Milanesa', 'Ensalada'])
+      await page.getByLabel('Producto destacado', { exact: true }).selectOption('11')
       await page.getByLabel('Frase de tu local').fill('Cocina de estación')
       await page.getByLabel('Descripción breve').fill('Desde nuestra cocina a tu mesa.')
       await page.getByLabel('Frases de la cinta').fill('Hecho en casa\nCon amor')
@@ -37,7 +40,7 @@ for (const width of [390, 1440]) {
       await page.getByLabel('Peso de los títulos').fill('800')
       await page.getByRole('button', { name: 'Guardar personalización', exact: true }).click()
       await expect(page.getByRole('status')).toContainText('Personalización guardada')
-      expect(enviado.tienda).toMatchObject({ plantilla: 'moderna', frase: 'Cocina de estación', cinta: ['Hecho en casa', 'Con amor'], fuentes: { titulos: 'DM Sans', cuerpo: 'Manrope', pesoTitulos: 800 } })
+      expect(enviado.tienda).toMatchObject({ plantilla: 'moderna', productoDestacadoId: 11, frase: 'Cocina de estación', cinta: ['Hecho en casa', 'Con amor'], fuentes: { titulos: 'DM Sans', cuerpo: 'Manrope', pesoTitulos: 800 } })
       expect(enviado.tienda.portadaUrl).toMatch(/^data:image\/png/)
       await expect(page.getByLabel('Enlace de la portada')).toHaveValue('/logopiru.jpeg')
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -79,13 +82,14 @@ test('onboarding conserva y guarda la personalización del borrador por local', 
   await page.getByText('Personalizar diseño y contenido (opcional)', { exact: true }).click()
   await expect(page.getByLabel('Frase de tu local')).toHaveValue('La cocina de siempre')
   await page.getByRole('radio', { name: 'Moderna' }).check()
+  await page.getByLabel('Producto destacado', { exact: true }).selectOption('10')
   await page.getByLabel('Frase de tu local').fill('Una cocina con raíces')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('piru_onboarding_data:7')!).tienda.frase)).toBe('Una cocina con raíces')
   await page.evaluate(() => { localStorage.setItem('piru_onboarding_data:7:phase', 'whatsapps'); localStorage.setItem('piru_onboarding_data:7:configurada', 'true') })
   await page.reload()
   await page.getByRole('button', { name: 'Continuar', exact: true }).click()
   await expect.poll(() => enviado?.tienda?.plantilla).toBe('moderna')
-  expect(enviado.tienda).toMatchObject({ frase: 'Una cocina con raíces', historia: { texto: 'Nuestra historia' } })
+  expect(enviado.tienda).toMatchObject({ productoDestacadoId: 10, frase: 'Una cocina con raíces', historia: { texto: 'Nuestra historia' } })
 })
 
 
@@ -107,4 +111,46 @@ test('valida los campos opcionales y conserva el borrador si falla el guardado',
   await expect(page.getByLabel('Frase de tu local')).toHaveValue('Mi borrador')
   await page.getByRole('button', { name: 'Guardar personalización', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('Personalización guardada')
+})
+
+
+test('se puede quitar el destacado sin quitar el resto de la personalización', async ({ page }) => {
+  let enviado: any
+  await page.route('**/restaurante/update', route => {
+    enviado = route.request().postDataJSON()
+    return route.fulfill({ json: { success: true, data: { tienda: enviado.tienda } } })
+  })
+  await page.goto('/tests/tienda-personalizacion.html?existente')
+  await page.getByLabel('Producto destacado', { exact: true }).selectOption('11')
+  await page.getByRole('button', { name: 'Guardar personalización', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Personalización guardada')
+  expect(enviado.tienda.productoDestacadoId).toBe(11)
+  await page.getByLabel('Producto destacado', { exact: true }).selectOption('')
+  await page.getByRole('button', { name: 'Guardar personalización', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Personalización guardada')
+  expect(enviado.tienda.productoDestacadoId).toBeUndefined()
+  expect(enviado.tienda.frase).toBe('La cocina de siempre')
+})
+
+
+test('la revisión de la carta permite destacar un producto recién guardado', async ({ page }) => {
+  let enviado: any
+  await page.addInitScript(() => {
+    localStorage.setItem('piru_onboarding_data:7:phase', 'revision')
+    localStorage.setItem('piru_onboarding_data:7', JSON.stringify({
+      tienda: { plantilla: 'moderna' },
+      cartaDetectada: { categorias: [{ nombre: 'Comidas', productos: [{ localId: 'nuevo', id: 20, guardado: true, nombre: 'Producto nuevo', precio: 500, activo: true }] }] },
+    }))
+  })
+  await page.route('**/api/**', route => {
+    if (route.request().method() === 'PUT' && route.request().url().endsWith('/restaurante/update')) {
+      enviado = route.request().postDataJSON()
+      return route.fulfill({ json: { success: true, data: { tienda: enviado.tienda } } })
+    }
+    return route.fulfill({ json: { success: true, data: [], productos: [{ id: 20, nombre: 'Producto nuevo', precio: '500' }], categorias: [], ingredientes: [], agregados: [] } })
+  })
+  await page.goto('/tests/tienda-personalizacion.html?onboarding')
+  await page.getByLabel('Producto destacado', { exact: true }).selectOption('20')
+  await page.getByRole('button', { name: 'Guardar pendientes y continuar' }).click()
+  await expect.poll(() => enviado?.tienda?.productoDestacadoId).toBe(20)
 })

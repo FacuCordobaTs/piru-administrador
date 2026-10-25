@@ -13,9 +13,13 @@ const PLANTILLAS = [
   { id: 'elegante', nombre: 'Elegante', detalle: 'Papel claro, carta editorial y detalles enmarcados.', fondo: '#f7f5ef', tinta: '#24201d', fuente: 'sans-serif' },
 ] as const
 
+export type ProductoDestacable = {
+  id: number; nombre: string; activo?: boolean | null; soloCanjePuntos?: boolean; eventoSucursalId?: number | null
+}
+
 /** El mismo formulario en el alta y en Ajustes. No agrega defaults a la configuración. */
-export function TiendaPersonalizacion({ value, onChange, disabled = false }: {
-  value: TiendaConfig; onChange: (v: TiendaConfig) => void; disabled?: boolean
+export function TiendaPersonalizacion({ value, onChange, productos = [], disabled = false }: {
+  value: TiendaConfig; onChange: (v: TiendaConfig) => void; productos?: ProductoDestacable[]; disabled?: boolean
 }) {
   const id = useId()
   const [fotoUrl, setFotoUrl] = useState('')
@@ -48,6 +52,8 @@ export function TiendaPersonalizacion({ value, onChange, disabled = false }: {
       </div>
       <label className="flex items-center gap-2 text-sm"><input type="radio" name={`${id}-plantilla`} checked={!value.plantilla} onChange={() => patch({ plantilla: undefined })} />Sin elegir · Artesanal por defecto</label>
     </div>
+
+    <SelectorProductoDestacado productos={productos} value={value.productoDestacadoId} onChange={productoDestacadoId => patch({ productoDestacadoId })} />
 
     <div className="space-y-4 border-t pt-5">
       <h3 className="text-base font-medium">Presentación</h3>
@@ -119,4 +125,23 @@ export function TiendaPersonalizacion({ value, onChange, disabled = false }: {
     </details>
     <Button type="button" variant="ghost" className="h-auto min-h-11 max-w-full whitespace-normal text-left" onClick={() => onChange({})}>Quitar personalización y usar el diseño predeterminado</Button>
   </fieldset>
+}
+
+
+/** Se reutiliza al revisar la carta, cuando los productos nuevos ya tienen su ID. */
+export function SelectorProductoDestacado({ productos, value, onChange, disabled = false }: {
+  productos: ProductoDestacable[]; value?: number; onChange: (id: number | undefined) => void; disabled?: boolean
+}) {
+  const id = useId()
+  const elegibles = productos.filter(p => p.activo !== false && !p.soloCanjePuntos && !p.eventoSucursalId)
+  return <div className="space-y-2 border-t pt-5">
+      <label htmlFor={`${id}-destacado`} className="text-sm font-medium">Producto destacado</label>
+      <select id={`${id}-destacado`} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value ? Number(e.target.value) : undefined)} className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm">
+        <option value="">Sin producto destacado</option>
+        {value && !elegibles.some(p => p.id === value) && <option value={value}>Producto elegido ya no disponible</option>}
+        {elegibles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+      </select>
+      <p className="text-xs text-muted-foreground">Se muestra en la portada de tu tienda. Si no elegís uno, no aparece ningún destacado.</p>
+      {!elegibles.length && <p className="text-xs text-muted-foreground">Cuando tengas productos activos guardados en tu carta, vas a poder elegirlos acá.</p>}
+    </div>
 }

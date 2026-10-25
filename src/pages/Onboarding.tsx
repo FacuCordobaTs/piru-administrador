@@ -1,4 +1,4 @@
-import { TiendaPersonalizacion } from '@/components/TiendaPersonalizacion'
+import { TiendaPersonalizacion, SelectorProductoDestacado, type ProductoDestacable } from '@/components/TiendaPersonalizacion'
 import { leerTiendaConfig, validarTiendaConfig } from '@/lib/tiendaConfig'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -548,6 +548,10 @@ const SelfServeOnboarding = () => {
   }, [phase, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (p: Partial<typeof formData>) => setFormData((prev: any) => ({ ...prev, ...p }))
+  const productosDestacables = [...new Map<number, ProductoDestacable>([
+    ...restauranteStore.productos.map(p => [p.id, p] as const),
+    ...(formData.cartaDetectada?.categorias.flatMap((c: CategoriaExtraida) => c.productos.filter(p => p.id).map(p => [p.id!, { ...p, id: p.id! }] as const)) ?? []),
+  ]).values()]
   const guardarProducto = useMemo(() => token ? crearGuardadorCarta(token) : null, [token])
   const [guardandoProductos, setGuardandoProductos] = useState<Set<string>>(new Set())
   const guardandoRef = useRef(new Set<string>())
@@ -744,6 +748,8 @@ const SelfServeOnboarding = () => {
       }
       const prods = await productosApi.getAll(token) as { productos: StoreProduct[] }
       setStoreProducts(prods.productos || [])
+      // La elección hecha en la revisión puede ser de un producto creado después del primer guardado.
+      await restauranteApi.update(token, { tienda: formData.tienda })
       goTo('explainer-crecimiento')
     } catch (e: any) {
       toast.error('No se pudo cargar el menú', { description: e?.message })
@@ -1228,6 +1234,7 @@ const SelfServeOnboarding = () => {
       formData={formData}
       patch={patch}
       indicator={renderIaIndicator()}
+      productos={productosDestacables}
       onContinue={() => goTo('explainer-monetizacion')}
     />
   )
@@ -1296,6 +1303,10 @@ const SelfServeOnboarding = () => {
           const nuevo = { localId: crypto.randomUUID(), nombre: '', descripcion: '', precio: 0, categoria: cat.nombre }
           patch({ cartaDetectada: { categorias: carta.categorias.length ? carta.categorias.map((c, i) => i === 0 ? { ...c, productos: [...c.productos, nuevo] } : c) : [{ ...cat, productos: [nuevo] }] } })
         }}><Plus className="mr-2 h-4 w-4" />Agregar producto</Button>
+        <div className="mt-5">
+          <SelectorProductoDestacado disabled={busy || guardandoProductos.size > 0} productos={productosDestacables} value={formData.tienda.productoDestacadoId} onChange={productoDestacadoId => patch({ tienda: { ...formData.tienda, productoDestacadoId } })} />
+          <p className="mt-2 text-xs text-muted-foreground">Guardá primero el producto que quieras destacar para poder elegirlo. Es opcional.</p>
+        </div>
         <Button onClick={confirmarMenu} disabled={busy || guardandoProductos.size > 0 || totalProductos === 0}
           className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-50">
           {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando el menú…</> : <>Guardar pendientes y continuar <ArrowRight className="ml-2 h-4 w-4" /></>}
@@ -2220,8 +2231,8 @@ function IaWaitIndicator({ estado, progress, total, errorMsg, onRetry }: {
 
 // ── Paso "preparativos": mientras la IA lee la carta en segundo plano, el usuario carga
 //    su logo y horarios. El botón avanza siempre (no espera a la IA). ──
-function PreparativosScreen({ formData, patch, indicator, onContinue }: {
-  formData: any; patch: (p: any) => void; indicator: React.ReactNode; onContinue: () => void
+function PreparativosScreen({ formData, patch, indicator, productos, onContinue }: {
+  formData: any; patch: (p: any) => void; indicator: React.ReactNode; productos: ProductoDestacable[]; onContinue: () => void
 }) {
   const agregarTurno = () => patch({ turnos: [...formData.turnos, { horaApertura: '09:00', horaCierre: '18:00' }] })
   const setTurno = (idx: number, field: string, value: string) => {
@@ -2249,7 +2260,7 @@ function PreparativosScreen({ formData, patch, indicator, onContinue }: {
 
         <details className="rounded-2xl border p-4">
           <summary className="cursor-pointer text-sm font-medium">Personalizar diseño y contenido (opcional)</summary>
-          <div className="mt-5"><TiendaPersonalizacion value={formData.tienda} onChange={tienda => patch({ tienda })} /></div>
+          <div className="mt-5"><TiendaPersonalizacion productos={productos} value={formData.tienda} onChange={tienda => patch({ tienda })} /></div>
         </details>
 
         <div>

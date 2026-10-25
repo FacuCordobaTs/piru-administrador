@@ -18,6 +18,7 @@ export default function Tienda() {
 }
 
 function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
+  const productos = useRestauranteStore(s => s.productos)
   const [config, setConfig] = useState(() => leerTiendaConfig(restaurante.tienda))
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
@@ -56,7 +57,7 @@ function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
       </div>
     </details>
     <p className="text-sm text-muted-foreground">Al terminar de editar el diseño y el contenido, guardá la personalización para publicarla en tu tienda.</p>
-    <TiendaPersonalizacion value={config} disabled={guardando} onChange={v => { setConfig(v); setGuardado(false) }} />
+    <TiendaPersonalizacion productos={productos} value={config} disabled={guardando} onChange={v => { setConfig(v); setGuardado(false) }} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <div className="flex flex-wrap items-center gap-3 border-t pt-5">
       <Button disabled={guardando || !!error} onClick={() => void guardar()}>{guardando && <Loader2 className="mr-2 size-4 animate-spin" />}Guardar personalización</Button>
