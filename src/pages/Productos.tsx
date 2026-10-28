@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -12,10 +13,11 @@ import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, agregadosApi, sucursalesApi } from '@/lib/api'
 import { toast } from 'sonner'
 import FotosProducto from '@/components/FotosProducto'
+import { StockPanel } from '@/components/stock/StockPanel'
 import { cn } from '@/lib/utils'
 import {
   Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
-  X, AlertTriangle, Percent,
+  X, AlertTriangle, Percent, Package,
   ChevronDown, GripVertical, ArrowUpDown, Check, SquareCheck
 } from 'lucide-react'
 
@@ -44,6 +46,8 @@ const phantomInputClass = "h-14 rounded-2xl bg-white dark:bg-zinc-900/50 border-
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
   const token = useAuthStore((state) => state.token)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const vista = searchParams.get('tab') === 'stock' ? 'stock' : 'catalogo'
   const [busqueda, setBusqueda] = useState('')
   const [eventos, setEventos] = useState<Array<{ id: number; nombre: string; activo: boolean; soloPos: boolean }>>([])
   useEffect(() => {
@@ -214,6 +218,18 @@ const Productos = () => {
     }
     cargarAgregados()
   }, [token])
+
+  const cambiarVista = (nueva: 'catalogo' | 'stock') => {
+    // El panel lateral pertenece al catálogo: al entrar a Stock no debe quedar
+    // un editor abierto ni una selección múltiple activa.
+    setActivePanelType(null)
+    setSeleccionando(false)
+    setProductosSeleccionados([])
+    const params = new URLSearchParams(searchParams)
+    if (nueva === 'stock') params.set('tab', 'stock')
+    else params.delete('tab')
+    setSearchParams(params, { replace: true })
+  }
 
   // ─────────────────────────────────────────────
   // Panel actions
@@ -865,7 +881,9 @@ const Productos = () => {
   const cantidadFotos = (imageBase64 && imageBase64.length > 10 ? 1 : 0) + imagenesExtra.length
   const summaryImagen = cantidadFotos === 0 ? 'Sin imagen' : cantidadFotos === 1 ? 'Con imagen' : `${cantidadFotos} fotos`
 
-  if (isLoading) {
+  // Stock no depende del catálogo de productos: si se entra directo a la tab
+  // mientras el menú carga, no tiene sentido bloquear toda la pantalla.
+  if (isLoading && vista === 'catalogo') {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-[#FFFBF0] dark:bg-[#0A0A0A]">
         <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
@@ -881,7 +899,7 @@ const Productos = () => {
           60% — nunca queda debajo de un overlay. ── */}
       <div className={cn(
         "h-full transition-[width] duration-300 ease-out overflow-y-auto min-w-0",
-        activePanelType ? "hidden md:block md:w-[60%]" : "w-full"
+        vista === 'catalogo' && activePanelType ? "hidden md:block md:w-[60%]" : "w-full"
       )}>
 
         {/* ── Header (not sticky — flows with document) ── */}
@@ -889,64 +907,107 @@ const Productos = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-56 sm:pt-72 pb-8">
             {/* Line 1: title */}
             <div className="text-center">
-              <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-zinc-950 dark:text-white">Catálogo</h1>
-              <p className="text-sm text-muted-foreground dark:text-zinc-500 mt-2">Gestiona el menú de tu restaurante</p>
+              <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-zinc-950 dark:text-white">
+                {vista === 'stock' ? 'Stock' : 'Catálogo'}
+              </h1>
+              <p className="text-sm text-muted-foreground dark:text-zinc-500 mt-2">
+                {vista === 'stock'
+                  ? 'Insumos, compras y consumo por producto'
+                  : 'Gestiona el menú de tu restaurante'}
+              </p>
             </div>
 
-            {/* Line 2: search + secondary actions */}
-            <div className="flex flex-col items-center gap-3 mt-6">
-              <div className="relative w-full sm:w-1/2">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-500" />
-                <Input
-                  placeholder="Buscar productos..."
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  className="pl-10 h-10 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-transparent focus:border-[#FF7A00] dark:focus:border-white/20 transition-colors text-zinc-950 dark:text-white placeholder:text-muted-foreground dark:placeholder:text-zinc-500 text-sm"
-                />
-              </div>
-              <div className="flex items-center gap-2">
+            {/* Tabs de la pantalla: Catálogo y Stock */}
+            <div className="mt-5 flex justify-center">
+              <div className="inline-flex items-center gap-1 rounded-2xl border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
                 <button
-                  onClick={seleccionando ? salirModoSeleccion : entrarModoSeleccion}
-                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5", seleccionando ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
+                  type="button"
+                  onClick={() => cambiarVista('catalogo')}
+                  className={cn(
+                    'flex h-9 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold transition-colors',
+                    vista === 'catalogo'
+                      ? 'bg-[#FF7A00] text-white shadow-sm'
+                      : 'text-muted-foreground hover:bg-zinc-100 hover:text-foreground dark:hover:bg-zinc-800 dark:hover:text-white',
+                  )}
                 >
-                  <SquareCheck className="h-4 w-4" />
-                  {seleccionando ? 'Cancelar selección' : 'Seleccionar'}
+                  <UtensilsCrossed className="h-4 w-4" />
+                  Catálogo
                 </button>
                 <button
-                  onClick={abrirPanelNuevo}
-                  className="h-9 px-4 rounded-lg text-sm font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white transition-colors flex items-center gap-1.5 shadow-md shadow-orange-500/20"
+                  type="button"
+                  onClick={() => cambiarVista('stock')}
+                  className={cn(
+                    'flex h-9 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold transition-colors',
+                    vista === 'stock'
+                      ? 'bg-[#FF7A00] text-white shadow-sm'
+                      : 'text-muted-foreground hover:bg-zinc-100 hover:text-foreground dark:hover:bg-zinc-800 dark:hover:text-white',
+                  )}
                 >
-                  <Plus className="h-4 w-4" />
-                  Nuevo Plato
+                  <Package className="h-4 w-4" />
+                  Stock
                 </button>
-                <button
-                  onClick={() => setActivePanelType(activePanelType === 'extras' ? null : 'extras')}
-                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'extras' ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
-                >
-                  Extras
-                </button>
-                <button
-                  onClick={() => setActivePanelType(activePanelType === 'discounts' ? null : 'discounts')}
-                  className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'discounts' ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
-                >
-                  Descuentos
-                </button>
-                {productosSinEtiqueta > 0 && (
-                  <button
-                    onClick={backfillEtiquetas}
-                    disabled={isBackfillingEtiquetas}
-                    className="h-9 px-4 rounded-lg text-sm font-medium bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    {isBackfillingEtiquetas && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Autocompletar ({productosSinEtiqueta})
-                  </button>
-                )}
               </div>
             </div>
+
+            {/* Line 2: search + secondary actions (sólo catálogo) */}
+            {vista === 'catalogo' && (
+              <div className="flex flex-col items-center gap-3 mt-6">
+                <div className="relative w-full sm:w-1/2">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-500" />
+                  <Input
+                    placeholder="Buscar productos..."
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    className="pl-10 h-10 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-transparent focus:border-[#FF7A00] dark:focus:border-white/20 transition-colors text-zinc-950 dark:text-white placeholder:text-muted-foreground dark:placeholder:text-zinc-500 text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={seleccionando ? salirModoSeleccion : entrarModoSeleccion}
+                    className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5", seleccionando ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
+                  >
+                    <SquareCheck className="h-4 w-4" />
+                    {seleccionando ? 'Cancelar selección' : 'Seleccionar'}
+                  </button>
+                  <button
+                    onClick={abrirPanelNuevo}
+                    className="h-9 px-4 rounded-lg text-sm font-bold bg-[#FF7A00] hover:bg-[#E66E00] text-white transition-colors flex items-center gap-1.5 shadow-md shadow-orange-500/20"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Nuevo Plato
+                  </button>
+                  <button
+                    onClick={() => setActivePanelType(activePanelType === 'extras' ? null : 'extras')}
+                    className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'extras' ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
+                  >
+                    Extras
+                  </button>
+                  <button
+                    onClick={() => setActivePanelType(activePanelType === 'discounts' ? null : 'discounts')}
+                    className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors", activePanelType === 'discounts' ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
+                  >
+                    Descuentos
+                  </button>
+                  {productosSinEtiqueta > 0 && (
+                    <button
+                      onClick={backfillEtiquetas}
+                      disabled={isBackfillingEtiquetas}
+                      className="h-9 px-4 rounded-lg text-sm font-medium bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {isBackfillingEtiquetas && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Autocompletar ({productosSinEtiqueta})
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ── Grid ── */}
+        {vista === 'stock' ? (
+          <StockPanel token={token} />
+        ) : (
+        /* ── Grid ── */
         <div className="max-w-7xl mx-auto px-4 sm:px-8 pb-24">
           {productosFiltrados.length === 0 ? (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
@@ -1165,10 +1226,11 @@ const Productos = () => {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Barra de selección múltiple — visible solo en modo selección */}
-      {seleccionando && (
+      {seleccionando && vista === 'catalogo' && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 sm:gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 rounded-2xl shadow-xl px-3 py-2.5 sm:px-4">
           <span className="text-sm font-semibold text-zinc-950 dark:text-white whitespace-nowrap">
             {productosSeleccionados.length} seleccionado{productosSeleccionados.length !== 1 ? 's' : ''}
@@ -1198,7 +1260,7 @@ const Productos = () => {
 
       {/* FAB (Mobile Only) — oculto mientras el panel full-width está abierto */}
       <Button
-        className={cn("sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50", activePanelType && "hidden", seleccionando && "hidden")}
+        className={cn("sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50", (activePanelType || vista === 'stock') && "hidden", seleccionando && "hidden")}
         onClick={abrirPanelNuevo}
       >
         <Plus className="h-6 w-6" />
@@ -1214,7 +1276,7 @@ const Productos = () => {
         className={cn(
           "relative h-full shrink-0 bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-white/5 overflow-hidden",
           "transition-[width] duration-300 ease-out",
-          activePanelType ? "w-full md:w-[40%]" : "w-0"
+          vista === 'catalogo' && activePanelType ? "w-full md:w-[40%]" : "w-0"
         )}
       >
         {/* X button */}

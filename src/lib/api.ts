@@ -3459,3 +3459,151 @@ export const puntosApi = {
       }
     ),
 }
+
+// ─── Control de stock (módulo `gestion_stock`) ─────────────────────────────
+export type UnidadStock = 'unidad' | 'gramo' | 'kilogramo' | 'mililitro' | 'litro'
+
+export interface InsumoStock {
+  id: number
+  nombre: string
+  unidad: UnidadStock
+  stockActual: number
+  stockMinimo: number | null
+  stockMinimoEfectivo: number | null
+  stockMaximo: number
+  costoUltimo: number | null
+  activo: boolean
+  bajoStock: boolean
+  sinStock: boolean
+}
+
+export interface ConsumoStock {
+  insumoId: number
+  varianteId: number | null
+  cantidad: number
+}
+
+export interface VarianteStock {
+  id: number
+  nombre: string
+  grupo: number
+  activo: boolean
+}
+
+export interface ProductoStock {
+  id: number
+  nombre: string
+  activo: boolean
+  categoriaId: number | null
+  categoria: string | null
+  variantes: VarianteStock[]
+  consumos: ConsumoStock[]
+  tieneConsumos: boolean
+}
+
+export interface GastoStockItem {
+  insumoId: number
+  insumoNombre: string
+  unidad: UnidadStock
+  cantidad: number
+  costoUnitario: number
+  subtotal: number
+}
+
+export interface GastoStock {
+  id: number
+  descripcion: string
+  proveedor: string | null
+  fecha: string
+  total: number
+  items: GastoStockItem[]
+}
+
+export interface MovimientoStock {
+  id: number
+  insumoId: number
+  insumoNombre: string
+  unidad: UnidadStock
+  tipo: 'compra' | 'consumo' | 'ajuste' | 'devolucion'
+  cantidad: number
+  nota: string | null
+  createdAt: string
+}
+
+export interface ResumenStock {
+  insumos: InsumoStock[]
+  productos: ProductoStock[]
+  gastos: GastoStock[]
+  alertas: { total: number; insumos: InsumoStock[] }
+  movimientos: MovimientoStock[]
+}
+
+export interface CrearInsumoPayload {
+  nombre: string
+  unidad: UnidadStock
+  stockInicial?: number | null
+  stockMinimo?: number | null
+  costoUnitario?: number | null
+}
+
+export interface ActualizarInsumoPayload {
+  nombre?: string
+  unidad?: UnidadStock
+  stockActual?: number
+  stockMinimo?: number | null
+  costoUnitario?: number | null
+  activo?: boolean
+}
+
+export interface CargarGastoPayload {
+  descripcion: string
+  proveedor?: string | null
+  fecha?: string | null
+  items: Array<{ insumoId: number; cantidad: number; costoUnitario: number }>
+}
+
+export const stockApi = {
+  resumen: (token: string) =>
+    fetchApi<{ success: boolean; data: ResumenStock }>('/stock', {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  alertas: (token: string) =>
+    fetchApi<{ success: boolean; data: { total: number; insumos: InsumoStock[] } }>('/stock/alertas', {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  crearInsumo: (token: string, data: CrearInsumoPayload) =>
+    fetchApi<{ success: boolean; data: InsumoStock }>('/stock/insumos', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+
+  actualizarInsumo: (token: string, id: number, data: ActualizarInsumoPayload) =>
+    fetchApi<{ success: boolean; data: InsumoStock }>(`/stock/insumos/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+
+  eliminarInsumo: (token: string, id: number) =>
+    fetchApi<{ success: boolean }>(`/stock/insumos/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  cargarGasto: (token: string, data: CargarGastoPayload) =>
+    fetchApi<{ success: boolean; data: { id: number; total: number } }>('/stock/gastos', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+
+  guardarConsumos: (token: string, productoId: number, consumos: ConsumoStock[]) =>
+    fetchApi<{ success: boolean }>(`/stock/productos/${productoId}/consumos`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ consumos }),
+    }),
+}

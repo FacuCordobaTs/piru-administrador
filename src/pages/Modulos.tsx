@@ -66,6 +66,7 @@ function requisitoConfiguracion(modulo: Modulo) {
 
 const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mesas: '/dashboard/mesas',
+  gestion_stock: '/dashboard/productos?tab=stock',
   motor_recompra: '/dashboard/clientes?tab=retencion&vista=motor',
   puntos_clientes: '/dashboard/clientes?tab=retencion&vista=puntos',
   codigos_descuento: '/dashboard/clientes?tab=adquisicion&vista=cupones',

@@ -50,6 +50,7 @@ import { requiereConfirmarCobro } from '@/lib/posCobro'
 import { SaldoAlertaBanner } from '@/components/SaldoAlertaBanner'
 import { TrialValorBanner } from '@/components/TrialValorBanner'
 import { SuscripcionVencimientoBanner } from '@/components/SuscripcionVencimientoBanner'
+import { StockAlertaBanner } from '@/components/StockAlertaBanner'
 import { sincronizarPendientes } from '@/lib/posOffline'
 import { leerParticion, transaccionPos } from '@/lib/posLocalDb'
 
@@ -3154,6 +3155,7 @@ const Dashboard = () => {
             {showTrialBanner && <TrialValorBanner onDismiss={() => setShowTrialBanner(false)} />}
             {showSuscripcionBanner && <SuscripcionVencimientoBanner onDismiss={() => setShowSuscripcionBanner(false)} />}
             {showSaldoBanner && <SaldoAlertaBanner onDismiss={() => setShowSaldoBanner(false)} />}
+            <StockAlertaBanner refreshKey={lastUpdate?.timestamp} />
             {isOffline && (
                 <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs sm:text-sm text-amber-700 dark:text-amber-300 font-medium">
                     <div className="flex items-center gap-2">
