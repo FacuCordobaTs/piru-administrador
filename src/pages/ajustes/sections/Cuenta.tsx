@@ -13,6 +13,8 @@ export default function Cuenta() {
   const logout = useAuthStore((s) => s.logout)
   const reset = useRestauranteStore((s) => s.reset)
   const email = useRestauranteStore((s) => s.restaurante?.email)
+  // Sin el flag (backend viejo o perfil aún sin cargar) se asume que ya tiene contraseña.
+  const tienePassword = useRestauranteStore((s) => s.restaurante?.hasPassword !== false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [isDark, setIsDark] = useState(() => {
@@ -54,9 +56,9 @@ export default function Cuenta() {
         />
         <AjusteRow
           titulo="Contraseña"
-          oracion="Última actualización desconocida"
-          estado="configurado"
-          accionLabel="Cambiar"
+          oracion={tienePassword ? 'Entrás con tu email y contraseña' : 'Entrás con tu celular. Podés crear una contraseña.'}
+          estado={tienePassword ? 'configurado' : 'sin-configurar'}
+          accionLabel={tienePassword ? 'Cambiar' : 'Crear'}
           onAccion={() => setPasswordOpen(true)}
         />
         <AjusteRow
@@ -81,7 +83,11 @@ export default function Cuenta() {
       </div>
 
       <CambiarEmailDialog open={emailOpen} onOpenChange={setEmailOpen} />
-      <CambiarPasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
+      <CambiarPasswordDialog
+        open={passwordOpen}
+        onOpenChange={setPasswordOpen}
+        tienePassword={tienePassword}
+      />
     </section>
   )
 }

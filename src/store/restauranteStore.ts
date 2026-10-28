@@ -60,6 +60,8 @@ interface Producto {
 export interface RestauranteData {
   id: number
   email: string
+  /** Las cuentas registradas con celular no tienen contraseña. */
+  hasPassword?: boolean
   nombre: string
   direccion: string | null
   telefono: string | null

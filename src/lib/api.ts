@@ -219,7 +219,7 @@ export const authApi = {
     })
   },
 
-  changePassword: async (token: string, currentPassword: string, newPassword: string) => {
+  changePassword: async (token: string, currentPassword: string | undefined, newPassword: string) => {
     return fetchApi('/auth/change-password', {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },

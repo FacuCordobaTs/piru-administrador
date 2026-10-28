@@ -13,10 +13,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { authApi, ApiError } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { useRestauranteStore } from '@/store/restauranteStore'
 
 interface CambiarPasswordDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Las cuentas registradas con celular no tienen contraseña: se crea sin pedir la actual. */
+  tienePassword?: boolean
 }
 
 const vacio = { currentPassword: '', newPassword: '', confirmPassword: '' }
@@ -25,8 +28,9 @@ const vacio = { currentPassword: '', newPassword: '', confirmPassword: '' }
  * Cambio de contraseña: es transaccional, así que conserva sus botones
  * Guardar/Cancelar (excepción al autosave). Movido desde Perfil.tsx.
  */
-export function CambiarPasswordDialog({ open, onOpenChange }: CambiarPasswordDialogProps) {
+export function CambiarPasswordDialog({ open, onOpenChange, tienePassword = true }: CambiarPasswordDialogProps) {
   const token = useAuthStore((s) => s.token)
+  const setLocal = useRestauranteStore((s) => s.setLocal)
   const [form, setForm] = useState(vacio)
   const [guardando, setGuardando] = useState(false)
 
@@ -37,7 +41,7 @@ export function CambiarPasswordDialog({ open, onOpenChange }: CambiarPasswordDia
 
   const cambiar = async () => {
     if (!token) return
-    if (!form.currentPassword || !form.newPassword) {
+    if ((tienePassword && !form.currentPassword) || !form.newPassword) {
       toast.error('Completá todos los campos')
       return
     }
@@ -53,11 +57,12 @@ export function CambiarPasswordDialog({ open, onOpenChange }: CambiarPasswordDia
     try {
       const res = (await authApi.changePassword(
         token,
-        form.currentPassword,
+        tienePassword ? form.currentPassword : undefined,
         form.newPassword
       )) as { success: boolean }
       if (res.success) {
-        toast.success('Contraseña actualizada')
+        setLocal({ hasPassword: true })
+        toast.success(tienePassword ? 'Contraseña actualizada' : 'Contraseña creada')
         cerrar(false)
       }
     } catch (e) {
@@ -71,22 +76,28 @@ export function CambiarPasswordDialog({ open, onOpenChange }: CambiarPasswordDia
     <Dialog open={open} onOpenChange={cerrar}>
       <DialogContent className="rounded-2xl sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-lg font-medium">Cambiar contraseña</DialogTitle>
+          <DialogTitle className="text-lg font-medium">
+            {tienePassword ? 'Cambiar contraseña' : 'Crear contraseña'}
+          </DialogTitle>
           <DialogDescription className="font-normal">
-            Ingresá tu contraseña actual y la nueva para actualizarla.
+            {tienePassword
+              ? 'Ingresá tu contraseña actual y la nueva para actualizarla.'
+              : 'Tu cuenta entra con el celular. Creá una contraseña para poder entrar también con tu email.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="font-medium">Contraseña actual</Label>
-            <Input
-              type="password"
-              placeholder="••••••••"
-              className="h-11"
-              value={form.currentPassword}
-              onChange={(e) => setForm((f) => ({ ...f, currentPassword: e.target.value }))}
-            />
-          </div>
+          {tienePassword && (
+            <div className="space-y-1.5">
+              <Label className="font-medium">Contraseña actual</Label>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                className="h-11"
+                value={form.currentPassword}
+                onChange={(e) => setForm((f) => ({ ...f, currentPassword: e.target.value }))}
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="font-medium">Nueva contraseña</Label>
             <Input
@@ -122,7 +133,7 @@ export function CambiarPasswordDialog({ open, onOpenChange }: CambiarPasswordDia
           </Button>
           <Button onClick={cambiar} disabled={guardando} className="h-11 min-h-[44px] font-medium">
             {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Cambiar contraseña
+            {tienePassword ? 'Cambiar contraseña' : 'Crear contraseña'}
           </Button>
         </div>
       </DialogContent>
