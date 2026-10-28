@@ -226,6 +226,14 @@ export const authApi = {
       body: JSON.stringify({ currentPassword, newPassword }),
     })
   },
+
+  changeEmail: async (token: string, email: string) => {
+    return fetchApi<{ message: string; success: boolean; email: string }>('/auth/change-email', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email }),
+    })
+  },
 }
 
 // Sesión de operador separada de la sesión del local. No invalida el login del

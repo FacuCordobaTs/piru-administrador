@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
+import { CambiarEmailDialog } from '../components/CambiarEmailDialog'
 import { CambiarPasswordDialog } from '../components/CambiarPasswordDialog'
 
 export default function Cuenta() {
@@ -13,6 +14,7 @@ export default function Cuenta() {
   const reset = useRestauranteStore((s) => s.reset)
   const email = useRestauranteStore((s) => s.restaurante?.email)
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
   const [isDark, setIsDark] = useState(() => {
     const stored = localStorage.getItem('piru-theme')
     return stored ? stored === 'dark' : document.documentElement.classList.contains('dark')
@@ -46,7 +48,9 @@ export default function Cuenta() {
         <AjusteRow
           titulo="Email"
           oracion={email || 'Sin email'}
-          estado="configurado"
+          estado={email ? 'configurado' : 'sin-configurar'}
+          accionLabel={email ? 'Cambiar' : 'Configurar'}
+          onAccion={() => setEmailOpen(true)}
         />
         <AjusteRow
           titulo="Contraseña"
@@ -76,6 +80,7 @@ export default function Cuenta() {
         </Button>
       </div>
 
+      <CambiarEmailDialog open={emailOpen} onOpenChange={setEmailOpen} />
       <CambiarPasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
     </section>
   )
