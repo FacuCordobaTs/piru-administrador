@@ -12,6 +12,7 @@ import {
   Blocks,
   Copy,
   ExternalLink,
+  Code2,
   Globe,
   ChevronRight,
   MessageCircle,
@@ -35,6 +36,7 @@ interface SectionDef { id: string; label: string; descripcion: string; Icon: Luc
 
 const SECTIONS: SectionDef[] = [
   { id: 'tienda', label: 'Tienda', descripcion: 'Diseño, fotos, textos y personalización de tu tienda.', Icon: Globe, Component: lazy(() => import('./sections/Tienda')) },
+  { id: 'mi-pagina', label: 'Mi página', descripcion: 'Una tienda con diseño propio en código, en tu subdominio.', Icon: Code2, Component: lazy(() => import('./sections/MiPagina')) },
   { id: 'marketer', label: 'Tu marketer', descripcion: 'Quién maneja tus clientes, campañas y mensajes.', Icon: User, Component: lazy(() => import('./sections/Marketer')) },
   {
     id: 'monetizacion',
@@ -138,7 +140,7 @@ const REQUISITOS: Record<string, string[]> = {
 
 const GROUPS = [
   { label: 'Operación', ids: ['whatsapp', 'entregas', 'horarios', 'ventas'] },
-  { label: 'Tu negocio', ids: ['general', 'tienda', 'monetizacion', 'marketer', 'modulos', 'suscripcion', 'cuenta'] },
+  { label: 'Tu negocio', ids: ['general', 'tienda', 'mi-pagina', 'monetizacion', 'marketer', 'modulos', 'suscripcion', 'cuenta'] },
 ]
 
 // Un único destino canónico por módulo que sí se configura dentro de Ajustes.

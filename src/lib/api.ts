@@ -21,6 +21,11 @@ export const miMarketerApi = {
 }
 
 /** Pase de dos minutos para abrir la app de marketing en modo dueño, sin login (Clientes). */
+/** Páginas (`pages.piru.app`): el panel pide un pase de dos minutos y abre el editor (docs/PAGINAS_PROPIAS.md). */
+export const sitiosApi = {
+  entrada: (token: string) => fetchApi<{ success: boolean; data: { url: string } }>('/sitios/entrada', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
+}
+
 export const marketingDuenioApi = {
   entrada: (token: string) => fetchApi<{ success: boolean; data: { url: string; expira: string } }>('/marketing-duenio/entrada', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
 }
