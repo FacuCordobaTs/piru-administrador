@@ -703,7 +703,8 @@ function Tienda({ c }: { c: ContextoGuia }) {
       <p>
         La plantilla, los textos, las fotos y el producto destacado se eligen en{' '}
         <strong>Ajustes → Tienda</strong>, que abre Páginas: primero elegís cómo se ve tu tienda y después podés
-        editar su código. Las preferencias también se cambian desde el editor, con el botón «Preferencias».
+        editar su código. Todo lo elegido queda escrito en el código de tu página (<code>contenido.ts</code>) y se puede
+        cambiar desde el editor, con el botón «Preferencias».
       </p>
       <p>
         <Donde texto="Tienda" icono={Code2} ruta={ruta(c, '/dashboard/ajustes/mi-pagina')} />
