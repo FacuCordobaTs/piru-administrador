@@ -35,8 +35,7 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean }
 
 const SECTIONS: SectionDef[] = [
-  { id: 'tienda', label: 'Tienda', descripcion: 'Diseño, fotos, textos y personalización de tu tienda.', Icon: Globe, Component: lazy(() => import('./sections/Tienda')) },
-  { id: 'mi-pagina', label: 'Mi página', descripcion: 'Una tienda con diseño propio en código, en tu subdominio.', Icon: Code2, Component: lazy(() => import('./sections/MiPagina')) },
+  { id: 'mi-pagina', label: 'Tienda', descripcion: 'Plantilla, preferencias y código propio de tu tienda.', Icon: Code2, Component: lazy(() => import('./sections/MiPagina')) },
   { id: 'marketer', label: 'Tu marketer', descripcion: 'Quién maneja tus clientes, campañas y mensajes.', Icon: User, Component: lazy(() => import('./sections/Marketer')) },
   {
     id: 'monetizacion',
@@ -130,6 +129,8 @@ const REDIRECTS_SECCION: Record<string, string> = {
   adquisicion: '/dashboard/clientes?tab=adquisicion&vista=campanas',
   activacion: '/dashboard/ajustes/general',
   retencion: '/dashboard/clientes?tab=retencion&vista=motor',
+  // La personalización de la tienda se mudó a Páginas: la URL vieja sigue funcionando.
+  tienda: '/dashboard/ajustes/mi-pagina',
 }
 const DESTINO_PUNTOS = '/dashboard/clientes?tab=retencion&vista=puntos'
 
@@ -140,7 +141,7 @@ const REQUISITOS: Record<string, string[]> = {
 
 const GROUPS = [
   { label: 'Operación', ids: ['whatsapp', 'entregas', 'horarios', 'ventas'] },
-  { label: 'Tu negocio', ids: ['general', 'tienda', 'mi-pagina', 'monetizacion', 'marketer', 'modulos', 'suscripcion', 'cuenta'] },
+  { label: 'Tu negocio', ids: ['general', 'mi-pagina', 'monetizacion', 'marketer', 'modulos', 'suscripcion', 'cuenta'] },
 ]
 
 // Un único destino canónico por módulo que sí se configura dentro de Ajustes.

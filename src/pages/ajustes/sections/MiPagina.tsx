@@ -6,8 +6,8 @@ import { sitiosApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 
 /**
- * Páginas (docs/PAGINAS_PROPIAS.md): el editor vive en `pages.piru.app`. El panel sólo lo abre en
- * otra pestaña con un pase de dos minutos, sin login, como la app de marketing.
+ * Tienda (Páginas): la plantilla, las preferencias y el código de la tienda viven en
+ * `pages.piru.app`. El panel sólo abre esa app en otra pestaña con un pase de dos minutos.
  */
 export default function MiPagina() {
   const token = useAuthStore((s) => s.token)
@@ -32,13 +32,15 @@ export default function MiPagina() {
     <div className="space-y-5">
       <div className="space-y-2 text-sm text-muted-foreground">
         <p>
-          Con <strong className="text-foreground">Páginas</strong> tu tienda puede tener un diseño hecho a medida, escrito en
-          código (por vos, por un diseñador o por Claude), en <strong className="text-foreground">tu-local.piru.app</strong>.
+          En <strong className="text-foreground">Páginas</strong> elegís la plantilla y las preferencias de tu tienda (colores,
+          textos, fotos y productos destacados) y después editás el código de la página que nace de ellas. Todo en{' '}
+          <strong className="text-foreground">tu-local.piru.app</strong>.
         </p>
         <p>
-          La carta, los precios, los horarios y los pedidos siguen saliendo de este panel. El cobro se hace siempre en la tienda de
-          Piru, y tu tienda de siempre sigue funcionando en my.piru.app.
+          La carta, los precios, los horarios y los pedidos siguen saliendo de este panel. El cobro se hace siempre en la tienda
+          de Piru, y tu tienda de siempre sigue funcionando en my.piru.app.
         </p>
+        <p>Las preferencias también se cambian desde el editor de código, con el botón «Preferencias».</p>
       </div>
       <Button onClick={abrir} disabled={abriendo || !token}>
         {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}

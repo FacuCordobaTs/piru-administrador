@@ -1,31 +1,35 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { TiendaPersonalizacion } from '@/components/TiendaPersonalizacion'
-import { restauranteApi } from '@/lib/api'
-import { leerTiendaConfig, validarTiendaConfig } from '@/lib/tiendaConfig'
-import { useAuthStore } from '@/store/authStore'
-import { useRestauranteStore, type RestauranteData } from '@/store/restauranteStore'
-import { AjusteInput } from '../components/AjusteInput'
-import { useAjuste } from '../hooks/useAjuste'
-import type { Marca } from '@/lib/tiendaPresets'
-import { ColorField, LogoField } from './general/campos'
-import { ModoColorField } from './General'
+import { Button } from '../src/components/ui/button'
+import { TiendaPersonalizacion } from '../src/components/TiendaPersonalizacion'
+import { restauranteApi } from '../src/lib/api'
+import { leerTiendaConfig, validarTiendaConfig } from '../src/lib/tiendaConfig'
+import { useAuthStore } from '../src/store/authStore'
+import { useRestauranteStore, type RestauranteData } from '../src/store/restauranteStore'
+import { AjusteInput } from '../src/pages/ajustes/components/AjusteInput'
+import { useAjuste } from '../src/pages/ajustes/hooks/useAjuste'
+import type { Marca } from '../src/lib/tiendaPresets'
+import { ColorField, LogoField } from '../src/pages/ajustes/sections/general/campos'
+import { ModoColorField } from '../src/pages/ajustes/sections/General'
 
-export default function Tienda() {
-  const restaurante = useRestauranteStore(s => s.restaurante)
+/**
+ * Sólo para la suite: reproduce la sección Tienda que vivía en Ajustes, ahora en Páginas.
+ * El editor real de Páginas se prueba en `sitios/`; acá se conserva la cobertura del editor
+ * compartido (guardado, fotos, colores de marca y validación) contra la API del panel.
+ */
+export default function TiendaHarness() {
+  const restaurante = useRestauranteStore((s) => s.restaurante)
   if (!restaurante) return null
   return <EditorTienda key={restaurante.id} restaurante={restaurante} />
 }
 
 function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
-  const productos = useRestauranteStore(s => s.productos)
+  const productos = useRestauranteStore((s) => s.productos)
   const [config, setConfig] = useState(() => leerTiendaConfig(restaurante.tienda))
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
   const error = validarTiendaConfig(config)
-  // Los colores de marca son del local, no de `tienda`: se guardan al elegirlos, como en el resto de Ajustes.
   const primario = useAjuste('colorPrimario'), secundario = useAjuste('colorSecundario'), unico = useAjuste('usarColorUnico')
   const marca: Marca = {
     colorPrimario: restaurante.colorPrimario || '#FF7A00',
@@ -37,7 +41,6 @@ function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
     if (m.colorSecundario) void secundario.guardar(m.colorSecundario)
     if (m.usarColorUnico !== undefined) void unico.guardar(m.usarColorUnico)
   }
-  const guardandoMarca = [primario, secundario, unico].some(c => c.status === 'saving')
   const guardar = async () => {
     const token = useAuthStore.getState().token
     if (!token || error) return
@@ -71,7 +74,7 @@ function EditorTienda({ restaurante }: { restaurante: RestauranteData }) {
         </div>
       </div>
     </details>
-    <p className="text-sm text-muted-foreground">Elegí entre las opciones y mirá cómo queda. Los colores de marca se guardan al elegirlos{guardandoMarca ? ' (guardando…)' : ''}; el resto, con «Guardar personalización».</p>
+    <p className="text-sm text-muted-foreground">Elegí entre las opciones y mirá cómo queda. Los colores de marca se guardan al elegirlos{primario.status === 'saving' || secundario.status === 'saving' || unico.status === 'saving' ? ' (guardando…)' : ''}; el resto, con «Guardar personalización».</p>
     <TiendaPersonalizacion productos={productos} value={config} disabled={guardando} nombre={restaurante.nombre} marca={marca} onMarca={guardarMarca} onChange={v => { setConfig(v); setGuardado(false) }} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <div className="flex flex-wrap items-center gap-3 border-t pt-5">

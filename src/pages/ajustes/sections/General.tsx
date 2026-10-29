@@ -190,7 +190,7 @@ export default function General() {
               !v ? 'El alias no puede quedar vacío' : v.length < 3 ? 'Usá al menos 3 caracteres' : null
             }
           />
-          <Button asChild variant="outline"><Link to="/dashboard/ajustes/tienda">Personalizar diseño y contenido</Link></Button>
+          <Button asChild variant="outline"><Link to="/dashboard/ajustes/mi-pagina">Diseño y preferencias de tu tienda</Link></Button>
           <ModoColorField />
           {colorUnico ? (
             <ColorField campo="colorPrimario" label="Color de botones y detalles" fallback="#FF7A00" />

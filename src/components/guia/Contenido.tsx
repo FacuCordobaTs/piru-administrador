@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Check,
   Clock,
+  Code2,
   CreditCard,
   Download,
   ExternalLink,
@@ -697,6 +698,15 @@ function Tienda({ c }: { c: ContextoGuia }) {
       <p>
         En Configuración → General cambiás el alias de tu link, los colores y los logos. ¿Querés usar tu propio
         dominio? Escribinos.
+      </p>
+      <h3>El diseño de tu tienda</h3>
+      <p>
+        La plantilla, los textos, las fotos y el producto destacado se eligen en{' '}
+        <strong>Ajustes → Tienda</strong>, que abre Páginas: primero elegís cómo se ve tu tienda y después podés
+        editar su código. Las preferencias también se cambian desde el editor, con el botón «Preferencias».
+      </p>
+      <p>
+        <Donde texto="Tienda" icono={Code2} ruta={ruta(c, '/dashboard/ajustes/mi-pagina')} />
       </p>
       <Clave>
         <li>Cuando no tenés ningún pedido abierto, Inicio te muestra tu link para copiarlo.</li>
