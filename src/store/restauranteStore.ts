@@ -126,6 +126,8 @@ export interface RestauranteData {
   permitirPedidosProgramados: boolean | null
   usarFranjasHorario: boolean | null
   soloPedidosProgramados: boolean | null
+  zonasEspecialesHabilitadas: boolean | null
+  permitirPrePedidosZonasEspeciales: boolean | null
   metodosPagoConfig?: {
     mercadopagoCheckout?: boolean
     mercadopagoBricks?: boolean

@@ -2704,6 +2704,105 @@ export const zonasDeliveryApi = {
   },
 }
 
+export type ZonaEspecial = {
+  id: number
+  restauranteId: number
+  nombre: string
+  precio: string
+  horaInicio: string
+  horaFin: string
+  activa: boolean
+  createdAt: string
+  enVentana?: boolean
+  proximaVentana?: string | null
+  pedidosPendientes?: number
+}
+
+export type DestinatarioZonaEspecial = {
+  pedidoId: number
+  nombre: string
+  telefono: string
+  telefonoWaMe: string | null
+  mensaje: string
+  waLink: string | null
+  createdAt: string
+}
+
+export const zonasEspecialesApi = {
+  getAll: async (token: string) => {
+    return fetchApi<{ success: boolean; data: ZonaEspecial[] }>('/zonas-especiales', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  create: async (
+    token: string,
+    data: { nombre: string; precio: string; horaInicio: string; horaFin: string; activa?: boolean },
+  ) => {
+    return fetchApi<{ success: boolean; data: ZonaEspecial; message?: string }>('/zonas-especiales/create', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+  },
+
+  update: async (
+    token: string,
+    id: number,
+    data: Partial<{ nombre: string; precio: string; horaInicio: string; horaFin: string; activa: boolean }>,
+  ) => {
+    return fetchApi<{ success: boolean; data: ZonaEspecial; message?: string }>(`/zonas-especiales/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete: async (token: string, id: number) => {
+    return fetchApi<{ success: boolean; message?: string }>(`/zonas-especiales/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  toggleHabilitadas: async (token: string) => {
+    return fetchApi<{ success: boolean; zonasEspecialesHabilitadas: boolean }>('/zonas-especiales/habilitadas', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  togglePrepedidos: async (token: string) => {
+    return fetchApi<{ success: boolean; permitirPrePedidosZonasEspeciales: boolean }>('/zonas-especiales/prepedidos', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  destinatarios: async (token: string, id: number) => {
+    return fetchApi<{
+      success: boolean
+      data: { zona: Pick<ZonaEspecial, 'id' | 'nombre' | 'horaInicio' | 'horaFin'>; destinatarios: DestinatarioZonaEspecial[]; total: number }
+    }>(`/zonas-especiales/${id}/destinatarios`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  enviarLlegada: async (token: string, id: number) => {
+    return fetchApi<{
+      success: boolean
+      message: string
+      saldoAgotado?: boolean
+      data?: { enviados: number; errores: number; total: number }
+    }>(`/zonas-especiales/${id}/enviar-llegada`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+}
+
 export const facturacionApi = {
   getEstado: async (token: string) => {
     return fetchApi('/facturacion/estado', {

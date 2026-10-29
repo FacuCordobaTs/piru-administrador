@@ -5,12 +5,13 @@ import { Plus, Loader2, Edit, Store, Truck, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { restauranteApi, zonasDeliveryApi } from '@/lib/api'
+import { esSesionDemo, restauranteApi, zonasDeliveryApi, zonasEspecialesApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { SucursalDialog } from '../components/SucursalDialog'
+import { ZonasEspecialesPanel } from '../components/ZonasEspecialesPanel'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import { useSucursales, type Sucursal } from '../hooks/useSucursales'
 import { useModuloActivo } from '@/store/modulosStore'
@@ -18,7 +19,7 @@ import { useModuloActivo } from '@/store/modulosStore'
 // El mapa (Leaflet, ~25KB) se carga solo al entrar a su editor.
 const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
 
-type EditorId = 'tipos' | 'sucursales' | 'eventos' | null
+type EditorId = 'tipos' | 'sucursales' | 'eventos' | 'zonas-especiales' | null
 
 export default function Entregas() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
@@ -28,6 +29,8 @@ export default function Entregas() {
   const [zonasOpen, setZonasOpen] = useState(false)
   const { sucursales, loaded: sucLoaded, recargar } = useSucursales()
 
+  const token = useAuthStore((s) => s.token)
+  const esDemo = esSesionDemo(token)
   const deliveryOn = restaurante?.deliveryEnabled !== false
   const takeawayOn = restaurante?.takeawayEnabled !== false
   const tiposOracion = describirTipos(deliveryOn, takeawayOn)
@@ -37,12 +40,19 @@ export default function Entregas() {
   const mostrarSucursales = sucLoaded && sucursales.filter(s => !s.soloPos).length >= 2
   const multisucursalActiva = useModuloActivo('multisucursal')
   const rapiboyActivo = useModuloActivo('rapiboy')
+  const avisosWhatsappActivos = useModuloActivo('avisos_automaticos_whatsapp')
+  const zonasEspecialesHabilitadas = restaurante?.zonasEspecialesHabilitadas === true
+  const { texto: zonasEspecialesOracion, estado: zonasEspecialesEstado } = useZonasEspecialesResumen(
+    avisosWhatsappActivos && !esDemo && zonasEspecialesHabilitadas,
+    editor === null,
+  )
   const eventos = sucursales.filter(s => s.soloPos)
 
   useEffect(() => {
     const config = searchParams.get('config')
     if ((config === 'sucursales' && multisucursalActiva) || (config === 'rapiboy' && rapiboyActivo)) setEditor('sucursales')
-  }, [multisucursalActiva, rapiboyActivo, searchParams])
+    else if (config === 'zonas-especiales' && avisosWhatsappActivos && !esDemo) setEditor('zonas-especiales')
+  }, [multisucursalActiva, rapiboyActivo, avisosWhatsappActivos, esDemo, searchParams])
 
   return (
     <section className="space-y-6">
@@ -66,6 +76,25 @@ export default function Entregas() {
           estado={zonasEstado}
           onAccion={() => setZonasOpen(true)}
         />
+        {!esDemo && (
+          <AjusteRow
+            titulo="Zonas especiales"
+            oracion={!avisosWhatsappActivos
+              ? 'Activá Avisos automáticos por WhatsApp para habilitar countries y barrios cerrados'
+              : !zonasEspecialesHabilitadas
+                ? 'Apagado: no se muestra nada de countries en la tienda'
+                : zonasEspecialesOracion}
+            estado={avisosWhatsappActivos && zonasEspecialesHabilitadas ? zonasEspecialesEstado : 'sin-configurar'}
+            accionLabel={!avisosWhatsappActivos
+              ? 'Ver WhatsApp'
+              : zonasEspecialesHabilitadas && zonasEspecialesEstado === 'configurado'
+                ? 'Administrar'
+                : 'Configurar'}
+            onAccion={() => avisosWhatsappActivos
+              ? setEditor('zonas-especiales')
+              : navigate('/dashboard/ajustes/whatsapp')}
+          />
+        )}
         {multisucursalActiva && mostrarSucursales && (
           <AjusteRow
             titulo="Sucursales"
@@ -124,6 +153,15 @@ export default function Entregas() {
           <ZonasDeliveryMap />
         </Suspense>
       </AjusteEditor>
+
+      <AjusteEditor
+        open={editor === 'zonas-especiales' && avisosWhatsappActivos && !esDemo}
+        onOpenChange={(o) => !o && setEditor(null)}
+        titulo="Zonas especiales"
+        descripcion="Countries y barrios cerrados con una ventana horaria de entrega."
+      >
+        <ZonasEspecialesPanel />
+      </AjusteEditor>
     </section>
   )
 }
@@ -165,6 +203,38 @@ function useZonasResumen() {
     }
     void cargar()
   }, [])
+
+  return { texto, estado }
+}
+
+/** Oración de zonas especiales: "{n} countries, entrega 17:00 a 20:00". */
+function useZonasEspecialesResumen(activo: boolean, refrescar: boolean) {
+  const [texto, setTexto] = useState('Cargando…')
+  const [estado, setEstado] = useState<'configurado' | 'sin-configurar'>('sin-configurar')
+
+  useEffect(() => {
+    if (!activo || !refrescar) return
+    const cargar = async () => {
+      const token = useAuthStore.getState().token
+      if (!token) return
+      try {
+        const res = await zonasEspecialesApi.getAll(token)
+        const zonas = res.success ? res.data.filter((zona) => zona.activa) : []
+        if (zonas.length === 0) {
+          setTexto('Todavía no cargaste countries ni barrios cerrados')
+          setEstado('sin-configurar')
+          return
+        }
+        const primera = zonas[0]
+        setTexto(`${zonas.length} ${zonas.length === 1 ? 'zona' : 'zonas'}, entrega ${primera.horaInicio.slice(0, 5)} a ${primera.horaFin.slice(0, 5)}`)
+        setEstado('configurado')
+      } catch {
+        setTexto('No se pudieron cargar las zonas especiales')
+        setEstado('sin-configurar')
+      }
+    }
+    void cargar()
+  }, [activo, refrescar])
 
   return { texto, estado }
 }
