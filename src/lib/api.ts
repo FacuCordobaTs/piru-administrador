@@ -292,12 +292,22 @@ export const onboardingApi = {
 
 // Carta IA — extracción automática del menú desde imágenes con Claude
 export const cartaIaApi = {
+  // Instructivo descargable (.md) para que una IA arme la carta en JSON.
+  instructivoUrl: `${API_URL}/carta-ia/instructivo`,
   // Envía las imágenes (data URLs base64) y devuelve la carta detectada
   extraer: async (token: string, imagenes: string[]) => {
     return fetchApi('/carta-ia/extraer', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({ imagenes }),
+    })
+  },
+  // Valida una carta en JSON (armada por una IA o a mano) y la normaliza
+  importar: async (token: string, carta: unknown) => {
+    return fetchApi('/carta-ia/importar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ carta }),
     })
   },
   // Crea todos los productos (con categorías, ingredientes, variantes y extras)

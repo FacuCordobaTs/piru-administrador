@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  ArrowRight, ArrowLeft, Check, Camera, FileText, Link2,
+  ArrowRight, ArrowLeft, Check, Camera, FileText, Link2, FileJson,
   Clock, Plus, Trash2, MapPin, Sparkles, Loader2,
   Banknote, ArrowDownToLine, Store, Utensils, Target, PencilRuler, Save, X,
   ImagePlus, Lock, RefreshCw, CircleDashed,
@@ -427,7 +427,11 @@ const SelfServeOnboarding = () => {
   // Flujo "Sacale una foto": imágenes subidas + modo del paso "carta" (opciones vs uploader).
   // Las imágenes NO se persisten en localStorage (son pesadas); viven sólo en memoria.
   const [cartaImagenes, setCartaImagenes] = useState<string[]>([])
-  const [cartaModo, setCartaModo] = useState<'opciones' | 'foto'>('opciones')
+  const [cartaModo, setCartaModo] = useState<'opciones' | 'foto' | 'json'>('opciones')
+  // Importación de una carta ya armada en JSON (por ejemplo, por un LLM).
+  const [cartaJson, setCartaJson] = useState('')
+  const [cartaJsonError, setCartaJsonError] = useState('')
+  const [importandoCartaJson, setImportandoCartaJson] = useState(false)
 
   // ── Estado de la lectura de la carta con IA. Vive en el padre para poder correr en segundo
   //    plano mientras el usuario configura logo/horarios y delivery/pago (fases posteriores). ──
@@ -693,7 +697,7 @@ const SelfServeOnboarding = () => {
   }
   const back = () => {
     // Dentro del paso "carta", si estamos en el uploader volvemos a elegir la forma de carga
-    if (phase === 'carta' && cartaModo === 'foto') return setCartaModo('opciones')
+    if (phase === 'carta' && cartaModo !== 'opciones') return setCartaModo('opciones')
     switch (phase) {
       case 'nombre': return goTo('explainer-tienda')
       case 'explainer-activacion': return goTo('nombre')
@@ -1093,13 +1097,153 @@ const SelfServeOnboarding = () => {
     }
   }
 
+  // ── Carta en JSON: el instructivo se descarga desde el backend y el archivo
+  //    lo valida el servidor antes de entrar al mismo flujo de revisión. ──
+  const descargarInstructivoCarta = () => {
+    const link = document.createElement('a')
+    link.href = cartaIaApi.instructivoUrl
+    link.download = 'carta-json-piru.md'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  const leerArchivoCartaJson = async (file: File | undefined) => {
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      setCartaJsonError('El archivo supera los 2 MB. Probá con una carta más chica.')
+      return
+    }
+    try {
+      setCartaJson(await file.text())
+      setCartaJsonError('')
+    } catch {
+      setCartaJsonError('No se pudo leer el archivo. Probá pegando el JSON.')
+    }
+  }
+
+  const importarCartaJson = async () => {
+    if (!token || importandoCartaJson) return
+    const texto = cartaJson.trim()
+    if (!texto) {
+      setCartaJsonError('Pegá el JSON o subí un archivo .json')
+      return
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(texto)
+    } catch (error) {
+      setCartaJsonError(`El texto no es un JSON válido: ${error instanceof Error ? error.message : 'revisá las comas y comillas'}`)
+      return
+    }
+    // Aceptamos tanto la carta pelada como un objeto { "carta": { ... } }.
+    const carta = parsed && typeof parsed === 'object' && 'carta' in parsed
+      ? (parsed as { carta: unknown }).carta
+      : parsed
+    setImportandoCartaJson(true)
+    setCartaJsonError('')
+    try {
+      const res = await cartaIaApi.importar(token, carta) as {
+        success: boolean
+        carta?: CartaExtraida
+        totalProductos?: number
+        avisos?: string[]
+        message?: string
+      }
+      if (!res.success || !res.carta) throw new Error(res.message || 'La carta no tiene productos válidos')
+      const preparada = prepararCarta(res.carta)
+      const total = preparada.categorias.reduce((acc, cat) => acc + cat.productos.length, 0)
+      patch({ cartaDetectada: preparada })
+      setIaTotal(total); setIaProgress(100); setIaEstado('listo'); setIaError('')
+      if (res.avisos?.length) {
+        toast.warning('Revisá la carta importada', { description: res.avisos.slice(0, 3).join(' · ') })
+      } else {
+        toast.success(`${total} producto${total === 1 ? '' : 's'} importado${total === 1 ? '' : 's'}`)
+      }
+      goTo('creando')
+    } catch (error) {
+      setCartaJsonError(error instanceof Error ? error.message : 'No se pudo importar la carta')
+    } finally {
+      setImportandoCartaJson(false)
+    }
+  }
+
   const renderCarta = () => {
     const opciones = [
       { id: 'foto', icon: Camera, title: 'Sacale una foto', desc: 'A tu carta impresa o pizarra', hint: 'Lo más rápido', activa: true },
+      { id: 'json', icon: FileJson, title: 'Importar un JSON', desc: 'Armado con una IA o a mano', hint: 'Con instructivo', activa: true },
       { id: 'pdf', icon: FileText, title: 'Subir un PDF', desc: 'Tu menú en archivo', hint: null, activa: false },
       { id: 'link', icon: Link2, title: 'Pegar un link', desc: 'De Instagram o PedidosYa', hint: null, activa: false },
       { id: 'mano', icon: Utensils, title: 'Cargar a mano', desc: 'Escribís los productos vos', hint: null, activa: false },
     ]
+
+    // ── Modo JSON: importar una carta ya armada (por ejemplo, con un LLM) ──
+    if (cartaModo === 'json') {
+      return (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Importá tu carta en JSON</h1>
+          <p className="text-[15px] text-muted-foreground mt-3">
+            Descargá el instructivo, pegáselo a una IA junto con tu carta y traé el archivo que te devuelva. También podés pegar un JSON armado a mano.
+          </p>
+
+          <button
+            onClick={descargarInstructivoCarta}
+            className="mt-6 w-full text-left rounded-2xl border border-[#FF7A00]/30 bg-orange-50/60 dark:bg-orange-950/20 p-4 flex items-start gap-3 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"
+          >
+            <span className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 shadow-sm flex items-center justify-center shrink-0">
+              <Download className="h-5 w-5 text-[#FF7A00]" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">Descargar instructivo para la IA (.md)</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">Explica el formato exacto del JSON, con reglas y un ejemplo completo.</span>
+            </span>
+          </button>
+
+          <label className="mt-6 block cursor-pointer">
+            <input
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => { void leerArchivoCartaJson(e.target.files?.[0]); e.currentTarget.value = '' }}
+            />
+            <div className="rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-[#FF7A00] transition-colors p-6 flex flex-col items-center justify-center text-center">
+              <div className="w-12 h-12 rounded-xl bg-orange-50 dark:bg-orange-950/40 flex items-center justify-center mb-3">
+                <FileJson className="h-6 w-6 text-[#FF7A00]" />
+              </div>
+              <p className="text-sm font-semibold">Subí tu archivo .json</p>
+              <p className="text-xs text-muted-foreground mt-1">o pegá el contenido abajo · hasta 2 MB</p>
+            </div>
+          </label>
+
+          <textarea
+            value={cartaJson}
+            onChange={(e) => { setCartaJson(e.target.value); if (cartaJsonError) setCartaJsonError('') }}
+            rows={8}
+            spellCheck={false}
+            placeholder={'{\n  "categorias": [ ... ]\n}'}
+            className="mt-3 w-full resize-y rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 font-mono text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF7A00]/40"
+          />
+
+          {cartaJsonError && (
+            <div className="mt-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 p-3">
+              <p className="text-xs font-semibold text-red-700 dark:text-red-300">Revisá el JSON</p>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 break-words">{cartaJsonError}</p>
+            </div>
+          )}
+
+          <Button
+            onClick={() => void importarCartaJson()}
+            disabled={importandoCartaJson || !cartaJson.trim()}
+            className="w-full h-14 mt-5 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-40"
+          >
+            {importandoCartaJson ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Validando carta…</> : <><FileJson className="mr-2 h-4 w-4" /> Importar carta</>}
+          </Button>
+          <button onClick={() => setCartaModo('opciones')} className="w-full text-center text-sm text-muted-foreground hover:text-foreground mt-4 transition-colors">
+            Elegir otra forma
+          </button>
+        </div>
+      )
+    }
 
     // ── Modo uploader: subir una o varias fotos del menú ──
     if (cartaModo === 'foto') {
@@ -1162,14 +1306,14 @@ const SelfServeOnboarding = () => {
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
         <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Cargá tu carta</h1>
-        <p className="text-[15px] text-muted-foreground mt-3">Sacale una foto y la leemos con IA en segundos. Las demás formas llegan pronto.</p>
+        <p className="text-[15px] text-muted-foreground mt-3">Sacale una foto y la leemos con IA, o importá un JSON armado con una IA. Las demás formas llegan pronto.</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-7">
           {opciones.map((o) => (
             <button
               key={o.id}
               disabled={!o.activa}
-              onClick={() => { if (o.activa) setCartaModo('foto') }}
+              onClick={() => { if (o.activa) setCartaModo(o.id === 'json' ? 'json' : 'foto') }}
               className={cn(
                 "group text-left p-4 rounded-2xl relative transition-all",
                 o.activa
@@ -1208,9 +1352,13 @@ const SelfServeOnboarding = () => {
         <Sparkles className="h-6 w-6 text-[#FF7A00]" strokeWidth={2} />
       </div>
 
-      <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Estamos creando tus productos</h1>
+      <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">
+        {cartaModo === 'json' ? 'Tu carta está lista' : 'Estamos creando tus productos'}
+      </h1>
       <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
-        La IA está leyendo tu carta y cargando todo. Puede tardar hasta 3 minutos, no hace falta que esperes acá.
+        {cartaModo === 'json'
+          ? `Importamos ${iaTotal} producto${iaTotal === 1 ? '' : 's'}. Más adelante vas a poder revisarlos y editarlos antes de publicarlos.`
+          : 'La IA está leyendo tu carta y cargando todo. Puede tardar hasta 3 minutos, no hace falta que esperes acá.'}
       </p>
 
       <div className="mt-7 w-full text-left">{renderIaIndicator()}</div>
@@ -2076,11 +2224,10 @@ const SelfServeOnboarding = () => {
     }
   }
 
-  // Fases donde tiene sentido volver atrás (no en pantallas de proceso/éxito)
-  const canGoBack = ![
-    'explainer-tienda',
-    'creando',
-  ].includes(phase)
+  // Fases donde tiene sentido volver atrás (no en pantallas de proceso/éxito).
+  // La carta importada desde JSON sí puede volver a editar el archivo; la foto
+  // no, porque la extracción con IA ya está corriendo en segundo plano.
+  const canGoBack = phase !== 'explainer-tienda' && !(phase === 'creando' && cartaModo !== 'json')
 
   return (
     <div className="min-h-dvh bg-background flex flex-col items-center justify-center px-6 py-6 relative selection:bg-orange-500/10 selection:text-[#FF7A00]">
