@@ -8,9 +8,10 @@ import 'leaflet-draw/dist/leaflet.draw.css'
 import 'leaflet-draw'
 import {
   Loader2, Check, Store, MessageCircle, ArrowLeft, Pencil, ImagePlus, X, Save,
-  Banknote, MapPin, UtensilsCrossed, CreditCard, Wallet, PencilRuler, Minus, Plus, AlertTriangle,
-  ShoppingBag, Settings, ArrowRight,
+  Banknote, MapPin, UtensilsCrossed, CreditCard, Wallet, Minus, Plus,
+  ShoppingBag, ArrowRight, Mail, Eye, EyeOff, CircleHelp,
   Printer, MonitorSmartphone, Armchair, ChevronDown, CircleCheck, Maximize2, Download,
+  Package, Bike, Calculator, Ticket,
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -19,13 +20,12 @@ import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import {
   claimApi, restauranteApi, zonasDeliveryApi, suscripcionApi, modulosApi, sucursalesApi, mesasLocalesApi, ApiError,
   pedidoUnificadoApi, productosApi,
-  type ClaimTienda as ClaimTiendaData, type ClaimInventario, type ClaimConfig, type MiSuscripcion,
+  type ClaimTienda as ClaimTiendaData, type ClaimInventario, type ClaimConfig, type MiSuscripcion, type Modulo,
 } from '@/lib/api'
 import { TiendaPreview } from '@/components/TiendaPreview'
-import { ExplainerTienda } from './onboarding/components/ExplainerTienda'
-import { ExplainerActivacion } from './onboarding/components/ExplainerActivacion'
-import { ExplainerMonetizacion } from './onboarding/components/ExplainerMonetizacion'
-import { ExplainerCrecimiento } from './onboarding/components/ExplainerCrecimiento'
+import { marcarRecorridoVisto } from '@/lib/recorridoPanel'
+import { IntroZonas } from './claim/IntroZonas'
+import { AprenderPanel } from './claim/AprenderPanel'
 
 const CODE_LENGTH = 6
 const RESEND_COOLDOWN = 45 // segundos
@@ -35,24 +35,23 @@ const DEFAULT_CENTER: [number, number] = [-31.4201, -64.1888]
 /**
  * Claim de tienda (onboarding outbound) — ruta pública `/mi-tienda/:token`, SIN login.
  *
- * El dueño llega por el link que Facu le mandó por WhatsApp. La tienda ya está construida (Facu la
- * armó): esta pantalla no le pide "registrarse". Es un RECORRIDO DE APROBACIÓN: se le MUESTRA cada
- * dato ya cargado, una cosa por pantalla, con "Continuar" (primario) y "Modificar" (secundario).
+ * El dueño llega por el link que Facu le mandó por WhatsApp. Ya es cliente (la venta está cerrada) y
+ * la tienda ya está construida: esta pantalla NO le vende nada. Lo lleva a completar lo que sólo él
+ * sabe y a aprender a manejar el panel.
  *
- * "Modificar" edita el dato AHÍ MISMO, en la tarjeta (nunca lo saca de la pantalla). El cambio NO
- * se guarda contra el backend en el momento (todavía no hay sesión): queda en un borrador local
- * (`draft`). Recién cuando el dueño confirma su WhatsApp (y tenemos su token) se persiste TODO el
- * borrador de una sola vez.
+ * - Lo que Facu nunca conoce (el alias, las zonas de delivery) se abre directo para completar.
+ * - Lo que ya está cargado (la dirección, el WhatsApp) se muestra como listo, con opción a cambiarlo.
+ * - Si el local tiene página propia (`<tienda>.piru.app`), nunca se le muestra el link compartido.
  *
- * Datos editables inline (del preview extendido, `config`): nombre, link, logo, métodos de pago +
- * alias de transferencia, y delivery (radio o zonas + precio). Los productos se muestran para verlos
- * (se editan en detalle adentro).
+ * Los cambios NO se guardan en el momento (todavía no hay sesión): quedan en un borrador local
+ * (`draft`) y se persisten de una vez cuando el dueño crea su acceso.
  *
- * Flujo: recorrido (`walk`) → verificación de WhatsApp → código (`codigo`) → persistir borrador →
- * pedido de prueba (`prueba`) → modos de uso (`modos`) → configuración elegida (impresión y/o
- * mesas) → info de la suscripción y prueba gratis (`plan`) → panel.
+ * Flujo: recorrido (`walk`: local, carta, sucursales, cobros, entregas, WhatsApp, acceso) → código
+ * por WhatsApp (`codigo`) o mail y contraseña → persistir borrador → cómo trabaja (`modos`, con
+ * impresión, POS, mesas y herramientas incluidas) → configuración elegida (impresión y/o mesas) →
+ * pedido de prueba (`prueba`) → aprender el panel (`aprender`) → panel.
  */
-type Paso = 'walk' | 'codigo' | 'crecimiento' | 'prueba' | 'modos' | 'configImpresion' | 'configMesas' | 'plan'
+type Paso = 'walk' | 'codigo' | 'modos' | 'configImpresion' | 'configMesas' | 'prueba' | 'aprender'
 type ModoUso = 'impresion' | 'pos'
 type PasoPostClaim = Exclude<Paso, 'walk' | 'codigo'>
 
@@ -72,7 +71,9 @@ const STORE_BASE = 'https://piru.app'
 const WHATSAPP_HELP_NUMBER = '5493408681915'
 const LATEST_DESKTOP_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 const DESKTOP_DOWNLOAD_FALLBACK = 'https://piru.app'
-const PASOS_POST_CLAIM: PasoPostClaim[] = ['crecimiento', 'prueba', 'modos', 'configImpresion', 'configMesas', 'plan']
+const PASOS_POST_CLAIM: PasoPostClaim[] = ['modos', 'configImpresion', 'configMesas', 'prueba', 'aprender']
+// Progreso guardado por una versión anterior del claim, que tenía otros pasos.
+const PASOS_RENOMBRADOS: Record<string, PasoPostClaim> = { crecimiento: 'modos', plan: 'aprender' }
 
 const progresoClaimKey = (claimToken: string) => `piru:claim-progress:${claimToken}`
 
@@ -83,11 +84,12 @@ function leerProgresoClaim(claimToken: string, restauranteId?: number): Progreso
     if (!raw) return null
     const progreso = JSON.parse(raw) as Partial<ProgresoClaim>
     if (progreso.restauranteId !== restauranteId) return null
-    if (!progreso.paso || !PASOS_POST_CLAIM.includes(progreso.paso as PasoPostClaim)) return null
+    const paso = PASOS_RENOMBRADOS[progreso.paso as string] ?? progreso.paso
+    if (!paso || !PASOS_POST_CLAIM.includes(paso as PasoPostClaim)) return null
     if (!progreso.tienda || typeof progreso.tienda !== 'object') return null
     return {
       restauranteId,
-      paso: progreso.paso as PasoPostClaim,
+      paso: paso as PasoPostClaim,
       tienda: progreso.tienda as ClaimTiendaData,
       telefono: typeof progreso.telefono === 'string' ? progreso.telefono : '',
       modosActivos: Array.isArray(progreso.modosActivos)
@@ -125,7 +127,6 @@ type SucursalDraft = {
 }
 type Draft = {
   nombre?: string
-  username?: string
   logo?: string
   pagos?: PagosDraft
   tiposPedido?: TiposPedidoDraft
@@ -137,12 +138,7 @@ type Draft = {
 // ── Tarjeta del recorrido ──
 type Card =
   | { kind: 'intro' }
-  | { kind: 'explainerTienda' }
-  | { kind: 'link' }
-  | { kind: 'logo' }
-  | { kind: 'explainerActivacion' }
   | { kind: 'productos' }
-  | { kind: 'explainerMonetizacion' }
   | { kind: 'modalidadSucursales' }
   | { kind: 'sucursales' }
   | { kind: 'pagos' }
@@ -152,11 +148,32 @@ type Card =
   | { kind: 'mensaje' }
   | { kind: 'whatsapps' }
   | { kind: 'reassure'; id: string; icon: LucideIcon; titulo: string; valor: string }
-  | { kind: 'verificar' }
+  | { kind: 'acceso' }
 
-// Convierte un texto en slug de URL: minúsculas, sin acentos, sólo alfanumérico.
-const toSlug = (v: string) =>
-  (v || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '')
+// En qué parte del recorrido está cada tarjeta: se muestra arriba, junto a la barra de progreso.
+const SECCION: Record<Card['kind'], string> = {
+  intro: 'Bienvenida',
+  productos: 'Tu carta',
+  modalidadSucursales: 'Tu local',
+  sucursales: 'Tu local',
+  pagos: 'Cobros',
+  pagosSucursal: 'Cobros',
+  delivery: 'Entregas',
+  deliverySucursal: 'Entregas',
+  reassure: 'Tu local',
+  mensaje: 'Pedidos',
+  whatsapps: 'Pedidos',
+  acceso: 'Tu acceso',
+}
+
+// Herramientas incluidas que se pueden prender en el paso "Cómo trabajás" (además de impresión y
+// POS). El catálogo real (`misModulos`) decide cuáles están disponibles para la cuenta.
+const HERRAMIENTAS_INCLUIDAS: Array<{ codigo: string; icon: LucideIcon; titulo: string; texto: string }> = [
+  { codigo: 'gestion_cadetes', icon: Bike, titulo: 'Tengo repartidores propios', texto: 'Asignás cada envío a un cadete y al cierre sabés cuánto rinde cada uno.' },
+  { codigo: 'cierre_turno_manual', icon: Calculator, titulo: 'Abro y cierro la caja por turno', texto: 'Ves qué entró por cada medio de pago y las diferencias del turno.' },
+  { codigo: 'gestion_stock', icon: Package, titulo: 'Quiero controlar el stock', texto: 'Cada venta descuenta los insumos de la receta y te avisa antes de quedarte sin nada.' },
+  { codigo: 'codigos_descuento', icon: Ticket, titulo: 'Voy a usar cupones', texto: 'Promos como MARTES20, con vencimiento y límite de usos.' },
+]
 
 const fmtPrecio = (n: number | string | null | undefined) => Number(n ?? 0).toLocaleString('es-AR')
 
@@ -222,24 +239,24 @@ function MapResizer({ dep }: { dep?: unknown }) {
   return null
 }
 
-// Encaja el mapa a los polígonos dados (para que la(s) zona(s) siempre queden a la vista).
-function FitBounds({ poligonos }: { poligonos: { lat: number; lng: number }[][] }) {
-  const map = useMap()
-  useEffect(() => {
-    const coords: L.LatLngExpression[] = []
-    poligonos.forEach((poly) => poly.forEach((c) => coords.push([c.lat, c.lng])))
-    if (coords.length > 0) {
-      map.fitBounds(L.latLngBounds(coords), { padding: [24, 24] })
-      setTimeout(() => map.invalidateSize(), 250)
-    }
-  }, [poligonos, map])
-  return null
-}
-
 const ZONE_COLORS = ['#FF7A00', '#3b82f6', '#ef4444', '#22c55e', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']
 function getNextColor(usados: (string | null)[]): string {
   const disponibles = ZONE_COLORS.filter((c) => !usados.includes(c))
   return disponibles.length > 0 ? disponibles[0] : ZONE_COLORS[usados.length % ZONE_COLORS.length]
+}
+
+// leaflet-draw viene en inglés: el dueño ve los mismos textos que le explica IntroZonas.
+const drawLocal = (L as any).drawLocal
+if (drawLocal) {
+  drawLocal.draw.toolbar.buttons.polygon = 'Dibujar una zona'
+  drawLocal.draw.toolbar.actions = { title: 'Cancelar el dibujo', text: 'Cancelar' }
+  drawLocal.draw.toolbar.finish = { title: 'Terminar la zona', text: 'Terminar' }
+  drawLocal.draw.toolbar.undo = { title: 'Borrar el último punto', text: 'Borrar último punto' }
+  drawLocal.draw.handlers.polygon.tooltip = {
+    start: 'Tocá el mapa en la primera esquina de la zona.',
+    cont: 'Tocá la siguiente esquina.',
+    end: 'Tocá el primer punto para cerrar la zona.',
+  }
 }
 
 // Control de dibujo de polígonos (leaflet-draw). Al terminar un polígono emite sus vértices.
@@ -334,14 +351,20 @@ export default function ClaimTienda() {
 
   // Borrador de ediciones inline, se persiste al confirmar el WhatsApp.
   const [draft, setDraft] = useState<Draft>({})
-  // Qué tarjeta está en modo edición, y buffers de los editores simples (nombre/link/logo/pagos).
+  // Qué tarjeta está en modo edición, y buffers del editor de nombre y logo.
   const [editing, setEditing] = useState<string | null>(null)
   const [tmpText, setTmpText] = useState('')
   const [tmpLogo, setTmpLogo] = useState<string | null>(null)
-  const [tmpPagos, setTmpPagos] = useState<PagosDraft>({ efectivo: true, transferenciaManual: false, transferenciaAlias: '' })
   const [subiendoLogo, setSubiendoLogo] = useState(false)
 
   const [telefono, setTelefono] = useState(progresoInicial.current?.telefono ?? '')
+  // Con un WhatsApp ya cargado se muestra como listo; "Usar otro número" abre el campo.
+  const [usarOtroNumero, setUsarOtroNumero] = useState(false)
+  // Cómo va a entrar al panel: código por WhatsApp o mail y contraseña.
+  const [metodoAcceso, setMetodoAcceso] = useState<'whatsapp' | 'email' | null>(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [verPassword, setVerPassword] = useState(false)
 
   // Estado del OTP (paso 2)
   const [verificationId, setVerificationId] = useState<string | null>(null)
@@ -434,7 +457,7 @@ export default function ClaimTienda() {
 
   useEffect(() => {
     const authToken = useAuthStore.getState().token
-    if ((paso === 'prueba' || paso === 'crecimiento') && storeProducts.length === 0) {
+    if (paso === 'prueba' && storeProducts.length === 0) {
       if (authToken) {
         productosApi.getAll(authToken)
           .then((res: any) => setStoreProducts(res.productos || []))
@@ -494,8 +517,13 @@ export default function ClaimTienda() {
 
   // Valores mostrados: el borrador pisa lo que vino del backend.
   const dispNombre = draft.nombre ?? tienda?.nombre ?? ''
-  const dispUsername = draft.username ?? tienda?.username ?? ''
+  const dispUsername = tienda?.username ?? ''
   const dispLogo = draft.logo ?? tienda?.imagenUrl ?? tienda?.imagenLightUrl ?? null
+  // Dónde vive la tienda: su página propia (`<tienda>.piru.app`) o la compartida.
+  const urlTienda = tienda?.urlTienda ?? (dispUsername ? `${STORE_BASE}/${dispUsername}` : null)
+  // El WhatsApp que ya tiene la tienda (enmascarado: el completo nunca llega al navegador).
+  const numeroCargado = tienda?.telefonoEnmascarado ?? null
+  const usaNumeroCargado = !!numeroCargado && !usarOtroNumero && draft.modalidadSucursales !== 'multiple'
 
   // Estado de pagos mostrado (borrador o config del backend).
   const pagosView: PagosDraft = draft.pagos ?? {
@@ -508,6 +536,14 @@ export default function ClaimTienda() {
     takeaway: config?.delivery.takeawayEnabled ?? true,
   }
 
+  // La dirección que ya tiene el local, para mostrarla como cargada en Entregas.
+  const direccionCargada = useMemo(() => {
+    const lat = config?.delivery.lat
+    const lng = config?.delivery.lng
+    if (lat == null || lng == null) return null
+    return { address: config?.delivery.direccion ?? '', center: { lat, lng } }
+  }, [config])
+
   // Centro del mapa: dirección del local → 1ª zona → default.
   const mapCenter = useMemo<[number, number]>(() => {
     if (config?.delivery.lat != null && config?.delivery.lng != null) return [config.delivery.lat, config.delivery.lng]
@@ -516,23 +552,14 @@ export default function ClaimTienda() {
     return DEFAULT_CENTER
   }, [config])
 
-  // ── Recorrido: después del menú se bifurca entre local único y múltiples sucursales. ──
+  // ── Recorrido: después de la carta se bifurca entre local único y múltiples sucursales. ──
   const cards = useMemo<Card[]>(() => {
     if (!tienda) return []
     const inv = inventario
     const list: Card[] = [{ kind: 'intro' }]
 
-    list.push({ kind: 'explainerTienda' })
-    if (inv?.tieneLink && tienda.username) list.push({ kind: 'link' })
-    if (inv?.tieneImagen) list.push({ kind: 'logo' })
-
     if (config) {
-      // Preview extendido: tarjetas ricas (ver/editar).
-      if (config.productos.length > 0) {
-        list.push({ kind: 'explainerActivacion' })
-        list.push({ kind: 'productos' })
-      }
-      list.push({ kind: 'explainerMonetizacion' })
+      if (config.productos.length > 0) list.push({ kind: 'productos' })
       list.push({ kind: 'modalidadSucursales' })
       if (draft.modalidadSucursales === 'multiple') {
         list.push({ kind: 'sucursales' })
@@ -542,29 +569,18 @@ export default function ClaimTienda() {
         }
       } else if (draft.modalidadSucursales === 'unica') {
         list.push({ kind: 'pagos' })
-        // Siempre se revisan las formas de entrega, aunque el prospecto no tenga delivery armado.
         list.push({ kind: 'delivery' })
       }
-    } else {
-      // Backend viejo sin `config`: caemos al resumen no editable.
-      if ((inv?.productos ?? 0) > 0) {
-        list.push({ kind: 'explainerActivacion' })
-        const n = inv!.productos
-        list.push({ kind: 'reassure', id: 'menu', icon: UtensilsCrossed, titulo: 'Tu menú ya está cargado', valor: `${n} ${n === 1 ? 'producto listo' : 'productos listos'} para vender` })
-      }
-      list.push({ kind: 'explainerMonetizacion' })
-      if (inv?.tieneCobros) list.push({ kind: 'reassure', id: 'cobros', icon: Banknote, titulo: 'Tus cobros están activados', valor: 'Podés cobrar online y en efectivo' })
-      if ((inv?.zonasDelivery ?? 0) > 0) {
-        const n = inv!.zonasDelivery
-        list.push({ kind: 'reassure', id: 'delivery', icon: MapPin, titulo: 'Tu zona de delivery', valor: `${n} ${n === 1 ? 'zona' : 'zonas'} de reparto` })
-      }
+    } else if ((inv?.productos ?? 0) > 0) {
+      // Backend viejo sin `config`: sólo el resumen de la carta.
+      const n = inv!.productos
+      list.push({ kind: 'reassure', id: 'menu', icon: UtensilsCrossed, titulo: 'Tu carta', valor: `${n} ${n === 1 ? 'producto cargado' : 'productos cargados'}` })
     }
 
-    // Después de revisar la configuración, mostramos el resultado concreto: cómo le llega un pedido
-    // al WhatsApp del local. Queda antes del claim para que el dueño entienda qué está activando.
+    // Cómo le llega un pedido al local, a qué WhatsApp, y con qué va a entrar al panel.
     list.push({ kind: 'mensaje' })
     list.push({ kind: 'whatsapps' })
-    list.push({ kind: 'verificar' })
+    list.push({ kind: 'acceso' })
     return list
   }, [tienda, inventario, config, draft.modalidadSucursales, draft.sucursales])
 
@@ -576,29 +592,24 @@ export default function ClaimTienda() {
     const local = dispNombre ? ` de ${dispNombre}` : ''
     const help = (label: string, context: string): WhatsAppHelp => ({
       label,
-      message: `Hola Facu, estoy reclamando mi tienda${local} en Piru. ${context}`,
+      message: `Hola Facu, estoy terminando de configurar mi tienda${local} en Piru. ${context}`,
     })
 
     if (loading) return help('Consultar por mi tienda', 'Quería consultarte por el acceso a mi tienda.')
     if (bloqueo) return help('Ayuda para ingresar', `Me aparece este mensaje: “${bloqueo.titulo}”. ¿Me ayudás a ingresar?`)
 
     if (paso === 'codigo') return help('Ayuda con el código', 'Estoy en la verificación de WhatsApp y necesito ayuda con el código.')
-    if (paso === 'crecimiento') return help('Consultar por el sistema de crecimiento', 'Estoy viendo el sistema de crecimiento de clientes y tengo una consulta.')
-    if (paso === 'prueba') return help('Ayuda con el pedido de prueba', 'Estoy por hacer el pedido de prueba y tengo una consulta.')
-    if (paso === 'modos') return help('Ayuda para elegir', 'Estoy eligiendo cómo usar Piru y necesito que me recomiendes la mejor configuración para mi local.')
+    if (paso === 'modos') return help('Ayuda para elegir', 'Estoy eligiendo cómo trabajo en el local (impresora, mostrador, mesas) y necesito que me recomiendes.')
     if (paso === 'configImpresion') return help('Ayuda con la impresión', 'Estoy configurando la impresión automática y necesito ayuda para instalar o conectar la app.')
     if (paso === 'configMesas') return help('Ayuda con mis mesas', 'Estoy armando el plano inicial de mesas y necesito ayuda para configurarlo.')
-    if (paso === 'plan') return help('Consultar por la suscripción', 'Estoy viendo la prueba gratis y la suscripción. Tengo una consulta antes de continuar.')
+    if (paso === 'prueba') return help('Ayuda con el pedido de prueba', 'Estoy por hacer el pedido de prueba y tengo una consulta.')
+    if (paso === 'aprender') return help('Consultar por el panel', 'Estoy aprendiendo a usar el panel y tengo una consulta.')
 
     if (!card) return help('Hablar con Facu', 'Necesito ayuda para continuar con la configuración.')
 
     if (editing) {
       const editingContext: Record<string, string> = {
-        intro: 'Estoy modificando el nombre de mi local y necesito ayuda.',
-        link: 'Estoy modificando el link público de mi tienda y necesito ayuda.',
-        logo: 'Estoy cambiando el logo de mi tienda y necesito ayuda.',
-        pagos: 'Estoy modificando los medios de pago y necesito ayuda.',
-        delivery: 'Estoy modificando las formas de entrega o la zona de delivery y necesito ayuda.',
+        intro: 'Estoy cambiando el nombre o el logo de mi local y necesito ayuda.',
         sucursales: 'Estoy cargando las sucursales y necesito ayuda.',
       }
       const editingKey = editing.split(':')[0]
@@ -607,45 +618,35 @@ export default function ClaimTienda() {
 
     switch (card.kind) {
       case 'intro':
-        return help('Consultar por mis datos', 'Estoy revisando el nombre y los datos iniciales de mi tienda.')
-      case 'explainerTienda':
-        return help('Consultar por mi tienda', 'Estoy viendo cómo funciona mi tienda online propia y tengo una consulta.')
-      case 'link':
-        return help('Consultar por mi link', `Estoy revisando el link piru.app/${dispUsername || 'mi-tienda'} y tengo una consulta.`)
-      case 'logo':
-        return help('Ayuda con mi logo', 'Estoy revisando el logo de mi tienda y necesito ayuda.')
-      case 'explainerActivacion':
-        return help('Consultar por la carta', 'Estoy viendo cómo está pensada la carta en Piru y tengo una consulta.')
+        return help('Hablar con Facu', 'Estoy empezando a configurar lo que falta.')
       case 'productos':
-        return help('Consultar por mi menú', 'Estoy revisando los productos que cargaron en mi menú y tengo una consulta.')
-      case 'explainerMonetizacion':
-        return help('Consultar por los cobros', 'Estoy viendo cómo funcionan los cobros y entregas y tengo una consulta.')
+        return help('Consultar por mi carta', 'Estoy revisando los productos de mi carta y tengo una consulta.')
       case 'modalidadSucursales':
         return help('Ayuda con mis sucursales', 'Estoy eligiendo si configurar una o varias sucursales y necesito ayuda.')
       case 'sucursales':
         return help('Configurar mis sucursales', 'Estoy cargando los nombres y direcciones de mis sucursales y necesito ayuda.')
       case 'pagos':
-        return help('Ayuda con los cobros', 'Estoy revisando los medios de pago de mi tienda y tengo una consulta.')
+        return help('Ayuda con mi alias', 'Estoy cargando mi alias y los medios de pago y tengo una consulta.')
       case 'pagosSucursal': {
         const sucursal = draft.sucursales?.[card.sucursalIdx]?.nombre ?? `Sucursal ${card.sucursalIdx + 1}`
-        return help('Ayuda con los cobros', `Estoy configurando los medios de pago de ${sucursal} y necesito ayuda.`)
+        return help('Ayuda con mi alias', `Estoy cargando el alias y los medios de pago de ${sucursal} y necesito ayuda.`)
       }
       case 'delivery':
-        return help('Ayuda con el delivery', 'Estoy configurando takeaway, delivery, precios y zonas de entrega y necesito ayuda.')
+        return help('Ayuda con mis zonas', 'Estoy dibujando mis zonas de delivery y necesito ayuda.')
       case 'deliverySucursal': {
         const sucursal = draft.sucursales?.[card.sucursalIdx]?.nombre ?? `Sucursal ${card.sucursalIdx + 1}`
-        return help('Ayuda con el delivery', `Estoy configurando la zona de delivery de ${sucursal} y necesito ayuda.`)
+        return help('Ayuda con mis zonas', `Estoy dibujando la zona de delivery de ${sucursal} y necesito ayuda.`)
       }
       case 'mensaje':
         return help('Consultar por los pedidos', 'Estoy viendo cómo me van a llegar los pedidos y tengo una consulta.')
       case 'whatsapps':
-        return help('Ayuda con los números', 'Estoy configurando los números de WhatsApp que recibirán los pedidos y necesito ayuda.')
-      case 'verificar':
-        return help('Ayuda para verificar', 'Estoy por verificar mi WhatsApp y reclamar la tienda. Necesito ayuda para continuar.')
+        return help('Ayuda con los números', 'Estoy configurando el WhatsApp donde me llegan los pedidos y necesito ayuda.')
+      case 'acceso':
+        return help('Ayuda con mi acceso', 'Estoy creando mi acceso al panel y necesito ayuda.')
       case 'reassure':
         return help('Consultar esta configuración', `Estoy revisando “${card.titulo}” y tengo una consulta.`)
     }
-  }, [bloqueo, card, dispNombre, dispUsername, draft.sucursales, editing, loading, paso])
+  }, [bloqueo, card, dispNombre, draft.sucursales, editing, loading, paso])
 
   const goCard = (i: number) => {
     setEditing(null)
@@ -654,31 +655,20 @@ export default function ClaimTienda() {
   }
   const continuar = () => goCard(cardIdx + 1)
 
-  // ── Editores inline simples ──
+  // ── Editor inline de la bienvenida (nombre + logo) ──
   const abrirEditor = (kind: string) => {
-    if (kind === 'intro') setTmpText(dispNombre)
-    if (kind === 'link') setTmpText(dispUsername)
-    if (kind === 'logo') setTmpLogo(dispLogo)
-    if (kind === 'pagos') setTmpPagos({ ...pagosView })
-    if (kind.startsWith('pagosSucursal:')) {
-      const idx = Number(kind.split(':')[1])
-      const sucursal = draft.sucursales?.[idx]
-      if (sucursal) setTmpPagos({ ...sucursal.pagos })
+    if (kind === 'intro') {
+      setTmpText(dispNombre)
+      setTmpLogo(dispLogo)
     }
     setEditing(kind)
   }
   const cancelarEditor = () => setEditing(null)
 
-  const guardarNombre = () => {
+  const guardarIdentidad = () => {
     const v = tmpText.trim()
     if (v.length < 2) return toast.error('El nombre es muy corto')
-    setDraft((d) => ({ ...d, nombre: v }))
-    setEditing(null)
-  }
-  const guardarLink = () => {
-    const slug = toSlug(tmpText)
-    if (slug.length < 3) return toast.error('El link necesita al menos 3 letras o números')
-    setDraft((d) => ({ ...d, username: slug }))
+    setDraft((d) => ({ ...d, nombre: v, ...(tmpLogo && tmpLogo !== dispLogo ? { logo: tmpLogo } : {}) }))
     setEditing(null)
   }
   const elegirLogo = async (files: FileList | null) => {
@@ -693,44 +683,46 @@ export default function ClaimTienda() {
       setSubiendoLogo(false)
     }
   }
-  const guardarLogo = () => {
-    if (!tmpLogo) return toast.error('Elegí una imagen')
-    setDraft((d) => ({ ...d, logo: tmpLogo }))
-    setEditing(null)
-  }
-  const guardarPagos = () => {
-    if (tmpPagos.transferenciaManual && !tmpPagos.transferenciaAlias.trim())
-      return toast.error('Poné el alias o CBU para la transferencia')
-    if (!tmpPagos.efectivo && !tmpPagos.transferenciaManual && !config?.pagos.autoTransferAvailable && !config?.pagos.mpConnected)
-      return toast.error('Dejá al menos un método de pago activo')
-    setDraft((d) => ({ ...d, pagos: { ...tmpPagos, transferenciaAlias: tmpPagos.transferenciaAlias.trim() } }))
-    setEditing(null)
+
+  const validarPagos = (pagos: PagosDraft, sucursal?: string) => {
+    if (pagos.transferenciaManual && !pagos.transferenciaAlias.trim()) {
+      toast.error(sucursal ? `Escribí el alias de ${sucursal}` : 'Escribí tu alias o CBU')
+      return false
+    }
+    if (!pagos.efectivo && !pagos.transferenciaManual && !config?.pagos.autoTransferAvailable && !config?.pagos.mpConnected) {
+      toast.error('Dejá al menos un medio de pago activo')
+      return false
+    }
+    return true
   }
 
-  const guardarPagosSucursal = (idx: number) => {
-    if (tmpPagos.transferenciaManual && !tmpPagos.transferenciaAlias.trim())
-      return toast.error('Poné el alias o CBU de esta sucursal')
-    if (!tmpPagos.efectivo && !tmpPagos.transferenciaManual && !config?.pagos.autoTransferAvailable && !config?.pagos.mpConnected)
-      return toast.error('Dejá al menos un método de pago activo')
+  const guardarPagos = (pagos: PagosDraft) => {
+    if (!validarPagos(pagos)) return
+    setDraft((d) => ({ ...d, pagos: { ...pagos, transferenciaAlias: pagos.transferenciaAlias.trim() } }))
+    continuar()
+  }
+
+  const guardarPagosSucursal = (idx: number, pagos: PagosDraft) => {
+    if (!validarPagos(pagos, draft.sucursales?.[idx]?.nombre)) return
     setDraft((prev) => ({
       ...prev,
       sucursales: prev.sucursales?.map((s, i) => i === idx
-        ? { ...s, pagos: { ...tmpPagos, transferenciaAlias: tmpPagos.transferenciaAlias.trim() } }
+        ? { ...s, pagos: { ...pagos, transferenciaAlias: pagos.transferenciaAlias.trim() } }
         // Efectivo/transferencia son capacidades generales; el alias sí pertenece a cada sucursal.
-        : { ...s, pagos: { ...s.pagos, efectivo: tmpPagos.efectivo, transferenciaManual: tmpPagos.transferenciaManual } }),
+        : { ...s, pagos: { ...s.pagos, efectivo: pagos.efectivo, transferenciaManual: pagos.transferenciaManual } }),
     }))
-    setEditing(null)
+    continuar()
   }
 
   const elegirModalidadSucursales = (modalidad: ModalidadSucursales) => {
-    const basePagos = { ...pagosView }
-    const firstCenter = { lat: mapCenter[0], lng: mapCenter[1] }
+    const basePagos = { ...pagosView, transferenciaAlias: '' }
+    const firstCenter = direccionCargada?.center ?? { lat: mapCenter[0], lng: mapCenter[1] }
     setDraft((prev) => ({
       ...prev,
       modalidadSucursales: modalidad,
       sucursales: modalidad === 'multiple'
         ? (prev.sucursales?.length ? prev.sucursales : [
-            { localId: crypto.randomUUID(), nombre: 'Casa central', address: '', center: firstCenter, pagos: { ...basePagos }, whatsappNumber: '' },
+            { localId: crypto.randomUUID(), nombre: 'Casa central', address: direccionCargada?.address ?? '', center: direccionCargada ? firstCenter : null, pagos: { ...basePagos }, whatsappNumber: '' },
             { localId: crypto.randomUUID(), nombre: 'Sucursal 2', address: '', center: null, pagos: { ...basePagos }, whatsappNumber: '' },
           ])
         : undefined,
@@ -745,22 +737,23 @@ export default function ClaimTienda() {
     continuar()
   }
 
-  const guardarEntregaSucursal = (idx: number, _tipos: TiposPedidoDraft, delivery?: DeliveryDraft) => {
-    if (!delivery) return toast.error('Configurá una zona de delivery para esta sucursal')
-    setDraft((prev) => ({
-      ...prev,
-      tiposPedido: { delivery: true, takeaway: prev.tiposPedido?.takeaway ?? (config?.delivery.takeawayEnabled ?? true) },
-      sucursales: prev.sucursales?.map((s, i) => i === idx
-        ? { ...s, address: delivery.address, center: delivery.center, delivery }
-        : s),
-    }))
-    setEditing(null)
+  const guardarEntregaSucursal = (idx: number, delivery?: DeliveryDraft) => {
+    if (delivery) {
+      setDraft((prev) => ({
+        ...prev,
+        tiposPedido: { delivery: true, takeaway: prev.tiposPedido?.takeaway ?? (config?.delivery.takeawayEnabled ?? true) },
+        sucursales: prev.sucursales?.map((s, i) => i === idx
+          ? { ...s, address: delivery.address, center: delivery.center, delivery }
+          : s),
+      }))
+    }
+    continuar()
   }
 
   const guardarEntrega = (tiposPedido: TiposPedidoDraft, delivery?: DeliveryDraft) => {
     // Al pasar a sólo takeaway descartamos una edición previa de zonas del borrador.
     setDraft((prev) => ({ ...prev, tiposPedido, delivery }))
-    setEditing(null)
+    continuar()
   }
 
   // Normaliza el WhatsApp tipeado: sólo dígitos + prefijo 54 si falta.
@@ -779,7 +772,7 @@ export default function ClaimTienda() {
       const actualizadas = sucursales.map((s, i) => ({ ...s, whatsappNumber: normalizados[i]! }))
       setDraft((prev) => ({ ...prev, sucursales: actualizadas }))
       if (!normalizados.includes(normalizarTelefono(telefono))) setTelefono(normalizados[0]!)
-    } else {
+    } else if (!usaNumeroCargado) {
       const normalizado = normalizarTelefono(telefono)
       if (!normalizado) return toast.error('Ingresá un número de WhatsApp válido')
       setTelefono(normalizado)
@@ -787,9 +780,12 @@ export default function ClaimTienda() {
     continuar()
   }
 
+  // El número elegido para los pedidos; `undefined` = el que ya tiene la tienda.
+  const telefonoElegido = () => usaNumeroCargado ? undefined : (normalizarTelefono(telefono) ?? undefined)
+
   const iniciarReclamo = async () => {
-    const tel = normalizarTelefono(telefono)
-    if (!tel) {
+    const tel = telefonoElegido()
+    if (!tel && !usaNumeroCargado) {
       toast.error('Ingresá un número de WhatsApp válido')
       return
     }
@@ -818,10 +814,12 @@ export default function ClaimTienda() {
   // Persiste el borrador de ediciones con el token recién obtenido. Best-effort: si algo falla,
   // igual lo dejamos entrar (puede reintentar desde Ajustes).
   const persistirDraft = async (nuevoToken: string) => {
-    // 1) Identidad: nombre / link / logo (+ dirección del local si la definió en el delivery).
+    // 1) Identidad: nombre / logo / WhatsApp de pedidos (+ dirección del local si la definió en el
+    // delivery). El número es unificado: `telefono` actualiza también el de pedidos y comprobantes.
     const perfil: Record<string, string | number | null> = {}
     if (draft.nombre !== undefined) perfil.nombre = draft.nombre
-    if (draft.username !== undefined) perfil.username = draft.username
+    const telPedidos = draft.modalidadSucursales !== 'multiple' ? telefonoElegido() : undefined
+    if (telPedidos) perfil.telefono = telPedidos
     if (draft.logo !== undefined) {
       perfil.image = draft.logo
       perfil.imageLight = draft.logo
@@ -925,6 +923,33 @@ export default function ClaimTienda() {
     }
   }
 
+  // Con la sesión ya emitida (por código o por mail): guarda el progreso, aplica el borrador y sigue
+  // con la configuración de cómo trabaja el local.
+  const completarReclamo = async (r: { token: string; restaurante: Parameters<typeof setAuth>[1] }) => {
+    setAuth(r.token, r.restaurante)
+    // El claim ya quedó confirmado en el servidor. Persistimos el primer paso autenticado antes
+    // de aplicar el borrador para que incluso una recarga inmediata pueda reanudar el recorrido.
+    if (tienda) {
+      const progreso: ProgresoClaim = {
+        restauranteId: r.restaurante.id,
+        paso: 'modos',
+        tienda,
+        telefono,
+        modosActivos: [],
+        activarMesasConPos: false,
+        mesasActivas: false,
+        cantidadMesas: 10,
+      }
+      localStorage.setItem(progresoClaimKey(token), JSON.stringify(progreso))
+    }
+    await persistirDraft(r.token)
+    // La suscripción base + trial para el cierre del recorrido (best-effort, no bloquea).
+    suscripcionApi.miSuscripcion(r.token).then((res) => setMiSusc(res.data)).catch(() => {})
+    toast.success('Tu acceso quedó listo')
+    setPaso('modos')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const submitCodigo = useCallback(
     async (codigo: string) => {
       if (!verificationId || codigo.length !== CODE_LENGTH) return
@@ -933,30 +958,7 @@ export default function ClaimTienda() {
       setVerificando(true)
       try {
         const r = await claimApi.verify(token, verificationId, codigo)
-        setAuth(r.token, r.restaurante)
-        // El claim ya quedó confirmado en el servidor. Persistimos el primer paso autenticado antes
-        // de aplicar el borrador para que incluso una recarga inmediata pueda reanudar el recorrido.
-        if (tienda) {
-          const progreso: ProgresoClaim = {
-            restauranteId: r.restaurante.id,
-            paso: 'crecimiento',
-            tienda,
-            telefono,
-            modosActivos: [],
-            activarMesasConPos: false,
-            mesasActivas: false,
-            cantidadMesas: 10,
-          }
-          localStorage.setItem(progresoClaimKey(token), JSON.stringify(progreso))
-        }
-        // Con el token en mano, aplicamos todo lo que tocó en el recorrido, de una sola vez.
-        await persistirDraft(r.token)
-        // Traemos la suscripción base + trial para la pantalla final (best-effort, no bloquea).
-        suscripcionApi.miSuscripcion(r.token).then((res) => setMiSusc(res.data)).catch(() => {})
-        toast.success('¡Tu tienda es tuya! 🎉')
-        // No vamos directo al panel: primero el sistema didáctico de crecimiento, prueba y suscripción.
-        setPaso('crecimiento')
-        window.scrollTo({ top: 0, behavior: 'smooth' })
+        await completarReclamo(r)
       } catch (e) {
         setDigits(Array(CODE_LENGTH).fill(''))
         inputsRef.current[0]?.focus()
@@ -968,9 +970,30 @@ export default function ClaimTienda() {
         submittingRef.current = false
       }
     },
-    // persistirDraft depende de `draft`/`config`; los incluimos para la referencia actual.
-    [verificationId, token, setAuth, draft, config, tienda, telefono],
+    // completarReclamo depende de `draft`/`config`/`telefono`; los incluimos para la referencia actual.
+    [verificationId, token, setAuth, draft, config, tienda, telefono, usarOtroNumero],
   )
+
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const crearAccesoConEmail = async () => {
+    if (!emailValido) return toast.error('Revisá el mail')
+    if (password.length < 8) return toast.error('La contraseña necesita al menos 8 caracteres')
+    setEnviando(true)
+    try {
+      const r = await claimApi.credenciales(token, { email: email.trim(), password, telefono: telefonoElegido() })
+      await completarReclamo(r)
+    } catch (e) {
+      if (e instanceof ApiError && (e.response?.yaReclamada || e.response?.vencido)) {
+        setBloqueo(mapBloqueo(e))
+      } else {
+        toast.error('No pudimos crear tu acceso', {
+          description: e instanceof ApiError ? e.message : 'Probá de nuevo en un momento',
+        })
+      }
+    } finally {
+      setEnviando(false)
+    }
+  }
 
   const handleChange = (index: number, value: string) => {
     const clean = value.replace(/\D/g, '')
@@ -1004,8 +1027,8 @@ export default function ClaimTienda() {
 
   const reenviar = async () => {
     if (cooldown > 0) return
-    const tel = normalizarTelefono(telefono)
-    if (!tel) {
+    const tel = telefonoElegido()
+    if (!tel && !usaNumeroCargado) {
       toast.error('Ingresá un número de WhatsApp válido')
       return
     }
@@ -1075,26 +1098,20 @@ export default function ClaimTienda() {
     }
   }
 
-  const avanzarDesdeModos = () => {
-    const siguiente: Paso = modosActivos.includes('impresion')
-      ? 'configImpresion'
-      : mesasActivas ? 'configMesas' : 'plan'
+  const irA = (siguiente: Paso) => {
     setPaso(siguiente)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const avanzarDesdeImpresion = () => {
-    setPaso(mesasActivas ? 'configMesas' : 'plan')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  const avanzarDesdeModos = () => irA(modosActivos.includes('impresion')
+    ? 'configImpresion'
+    : mesasActivas ? 'configMesas' : 'prueba')
 
-  const volverDesdePlan = () => {
-    const anterior: Paso = mesasActivas
-      ? 'configMesas'
-      : modosActivos.includes('impresion') ? 'configImpresion' : 'modos'
-    setPaso(anterior)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  const avanzarDesdeImpresion = () => irA(mesasActivas ? 'configMesas' : 'prueba')
+
+  const volverDesdePrueba = () => irA(mesasActivas
+    ? 'configMesas'
+    : modosActivos.includes('impresion') ? 'configImpresion' : 'modos')
 
   const crearPlanoInicialMesas = async () => {
     const authToken = useAuthStore.getState().token
@@ -1128,8 +1145,7 @@ export default function ClaimTienda() {
       toast.success(faltantes > 0
         ? `${faltantes} ${faltantes === 1 ? 'mesa creada' : 'mesas creadas'} en tu plano inicial`
         : `Ya tenés ${activas.length} mesas configuradas`)
-      setPaso('plan')
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      irA('prueba')
     } catch (error) {
       toast.error('No pudimos crear el plano inicial', {
         description: error instanceof Error ? error.message : 'Probá nuevamente en un momento.',
@@ -1141,29 +1157,24 @@ export default function ClaimTienda() {
 
   const terminarClaim = () => {
     localStorage.removeItem(progresoClaimKey(token))
+    // El recorrido del panel ya lo hizo acá: que no se le vuelva a abrir al entrar.
+    if (restauranteAutenticado?.id) marcarRecorridoVisto(restauranteAutenticado.id)
     navigate('/dashboard', { replace: true })
   }
 
+  // El catálogo del backend es la fuente del precio vigente. Los otros campos son snapshots/aliases
+  // de compatibilidad y pueden quedar viejos.
+  const precioBase = miSusc?.suscripcionBase?.precioMensual
+    ?? miSusc?.cotizacionProximaFactura?.montoBaseMensual
+    ?? miSusc?.precioBaseMensual
+    ?? miSusc?.precioMensual
+  const precioSuscripcion = precioBase ? `$${fmtPrecio(precioBase)}` : null
+  const trialDias = miSusc?.trialFin
+    ? Math.max(0, Math.ceil((new Date(miSusc.trialFin).getTime() - Date.now()) / 86_400_000))
+    : null
+
   const codigo = digits.join('')
   const progress = cards.length > 0 ? ((cardIdx + 1) / cards.length) * 100 : 0
-
-  // Botones de una tarjeta editable: Continuar (primario) + Modificar (secundario).
-  const AccionesDato = ({ onModificar, primary }: { onModificar: () => void; primary?: string }) => (
-    <>
-      <button
-        onClick={continuar}
-        className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
-      >
-        {primary ?? 'Continuar'}
-      </button>
-      <button
-        onClick={onModificar}
-        className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5"
-      >
-        <Pencil className="h-3.5 w-3.5" /> Modificar
-      </button>
-    </>
-  )
 
   // Botones de un editor inline simple: Guardar (primario) + Cancelar (secundario).
   const AccionesEditor = ({ onGuardar, disabled }: { onGuardar: () => void; disabled?: boolean }) => (
@@ -1185,12 +1196,7 @@ export default function ClaimTienda() {
   )
 
   const Titulo = ({ children }: { children: React.ReactNode }) => (
-    <>
-      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-        <Check className="h-3.5 w-3.5" /> Ya está listo
-      </span>
-      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">{children}</h1>
-    </>
+    <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight">{children}</h1>
   )
 
   return (
@@ -1204,148 +1210,108 @@ export default function ClaimTienda() {
           <BloqueoView bloqueo={bloqueo} onLogin={() => navigate('/login', { replace: true })} />
         ) : paso === 'walk' ? (
           <>
-            {/* Barra de progreso del recorrido (sutil, no numerada) */}
-            <div className="h-1 w-full rounded-full bg-zinc-100 dark:bg-zinc-900 mb-8 overflow-hidden">
+            {/* Barra de progreso del recorrido + en qué parte está */}
+            <div className="h-1 w-full rounded-full bg-zinc-100 dark:bg-zinc-900 overflow-hidden">
               <div className="h-full rounded-full bg-[#FF7A00] transition-all duration-500 ease-out" style={{ width: `${progress}%` }} />
             </div>
+            <div className="flex items-center justify-between mt-3 mb-6 min-h-6">
+              {cardIdx > 0 ? (
+                <button
+                  onClick={() => goCard(cardIdx - 1)}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Volver
+                </button>
+              ) : <span />}
+              {card && <span className="text-xs font-semibold text-[#FF7A00]">{SECCION[card.kind]}</span>}
+            </div>
 
-            {cardIdx > 0 && (
-              <button
-                onClick={() => goCard(cardIdx - 1)}
-                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-              >
-                <ArrowLeft className="h-4 w-4" /> Volver
-              </button>
-            )}
-
-            {/* ── Portada + nombre (editable) ── */}
+            {/* ── Bienvenida: qué falta dejar listo (nombre y logo editables) ── */}
             {card?.kind === 'intro' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 text-center flex flex-col items-center">
-                {dispLogo ? (
-                  <img src={dispLogo} alt={dispNombre || 'Tu tienda'} className="h-20 w-20 rounded-2xl object-cover shadow-sm ring-1 ring-border" />
-                ) : (
-                  <div className="h-20 w-20 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center">
-                    <Store className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                )}
-
                 {editing === 'intro' ? (
-                  <div className="w-full mt-6">
-                    <p className="text-sm text-muted-foreground mb-2 text-left">El nombre de tu local</p>
+                  <div className="w-full">
+                    <Titulo>Tu nombre y tu logo</Titulo>
+                    <label className="cursor-pointer inline-block mt-6">
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { elegirLogo(e.target.files); e.currentTarget.value = '' }} />
+                      <div className="relative h-24 w-24 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 ring-1 ring-border flex items-center justify-center group">
+                        {tmpLogo ? <img src={tmpLogo} alt="Logo" className="h-full w-full object-cover" /> : <ImagePlus className="h-7 w-7 text-muted-foreground" />}
+                        {subiendoLogo && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-white" /></div>}
+                        <div className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[11px] py-1">Cambiar</div>
+                      </div>
+                    </label>
+                    <p className="text-sm text-muted-foreground mt-6 mb-2 text-left">El nombre de tu local</p>
                     <input
                       autoFocus
                       value={tmpText}
                       onChange={(e) => setTmpText(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && guardarNombre()}
+                      onKeyDown={(e) => e.key === 'Enter' && guardarIdentidad()}
                       placeholder="Burger Bros"
                       className="w-full h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-0 px-4 text-lg font-semibold outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow"
                     />
-                    <AccionesEditor onGuardar={guardarNombre} disabled={tmpText.trim().length < 2} />
+                    <AccionesEditor onGuardar={guardarIdentidad} disabled={tmpText.trim().length < 2 || subiendoLogo} />
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm text-muted-foreground mt-6">Esta tienda es de</p>
-                    <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-1">{dispNombre || 'tu local'}</h1>
-                    <p className="text-[15px] text-muted-foreground mt-4 max-w-xs">
-                      Ya la dejamos armada y lista para vender. Mirá lo que hay hecho y, si algo no te cierra, lo cambiás acá mismo.
-                    </p>
-                    <AccionesDato onModificar={() => abrirEditor('intro')} primary="Ver mi tienda" />
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ── Didáctico 1: Tu tienda propia ── */}
-            {card?.kind === 'explainerTienda' && (
-              <ExplainerTienda
-                slug={dispUsername || 'tulocal'}
-                onContinue={continuar}
-              />
-            )}
-
-            {/* ── Link público (editable) ── */}
-            {card?.kind === 'link' && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                <Titulo>Tu link para compartir</Titulo>
-                {editing === 'link' ? (
-                  <div className="w-full mt-6">
-                    <div className="flex items-center h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30 transition-shadow font-mono">
-                      <span className="text-muted-foreground/60 text-base select-none">piru.app/</span>
-                      <input
-                        autoFocus
-                        value={tmpText}
-                        onChange={(e) => setTmpText(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && guardarLink()}
-                        placeholder="tulocal"
-                        className="flex-1 bg-transparent border-0 outline-none text-base font-semibold text-[#FF7A00] min-w-0"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2 text-left">
-                      Quedará como <span className="font-mono">piru.app/{toSlug(tmpText) || 'tulocal'}</span>
-                    </p>
-                    <AccionesEditor onGuardar={guardarLink} disabled={toSlug(tmpText).length < 3} />
-                  </div>
-                ) : (
-                  <>
-                    <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-4 text-base font-mono">
-                      <span className="text-muted-foreground/60">piru.app/</span>
-                      <span className="font-semibold text-[#FF7A00]">{dispUsername}</span>
-                    </div>
-                    <AccionesDato onModificar={() => abrirEditor('link')} />
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ── Logo (editable) ── */}
-            {card?.kind === 'logo' && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                <Titulo>Tu logo</Titulo>
-                {editing === 'logo' ? (
-                  <div className="w-full mt-6 flex flex-col items-center">
-                    <label className="cursor-pointer">
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { elegirLogo(e.target.files); e.currentTarget.value = '' }} />
-                      <div className="relative h-28 w-28 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 ring-1 ring-border flex items-center justify-center group">
-                        {tmpLogo ? <img src={tmpLogo} alt="Nuevo logo" className="h-full w-full object-cover" /> : <ImagePlus className="h-7 w-7 text-muted-foreground" />}
-                        {subiendoLogo && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-white" /></div>}
-                        <div className="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[11px] py-1 opacity-0 group-hover:opacity-100 transition-opacity">Cambiar</div>
+                    {dispLogo ? (
+                      <img src={dispLogo} alt={dispNombre || 'Tu local'} className="h-20 w-20 rounded-2xl object-cover shadow-sm ring-1 ring-border" />
+                    ) : (
+                      <div className="h-20 w-20 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center">
+                        <Store className="h-8 w-8 text-muted-foreground" />
                       </div>
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-3">Tocá la imagen para elegir otra · JPG o PNG</p>
-                    <div className="w-full"><AccionesEditor onGuardar={guardarLogo} disabled={!tmpLogo || subiendoLogo} /></div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="mt-6 h-28 w-28 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 ring-1 ring-border flex items-center justify-center">
-                      {dispLogo ? <img src={dispLogo} alt="Logo" className="h-full w-full object-cover" /> : <Store className="h-8 w-8 text-muted-foreground" />}
-                    </div>
-                    <p className="text-[15px] text-muted-foreground mt-4">Tu marca ya está puesta en la tienda.</p>
-                    <AccionesDato onModificar={() => abrirEditor('logo')} />
+                    )}
+                    <p className="text-sm text-muted-foreground mt-6">Hola, {dispNombre || 'bienvenido'}</p>
+                    <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-1">Dejemos lo último listo</h1>
+                    <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+                      Completás los datos que sólo vos sabés, elegís cómo trabajás y aprendés a manejar tu panel. Te lleva unos minutos.
+                    </p>
+                    <ol className="w-full mt-7 rounded-2xl bg-white dark:bg-zinc-900 p-2 text-left">
+                      {[
+                        { icon: Banknote, titulo: 'Tu alias y tus zonas de delivery', texto: 'Lo único que no podemos cargar por vos.' },
+                        { icon: MessageCircle, titulo: 'Dónde te llegan los pedidos', texto: 'Tu WhatsApp y tu acceso al panel.' },
+                        { icon: Printer, titulo: 'Cómo trabajás en el local', texto: 'Impresora, mostrador, mesas.' },
+                        { icon: CircleHelp, titulo: 'Cómo se usa el panel', texto: 'Un repaso corto, pantalla por pantalla.' },
+                      ].map((item, i) => (
+                        <li key={item.titulo} className="flex items-center gap-3 rounded-xl px-3 py-2.5 animate-in fade-in slide-in-from-bottom-1 fill-mode-both" style={{ animationDelay: `${150 + i * 90}ms` }}>
+                          <span className="h-9 w-9 shrink-0 rounded-xl bg-orange-500/10 flex items-center justify-center">
+                            <item.icon className="h-4 w-4 text-[#FF7A00]" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold leading-tight">{item.titulo}</span>
+                            <span className="block text-xs text-muted-foreground mt-0.5">{item.texto}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                    <button
+                      onClick={continuar}
+                      className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
+                    >
+                      Empezar <ArrowRight className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => abrirEditor('intro')}
+                      className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Cambiar nombre o logo
+                    </button>
                   </>
                 )}
               </div>
             )}
 
-            {/* ── Didáctico 2: Activación sin fricción (la carta) ── */}
-            {card?.kind === 'explainerActivacion' && (
-              <ExplainerActivacion
-                onContinue={continuar}
-              />
-            )}
-
-            {/* ── Productos (solo ver) ── */}
+            {/* ── Carta (sólo ver): dónde se edita ── */}
             {card?.kind === 'productos' && config && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                <Titulo>Tu menú ya está cargado</Titulo>
-                <p className="text-[15px] text-muted-foreground mt-3">
-                  {config.productos.length} {config.productos.length === 1 ? 'producto listo' : 'productos listos'} para vender.
+                <Titulo>Revisá tu carta</Titulo>
+                <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
+                  Estos son los {config.productos.length} {config.productos.length === 1 ? 'producto' : 'productos'} que cargamos. Si un precio o una foto no está bien, lo cambiás vos desde <strong className="font-semibold text-foreground">Menú</strong> en tu panel.
                 </p>
                 <div className="mt-6 w-full max-h-[55vh] overflow-y-auto space-y-3 pr-0.5 scrollbar-mini">
                   {config.productos.map((p) => (
                     <ProductoCard key={p.id} p={p} />
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground mt-3">Los editás en detalle cuando entres a tu panel.</p>
                 <button
                   onClick={continuar}
                   className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
@@ -1353,13 +1319,6 @@ export default function ClaimTienda() {
                   Continuar
                 </button>
               </div>
-            )}
-
-            {/* ── Didáctico 3: Monetización directa ── */}
-            {card?.kind === 'explainerMonetizacion' && (
-              <ExplainerMonetizacion
-                onContinue={continuar}
-              />
             )}
 
             {/* ── Bifurcación del recorrido: un local o configuración por sucursal ── */}
@@ -1370,16 +1329,16 @@ export default function ClaimTienda() {
                 </div>
                 <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">¿Cuántos locales tenés?</h1>
                 <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-                  Así configuramos correctamente los cobros, direcciones y zonas de envío.
+                  Así dejamos bien configurados los cobros, las direcciones y las zonas de envío.
                 </p>
                 <div className="w-full space-y-2.5 mt-7">
                   <button type="button" onClick={() => elegirModalidadSucursales('unica')} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left hover:border-[#FF7A00]/60 hover:bg-orange-500/[0.04] transition-colors">
-                    <span className="block text-sm font-semibold">Una única sucursal</span>
-                    <span className="block text-xs text-muted-foreground mt-1">Una dirección, sus medios de pago y su delivery.</span>
+                    <span className="block text-sm font-semibold">Un solo local</span>
+                    <span className="block text-xs text-muted-foreground mt-1">Una dirección, un alias y tus zonas de delivery.</span>
                   </button>
                   <button type="button" onClick={() => elegirModalidadSucursales('multiple')} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-left hover:border-[#FF7A00]/60 hover:bg-orange-500/[0.04] transition-colors">
-                    <span className="block text-sm font-semibold">Múltiples sucursales</span>
-                    <span className="block text-xs text-muted-foreground mt-1">Cada local tendrá dirección, alias y zonas propias.</span>
+                    <span className="block text-sm font-semibold">Varias sucursales</span>
+                    <span className="block text-xs text-muted-foreground mt-1">Cada local con su dirección, su alias y sus zonas.</span>
                   </button>
                 </div>
               </div>
@@ -1393,206 +1352,90 @@ export default function ClaimTienda() {
               </div>
             )}
 
-            {/* ── Métodos de pago (editable) ── */}
+            {/* ── Alias y medios de pago: siempre abierto, el alias real lo sabe sólo el dueño ── */}
             {card?.kind === 'pagos' && config && (
+              <PagosForm
+                key="pagos"
+                initial={draft.pagos ?? { ...pagosView, transferenciaManual: true, transferenciaAlias: '' }}
+                autoTransfer={config.pagos.autoTransferAvailable}
+                mercadoPago={config.pagos.mpConnected}
+                onGuardar={guardarPagos}
+              />
+            )}
+
+            {card?.kind === 'pagosSucursal' && config && draft.sucursales?.[card.sucursalIdx] && (
+              <PagosForm
+                key={`pagos-${card.sucursalIdx}`}
+                sucursal={draft.sucursales[card.sucursalIdx].nombre}
+                initial={{ ...draft.sucursales[card.sucursalIdx].pagos, transferenciaManual: draft.sucursales[card.sucursalIdx].pagos.transferenciaManual || !draft.sucursales[card.sucursalIdx].pagos.transferenciaAlias }}
+                autoTransfer={config.pagos.autoTransferAvailable}
+                mercadoPago={config.pagos.mpConnected}
+                onGuardar={(pagos) => guardarPagosSucursal(card.sucursalIdx, pagos)}
+              />
+            )}
+
+            {/* ── Formas de entrega + zonas: siempre abierto, las zonas las dibuja el dueño ── */}
+            {card?.kind === 'delivery' && config && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                <Titulo>Cómo te pagan</Titulo>
-                {editing === 'pagos' ? (
-                  <div className="w-full mt-6 space-y-2.5 text-left">
-                    <ToggleRow
-                      icon={Wallet}
-                      label="Efectivo"
-                      checked={tmpPagos.efectivo}
-                      onToggle={() => setTmpPagos((p) => ({ ...p, efectivo: !p.efectivo }))}
-                    />
-                    <ToggleRow
-                      icon={Banknote}
-                      label="Transferencia manual"
-                      checked={tmpPagos.transferenciaManual}
-                      onToggle={() => setTmpPagos((p) => ({ ...p, transferenciaManual: !p.transferenciaManual }))}
-                    />
-                    {tmpPagos.transferenciaManual && (
-                      <input
-                        autoFocus
-                        value={tmpPagos.transferenciaAlias}
-                        onChange={(e) => setTmpPagos((p) => ({ ...p, transferenciaAlias: e.target.value }))}
-                        placeholder="Tu alias o CBU"
-                        className="w-full h-12 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-0 px-4 text-sm outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow"
-                      />
-                    )}
-                    {(config.pagos.autoTransferAvailable || config.pagos.mpConnected) && (
-                      <p className="text-xs text-muted-foreground px-1 pt-1">
-                        {config.pagos.mpConnected && 'MercadoPago'}
-                        {config.pagos.mpConnected && config.pagos.autoTransferAvailable && ' y '}
-                        {config.pagos.autoTransferAvailable && 'la transferencia automática'}
-                        {' '}ya {config.pagos.mpConnected && config.pagos.autoTransferAvailable ? 'están' : 'está'} activo. Se gestiona desde el panel.
-                      </p>
-                    )}
-                    <AccionesEditor onGuardar={guardarPagos} />
-                  </div>
-                ) : (
-                  <>
-                    <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-2 space-y-1.5 text-left">
-                      <MetodoLinea icon={Wallet} label="Efectivo" on={pagosView.efectivo} />
-                      <MetodoLinea
-                        icon={Banknote}
-                        label={pagosView.transferenciaManual && pagosView.transferenciaAlias ? `Transferencia · ${pagosView.transferenciaAlias}` : 'Transferencia manual'}
-                        on={pagosView.transferenciaManual}
-                        attention={pagosView.transferenciaManual && !pagosView.transferenciaAlias ? 'Falta tu alias — tocá Modificar' : undefined}
-                      />
-                      {config.pagos.autoTransferAvailable && <MetodoLinea icon={Banknote} label="Transferencia automática" on />}
-                      {config.pagos.mpConnected && <MetodoLinea icon={CreditCard} label="MercadoPago" on />}
-                    </div>
-                    <AccionesDato onModificar={() => abrirEditor('pagos')} />
-                  </>
-                )}
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight">¿Cómo entregás tus pedidos?</h1>
+                <DeliveryEditor
+                  initial={draft.delivery ?? (direccionCargada ? { mode: 'zonas', zonas: [], ...direccionCargada } : undefined)}
+                  direccionCargada={!draft.delivery && !!direccionCargada}
+                  initialTipos={tiposPedidoView}
+                  onGuardar={guardarEntrega}
+                  onSaltar={continuar}
+                  textoSaltar="Lo configuro después en el panel"
+                />
               </div>
             )}
 
-            {card?.kind === 'pagosSucursal' && config && draft.sucursales?.[card.sucursalIdx] && (() => {
-              const sucursal = draft.sucursales![card.sucursalIdx]
-              const editorId = `pagosSucursal:${card.sucursalIdx}`
-              const pagos = sucursal.pagos
-              return (
-                <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                  <span className="text-lg font-semibold tracking-tight text-[#FF7A00]">{sucursal.nombre}</span>
-                  <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">Cómo te pagan</h1>
-                  {editing === editorId ? (
-                    <div className="w-full mt-6 space-y-2.5 text-left">
-                      <ToggleRow icon={Wallet} label="Efectivo" checked={tmpPagos.efectivo} onToggle={() => setTmpPagos((p) => ({ ...p, efectivo: !p.efectivo }))} />
-                      <ToggleRow icon={Banknote} label="Transferencia manual" checked={tmpPagos.transferenciaManual} onToggle={() => setTmpPagos((p) => ({ ...p, transferenciaManual: !p.transferenciaManual }))} />
-                      {tmpPagos.transferenciaManual && <input autoFocus value={tmpPagos.transferenciaAlias} onChange={(e) => setTmpPagos((p) => ({ ...p, transferenciaAlias: e.target.value }))} placeholder={`Alias o CBU de ${sucursal.nombre}`} className="w-full h-12 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-0 px-4 text-sm outline-none focus:ring-2 focus:ring-[#FF7A00]/30" />}
-                      <p className="text-xs text-muted-foreground px-1">Los medios habilitados son generales; el alias de transferencia se guarda para esta sucursal.</p>
-                      <AccionesEditor onGuardar={() => guardarPagosSucursal(card.sucursalIdx)} />
-                    </div>
-                  ) : (
-                    <>
-                      <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-2 space-y-1.5 text-left">
-                        <MetodoLinea icon={Wallet} label="Efectivo" on={pagos.efectivo} />
-                        <MetodoLinea icon={Banknote} label={pagos.transferenciaManual && pagos.transferenciaAlias ? `Transferencia · ${pagos.transferenciaAlias}` : 'Transferencia manual'} on={pagos.transferenciaManual} attention={pagos.transferenciaManual && !pagos.transferenciaAlias ? 'Falta el alias de esta sucursal' : undefined} />
-                        {config.pagos.autoTransferAvailable && <MetodoLinea icon={Banknote} label="Transferencia automática" on />}
-                        {config.pagos.mpConnected && <MetodoLinea icon={CreditCard} label="MercadoPago" on />}
-                      </div>
-                      <AccionesDato onModificar={() => abrirEditor(editorId)} />
-                    </>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* ── Formas de entrega + delivery (editable: radio o zonas + precio) ── */}
-            {card?.kind === 'delivery' && config && (() => {
-              const configurado = !!draft.tiposPedido || !!draft.delivery || config.delivery.deliveryEnabled || config.delivery.takeawayEnabled !== false
-              return (
-                <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                  {editing === 'delivery' ? (
-                    <>
-                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight">¿Cómo entregás tus pedidos?</h1>
-                      <DeliveryEditor
-                        initial={draft.delivery}
-                        initialTipos={tiposPedidoView}
-                        onGuardar={guardarEntrega}
-                        onCancelar={cancelarEditor}
-                      />
-                    </>
-                  ) : configurado ? (
-                    <>
-                      <Titulo>Cómo entregás tus pedidos</Titulo>
-                      <DeliveryResumen draft={draft.delivery} tipos={tiposPedidoView} zonas={config.delivery.zonas} center={mapCenter} />
-                      <AccionesDato onModificar={() => abrirEditor('delivery')} />
-                    </>
-                  ) : (
-                    // Nada configurado todavía: invitamos a configurar, sin decir "ya está listo".
-                    <>
-                      <div className="h-14 w-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center ring-1 ring-black/[0.04] dark:ring-white/[0.06]">
-                        <MapPin className="h-6 w-6 text-[#FF7A00]" strokeWidth={2} />
-                      </div>
-                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">Definí cómo entregás</h1>
-                      <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-                        Elegí si tus clientes pueden pedir delivery, takeaway o ambas opciones.
-                      </p>
-                      <button
-                        onClick={() => abrirEditor('delivery')}
-                        className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
-                      >
-                        Configurar entregas
-                      </button>
-                      <button
-                        onClick={continuar}
-                        className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-                      >
-                        Ahora no
-                      </button>
-                    </>
-                  )}
-                </div>
-              )
-            })()}
-
             {card?.kind === 'deliverySucursal' && config && draft.sucursales?.[card.sucursalIdx] && (() => {
               const sucursal = draft.sucursales![card.sucursalIdx]
-              const editorId = `deliverySucursal:${card.sucursalIdx}`
               const initial = sucursal.delivery ?? (sucursal.center ? {
-                mode: 'radio' as const,
-                precio: '0',
-                radius: 2500,
+                mode: 'zonas' as const,
+                zonas: [],
                 center: sucursal.center,
                 address: sucursal.address,
               } : undefined)
               return (
-                <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                  {editing === editorId ? (
-                    <>
-                      <span className="text-lg font-semibold tracking-tight text-[#FF7A00]">{sucursal.nombre}</span>
-                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">Zona de envío</h1>
-                      <DeliveryEditor initial={initial} initialTipos={{ delivery: true, takeaway: tiposPedidoView.takeaway }} skipTipos onGuardar={(tipos, delivery) => guardarEntregaSucursal(card.sucursalIdx, tipos, delivery)} onCancelar={cancelarEditor} />
-                    </>
-                  ) : sucursal.delivery ? (
-                    <>
-                      <span className="text-lg font-semibold tracking-tight text-[#FF7A00]">{sucursal.nombre}</span>
-                      <Titulo>Zona de envío configurada</Titulo>
-                      <DeliveryResumen draft={sucursal.delivery} tipos={{ delivery: true, takeaway: tiposPedidoView.takeaway }} zonas={[]} center={[sucursal.delivery.center.lat, sucursal.delivery.center.lng]} />
-                      <AccionesDato onModificar={() => abrirEditor(editorId)} />
-                    </>
-                  ) : (
-                    <>
-                      <div className="h-14 w-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"><MapPin className="h-6 w-6 text-[#FF7A00]" /></div>
-                      <span className="text-lg font-semibold tracking-tight text-[#FF7A00] mt-5">{sucursal.nombre}</span>
-                      <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">Definí su zona de envío</h1>
-                      <p className="text-[15px] text-muted-foreground mt-3">Podés usar un radio o dibujar zonas con distintos precios.</p>
-                      <button onClick={() => abrirEditor(editorId)} className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white">Configurar delivery</button>
-                      <button onClick={continuar} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">Esta sucursal no hace delivery</button>
-                    </>
-                  )}
+                <div key={sucursal.localId} className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
+                  <span className="text-lg font-semibold tracking-tight text-[#FF7A00]">{sucursal.nombre}</span>
+                  <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">Zonas de envío</h1>
+                  <DeliveryEditor
+                    initial={initial}
+                    direccionCargada={!sucursal.delivery && !!sucursal.center}
+                    initialTipos={{ delivery: true, takeaway: tiposPedidoView.takeaway }}
+                    skipTipos
+                    onGuardar={(_tipos, delivery) => guardarEntregaSucursal(card.sucursalIdx, delivery)}
+                    onSaltar={() => guardarEntregaSucursal(card.sucursalIdx)}
+                    textoSaltar="Esta sucursal no hace delivery"
+                  />
                 </div>
               )
             })()}
 
-            {/* ── Confirmación de datos agregados (backend viejo sin config) ── */}
+            {/* ── Resumen de datos agregados (backend viejo sin config) ── */}
             {card?.kind === 'reassure' && (
               <div key={card.id} className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
-                <div className="h-14 w-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center ring-1 ring-emerald-500/15">
-                  <card.icon className="h-6 w-6 text-emerald-600 dark:text-emerald-400" strokeWidth={2} />
+                <div className="h-14 w-14 rounded-2xl bg-orange-500/10 flex items-center justify-center ring-1 ring-orange-500/15">
+                  <card.icon className="h-6 w-6 text-[#FF7A00]" strokeWidth={2} />
                 </div>
-                <span className="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                  <Check className="h-3.5 w-3.5" /> Ya está listo
-                </span>
-                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-2">{card.titulo}</h1>
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">{card.titulo}</h1>
                 <div className="mt-6 w-full rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-4 text-base font-medium text-foreground">{card.valor}</div>
-                <p className="text-xs text-muted-foreground mt-3">Lo afinás en detalle cuando entres a tu panel.</p>
+                <p className="text-xs text-muted-foreground mt-3">Lo editás desde Menú en tu panel.</p>
                 <button onClick={continuar} className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">Continuar</button>
               </div>
             )}
 
-            {/* ── Ejemplo del pedido que recibe el local por WhatsApp ── */}
+            {/* ── Cómo le llega un pedido al local por WhatsApp ── */}
             {card?.kind === 'mensaje' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 flex flex-col items-center text-center">
                 <div className="h-14 w-14 rounded-2xl bg-[#25D366]/10 ring-1 ring-[#25D366]/20 flex items-center justify-center">
                   <MessageCircle className="h-6 w-6 text-[#20B957]" strokeWidth={2} />
                 </div>
-                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">Tus pedidos, claros y al instante</h1>
+                <h1 className="text-[1.9rem] leading-[1.12] font-semibold tracking-tight mt-5">Así te llega cada pedido</h1>
                 <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">
-                  Cada compra te llega por WhatsApp con el detalle completo, para que puedas prepararla sin ir y venir con el cliente.
+                  Cuando un cliente compra, te llega este mensaje al WhatsApp y el pedido aparece en Inicio, en tu panel.
                 </p>
 
                 <img
@@ -1612,19 +1455,23 @@ export default function ClaimTienda() {
                   onClick={continuar}
                   className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all"
                 >
-                  Entendido, continuar
+                  Entendido
                 </button>
               </div>
             )}
 
-            {/* ── WhatsApp operativo: uno general o uno por sucursal ── */}
+            {/* ── WhatsApp de pedidos: el cargado se muestra listo; uno por sucursal si hay varias ── */}
             {card?.kind === 'whatsapps' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
-                <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">¿Dónde querés recibir los pedidos?</h1>
+                <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">
+                  {usaNumeroCargado ? 'Tus pedidos llegan a este WhatsApp' : '¿A qué WhatsApp te llegan los pedidos?'}
+                </h1>
                 <p className="text-[15px] text-muted-foreground mt-3">
                   {draft.modalidadSucursales === 'multiple'
-                    ? 'Ingresá el WhatsApp de cada sucursal. Cada local recibirá directamente los pedidos que le correspondan.'
-                    : 'Ingresá el WhatsApp donde querés que lleguen los pedidos de tu tienda.'}
+                    ? 'Ingresá el WhatsApp de cada sucursal. Cada local recibe directamente sus pedidos.'
+                    : usaNumeroCargado
+                      ? 'Es el número que nos pasaste. Si preferís que lleguen a otro, cambialo acá.'
+                      : 'Ingresá el WhatsApp donde querés que lleguen los pedidos de tu tienda.'}
                 </p>
 
                 <div className="mt-7 space-y-3">
@@ -1646,7 +1493,17 @@ export default function ClaimTienda() {
                         />
                       </div>
                     </div>
-                  )) : (
+                  )) : usaNumeroCargado ? (
+                    <div className="flex items-center gap-3 h-16 rounded-2xl bg-white dark:bg-zinc-900 px-4 ring-1 ring-emerald-500/20">
+                      <span className="h-9 w-9 shrink-0 rounded-xl bg-[#25D366]/10 flex items-center justify-center">
+                        <MessageCircle className="h-4 w-4 text-[#20B957]" />
+                      </span>
+                      <span className="flex-1 text-base font-semibold tabular-nums">+54 {numeroCargado}</span>
+                      <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        <CircleCheck className="h-4 w-4" /> Listo
+                      </span>
+                    </div>
+                  ) : (
                     <div className="group flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 focus-within:ring-2 focus-within:ring-[#FF7A00]/30">
                       <MessageCircle className="h-4 w-4 shrink-0 text-[#20B957]" />
                       <span className="text-base text-muted-foreground">+54</span>
@@ -1665,61 +1522,125 @@ export default function ClaimTienda() {
                   )}
                 </div>
 
-                <div className="mt-4 flex items-start gap-3 rounded-2xl bg-zinc-100/80 px-4 py-3.5 dark:bg-zinc-900">
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#FF7A00]" />
-                  <p className="text-[13px] leading-relaxed text-muted-foreground">
-                    Después sólo falta verificar uno de estos números para terminar de reclamar la tienda.
-                  </p>
-                </div>
-
                 <button onClick={guardarWhatsapps} className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
                   Continuar
                 </button>
+                {usaNumeroCargado ? (
+                  <button onClick={() => { setUsarOtroNumero(true); setTelefono('') }} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5">
+                    <Pencil className="h-3.5 w-3.5" /> Usar otro número
+                  </button>
+                ) : numeroCargado && usarOtroNumero && draft.modalidadSucursales !== 'multiple' ? (
+                  <button onClick={() => setUsarOtroNumero(false)} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+                    Dejar el que ya estaba
+                  </button>
+                ) : null}
               </div>
             )}
 
-            {/* ── Verificación del WhatsApp ── */}
-            {card?.kind === 'verificar' && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
-                <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Terminá de reclamar tu tienda</h1>
-                <p className="text-[15px] text-muted-foreground mt-3">
-                  Te vamos a mandar un código de seguridad de Piru por WhatsApp. Lo escribís en la pantalla que sigue y no se lo pasás a nadie. Al verificarlo, la tienda queda a tu nombre con todos estos cambios aplicados.
-                </p>
-
-                <form onSubmit={(e) => { e.preventDefault(); iniciarReclamo() }} className="mt-7">
-                  <p className="mb-3 text-sm font-medium text-foreground">
-                    {draft.modalidadSucursales === 'multiple' ? '¿A cuál número enviamos el código?' : 'Te enviaremos el código a este número:'}
+            {/* ── Acceso al panel: código por WhatsApp o mail y contraseña ── */}
+            {card?.kind === 'acceso' && (() => {
+              const numeroAcceso = usaNumeroCargado
+                ? `+54 ${numeroCargado}`
+                : `+${normalizarTelefono(telefono) ?? telefono}`
+              return (
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
+                  <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">¿Cómo querés entrar a tu panel?</h1>
+                  <p className="text-[15px] text-muted-foreground mt-3">
+                    Es lo que vas a usar cada vez que inicies sesión, en la compu o en el celular. Con esto la tienda queda a tu nombre.
                   </p>
-                  {draft.modalidadSucursales === 'multiple' ? (
-                    <div className="space-y-2">
-                      {draft.sucursales?.map((sucursal) => {
-                        const numero = normalizarTelefono(sucursal.whatsappNumber) ?? sucursal.whatsappNumber
-                        const seleccionado = normalizarTelefono(telefono) === numero
-                        return (
-                          <button key={sucursal.localId} type="button" onClick={() => setTelefono(numero)} className={`w-full rounded-2xl border p-4 text-left transition-colors ${seleccionado ? 'border-[#FF7A00] bg-orange-500/[0.06]' : 'border-zinc-200 dark:border-zinc-800 hover:border-[#FF7A00]/50'}`}>
-                            <span className="block text-sm font-semibold">{sucursal.nombre}</span>
-                            <span className="block text-sm text-muted-foreground mt-1">+{numero}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4">
-                      <MessageCircle className="h-4 w-4 text-[#20B957]" />
-                      <span className="text-base font-semibold">+{normalizarTelefono(telefono) ?? telefono}</span>
-                    </div>
+
+                  <div className="mt-7 space-y-2.5" role="radiogroup" aria-label="Cómo entrar al panel">
+                    <OpcionAcceso
+                      icon={MessageCircle}
+                      titulo="Con un código por WhatsApp"
+                      texto="Te mandamos 6 números cada vez que entrás. Sin contraseñas que recordar."
+                      elegido={metodoAcceso === 'whatsapp'}
+                      onElegir={() => setMetodoAcceso('whatsapp')}
+                    />
+                    <OpcionAcceso
+                      icon={Mail}
+                      titulo="Con mail y contraseña"
+                      texto="Cómodo si vas a entrar desde la compu del local."
+                      elegido={metodoAcceso === 'email'}
+                      onElegir={() => setMetodoAcceso('email')}
+                    />
+                  </div>
+
+                  {metodoAcceso === 'whatsapp' && (
+                    <form onSubmit={(e) => { e.preventDefault(); iniciarReclamo() }} className="mt-6 animate-in fade-in slide-in-from-top-1 duration-300">
+                      <p className="mb-3 text-sm font-medium text-foreground">
+                        {draft.modalidadSucursales === 'multiple' ? '¿A cuál número te mandamos el código?' : 'Te mandamos el código a:'}
+                      </p>
+                      {draft.modalidadSucursales === 'multiple' ? (
+                        <div className="space-y-2">
+                          {draft.sucursales?.map((sucursal) => {
+                            const numero = normalizarTelefono(sucursal.whatsappNumber) ?? sucursal.whatsappNumber
+                            const seleccionado = normalizarTelefono(telefono) === numero
+                            return (
+                              <button key={sucursal.localId} type="button" onClick={() => setTelefono(numero)} className={`w-full rounded-2xl border p-4 text-left transition-colors ${seleccionado ? 'border-[#FF7A00] bg-orange-500/[0.06]' : 'border-zinc-200 dark:border-zinc-800 hover:border-[#FF7A00]/50'}`}>
+                                <span className="block text-sm font-semibold">{sucursal.nombre}</span>
+                                <span className="block text-sm text-muted-foreground mt-1">+{numero}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4">
+                          <MessageCircle className="h-4 w-4 text-[#20B957]" />
+                          <span className="text-base font-semibold tabular-nums">{numeroAcceso}</span>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-3">Es un código de Piru: escribilo sólo en la pantalla que sigue y no se lo pases a nadie.</p>
+                      <button
+                        type="submit"
+                        disabled={enviando || (!usaNumeroCargado && telefono.replace(/\D/g, '').length < 8)}
+                        className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl h-14 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-[15px] font-semibold transition-all active:scale-[0.985] disabled:opacity-40"
+                      >
+                        {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Enviarme el código'}
+                      </button>
+                    </form>
                   )}
 
-                  <button
-                    type="submit"
-                    disabled={enviando || telefono.replace(/\D/g, '').length < 8}
-                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl h-14 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-[15px] font-semibold transition-all active:scale-[0.985] disabled:opacity-40"
-                  >
-                    {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Enviar código y terminar'}
-                  </button>
-                </form>
-              </div>
-            )}
+                  {metodoAcceso === 'email' && (
+                    <form onSubmit={(e) => { e.preventDefault(); crearAccesoConEmail() }} className="mt-6 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-300">
+                      <label htmlFor="claim-email" className="block text-sm font-medium text-foreground">Tu mail</label>
+                      <input
+                        id="claim-email"
+                        type="email"
+                        autoComplete="email"
+                        autoFocus
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="vos@tulocal.com"
+                        className="w-full h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-0 px-4 text-base outline-none focus:ring-2 focus:ring-[#FF7A00]/30 transition-shadow"
+                      />
+                      <label htmlFor="claim-password" className="block text-sm font-medium text-foreground pt-2">Elegí una contraseña</label>
+                      <div className="flex items-center h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 pl-4 pr-2 focus-within:ring-2 focus-within:ring-[#FF7A00]/30 transition-shadow">
+                        <input
+                          id="claim-password"
+                          type={verPassword ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Al menos 8 caracteres"
+                          className="flex-1 min-w-0 bg-transparent border-0 outline-none text-base"
+                        />
+                        <button type="button" onClick={() => setVerPassword((v) => !v)} aria-label={verPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} className="h-10 w-10 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground">
+                          {verPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={enviando || !emailValido || password.length < 8}
+                        className="!mt-5 flex w-full items-center justify-center gap-2 rounded-2xl h-14 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-[15px] font-semibold transition-all active:scale-[0.985] disabled:opacity-40"
+                      >
+                        {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Crear mi acceso'}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )
+            })()}
           </>
         ) : paso === 'codigo' ? (
           <>
@@ -1762,7 +1683,7 @@ export default function ClaimTienda() {
               onClick={() => submitCodigo(codigo)}
               className="flex w-full items-center justify-center rounded-2xl h-12 bg-[#FF7A00] hover:bg-[#E66E00] text-white text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-50"
             >
-              {verificando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirmar y reclamar'}
+              {verificando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirmar'}
             </button>
 
             <div className="text-center text-sm text-muted-foreground mt-6">
@@ -1773,15 +1694,6 @@ export default function ClaimTienda() {
               )}
             </div>
           </>
-        ) : paso === 'crecimiento' ? (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <ExplainerCrecimiento
-              onContinue={() => {
-                setPaso('prueba')
-                window.scrollTo({ top: 0, behavior: 'smooth' })
-              }}
-            />
-          </div>
         ) : paso === 'prueba' ? (
           pedidoOk ? (
             <div className="text-center flex flex-col items-center animate-in fade-in duration-500 py-6">
@@ -1793,23 +1705,23 @@ export default function ClaimTienda() {
               <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">Así vas a recibir cada pedido real: al toque, en tu WhatsApp y en el panel.</p>
 
               <button
-                onClick={() => { setPaso('modos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                onClick={() => irA('aprender')}
                 className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
               >
-                Continuar <ArrowRight className="h-4 w-4" />
+                Ahora, a conocer el panel <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           ) : (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
               <button
-                onClick={() => { setPaso('crecimiento'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                onClick={volverDesdePrueba}
                 className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"
               >
                 <ArrowLeft className="h-4 w-4" /> Volver
               </button>
-              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight text-center">Probá tu tienda</h1>
+              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight text-center">Hacé un pedido de prueba</h1>
               <p className="text-[15px] text-muted-foreground mt-3 text-center max-w-sm mx-auto">
-                Recorré tu tienda tal como la verán tus clientes y hacé un pedido de prueba para ver cómo te llega.
+                Pedí algo como si fueras un cliente: te llega al WhatsApp y lo ves en Inicio, igual que un pedido real.
               </p>
 
               <div className="mt-6">
@@ -1817,6 +1729,7 @@ export default function ClaimTienda() {
                   nombre={dispNombre || 'tu local'}
                   logo={dispLogo}
                   slug={dispUsername || 'tulocal'}
+                  baseTienda={urlTienda}
                   direccion={draft.delivery?.address || ''}
                   deliveryPrice={draft.delivery?.mode === 'radio' ? draft.delivery.precio : config?.delivery.zonas?.[0]?.precio || '0'}
                   metodosPago={{
@@ -1831,7 +1744,7 @@ export default function ClaimTienda() {
 
               <div className="mt-6 space-y-2 text-center">
                 <a
-                  href={`${STORE_BASE}/${dispUsername}`}
+                  href={urlTienda ?? STORE_BASE}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-2 text-xs font-semibold text-[#FF7A00] hover:underline"
@@ -1840,7 +1753,7 @@ export default function ClaimTienda() {
                 </a>
                 <div>
                   <button
-                    onClick={() => { setPaso('modos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    onClick={() => irA('aprender')}
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
                     Omitir la prueba
@@ -1852,12 +1765,10 @@ export default function ClaimTienda() {
         ) : paso === 'modos' ? (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="text-center flex flex-col items-center">
-              <div className="h-16 w-16 rounded-2xl bg-[#FF7A00]/10 ring-1 ring-[#FF7A00]/15 flex items-center justify-center">
-                <Settings className="h-7 w-7 text-[#FF7A00]" strokeWidth={2} />
-              </div>
-              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-6">¿Cómo querés usar Piru?</h1>
+              <span className="text-xs font-semibold text-[#FF7A00]">Tu acceso quedó listo · Ahora, tu local</span>
+              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mt-3">¿Cómo trabajás en el local?</h1>
               <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-                Elegí todas las formas que te sirvan. Podés combinarlas y cambiarlas después.
+                Activá lo que vas a usar. Todo viene incluido y lo podés cambiar cuando quieras desde Módulos.
               </p>
             </div>
 
@@ -1928,13 +1839,15 @@ export default function ClaimTienda() {
               </ModoUsoCard>
             </div>
 
+            <HerramientasIncluidas />
+
             <button
               onClick={avanzarDesdeModos}
               className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
             >
               Continuar <ArrowRight className="h-4 w-4" />
             </button>
-            <p className="text-center text-xs text-muted-foreground mt-3">Lo que no actives ahora seguirá disponible en Módulos.</p>
+            <p className="text-center text-xs text-muted-foreground mt-3">Lo que no actives ahora sigue disponible en Módulos.</p>
           </div>
         ) : paso === 'configImpresion' ? (
           <div className="text-center flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -2038,64 +1951,18 @@ export default function ClaimTienda() {
             </button>
           </div>
         ) : (
-          // ── Último paso: info del período de prueba y suscripción base ──
-          (() => {
-            // El catálogo del backend es la fuente del precio vigente. Los otros
-            // campos son snapshots/aliases de compatibilidad y pueden quedar viejos.
-            const precioBase = miSusc?.suscripcionBase?.precioMensual
-              ?? miSusc?.cotizacionProximaFactura?.montoBaseMensual
-              ?? miSusc?.precioBaseMensual
-              ?? miSusc?.precioMensual
-            const precio = precioBase ? `$${fmtPrecio(precioBase)}` : null
-            const trialDias = miSusc?.trialFin
-              ? Math.max(0, Math.ceil((new Date(miSusc.trialFin).getTime() - Date.now()) / 86_400_000))
-              : null
-            return (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                <button
-                  type="button"
-                  onClick={volverDesdePlan}
-                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-                >
-                  <ArrowLeft className="h-4 w-4" /> Volver
-                </button>
-                <div className="text-center flex flex-col items-center">
-                  <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">
-                    {trialDias != null ? `Tenés ${trialDias} días de prueba gratis` : 'Empezás con tu prueba gratis'}
-                  </h1>
-                  <p className="text-[15px] text-muted-foreground mt-3 max-w-xs">
-                    Usá toda la operación base sin pagar nada. {trialDias != null ? 'Cuando termine' : 'Cuando termine la prueba'}, activás tu suscripción y seguís ofreciendo la mejor experiencia de compra.
-                  </p>
-
-                  {precio && (
-                    <div className="mt-9">
-                      <p className="text-sm font-semibold text-muted-foreground">Suscripción Piru</p>
-                      <p className="mt-1 text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums">
-                        {precio}<span className="text-base font-medium text-muted-foreground">/mes</span>
-                      </p>
-                      <p className="mt-3 text-xs text-muted-foreground">Cuota fija · sin comisión por venta.</p>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={terminarClaim}
-                  className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
-                >
-                  Empezar la prueba gratis <ArrowRight className="h-4 w-4" />
-                </button>
-
-                {/* Opcional: pagar la base ahora y conservar los días de prueba. */}
-                {precio && <button
-                  onClick={pagarSuscripcionAhora}
-                  disabled={pagandoSuscripcion}
-                  className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  {pagandoSuscripcion ? <Loader2 className="h-4 w-4 animate-spin" /> : `Activar ${precio}/mes ahora`}
-                </button>}
-              </div>
-            )
-          })()
+          // ── Último paso: aprender a manejar el panel, según lo que activó ──
+          <AprenderPanel
+            local={dispNombre || 'Tu local'}
+            impresion={modosActivos.includes('impresion')}
+            pos={modosActivos.includes('pos')}
+            mesas={mesasActivas}
+            trialDias={trialDias}
+            precio={precioSuscripcion}
+            pagando={pagandoSuscripcion}
+            onPagar={pagarSuscripcionAhora}
+            onTerminar={terminarClaim}
+          />
         )}
       </div>
       <WhatsAppHelpButton help={whatsappHelp} />
@@ -2252,6 +2119,171 @@ function ModoUsoCard({
   )
 }
 
+// ── Alias y medios de pago: se abre directo en el alias, que sólo el dueño conoce ──
+function PagosForm({ initial, sucursal, autoTransfer, mercadoPago, onGuardar }: {
+  initial: PagosDraft
+  sucursal?: string
+  autoTransfer: boolean
+  mercadoPago: boolean
+  onGuardar: (pagos: PagosDraft) => void
+}) {
+  const [pagos, setPagos] = useState<PagosDraft>(initial)
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); onGuardar(pagos) }}
+      className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+    >
+      {sucursal && <span className="block text-center text-lg font-semibold tracking-tight text-[#FF7A00] mb-2">{sucursal}</span>}
+      <h1 className="text-center text-[1.9rem] leading-[1.12] font-semibold tracking-tight">
+        {pagos.transferenciaManual ? '¿A qué alias te transfieren?' : '¿Cómo te pagan?'}
+      </h1>
+      <p className="text-center text-[15px] text-muted-foreground mt-3">
+        {pagos.transferenciaManual
+          ? 'Es el que ven tus clientes cuando eligen pagar por transferencia. Copialo tal cual de tu banco o billetera.'
+          : 'Elegí los medios de pago que aceptás.'}
+      </p>
+
+      {pagos.transferenciaManual && (
+        <div className="mt-7">
+          <label htmlFor="claim-alias" className="block text-sm font-medium mb-2">
+            {sucursal ? `Alias o CBU de ${sucursal}` : 'Tu alias o CBU'}
+          </label>
+          <div className="flex items-center gap-3 h-14 rounded-2xl bg-white dark:bg-zinc-900 px-4 ring-1 ring-zinc-200 dark:ring-zinc-800 focus-within:ring-2 focus-within:ring-[#FF7A00]/40 transition-shadow">
+            <Banknote className="h-5 w-5 shrink-0 text-[#FF7A00]" />
+            <input
+              id="claim-alias"
+              autoFocus
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={pagos.transferenciaAlias}
+              onChange={(e) => setPagos((p) => ({ ...p, transferenciaAlias: e.target.value }))}
+              placeholder="mi.local.mp"
+              className="flex-1 min-w-0 bg-transparent border-0 outline-none text-base font-semibold"
+            />
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/80 mt-7 mb-2">Medios que aceptás</p>
+      <div className="space-y-2">
+        <ToggleRow icon={Wallet} label="Efectivo" checked={pagos.efectivo} onToggle={() => setPagos((p) => ({ ...p, efectivo: !p.efectivo }))} />
+        <ToggleRow icon={Banknote} label="Transferencia" checked={pagos.transferenciaManual} onToggle={() => setPagos((p) => ({ ...p, transferenciaManual: !p.transferenciaManual }))} />
+      </div>
+      {(autoTransfer || mercadoPago) && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground mt-3 px-1">
+          <CreditCard className="h-3.5 w-3.5 shrink-0" />
+          {mercadoPago && 'MercadoPago'}{mercadoPago && autoTransfer && ' y '}{autoTransfer && 'la transferencia automática'} también {mercadoPago && autoTransfer ? 'quedan activos' : 'queda activo'}.
+        </p>
+      )}
+      {sucursal && <p className="text-xs text-muted-foreground mt-3 px-1">Los medios son los mismos en todos los locales; el alias es de cada sucursal.</p>}
+
+      <button type="submit" className="w-full h-14 mt-7 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all">
+        Continuar
+      </button>
+    </form>
+  )
+}
+
+// ── Una forma de entrar al panel (radio) ──
+function OpcionAcceso({ icon: Icon, titulo, texto, elegido, onElegir }: {
+  icon: LucideIcon
+  titulo: string
+  texto: string
+  elegido: boolean
+  onElegir: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={elegido}
+      onClick={onElegir}
+      className={`w-full rounded-2xl border p-4 flex items-center gap-3 text-left transition-colors ${elegido ? 'border-[#FF7A00] bg-orange-500/[0.06]' : 'border-zinc-200 dark:border-zinc-800 hover:border-[#FF7A00]/50'}`}
+    >
+      <span className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center ${elegido ? 'bg-[#FF7A00] text-white' : 'bg-zinc-100 dark:bg-zinc-900 text-muted-foreground'}`}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold">{titulo}</span>
+        <span className="block text-xs text-muted-foreground mt-0.5 leading-relaxed">{texto}</span>
+      </span>
+      <span className={`h-5 w-5 shrink-0 rounded-full border-2 flex items-center justify-center ${elegido ? 'border-[#FF7A00]' : 'border-zinc-300 dark:border-zinc-700'}`}>
+        {elegido && <span className="h-2.5 w-2.5 rounded-full bg-[#FF7A00]" />}
+      </span>
+    </button>
+  )
+}
+
+// ── Herramientas incluidas que se prenden con un toque en "Cómo trabajás". Sólo muestra las que el
+//    catálogo de la cuenta tiene como incluidas y activables. ──
+function HerramientasIncluidas() {
+  const [modulos, setModulos] = useState<Modulo[] | null>(null)
+  const [procesando, setProcesando] = useState<string | null>(null)
+  useEffect(() => {
+    const authToken = useAuthStore.getState().token
+    if (!authToken) return
+    modulosApi.misModulos(authToken)
+      .then((res) => setModulos(res.data.flatMap((categoria) => categoria.modulos)))
+      .catch(() => setModulos([]))
+  }, [])
+
+  const disponibles = HERRAMIENTAS_INCLUIDAS.flatMap((h) => {
+    const modulo = modulos?.find((m) => m.codigo === h.codigo)
+    if (!modulo || modulo.tipo !== 'incluido' || !modulo.activable || modulo.estadoProducto === 'proximamente') return []
+    return [{ ...h, activo: modulo.activoAhora }]
+  })
+  if (disponibles.length === 0) return null
+
+  const alternar = async (codigo: string, activo: boolean) => {
+    const authToken = useAuthStore.getState().token
+    if (!authToken || procesando) return
+    setProcesando(codigo)
+    try {
+      const res = activo ? await modulosApi.desactivar(authToken, codigo) : await modulosApi.activar(authToken, codigo)
+      if ('paymentRequired' in res && res.paymentRequired) {
+        toast.info('Esta herramienta se activa desde Módulos, en tu panel')
+        return
+      }
+      setModulos((actuales) => actuales?.map((m) => m.codigo === codigo ? { ...m, activoAhora: !activo } : m) ?? null)
+    } catch (error) {
+      toast.error('No pudimos cambiar esta herramienta', { description: error instanceof Error ? error.message : undefined })
+    } finally {
+      setProcesando(null)
+    }
+  }
+
+  return (
+    <div className="mt-7">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/80 mb-2 px-1">¿Usás alguna de estas?</p>
+      <div className="rounded-2xl bg-white dark:bg-zinc-900 p-1.5">
+        {disponibles.map((h) => (
+          <button
+            key={h.codigo}
+            type="button"
+            role="switch"
+            aria-checked={h.activo}
+            disabled={procesando === h.codigo}
+            onClick={() => alternar(h.codigo, h.activo)}
+            className="w-full rounded-xl p-3 flex items-center gap-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors disabled:opacity-60"
+          >
+            <span className="h-9 w-9 shrink-0 rounded-xl bg-orange-500/10 flex items-center justify-center">
+              {procesando === h.codigo ? <Loader2 className="h-4 w-4 animate-spin text-[#FF7A00]" /> : <h.icon className="h-4 w-4 text-[#FF7A00]" />}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-semibold leading-tight">{h.titulo}</span>
+              <span className="block text-xs text-muted-foreground mt-0.5 leading-relaxed">{h.texto}</span>
+            </span>
+            <span className={`h-6 w-10 shrink-0 rounded-full p-0.5 transition-colors ${h.activo ? 'bg-[#FF7A00]' : 'bg-zinc-300 dark:bg-zinc-700'}`}>
+              <span className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${h.activo ? 'translate-x-4' : ''}`} />
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Fila con toggle para el editor de métodos de pago ──
 function ToggleRow({ icon: Icon, label, checked, onToggle }: { icon: LucideIcon; label: string; checked: boolean; onToggle: () => void }) {
   return (
@@ -2392,86 +2424,6 @@ function ProductoCard({ p }: { p: ClaimConfig['productos'][number] }) {
   )
 }
 
-// ── Línea de resumen (lectura) de un método de pago ──
-function MetodoLinea({ icon: Icon, label, on, attention }: { icon: LucideIcon; label: string; on: boolean; attention?: string }) {
-  return (
-    <div className={`flex items-center gap-3 rounded-xl px-3 min-h-11 py-1.5 ${on ? '' : 'opacity-40'}`}>
-      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-      <div className="flex-1 text-left min-w-0">
-        <span className="block text-sm font-medium truncate">{label}</span>
-        {on && attention && <span className="block text-[11px] text-amber-600 dark:text-amber-400">{attention}</span>}
-      </div>
-      {on ? (
-        attention ? <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" /> : <Check className="h-4 w-4 text-emerald-500 shrink-0" />
-      ) : (
-        <X className="h-4 w-4 text-muted-foreground shrink-0" />
-      )}
-    </div>
-  )
-}
-
-// ── Resumen (lectura) del delivery: mapa con las zonas + precios ──
-function DeliveryResumen({ draft, tipos, zonas, center }: {
-  draft?: DeliveryDraft
-  tipos: TiposPedidoDraft
-  zonas: ClaimConfig['delivery']['zonas']
-  center: [number, number]
-}) {
-  // Si hay borrador, mostramos lo que quedó configurado; si no, las zonas actuales del backend.
-  const poligonos: { poligono: { lat: number; lng: number }[]; color: string; nombre: string; precio: string }[] = draft
-    ? draft.mode === 'radio'
-      ? [{ poligono: circleToPolygon(draft.center, draft.radius), color: '#FF7A00', nombre: 'Radio de reparto', precio: draft.precio }]
-      : draft.zonas.map((z) => ({ poligono: z.poligono, color: z.color, nombre: z.nombre, precio: z.precio }))
-    : zonas.map((z) => ({ poligono: z.poligono, color: z.color || '#3b82f6', nombre: z.nombre, precio: z.precio }))
-
-  return (
-    <div className="w-full mt-6">
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <TipoPedidoResumen icon={MapPin} label="Delivery" activo={tipos.delivery} />
-        <TipoPedidoResumen icon={ShoppingBag} label="Takeaway" activo={tipos.takeaway} />
-      </div>
-      {tipos.delivery && poligonos.length > 0 && (
-        <>
-          <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 h-52">
-            <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false} dragging={false} zoomControl={false} attributionControl={false}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <MapResizer />
-              <FitBounds poligonos={poligonos.map((p) => p.poligono)} />
-              {poligonos.map((p, i) => (
-                <Polygon key={i} positions={p.poligono.map((c) => [c.lat, c.lng] as [number, number])} pathOptions={{ color: p.color, fillColor: p.color, fillOpacity: 0.2, weight: 2 }} />
-              ))}
-            </MapContainer>
-          </div>
-          <div className="mt-3 space-y-1.5">
-            {poligonos.map((p, i) => (
-              <div key={i} className="flex items-center gap-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 px-3.5 h-11">
-                <span className="h-3 w-3 rounded-full shrink-0" style={{ background: p.color }} />
-                <span className="flex-1 text-left text-sm font-medium truncate">{p.nombre}</span>
-                <span className="text-sm font-semibold tabular-nums shrink-0">${fmtPrecio(p.precio)}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {tipos.delivery && poligonos.length === 0 && (
-        <p className="rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-3 text-sm text-muted-foreground text-left">
-          Falta configurar la zona y el costo de envío.
-        </p>
-      )}
-    </div>
-  )
-}
-
-function TipoPedidoResumen({ icon: Icon, label, activo }: { icon: LucideIcon; label: string; activo: boolean }) {
-  return (
-    <div className={`rounded-2xl border px-3 py-3 flex items-center gap-2 text-sm font-medium ${activo ? 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-foreground' : 'border-transparent bg-zinc-100 dark:bg-zinc-900 text-muted-foreground'}`}>
-      <Icon className="h-4 w-4 shrink-0" />
-      <span className="flex-1 text-left">{label}</span>
-      {activo ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-    </div>
-  )
-}
-
 // ── Alta de sucursales dentro del claim. Todavía no hay sesión: sólo arma el borrador local. ──
 function SucursalesClaimEditor({ initial, pagosDefault, onGuardar }: {
   initial: SucursalDraft[]
@@ -2532,27 +2484,32 @@ function SucursalesClaimEditor({ initial, pagosDefault, onGuardar }: {
 }
 
 // ── Editor de entregas: primero define delivery/takeaway. Sólo si hay delivery pide la dirección
-//    y luego muestra el mapa para elegir un radio o dibujar zonas, con precio. ──
-function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipos = false }: {
+//    (o la muestra ya cargada) y abre el mapa en "Dibujar zonas", con su presentación la primera vez. ──
+function DeliveryEditor({ initial, direccionCargada = false, initialTipos, onGuardar, onSaltar, textoSaltar, skipTipos = false }: {
   initial?: DeliveryDraft
+  /** La dirección de `initial` vino del local (no del borrador): se muestra como cargada. */
+  direccionCargada?: boolean
   initialTipos: TiposPedidoDraft
   onGuardar: (tipos: TiposPedidoDraft, delivery?: DeliveryDraft) => void
-  onCancelar: () => void
+  onSaltar: () => void
+  textoSaltar: string
   skipTipos?: boolean
 }) {
   const [tipos, setTipos] = useState<TiposPedidoDraft>(initialTipos)
   const [pasoTipos, setPasoTipos] = useState<'delivery' | 'takeaway' | 'configuracion'>(skipTipos ? 'configuracion' : 'delivery')
-  // Dirección del local (paso 2): sin ubicación geolocalizada no mostramos el mapa. Si venimos a
-  // re-editar un borrador ya cargado, arrancamos con su dirección/ubicación y su configuración.
+  // Dirección del local: sin ubicación geolocalizada no mostramos el mapa. Si ya estaba cargada (o
+  // venimos de un borrador), arrancamos con ella y sólo se reemplaza si toca "Cambiar".
   const [address, setAddress] = useState(initial?.address ?? '')
   const [lat, setLat] = useState<number | null>(initial?.center.lat ?? null)
   const [lng, setLng] = useState<number | null>(initial?.center.lng ?? null)
+  const [cambiandoDireccion, setCambiandoDireccion] = useState(!initial)
   const tieneUbicacion = lat != null && lng != null
   // Memoizado por lat/lng: identidad estable para que RecenterMap no resetee el zoom en cada render.
   const center = useMemo<[number, number]>(() => [lat ?? DEFAULT_CENTER[0], lng ?? DEFAULT_CENTER[1]], [lat, lng])
   const centerObj = { lat: center[0], lng: center[1] }
 
-  const [mode, setMode] = useState<'radio' | 'zonas'>(initial?.mode ?? 'radio')
+  // Las zonas las dibuja el dueño: es el modo por defecto.
+  const [mode, setMode] = useState<'radio' | 'zonas'>(initial?.mode ?? 'zonas')
   // Radio
   const [radius, setRadius] = useState(initial?.mode === 'radio' ? initial.radius : 2500)
   const [precioRadio, setPrecioRadio] = useState(initial?.mode === 'radio' ? initial.precio : '0')
@@ -2562,10 +2519,19 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
   const [nombre, setNombre] = useState('')
   const [precioZona, setPrecioZona] = useState('')
   const [color, setColor] = useState('#FF7A00')
+  // Presentación de "Dibujar zonas": se abre sola la primera vez que se ve el mapa sin zonas.
+  const [introAbierta, setIntroAbierta] = useState(false)
+  const [introMostrada, setIntroMostrada] = useState(false)
+  const mapaVisible = pasoTipos === 'configuracion' && tipos.delivery && tieneUbicacion && !cambiandoDireccion
+  // Ajuste durante el render (sin efecto): la primera vez que aparece el mapa vacío en modo zonas.
+  if (mapaVisible && mode === 'zonas' && zonas.length === 0 && !introMostrada) {
+    setIntroMostrada(true)
+    setIntroAbierta(true)
+  }
 
   const onPolygonCreated = useCallback((coords: { lat: number; lng: number }[]) => {
     setColor(getNextColor(zonas.map((z) => z.color)))
-    setNombre('')
+    setNombre(zonas.length === 0 ? 'Centro' : '')
     setPrecioZona('')
     setPending(coords)
   }, [zonas])
@@ -2590,6 +2556,7 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
     if (mode === 'radio') {
       onGuardar(tipos, { mode: 'radio', precio: precioRadio || '0', radius, center: centerObj, address })
     } else {
+      if (pending) return toast.error('Terminá de cargar la zona: poné el nombre y el precio')
       if (zonas.length === 0) return toast.error('Dibujá al menos una zona')
       onGuardar(tipos, { mode: 'zonas', zonas, center: centerObj, address })
     }
@@ -2609,6 +2576,12 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
     setPasoTipos('configuracion')
   }
 
+  const botonSaltar = (
+    <button type="button" onClick={onSaltar} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+      {textoSaltar}
+    </button>
+  )
+
   return (
     <div className="w-full mt-6 text-left">
       {/* Una sola pregunta por pantalla, con opciones visualmente neutras. */}
@@ -2619,7 +2592,6 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
           aclaracion="Es decir, llevás el pedido hasta la dirección del cliente."
           onSi={() => responderDelivery(true)}
           onNo={() => responderDelivery(false)}
-          onCancelar={onCancelar}
         />
       )}
 
@@ -2631,51 +2603,74 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
           onSi={() => responderTakeaway(true)}
           onNo={() => responderTakeaway(false)}
           onVolver={() => setPasoTipos('delivery')}
-          onCancelar={onCancelar}
         />
       )}
 
       {pasoTipos === 'configuracion' && !tipos.delivery ? (
         <>
           <p className="mt-3 rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-3 text-sm text-muted-foreground">
-            Como elegiste solo takeaway, no necesitás configurar dirección ni costos de envío.
+            Como trabajás sólo con takeaway, no hace falta dirección ni costos de envío.
           </p>
           <button onClick={guardar} className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2">
-            <Check className="h-4 w-4" /> Guardar tipos de pedido
+            Continuar
           </button>
-          <button onClick={onCancelar} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
-            Cancelar
-          </button>
+          {!skipTipos && (
+            <button type="button" onClick={() => setPasoTipos('delivery')} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
+              Volver
+            </button>
+          )}
         </>
       ) : pasoTipos === 'configuracion' && tipos.delivery ? (
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 mt-5">
-      {/* Paso 2 — dirección del local, únicamente si ofrece delivery. */}
-      <p className="text-sm font-medium text-foreground mb-1">¿Desde dónde entregás?</p>
-      {tipos.delivery && !tipos.takeaway && (
-        <p className="text-xs text-muted-foreground mb-2">
-          Te pedimos la dirección para configurar tus zonas y costos de envío.
-        </p>
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-400 mt-2">
+      {/* Dirección del local: cargada (con opción a cambiarla) o para elegir. */}
+      <p className="text-sm font-medium text-foreground mb-2">¿Desde dónde entregás?</p>
+      {!cambiandoDireccion && tieneUbicacion ? (
+        <div className="flex items-center gap-3 min-h-14 rounded-2xl bg-white dark:bg-zinc-900 px-4 py-2.5 ring-1 ring-emerald-500/20">
+          <MapPin className="h-4 w-4 shrink-0 text-[#FF7A00]" />
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold leading-snug">{address || 'La ubicación de tu local'}</span>
+            {direccionCargada && (
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                <CircleCheck className="h-3.5 w-3.5" /> Ya estaba cargada
+              </span>
+            )}
+          </span>
+          <button type="button" onClick={() => setCambiandoDireccion(true)} className="h-9 shrink-0 rounded-xl px-3 text-[13px] font-semibold text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800">
+            Cambiar
+          </button>
+        </div>
+      ) : (
+        <AddressAutocomplete
+          value={address}
+          onChange={(a, la, ln) => {
+            setAddress(a)
+            setLat(la)
+            setLng(ln)
+            if (la != null && ln != null) setCambiandoDireccion(false)
+          }}
+          placeholder="Av. Corrientes 1234"
+        />
       )}
-      <AddressAutocomplete
-        value={address}
-        onChange={(a, la, ln) => { setAddress(a); setLat(la); setLng(ln) }}
-        placeholder="Av. Corrientes 1234"
-      />
 
-      {!tieneUbicacion ? (
+      {!mapaVisible ? (
         <>
           <div className="mt-3 flex items-center gap-2.5 text-sm text-muted-foreground rounded-2xl bg-zinc-100 dark:bg-zinc-900 px-4 py-3.5">
             <MapPin className="h-4 w-4 text-[#FF7A00] shrink-0" />
-            Elegí tu dirección de la lista para dibujar tu zona de reparto.
+            Elegí tu dirección de la lista para dibujar tus zonas de reparto.
           </div>
-          <button onClick={onCancelar} className="w-full h-11 mt-3 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
-            Cancelar
-          </button>
+          {botonSaltar}
         </>
       ) : (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
-      {/* Selector de modo */}
+      {/* Selector de modo: dibujar zonas primero, porque es lo que casi todos necesitan. */}
       <div className="grid grid-cols-2 gap-2 mt-4 mb-3">
+        <button
+          type="button"
+          onClick={() => setMode('zonas')}
+          className={`h-11 rounded-xl text-sm font-semibold transition-colors ${mode === 'zonas' ? 'bg-[#FF7A00] text-white' : 'bg-zinc-100 dark:bg-zinc-900 text-muted-foreground'}`}
+        >
+          Dibujar zonas
+        </button>
         <button
           type="button"
           onClick={() => setMode('radio')}
@@ -2683,17 +2678,10 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
         >
           Un radio
         </button>
-        <button
-          type="button"
-          onClick={() => setMode('zonas')}
-          className={`h-11 rounded-xl text-sm font-semibold transition-colors ${mode === 'zonas' ? 'bg-[#FF7A00] text-white' : 'bg-zinc-100 dark:bg-zinc-900 text-muted-foreground'}`}
-        >
-          Zonas dibujadas
-        </button>
       </div>
 
-      <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 h-64 relative">
-        <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
+      <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 h-72 relative">
+        <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <MapResizer dep={mode} />
           <RecenterMap center={center} />
@@ -2736,22 +2724,32 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
       {mode === 'zonas' && (
         <>
           {pending ? (
-            <div className="mt-3 rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-3.5 space-y-3">
+            <div className="mt-3 rounded-2xl bg-zinc-100 dark:bg-zinc-900 p-3.5 space-y-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ background: color }} /> Nueva zona</p>
-                <button onClick={() => setPending(null)} className="h-7 w-7 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
+                <button onClick={() => setPending(null)} aria-label="Descartar zona" className="h-7 w-7 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
               </div>
-              <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre (ej: Zona Centro)" className="w-full h-10 bg-white dark:bg-zinc-800 border-0 text-sm rounded-xl px-3 outline-none" />
+              <input autoFocus value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre (ej: Centro)" className="w-full h-10 bg-white dark:bg-zinc-800 border-0 text-sm rounded-xl px-3 outline-none" />
               <div className="flex items-center rounded-xl bg-white dark:bg-zinc-800 px-4 h-10">
                 <span className="text-muted-foreground text-sm">$</span>
-                <input type="number" value={precioZona} onChange={(e) => setPrecioZona(e.target.value)} placeholder="Costo de envío" className="flex-1 bg-transparent outline-none text-sm px-1" />
+                <input type="number" inputMode="numeric" value={precioZona} onChange={(e) => setPrecioZona(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && agregarZona()} placeholder="Costo de envío" className="flex-1 bg-transparent outline-none text-sm px-1" />
               </div>
               <button onClick={agregarZona} className="w-full h-11 rounded-xl bg-[#FF7A00] hover:bg-[#E66E00] text-white font-semibold flex items-center justify-center gap-2"><Save className="h-4 w-4" /> Agregar zona</button>
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
-              <PencilRuler className="h-3.5 w-3.5 shrink-0" /> Tocá el ícono del polígono arriba a la izquierda del mapa y marcá los límites de una zona.
-            </p>
+            <div className="mt-3 flex items-start gap-3 rounded-2xl bg-orange-500/[0.06] px-4 py-3">
+              <svg width={18} height={18} viewBox="0 0 16 16" className="mt-0.5 shrink-0" aria-hidden>
+                <path d="M8 1.6 14.4 6.2 12 14H4L1.6 6.2Z" fill="none" stroke="#FF7A00" strokeWidth={1.6} strokeLinejoin="round" />
+              </svg>
+              <p className="flex-1 text-[13px] leading-relaxed text-muted-foreground">
+                {zonas.length === 0
+                  ? 'Tocá el pentágono arriba a la izquierda del mapa, marcá las esquinas y cerrá tocando el primer punto.'
+                  : 'Para sumar otra zona, tocá de nuevo el pentágono.'}{' '}
+                <button type="button" onClick={() => setIntroAbierta(true)} className="font-semibold text-[#FF7A00] hover:text-[#E66E00]">
+                  Ver cómo
+                </button>
+              </p>
+            </div>
           )}
 
           {zonas.length > 0 && (
@@ -2761,7 +2759,7 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
                   <span className="h-3 w-3 rounded-full shrink-0" style={{ background: z.color }} />
                   <span className="text-sm font-semibold flex-1 truncate">{z.nombre}</span>
                   <span className="text-sm font-semibold tabular-nums">${fmtPrecio(z.precio)}</span>
-                  <button onClick={() => setZonas((prev) => prev.filter((_, k) => k !== i))} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 shrink-0"><X className="h-4 w-4" /></button>
+                  <button onClick={() => setZonas((prev) => prev.filter((_, k) => k !== i))} aria-label={`Quitar ${z.nombre}`} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 shrink-0"><X className="h-4 w-4" /></button>
                 </div>
               ))}
             </div>
@@ -2770,11 +2768,10 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
       )}
 
       <button onClick={guardar} className="w-full h-14 mt-6 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2">
-        <Check className="h-4 w-4" /> Guardar delivery
+        <Check className="h-4 w-4" /> {mode === 'zonas' && zonas.length > 1 ? `Guardar mis ${zonas.length} zonas` : 'Guardar delivery'}
       </button>
-      <button onClick={onCancelar} className="w-full h-11 mt-2.5 rounded-2xl text-[14px] font-medium text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
-        Cancelar
-      </button>
+      {botonSaltar}
+      <IntroZonas abierto={introAbierta} onCerrar={() => setIntroAbierta(false)} />
       </div>
       )}
       </div>
@@ -2783,14 +2780,13 @@ function DeliveryEditor({ initial, initialTipos, onGuardar, onCancelar, skipTipo
   )
 }
 
-function PreguntaTipoPedido({ icon: Icon, pregunta, aclaracion, onSi, onNo, onVolver, onCancelar }: {
+function PreguntaTipoPedido({ icon: Icon, pregunta, aclaracion, onSi, onNo, onVolver }: {
   icon: LucideIcon
   pregunta: string
   aclaracion: string
   onSi: () => void
   onNo: () => void
   onVolver?: () => void
-  onCancelar: () => void
 }) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -2807,16 +2803,13 @@ function PreguntaTipoPedido({ icon: Icon, pregunta, aclaracion, onSi, onNo, onVo
           No
         </button>
       </div>
-      <div className="flex items-center justify-center gap-2 mt-3">
-        {onVolver && (
+      {onVolver && (
+        <div className="flex items-center justify-center mt-3">
           <button type="button" onClick={onVolver} className="h-10 px-4 rounded-xl text-sm font-medium text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
             Volver
           </button>
-        )}
-        <button type="button" onClick={onCancelar} className="h-10 px-4 rounded-xl text-sm font-medium text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors">
-          Cancelar
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   )
 }

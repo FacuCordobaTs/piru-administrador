@@ -3275,6 +3275,10 @@ export interface ClaimTienda {
   imagenUrl: string | null
   imagenLightUrl: string | null
   telefonoEnmascarado: string | null
+  /** Base pública real (`https://<tienda>.piru.app/` si tiene página propia). Aditivo: puede faltar. */
+  urlTienda?: string | null
+  /** El local tiene página propia (dominio_tienda): no se le muestra el link compartido. */
+  tienePagina?: boolean
 }
 
 export interface ClaimInventario {
@@ -3309,6 +3313,8 @@ export interface ClaimConfig {
     deliveryEnabled: boolean
     /** Opcional para mantener compatibilidad con backends previos a este campo aditivo. */
     takeawayEnabled?: boolean
+    /** Dirección del local como texto. Aditivo: backends previos no la mandan. */
+    direccion?: string | null
     lat: number | null
     lng: number | null
     zonas: ClaimZona[]
@@ -3376,8 +3382,8 @@ export const claimApi = {
       `/public/claim/${token}`,
       { method: 'GET' },
     ),
-  // El claim SIEMPRE pide el WhatsApp del dueño: el código se manda al número que ingresa.
-  start: (token: string, telefono: string) =>
+  // Sin `telefono`, el código va al número que ya tiene la tienda.
+  start: (token: string, telefono?: string) =>
     fetchApi<{
       success: boolean
       verificationId: string
@@ -3385,12 +3391,18 @@ export const claimApi = {
       expiraEnSegundos: number
     }>(`/public/claim/${token}/start`, {
       method: 'POST',
-      body: JSON.stringify({ telefono }),
+      body: JSON.stringify(telefono ? { telefono } : {}),
     }),
   verify: (token: string, verificationId: string, codigo: string) =>
     fetchApi<{ success: boolean; token: string; restaurante: any }>(
       `/public/claim/${token}/verify`,
       { method: 'POST', body: JSON.stringify({ verificationId, codigo }) },
+    ),
+  // Reclamo con mail y contraseña (sin código). `telefono` es el WhatsApp de pedidos si lo cambió.
+  credenciales: (token: string, data: { email: string; password: string; telefono?: string }) =>
+    fetchApi<{ success: boolean; token: string; restaurante: any }>(
+      `/public/claim/${token}/credenciales`,
+      { method: 'POST', body: JSON.stringify(data) },
     ),
 }
 
