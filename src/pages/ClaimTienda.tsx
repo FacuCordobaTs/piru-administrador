@@ -19,10 +19,8 @@ import { useAuthStore } from '@/store/authStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import {
   claimApi, restauranteApi, zonasDeliveryApi, suscripcionApi, modulosApi, sucursalesApi, mesasLocalesApi, ApiError,
-  pedidoUnificadoApi, productosApi,
   type ClaimTienda as ClaimTiendaData, type ClaimInventario, type ClaimConfig, type MiSuscripcion, type Modulo,
 } from '@/lib/api'
-import { TiendaPreview } from '@/components/TiendaPreview'
 import { marcarRecorridoVisto } from '@/lib/recorridoPanel'
 import { IntroZonas } from './claim/IntroZonas'
 import { AprenderPanel } from './claim/AprenderPanel'
@@ -49,9 +47,9 @@ const DEFAULT_CENTER: [number, number] = [-31.4201, -64.1888]
  * Flujo: recorrido (`walk`: local, carta, sucursales, cobros, entregas, WhatsApp, acceso) → código
  * por WhatsApp (`codigo`) o mail y contraseña → persistir borrador → cómo trabaja (`modos`, con
  * impresión, POS, mesas y herramientas incluidas) → configuración elegida (impresión y/o mesas) →
- * pedido de prueba (`prueba`) → aprender el panel (`aprender`) → panel.
+ * aprender el panel (`aprender`) → panel.
  */
-type Paso = 'walk' | 'codigo' | 'modos' | 'configImpresion' | 'configMesas' | 'prueba' | 'aprender'
+type Paso = 'walk' | 'codigo' | 'modos' | 'configImpresion' | 'configMesas' | 'aprender'
 type ModoUso = 'impresion' | 'pos'
 type PasoPostClaim = Exclude<Paso, 'walk' | 'codigo'>
 
@@ -66,13 +64,11 @@ type ProgresoClaim = {
   cantidadMesas: number
 }
 
-// Base de la tienda pública del local (mismo formato que el link que ve el dueño en el recorrido).
-const STORE_BASE = 'https://piru.app'
 const LATEST_DESKTOP_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 const DESKTOP_DOWNLOAD_FALLBACK = 'https://piru.app'
-const PASOS_POST_CLAIM: PasoPostClaim[] = ['modos', 'configImpresion', 'configMesas', 'prueba', 'aprender']
+const PASOS_POST_CLAIM: PasoPostClaim[] = ['modos', 'configImpresion', 'configMesas', 'aprender']
 // Progreso guardado por una versión anterior del claim, que tenía otros pasos.
-const PASOS_RENOMBRADOS: Record<string, PasoPostClaim> = { crecimiento: 'modos', plan: 'aprender' }
+const PASOS_RENOMBRADOS: Record<string, PasoPostClaim> = { crecimiento: 'modos', prueba: 'aprender', plan: 'aprender' }
 
 const progresoClaimKey = (claimToken: string) => `piru:claim-progress:${claimToken}`
 
@@ -285,32 +281,6 @@ function DrawControl({ onPolygonCreated }: { onPolygonCreated: (coords: { lat: n
   return null
 }
 
-// ── Confeti minimalista, sin dependencias ──
-function Confetti() {
-  const colors = ['#FF7A00', '#22c55e', '#3b82f6', '#eab308', '#ec4899']
-  const pieces = useMemo(() => Array.from({ length: 70 }).map((_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    delay: Math.random() * 0.6,
-    duration: 1.8 + Math.random() * 1.4,
-    color: colors[i % colors.length],
-    size: 6 + Math.random() * 6,
-    rotate: Math.random() * 360,
-  })), [])
-  return (
-    <div className="pointer-events-none fixed inset-0 z-[100] overflow-hidden">
-      <style>{`@keyframes piru-confetti { 0% { transform: translateY(-10vh) rotate(0deg); opacity: 1 } 100% { transform: translateY(110vh) rotate(720deg); opacity: 0 } }`}</style>
-      {pieces.map(p => (
-        <span key={p.id} style={{
-          position: 'absolute', top: 0, left: `${p.left}%`, width: p.size, height: p.size * 1.6,
-          background: p.color, borderRadius: 2, transform: `rotate(${p.rotate}deg)`,
-          animation: `piru-confetti ${p.duration}s ${p.delay}s ease-in forwards`,
-        }} />
-      ))}
-    </div>
-  )
-}
-
 export default function ClaimTienda() {
   const { token = '' } = useParams()
   const navigate = useNavigate()
@@ -323,8 +293,6 @@ export default function ClaimTienda() {
   const [tienda, setTienda] = useState<ClaimTiendaData | null>(progresoInicial.current?.tienda ?? null)
   const [inventario, setInventario] = useState<ClaimInventario | null>(null)
   const [config, setConfig] = useState<ClaimConfig | null>(null)
-  const [storeProducts, setStoreProducts] = useState<any[]>([])
-  const [pedidoOk, setPedidoOk] = useState(false)
 
   const [paso, setPaso] = useState<Paso>(progresoInicial.current?.paso ?? 'walk')
   const [cardIdx, setCardIdx] = useState(0)
@@ -453,47 +421,6 @@ export default function ClaimTienda() {
     return () => clearTimeout(t)
   }, [cooldown])
 
-  useEffect(() => {
-    const authToken = useAuthStore.getState().token
-    if (paso === 'prueba' && storeProducts.length === 0) {
-      if (authToken) {
-        productosApi.getAll(authToken)
-          .then((res: any) => setStoreProducts(res.productos || []))
-          .catch(() => {})
-      } else if (config?.productos) {
-        setStoreProducts(config.productos.map((p) => ({
-          id: p.id,
-          nombre: p.nombre,
-          descripcion: p.descripcion || '',
-          precio: p.precio,
-        })))
-      }
-    }
-  }, [paso, config, storeProducts.length])
-
-  const hacerPedidoPrueba = async (
-    items: { productoId: number; cantidad: number }[],
-    meta: { nombreCliente: string; notas: string },
-  ) => {
-    const authToken = useAuthStore.getState().token
-    if (!authToken || items.length === 0) return
-    try {
-      await pedidoUnificadoApi.create(authToken, {
-        tipo: 'takeaway',
-        nombreCliente: meta.nombreCliente || 'Pedido de prueba',
-        notas: meta.notas || 'Pedido de prueba generado en el claim',
-        anotadoManualmente: true,
-        notificarWhatsappPrueba: true,
-        items,
-      })
-      await new Promise((r) => setTimeout(r, 3500))
-      setPedidoOk(true)
-    } catch (e: any) {
-      toast.error('No se pudo crear el pedido', { description: e?.message })
-      throw e
-    }
-  }
-
   // La URL del instalador cambia con cada release. Usamos la misma fuente que el banner de Ajustes
   // y conservamos la landing como fallback si el manifiesto no responde.
   useEffect(() => {
@@ -515,10 +442,7 @@ export default function ClaimTienda() {
 
   // Valores mostrados: el borrador pisa lo que vino del backend.
   const dispNombre = draft.nombre ?? tienda?.nombre ?? ''
-  const dispUsername = tienda?.username ?? ''
   const dispLogo = draft.logo ?? tienda?.imagenUrl ?? tienda?.imagenLightUrl ?? null
-  // Dónde vive la tienda: su página propia (`<tienda>.piru.app`) o la compartida.
-  const urlTienda = tienda?.urlTienda ?? (dispUsername ? `${STORE_BASE}/${dispUsername}` : null)
   // El WhatsApp que ya tiene la tienda, completo (el enmascarado sólo si el backend es anterior).
   const numeroCargado = tienda?.telefono
     ? `+${tienda.telefono}`
@@ -1044,13 +968,10 @@ export default function ClaimTienda() {
 
   const avanzarDesdeModos = () => irA(modosActivos.includes('impresion')
     ? 'configImpresion'
-    : mesasActivas ? 'configMesas' : 'prueba')
+    : mesasActivas ? 'configMesas' : 'aprender')
 
-  const avanzarDesdeImpresion = () => irA(mesasActivas ? 'configMesas' : 'prueba')
+  const avanzarDesdeImpresion = () => irA(mesasActivas ? 'configMesas' : 'aprender')
 
-  const volverDesdePrueba = () => irA(mesasActivas
-    ? 'configMesas'
-    : modosActivos.includes('impresion') ? 'configImpresion' : 'modos')
 
   const crearPlanoInicialMesas = async () => {
     const authToken = useAuthStore.getState().token
@@ -1084,7 +1005,7 @@ export default function ClaimTienda() {
       toast.success(faltantes > 0
         ? `${faltantes} ${faltantes === 1 ? 'mesa creada' : 'mesas creadas'} en tu plano inicial`
         : `Ya tenés ${activas.length} mesas configuradas`)
-      irA('prueba')
+      irA('aprender')
     } catch (error) {
       toast.error('No pudimos crear el plano inicial', {
         description: error instanceof Error ? error.message : 'Probá nuevamente en un momento.',
@@ -1637,74 +1558,6 @@ export default function ClaimTienda() {
               )}
             </div>
           </>
-        ) : paso === 'prueba' ? (
-          pedidoOk ? (
-            <div className="text-center flex flex-col items-center animate-in fade-in duration-500 py-6">
-              <Confetti />
-              <div className="w-16 h-16 rounded-2xl bg-[#25D366] flex items-center justify-center mb-6">
-                <svg viewBox="0 0 24 24" className="h-8 w-8 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884Z" /></svg>
-              </div>
-              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Te llegó el pedido</h1>
-              <p className="text-[15px] text-muted-foreground mt-3 max-w-sm">Así vas a recibir cada pedido real: al toque, en tu WhatsApp y en el panel.</p>
-
-              <button
-                onClick={() => irA('aprender')}
-                className="w-full h-14 mt-8 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all flex items-center justify-center gap-2"
-              >
-                Ahora, a conocer el panel <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-              <button
-                onClick={volverDesdePrueba}
-                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"
-              >
-                <ArrowLeft className="h-4 w-4" /> Volver
-              </button>
-              <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight text-center">Hacé un pedido de prueba</h1>
-              <p className="text-[15px] text-muted-foreground mt-3 text-center max-w-sm mx-auto">
-                Pedí algo como si fueras un cliente: te llega al WhatsApp y lo ves en Inicio, igual que un pedido real.
-              </p>
-
-              <div className="mt-6">
-                <TiendaPreview
-                  nombre={dispNombre || 'tu local'}
-                  logo={dispLogo}
-                  slug={dispUsername || 'tulocal'}
-                  baseTienda={urlTienda}
-                  direccion={draft.delivery?.address || ''}
-                  deliveryPrice={draft.delivery?.mode === 'radio' ? draft.delivery.precio : config?.delivery.zonas?.[0]?.precio || '0'}
-                  metodosPago={{
-                    transferenciaManual: pagosView.transferenciaManual,
-                    efectivo: pagosView.efectivo,
-                  }}
-                  proveedorPago={config?.pagos.mpConnected ? 'mercadopago' : 'manual'}
-                  productos={storeProducts}
-                  onConfirmar={hacerPedidoPrueba}
-                />
-              </div>
-
-              <div className="mt-6 space-y-2 text-center">
-                <a
-                  href={urlTienda ?? STORE_BASE}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 text-xs font-semibold text-[#FF7A00] hover:underline"
-                >
-                  <ShoppingBag className="h-3.5 w-3.5" /> Abrir en una pestaña nueva
-                </a>
-                <div>
-                  <button
-                    onClick={() => irA('aprender')}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Omitir la prueba
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
         ) : paso === 'modos' ? (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="text-center flex flex-col items-center">

@@ -37,7 +37,6 @@ async function preparar(page: Page) {
     ] }] }
     if (path === '/suscripcion/mi-suscripcion') res = { success: true, data: { trialFin: new Date(Date.now() + 5 * 86_400_000).toISOString(), suscripcionBase: { precioMensual: '40000' } } }
     if (path === '/datos-ejemplo') res = { success: true, data: { hay: true } }
-    if (path === '/producto') res = { success: true, productos: [producto] }
     await route.fulfill({ json: res })
   })
   return { pedidos, errores }
@@ -131,11 +130,8 @@ test('el dueño completa alias, zonas y acceso con mail, y aprende el panel', as
   await captura(page, '08-modos')
   await page.getByRole('button', { name: /^Continuar/ }).click()
 
-  await expect(page.getByRole('heading', { name: 'Hacé un pedido de prueba' })).toBeVisible()
-  await expect(page.getByText('riceandroll.piru.app')).toBeVisible()
-  await expect(page.getByText(/my\.piru\.app\/riceandroll/)).toHaveCount(0)
-  await page.getByRole('button', { name: 'Omitir la prueba' }).click()
-
+  // Sin pedido de prueba: de cómo trabaja pasa directo a aprender el panel.
+  await expect(page.getByRole('heading', { name: 'Hacé un pedido de prueba' })).toHaveCount(0)
   await expect(page.getByText(/Aprendé tu panel · 1 de/)).toBeVisible()
   await captura(page, '09-aprender-1')
   while (await page.getByRole('button', { name: 'Siguiente' }).count()) await page.getByRole('button', { name: 'Siguiente' }).click()
