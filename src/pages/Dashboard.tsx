@@ -3018,8 +3018,16 @@ const Dashboard = () => {
                             {activeOrdersListado.length}
                         </button>
                     )}
-                    <Button variant="outline" className="h-10 rounded-xl hidden sm:flex" onClick={async () => { await cargarTurnosCaja(); setShowCierreTurno(true) }}>
-                        <CalendarDays className="mr-2 h-4 w-4" /> Caja
+                    {/* En celular el header no tiene lugar para el texto: el botón queda
+                        como ícono para que Caja siga accesible desde cualquier ancho. */}
+                    <Button
+                        variant="outline"
+                        className="h-10 rounded-xl px-3 sm:px-4"
+                        aria-label="Caja"
+                        title="Caja"
+                        onClick={async () => { await cargarTurnosCaja(); setShowCierreTurno(true) }}
+                    >
+                        <CalendarDays className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Caja</span>
                     </Button>
                     {cierreManualActivo && !sedeEvento && turnoActual && selectedTurnoId === turnoActual.id && (
                         <Button className="h-10 rounded-xl" onClick={() => setShowCerrarTurno(true)}>
