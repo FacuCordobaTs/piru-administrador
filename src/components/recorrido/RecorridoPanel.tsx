@@ -9,7 +9,6 @@ import {
   CircleHelp,
   LayoutDashboard,
   MapPin,
-  MessageCircle,
   Package,
   PanelLeft,
   Sparkles,
@@ -19,7 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { esSesionDemo } from '@/lib/api'
-import { marcarRecorridoVisto, useRecorridoPanel, whatsappDemo } from '@/lib/recorridoPanel'
+import { marcarRecorridoVisto, useRecorridoPanel } from '@/lib/recorridoPanel'
 import { useAuthStore } from '@/store/authStore'
 import { useDatosEjemplo } from '@/store/datosEjemploStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
@@ -247,17 +246,6 @@ export default function RecorridoPanel() {
             <Progreso pasos={pasos} actual={i} ir={ir} className="mt-6 hidden flex-none md:flex" />
             {ultimo && (
               <div className="mt-5 flex flex-wrap items-center gap-2.5">
-                {demo && (
-                  <a
-                    href={whatsappDemo(local)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-4 text-[15px] font-semibold text-ink ring-1 ring-line hover:bg-sand sm:px-5"
-                  >
-                    <MessageCircle size={16} />
-                    Hablar con Facu
-                  </a>
-                )}
                 <button
                   type="button"
                   className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-4 text-[15px] font-semibold text-ink ring-1 ring-line hover:bg-sand sm:px-5"

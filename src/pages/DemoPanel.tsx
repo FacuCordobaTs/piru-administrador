@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { Loader2, MessageCircle } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { ApiError, demoPanelApi, esSesionDemo, isTokenExpired, restauranteApi } from '@/lib/api'
-import { whatsappDemo } from '@/lib/recorridoPanel'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore, type RestauranteData } from '@/store/restauranteStore'
 
@@ -152,15 +151,6 @@ export default function DemoPanel() {
                   </button>
                 )
               )}
-              <a
-                href={whatsappDemo(null)}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold text-muted-foreground hover:text-foreground"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Escribirle a Facu
-              </a>
             </div>
           </>
         )}

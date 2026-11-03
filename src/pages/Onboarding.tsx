@@ -43,7 +43,6 @@ import { ExplainerCrecimiento } from './onboarding/components/ExplainerCrecimien
 
 const MP_APP_ID = 38638191854826
 const MP_REDIRECT_URI = import.meta.env.VITE_MP_REDIRECT_URI || 'https://api.piru.app/api/mp/callback'
-const WHATSAPP_HELP_NUMBER = '5493408681915'
 const LATEST_DESKTOP_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 
 // ── Fases del onboarding ──
@@ -391,7 +390,6 @@ type SucursalDraft = {
   delivery?: DeliveryDraft
 }
 type ModoUso = 'impresion' | 'pos'
-type WhatsAppHelp = { label: string; message: string }
 
 const normalizarTelefono = (raw: string): string | null => {
   let limpio = (raw || '').replace(/\D/g, '')
@@ -983,52 +981,6 @@ const SelfServeOnboarding = () => {
     }
   }
 
-  const whatsappHelp = useMemo<WhatsAppHelp>(() => {
-    const local = formData.nombre ? ` de ${formData.nombre}` : ''
-    const help = (label: string, context: string): WhatsAppHelp => ({
-      label,
-      message: `Hola Facu, estoy creando mi tienda${local} en Piru. ${context}`,
-    })
-
-    switch (phase) {
-      case 'explainer-tienda':
-      case 'nombre':
-        return help('Consultar por mi tienda', 'Estoy definiendo el nombre de mi local y tengo una consulta.')
-      case 'explainer-activacion':
-      case 'carta':
-      case 'creando':
-        return help('Ayuda con mi carta', 'Estoy subiendo las fotos de mi menú y tengo una consulta.')
-      case 'preparativos':
-        return help('Ayuda con logo y horarios', 'Estoy configurando el logo y los horarios de atención.')
-      case 'explainer-monetizacion':
-      case 'modalidadSucursales':
-      case 'sucursales':
-        return help('Ayuda con mis sucursales', 'Estoy configurando las sucursales de mi negocio.')
-      case 'entrega':
-        return help('Ayuda con el delivery', 'Estoy configurando el reparto y las zonas de entrega.')
-      case 'pagos':
-        return help('Ayuda con los cobros', 'Estoy configurando los medios de pago de mi tienda.')
-      case 'mensaje':
-      case 'whatsapps':
-        return help('Ayuda con los pedidos', 'Estoy configurando dónde recibir los pedidos por WhatsApp.')
-      case 'revision':
-        return help('Consultar por mi menú', 'Estoy revisando los productos detectados por la IA.')
-      case 'explainer-crecimiento':
-        return help('Consultar por el sistema de crecimiento', 'Estoy viendo el sistema de clientes y tengo una consulta.')
-      case 'prueba':
-        return help('Ayuda con la prueba', 'Estoy probando la tienda y haciendo el pedido de prueba.')
-      case 'modos':
-        return help('Ayuda para elegir', 'Estoy eligiendo cómo usar Piru y necesito que me recomiendes la mejor configuración.')
-      case 'configImpresion':
-        return help('Ayuda con la impresión', 'Estoy configurando la app de escritorio para imprimir comandas.')
-      case 'configMesas':
-        return help('Ayuda con mis mesas', 'Estoy armando la cantidad de mesas iniciales.')
-      case 'plan':
-        return help('Consultar por la suscripción', 'Estoy viendo la prueba gratis y la suscripción de Piru.')
-      default:
-        return help('Hablar con Facu', 'Necesito ayuda para continuar con la configuración.')
-    }
-  }, [formData.nombre, phase])
 
   // ────────────────────────────── RENDER DE FASES ──────────────────────────────
 
@@ -2260,7 +2212,6 @@ const SelfServeOnboarding = () => {
           {renderPhase()}
         </main>
       </div>
-      {!esConstructorInterno(token) && <WhatsAppHelpButton help={whatsappHelp} />}
     </div>
   )
 }
@@ -2442,23 +2393,6 @@ function PreparativosScreen({ formData, patch, indicator, productos, onContinue 
         Continuar <ArrowRight className="ml-2 h-4 w-4" />
       </Button>
     </div>
-  )
-}
-
-function WhatsAppHelpButton({ help }: { help: WhatsAppHelp }) {
-  const href = `https://wa.me/${WHATSAPP_HELP_NUMBER}?text=${encodeURIComponent(help.message)}`
-
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`${help.label}. Abre WhatsApp en una pestaña nueva`}
-      className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[1000] inline-flex min-h-12 max-w-[calc(100vw-2rem)] items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-950/20 transition-all hover:bg-[#20BD5A] hover:shadow-xl active:scale-[0.98] sm:bottom-6 sm:right-6"
-    >
-      <MessageCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
-      <span className="truncate">{help.label}</span>
-    </a>
   )
 }
 

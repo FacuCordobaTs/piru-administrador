@@ -44,15 +44,3 @@ export const useRecorridoPanel = create<EstadoRecorrido>()((set) => ({
   abrir: () => set((s) => ({ abierto: true, vez: s.vez + 1 })),
   cerrar: () => set({ abierto: false }),
 }))
-
-/** El WhatsApp de ayuda de Piru: el mismo número que la guía, con el texto de quien mira la demo. */
-export const NUMERO_AYUDA = '543408681915'
-
-export function whatsappDemo(local?: string | null) {
-  // Un mensaje de curiosidad, no de compromiso: quien recién la vio tiene que poder mandarlo, y
-  // "podés llamarme" le da permiso a Facu para llamar (a un desconocido casi nadie le atiende).
-  const texto = local
-    ? `Hola Facu, vi la demo de ${local}. ¿Me contás cómo sigue? Podés llamarme.`
-    : 'Hola Facu, vi la demo de Piru. ¿Me contás cómo sigue? Podés llamarme.'
-  return `https://api.whatsapp.com/send?phone=${NUMERO_AYUDA}&text=${encodeURIComponent(texto)}`
-}

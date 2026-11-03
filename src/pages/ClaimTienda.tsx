@@ -68,7 +68,6 @@ type ProgresoClaim = {
 
 // Base de la tienda pública del local (mismo formato que el link que ve el dueño en el recorrido).
 const STORE_BASE = 'https://piru.app'
-const WHATSAPP_HELP_NUMBER = '5493408681915'
 const LATEST_DESKTOP_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 const DESKTOP_DOWNLOAD_FALLBACK = 'https://piru.app'
 const PASOS_POST_CLAIM: PasoPostClaim[] = ['modos', 'configImpresion', 'configMesas', 'prueba', 'aprender']
@@ -106,7 +105,6 @@ function leerProgresoClaim(claimToken: string, restauranteId?: number): Progreso
 
 // Motivos de link no reclamable, para mostrar el mensaje correcto (y a dónde mandar al dueño).
 type Bloqueo = { titulo: string; detalle: string; irALogin?: boolean } | null
-type WhatsAppHelp = { label: string; message: string }
 
 // ── Borrador local de ediciones (se persiste al confirmar el WhatsApp) ──
 type PagosDraft = { efectivo: boolean; transferenciaManual: boolean; transferenciaAlias: string }
@@ -588,67 +586,6 @@ export default function ClaimTienda() {
 
   const card = cards[cardIdx]
 
-  // El CTA de ayuda acompaña todo el onboarding. Tanto el texto visible como el mensaje que llega
-  // a WhatsApp explican en qué pantalla está el dueño, para poder asistirlo sin pedirle contexto.
-  const whatsappHelp = useMemo<WhatsAppHelp>(() => {
-    const local = dispNombre ? ` de ${dispNombre}` : ''
-    const help = (label: string, context: string): WhatsAppHelp => ({
-      label,
-      message: `Hola Facu, estoy terminando de configurar mi tienda${local} en Piru. ${context}`,
-    })
-
-    if (loading) return help('Consultar por mi tienda', 'Quería consultarte por el acceso a mi tienda.')
-    if (bloqueo) return help('Ayuda para ingresar', `Me aparece este mensaje: “${bloqueo.titulo}”. ¿Me ayudás a ingresar?`)
-
-    if (paso === 'codigo') return help('Ayuda con el código', 'Estoy en la verificación de WhatsApp y necesito ayuda con el código.')
-    if (paso === 'modos') return help('Ayuda para elegir', 'Estoy eligiendo cómo trabajo en el local (impresora, mostrador, mesas) y necesito que me recomiendes.')
-    if (paso === 'configImpresion') return help('Ayuda con la impresión', 'Estoy configurando la impresión automática y necesito ayuda para instalar o conectar la app.')
-    if (paso === 'configMesas') return help('Ayuda con mis mesas', 'Estoy armando el plano inicial de mesas y necesito ayuda para configurarlo.')
-    if (paso === 'prueba') return help('Ayuda con el pedido de prueba', 'Estoy por hacer el pedido de prueba y tengo una consulta.')
-    if (paso === 'aprender') return help('Consultar por el panel', 'Estoy aprendiendo a usar el panel y tengo una consulta.')
-
-    if (!card) return help('Hablar con Facu', 'Necesito ayuda para continuar con la configuración.')
-
-    if (editing) {
-      const editingContext: Record<string, string> = {
-        intro: 'Estoy cambiando el nombre o el logo de mi local y necesito ayuda.',
-        sucursales: 'Estoy cargando las sucursales y necesito ayuda.',
-      }
-      const editingKey = editing.split(':')[0]
-      return help('Ayuda con este cambio', editingContext[editingKey] ?? 'Estoy modificando esta configuración y necesito ayuda.')
-    }
-
-    switch (card.kind) {
-      case 'intro':
-        return help('Hablar con Facu', 'Estoy empezando a configurar lo que falta.')
-      case 'productos':
-        return help('Consultar por mi carta', 'Estoy revisando los productos de mi carta y tengo una consulta.')
-      case 'modalidadSucursales':
-        return help('Ayuda con mis sucursales', 'Estoy eligiendo si configurar una o varias sucursales y necesito ayuda.')
-      case 'sucursales':
-        return help('Configurar mis sucursales', 'Estoy cargando los nombres y direcciones de mis sucursales y necesito ayuda.')
-      case 'pagos':
-        return help('Ayuda con mi alias', 'Estoy cargando mi alias y los medios de pago y tengo una consulta.')
-      case 'pagosSucursal': {
-        const sucursal = draft.sucursales?.[card.sucursalIdx]?.nombre ?? `Sucursal ${card.sucursalIdx + 1}`
-        return help('Ayuda con mi alias', `Estoy cargando el alias y los medios de pago de ${sucursal} y necesito ayuda.`)
-      }
-      case 'delivery':
-        return help('Ayuda con mis zonas', 'Estoy dibujando mis zonas de delivery y necesito ayuda.')
-      case 'deliverySucursal': {
-        const sucursal = draft.sucursales?.[card.sucursalIdx]?.nombre ?? `Sucursal ${card.sucursalIdx + 1}`
-        return help('Ayuda con mis zonas', `Estoy dibujando la zona de delivery de ${sucursal} y necesito ayuda.`)
-      }
-      case 'mensaje':
-        return help('Consultar por los pedidos', 'Estoy viendo cómo me van a llegar los pedidos y tengo una consulta.')
-      case 'whatsapps':
-        return help('Ayuda con los números', 'Estoy configurando el WhatsApp donde me llegan los pedidos y necesito ayuda.')
-      case 'acceso':
-        return help('Ayuda con mi acceso', 'Estoy creando mi acceso al panel y necesito ayuda.')
-      case 'reassure':
-        return help('Consultar esta configuración', `Estoy revisando “${card.titulo}” y tengo una consulta.`)
-    }
-  }, [bloqueo, card, dispNombre, draft.sucursales, editing, loading, paso])
 
   const goCard = (i: number) => {
     setEditing(null)
@@ -1206,7 +1143,7 @@ export default function ClaimTienda() {
   )
 
   return (
-    <div className="min-h-dvh flex items-center justify-center w-full bg-[#FFFBF0] dark:bg-background px-6 pt-10 pb-32 sm:pb-36 selection:bg-orange-500/10 selection:text-[#FF7A00]">
+    <div className="min-h-dvh flex items-center justify-center w-full bg-[#FFFBF0] dark:bg-background px-6 pt-10 pb-12 selection:bg-orange-500/10 selection:text-[#FF7A00]">
       <div className="w-full max-w-sm animate-in fade-in duration-500">
         {loading ? (
           <div className="flex justify-center py-24">
@@ -1971,25 +1908,7 @@ export default function ClaimTienda() {
           />
         )}
       </div>
-      <WhatsAppHelpButton help={whatsappHelp} />
     </div>
-  )
-}
-
-function WhatsAppHelpButton({ help }: { help: WhatsAppHelp }) {
-  const href = `https://wa.me/${WHATSAPP_HELP_NUMBER}?text=${encodeURIComponent(help.message)}`
-
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`${help.label}. Abre WhatsApp en una pestaña nueva`}
-      className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[1000] inline-flex min-h-12 max-w-[calc(100vw-2rem)] items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-950/20 transition-all hover:bg-[#20BD5A] hover:shadow-xl active:scale-[0.98] sm:bottom-6 sm:right-6"
-    >
-      <MessageCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
-      <span className="truncate">{help.label}</span>
-    </a>
   )
 }
 

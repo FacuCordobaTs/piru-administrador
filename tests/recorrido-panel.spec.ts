@@ -108,12 +108,8 @@ test('la primera vez que entra por la demo, el recorrido se abre solo y explica 
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/paso-${i + 1}.png` })
   }
 
-  // El último paso lleva a hablar con el fundador y a la guía, y cerrarlo lo recuerda.
-  const hablar = dialogo(page).getByRole('link', { name: 'Hablar con Facu' })
-  const href = (await hablar.getAttribute('href'))!
-  expect(href).toMatch(/^https:\/\/api\.whatsapp\.com\/send\?phone=543408681915&/)
-  // Curiosidad y permiso para que Facu llame, no "quiero activarlo".
-  expect(new URL(href).searchParams.get('text')).toBe('Hola Facu, vi la demo de Brasa. ¿Me contás cómo sigue? Podés llamarme.')
+  // El último paso lleva a la guía (sin botón para hablar con Facu), y cerrarlo lo recuerda.
+  await expect(dialogo(page).getByRole('link', { name: 'Hablar con Facu' })).toHaveCount(0)
   await expect(dialogo(page).getByRole('button', { name: 'Leer la guía' })).toBeVisible()
   await dialogo(page).getByRole('button', { name: 'Empezar' }).click()
   await expect(dialogo(page)).toHaveCount(0)

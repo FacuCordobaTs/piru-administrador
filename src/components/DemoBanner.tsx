@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { MessageCircle, Sparkles, Trash2 } from 'lucide-react'
+import { Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { esSesionDemo } from '@/lib/api'
-import { whatsappDemo } from '@/lib/recorridoPanel'
 import { useAuthStore } from '@/store/authStore'
 import { useDatosEjemplo } from '@/store/datosEjemploStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
@@ -100,17 +99,6 @@ export function DemoBanner() {
         </button>
       )}
 
-      {esDemo && (
-        <a
-          href={whatsappDemo(nombre)}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-brand px-3 text-xs font-semibold text-white transition-colors hover:bg-brand-deep"
-        >
-          <MessageCircle className="h-3.5 w-3.5" />
-          Hablar con Facu
-        </a>
-      )}
     </div>
   )
 }
