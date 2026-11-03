@@ -521,8 +521,10 @@ export default function ClaimTienda() {
   const dispLogo = draft.logo ?? tienda?.imagenUrl ?? tienda?.imagenLightUrl ?? null
   // Dónde vive la tienda: su página propia (`<tienda>.piru.app`) o la compartida.
   const urlTienda = tienda?.urlTienda ?? (dispUsername ? `${STORE_BASE}/${dispUsername}` : null)
-  // El WhatsApp que ya tiene la tienda (enmascarado: el completo nunca llega al navegador).
-  const numeroCargado = tienda?.telefonoEnmascarado ?? null
+  // El WhatsApp que ya tiene la tienda, completo (el enmascarado sólo si el backend es anterior).
+  const numeroCargado = tienda?.telefono
+    ? `+${tienda.telefono}`
+    : tienda?.telefonoEnmascarado ? `+54 ${tienda.telefonoEnmascarado}` : null
   const usaNumeroCargado = !!numeroCargado && !usarOtroNumero && draft.modalidadSucursales !== 'multiple'
 
   // Estado de pagos mostrado (borrador o config del backend).
@@ -1174,6 +1176,10 @@ export default function ClaimTienda() {
     : null
 
   const codigo = digits.join('')
+  // A qué número se mandó el código, completo.
+  const numeroCodigo = usaNumeroCargado
+    ? numeroCargado
+    : normalizarTelefono(telefono) ? `+${normalizarTelefono(telefono)}` : telefonoEnmascarado
   const progress = cards.length > 0 ? ((cardIdx + 1) / cards.length) * 100 : 0
 
   // Botones de un editor inline simple: Guardar (primario) + Cancelar (secundario).
@@ -1498,7 +1504,7 @@ export default function ClaimTienda() {
                       <span className="h-9 w-9 shrink-0 rounded-xl bg-[#25D366]/10 flex items-center justify-center">
                         <MessageCircle className="h-4 w-4 text-[#20B957]" />
                       </span>
-                      <span className="flex-1 text-base font-semibold tabular-nums">+54 {numeroCargado}</span>
+                      <span className="flex-1 text-base font-semibold tabular-nums">{numeroCargado}</span>
                       <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                         <CircleCheck className="h-4 w-4" /> Listo
                       </span>
@@ -1540,7 +1546,7 @@ export default function ClaimTienda() {
             {/* ── Acceso al panel: código por WhatsApp o mail y contraseña ── */}
             {card?.kind === 'acceso' && (() => {
               const numeroAcceso = usaNumeroCargado
-                ? `+54 ${numeroCargado}`
+                ? numeroCargado
                 : `+${normalizarTelefono(telefono) ?? telefono}`
               return (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-400">
@@ -1652,7 +1658,7 @@ export default function ClaimTienda() {
               <h1 className="text-2xl font-semibold tracking-tight">Ingresá el código</h1>
               <p className="text-sm text-muted-foreground mt-2">
                 Te lo enviamos por WhatsApp
-                {telefonoEnmascarado ? (<>{' '}al <span className="font-medium text-foreground">{telefonoEnmascarado}</span></>) : null}
+                {numeroCodigo ? (<>{' '}al <span className="font-medium text-foreground">{numeroCodigo}</span></>) : null}
               </p>
               <p className="text-xs text-muted-foreground mt-3 max-w-xs mx-auto">
                 Es un código de Piru: escribilo sólo acá. No se lo pases a nadie, ni a nosotros.

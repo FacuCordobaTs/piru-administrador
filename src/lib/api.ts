@@ -3275,6 +3275,8 @@ export interface ClaimTienda {
   imagenUrl: string | null
   imagenLightUrl: string | null
   telefonoEnmascarado: string | null
+  /** WhatsApp cargado, sólo dígitos. Aditivo: backends previos sólo mandan el enmascarado. */
+  telefono?: string | null
   /** Base pública real (`https://<tienda>.piru.app/` si tiene página propia). Aditivo: puede faltar. */
   urlTienda?: string | null
   /** El local tiene página propia (dominio_tienda): no se le muestra el link compartido. */

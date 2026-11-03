@@ -21,7 +21,7 @@ async function preparar(page: Page) {
     let res: any = { success: true, data: [] }
     if (path === '/public/claim/test-claim') res = {
       success: true,
-      tienda: { nombre: local.nombre, username: local.username, imagenUrl: null, imagenLightUrl: null, telefonoEnmascarado: '••••••567', urlTienda: 'https://riceandroll.piru.app/', tienePagina: true },
+      tienda: { nombre: local.nombre, username: local.username, imagenUrl: null, imagenLightUrl: null, telefonoEnmascarado: '••••••567', telefono: '5493511234567', urlTienda: 'https://riceandroll.piru.app/', tienePagina: true },
       inventario: { productos: 1, tieneImagen: false, tieneCobros: true, zonasDelivery: 0, primerPedido: false, tieneNombre: true, tieneLink: true },
       config: {
         pagos: { efectivo: true, transferenciaManual: true, transferenciaAutomatica: false, mercadopagoCheckout: false, transferenciaAlias: 'alias.de.facu', autoTransferAvailable: false, mpConnected: false },
@@ -113,6 +113,8 @@ test('el dueño completa alias, zonas y acceso con mail, y aprende el panel', as
   await page.getByRole('button', { name: 'Entendido' }).click()
 
   await expect(page.getByRole('heading', { name: 'Tus pedidos llegan a este WhatsApp' })).toBeVisible()
+  await expect(page.getByText('+5493511234567')).toBeVisible()
+  await expect(page.getByText(/••/)).toHaveCount(0)
   await captura(page, '06-whatsapp')
   await page.getByRole('button', { name: 'Continuar' }).click()
 
