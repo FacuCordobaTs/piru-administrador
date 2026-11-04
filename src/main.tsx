@@ -35,6 +35,19 @@ import AccesoInterno from './pages/AccesoInterno';
 import DemoPanel from './pages/DemoPanel';
 import { initializeDesktopZoom } from './utils/desktopZoom';
 
+// Tras un deploy, un index.html viejo pide chunks con hash que ya no existen:
+// recargamos una vez para traer la versión nueva en vez de romper la ruta.
+window.addEventListener('vite:preloadError', (event) => {
+  const key = 'piru:chunk-reload'
+  try {
+    const last = Number(sessionStorage.getItem(key) || 0)
+    if (Date.now() - last < 10_000) return
+    sessionStorage.setItem(key, String(Date.now()))
+  } catch { /* sin storage: recargamos igual */ }
+  event.preventDefault()
+  window.location.reload()
+})
+
 // La guía se carga aparte: el uso de todos los días no la descarga.
 const Guia = lazy(() => import('./pages/Guia'))
 const GuiaPublica = lazy(() => import('./pages/Guia').then((m) => ({ default: m.GuiaPublica })))
