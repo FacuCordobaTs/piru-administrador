@@ -85,7 +85,7 @@ export function ConModulo({ children }: { children: ReactNode }) {
   )
 }
 
-/** Una hoja lateral (abajo, en el celular), como las de la app de marketing. */
+/** Una hoja lateral (abajo, en el celular), como las de Marketing. */
 export function Hoja({
   open,
   onOpenChange,

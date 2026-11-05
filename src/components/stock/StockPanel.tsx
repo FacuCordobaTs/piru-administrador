@@ -443,7 +443,7 @@ function StockGate({ activando, onActivar }: { activando: boolean; onActivar: ()
             Activar control de stock
           </Button>
           <p className="mt-3 text-xs text-muted-foreground">
-            Se activa al instante. Después podés desactivarlo desde Mis módulos sin perder lo que ya cargaste.
+            Se activa al instante. Después podés desactivarlo desde Módulos sin perder lo que ya cargaste.
           </p>
         </div>
       </div>

@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties } from 'react'
 
 /**
- * Las piezas de las ilustraciones de la guía, las mismas que usa la app de marketing
- * (marketers/src/components/escenas/animacion.ts).
+ * Las piezas de las ilustraciones de la guía, las mismas que usa Marketing
+ * (src/marketing/components/escenas/animacion.ts).
  */
 
 /** Si la escena se está viendo: fuera de pantalla queda congelada. */

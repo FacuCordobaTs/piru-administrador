@@ -15,11 +15,10 @@ import Dashboard from './pages/Dashboard'
 import Pedidos from './pages/Pedidos'
 import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
+import Modulos from './pages/Modulos'
 import AjustesPage from './pages/ajustes'
-import ClientesMarketing from './pages/ClientesMarketing'
 import Mensajes from './pages/Mensajes'
 import Repartidores from './pages/Repartidores'
-import CodigosDescuento from './pages/CodigosDescuento'
 import { PrinterProvider } from './context/PrinterContext'
 import Onboarding from './pages/Onboarding';
 import Suscribir from './pages/Suscribir';
@@ -52,6 +51,12 @@ window.addEventListener('vite:preloadError', (event) => {
 const Guia = lazy(() => import('./pages/Guia'))
 const GuiaPublica = lazy(() => import('./pages/Guia').then((m) => ({ default: m.GuiaPublica })))
 
+
+type PantallaMarketing = keyof typeof import('./marketing')
+/** Las pantallas de Marketing viven en un chunk aparte: el uso de todos los días no lo descarga. */
+const marketing = (pantalla: PantallaMarketing) => async () => ({
+  Component: (await import('./marketing'))[pantalla],
+})
 
 const router = createBrowserRouter([
   {
@@ -196,10 +201,25 @@ const router = createBrowserRouter([
             element: <Ropa />,
           },
           {
-            // Clientes, campañas, cupones, puntos y recompra viven en la app de marketing:
-            // esta pantalla la abre en modo dueño, sin login.
+            // Marketing: clientes, campañas, cupones, puntos, recompra y días flojos del local.
+            path: "marketing",
+            lazy: marketing('Layout'),
+            children: [
+              { index: true, lazy: marketing('Resumen') },
+              { path: "hoy", lazy: marketing('Hoy') },
+              { path: "dias-flojos", lazy: marketing('Dias') },
+              { path: "campanas", lazy: marketing('Campanas') },
+              { path: "clientes", lazy: marketing('Clientes') },
+              { path: "puntos", lazy: marketing('Puntos') },
+              { path: "cupones", lazy: marketing('Cupones') },
+              { path: "estadisticas", lazy: marketing('Estadisticas') },
+              { path: "*", element: <Navigate to="/dashboard/marketing" replace /> },
+            ],
+          },
+          {
+            // Enlaces guardados de cuando Clientes era su propia pantalla.
             path: "clientes",
-            element: <ClientesMarketing />,
+            element: <Navigate to="/dashboard/marketing/clientes" replace />,
           },
           {
             path: "mensajes",
@@ -207,7 +227,7 @@ const router = createBrowserRouter([
           },
           {
             path: "modulos",
-            element: <ConfiguracionRedirect seccion="modulos" />,
+            element: <Modulos />,
           },
           {
             path: "mesas",
@@ -228,7 +248,7 @@ const router = createBrowserRouter([
           },
           {
             path: "codigos-descuento",
-            element: <CodigosDescuento />,
+            element: <Navigate to="/dashboard/marketing/cupones" replace />,
           },
           {
             path: "ajustes",
@@ -246,6 +266,11 @@ const router = createBrowserRouter([
             element: <PerfilRedirect />,
           },
         ],
+      },
+      {
+        // La guía de Marketing, como la del panel: toda la pantalla, dentro de la sesión.
+        path: "marketing/guia",
+        lazy: marketing('Guia'),
       },
       {
         // La guía ocupa toda la pantalla, sin el menú, pero sigue adentro de la sesión: mientras se

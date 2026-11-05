@@ -79,8 +79,8 @@ export function pasosDelRecorrido({
       etiqueta: 'Clientes',
       titulo: 'Cada pedido suma un cliente a tu base',
       texto:
-        'Queda guardado quién te compra, qué pide y cada cuánto. Desde Clientes abrís la app de marketing: campañas con link propio y cupones (vienen incluidos), y la recompra por WhatsApp y los puntos con Retención.',
-      donde: 'Clientes',
+        'Queda guardado quién te compra, qué pide y cada cuánto. En Marketing tenés tu base, campañas con link propio y cupones (vienen incluidos), y la recompra por WhatsApp y los puntos con Retención.',
+      donde: 'Marketing',
       escena: 'clientes',
     },
     {

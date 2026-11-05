@@ -1,0 +1,123 @@
+/*
+ * El recorrido de bienvenida (Recorrido.tsx). Como en las escenas, cada animación describe de dónde
+ * viene la pieza y el estado final es el normal: con movimiento reducido, index.css las apaga.
+ */
+.recorrido-fondo[data-state="open"] {
+  animation: r-fundido-entra 0.3s ease both;
+}
+.recorrido-fondo[data-state="closed"] {
+  animation: r-fundido-sale 0.22s ease both;
+}
+.recorrido-caja[data-state="open"] {
+  animation: r-caja-entra 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.recorrido-caja[data-state="closed"] {
+  animation: r-caja-sale 0.22s ease both;
+}
+
+/* El escenario limita el alto de la escena: la escena entra entera, sea cual sea la pantalla. */
+.r-marco {
+  container-type: size;
+  --alto-max: 100cqh;
+}
+.r-escena {
+  animation: r-escena 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* El texto entra desde el lado hacia el que se avanza. */
+.r-texto[data-dir="1"] {
+  animation: r-desde-derecha 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.r-texto[data-dir="-1"] {
+  animation: r-desde-izquierda 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.r-texto > * {
+  animation: r-sube 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.r-texto > :nth-child(2) {
+  animation-delay: 50ms;
+}
+.r-texto > :nth-child(3) {
+  animation-delay: 100ms;
+}
+.r-texto > :nth-child(4) {
+  animation-delay: 150ms;
+}
+
+.r-progreso {
+  transform-origin: left center;
+  animation: r-llena 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes r-fundido-entra {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes r-fundido-sale {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes r-caja-entra {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.97);
+  }
+}
+@keyframes r-caja-sale {
+  to {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+}
+@keyframes r-escena {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes r-desde-derecha {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+@keyframes r-desde-izquierda {
+  from {
+    opacity: 0;
+    transform: translateX(-32px);
+  }
+}
+@keyframes r-sube {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes r-llena {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Las ilustraciones mantienen su paleta original, independientemente del tema de la app. */
+.recorrido-caja .escenario {
+  color-scheme: light;
+  color: #191512;
+  --marketing-brand: #ff7a00;
+  --marketing-brand-deep: #e66e00;
+  --marketing-brand-soft: #fff2e3;
+  --marketing-ink: #191512;
+  --marketing-ink-2: #4a433c;
+  --marketing-ink-3: #80776e;
+  --marketing-paper: #fffbf0;
+  --marketing-surface: #ffffff;
+  --marketing-cream: #fffbf0;
+  --marketing-sand: #f6f0e6;
+  --marketing-line: #ece4d8;
+}
+
+.recorrido-caja .escenario .bg-ink {
+  color: #ffffff;
+}

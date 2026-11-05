@@ -1,0 +1,199 @@
+@reference "../index.css";
+
+/*
+ * Estilos de Marketing (marketing/). Todo va acotado a `.marketing-app`, el contenedor de cada
+ * pantalla (components/Layout.tsx y pages/Guia.tsx): los diálogos se montan adentro
+ * (components/portal.tsx), así estas reglas nunca tocan el resto del panel. La paleta (`ink`,
+ * `paper`, `sand`…) está en index.css; acá sólo se redefine para el modo oscuro.
+ */
+
+.dark .marketing-app {
+  color-scheme: dark;
+  --marketing-paper: oklch(0.145 0 0);
+  --marketing-surface: #242424;
+  --marketing-cream: #1c1c1c;
+  --marketing-sand: #303030;
+  --marketing-line: #414141;
+  --marketing-ink: #fafafa;
+  --marketing-ink-2: #dddddd;
+  --marketing-ink-3: #b4b4b4;
+  --marketing-brand-deep: #ff9b42;
+  --marketing-brand-soft: #442b18;
+}
+
+@layer base {
+  .marketing-app {
+    @apply bg-paper text-ink font-sans antialiased;
+  }
+  .marketing-app :is(button, a, input, select, textarea) {
+    touch-action: manipulation;
+  }
+  .marketing-app :is(button, a) {
+    transition:
+      background-color 0.18s,
+      color 0.18s;
+  }
+  .marketing-app button {
+    cursor: pointer;
+  }
+  .marketing-app button:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  .marketing-app :is(input, select, textarea) {
+    @apply w-full rounded-xl border border-line bg-surface px-3 py-3 text-sm min-h-11;
+  }
+  .marketing-app label {
+    @apply grid gap-2 text-sm font-medium text-ink-2;
+  }
+  .marketing-app h1 {
+    @apply text-3xl sm:text-4xl font-bold tracking-tight;
+  }
+  .marketing-app h2 {
+    @apply text-lg font-semibold tracking-tight;
+  }
+  .marketing-app :is(button, a, input, textarea, select):focus-visible {
+    outline: 2px solid #e66e00;
+    outline-offset: 3px;
+  }
+  .marketing-app summary {
+    cursor: pointer;
+    min-height: 44px;
+  }
+}
+
+@layer components {
+  .marketing-app .card {
+    @apply rounded-[20px] bg-surface p-5 sm:p-6 ring-1 ring-line shadow-[0_1px_2px_rgb(40_24_8/.04),0_12px_28px_-20px_rgb(40_24_8/.15)];
+  }
+  .marketing-app .muted {
+    @apply text-sm text-ink-3;
+  }
+  .marketing-app .label {
+    @apply text-[11px] font-semibold uppercase tracking-[.09em] text-ink-3;
+  }
+  .marketing-app .btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold bg-ink text-white;
+  }
+  .marketing-app .btn-secondary {
+    @apply bg-surface text-ink ring-1 ring-line;
+  }
+  .marketing-app .btn-ghost {
+    @apply bg-transparent text-ink-2;
+  }
+  .marketing-app .btn-danger {
+    @apply bg-rose-700 text-white;
+  }
+  .marketing-app .stat {
+    @apply text-3xl font-bold tracking-tight tabular-nums;
+  }
+  .marketing-app .wa-preview {
+    @apply rounded-2xl bg-[#EFEAE2] p-4;
+  }
+  .marketing-app .wa-bubble {
+    @apply ml-5 rounded-xl rounded-tr-none bg-[#D9FDD3] p-4 text-sm text-[#111b21] whitespace-pre-wrap leading-relaxed shadow-sm;
+  }
+  .marketing-app .closed {
+    background: repeating-linear-gradient(
+      135deg,
+      #ece4d8 0 5px,
+      #f6f0e6 5px 10px
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-app *,
+  .marketing-app *:before,
+  .marketing-app *:after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Las superficies oscuras se distinguen por el fondo, sin contorno. */
+.dark .marketing-app :is(.card, .btn-secondary, [class*="rounded"][class~="ring-line"]):not(.escenario *) {
+  --tw-ring-shadow: 0 0 #0000;
+}
+.dark .marketing-app :is(input, select, textarea, [class*="rounded"][class~="border-line"]):not(.escenario *) {
+  border-style: none;
+}
+.dark .marketing-app .guia-pasos > li > span {
+  box-shadow: none;
+}
+.dark .marketing-app :is(.bg-ink, .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger)) { color: #191512; }
+.dark .marketing-app .wa-preview { background: #202c33; }
+.dark .marketing-app .wa-bubble { background: #005c4b; color: #e9edef; }
+
+/* Indicadores en una banda: ventas tiene prioridad, los contadores comparten el resto. */
+.marketing-app .resumen-indicadores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; }
+.marketing-app .resumen-ventas { grid-column: 1 / -1; padding: 1.5rem; }
+.marketing-app .resumen-indicador { padding: 1.25rem 1.5rem; border-top: 1px solid var(--marketing-line); }
+.marketing-app .resumen-indicador + .resumen-indicador { border-left: 1px solid var(--marketing-line); }
+.marketing-app .resumen-enlace { font-size: .8125rem; font-weight: 600; color: var(--marketing-brand-deep); white-space: nowrap; }
+.marketing-app .resumen-enlace:hover { text-decoration: underline; text-underline-offset: 4px; }
+@media (min-width: 900px) {
+  .marketing-app .resumen-indicadores { grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .marketing-app .resumen-ventas { grid-column: auto; padding: 1.75rem; }
+  .marketing-app .resumen-indicador { display: flex; flex-direction: column; justify-content: center; border-top: 0; border-left: 1px solid var(--marketing-line); }
+  .marketing-app .resumen-indicadores--cuatro { grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); }
+}
+
+.marketing-app .campana-compacta .btn { padding-inline: .75rem; padding-block: .375rem; font-size: .8125rem; }
+@media (hover: hover) and (pointer: fine) {
+  .marketing-app .campana-compacta .btn { min-height: 2rem; }
+}
+
+.marketing-app .campana-resultados { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: 1rem; }
+.marketing-app .campana-resultados > div { min-width: 0; overflow-wrap: anywhere; }
+.marketing-app .campana-venta { grid-column: 1 / -1; }
+@media (min-width: 640px) {
+  .marketing-app .campana-resultados { grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 0; }
+  .marketing-app .campana-resultados > div { padding-inline: 1rem; border-left: 1px solid var(--marketing-line); }
+  .marketing-app .campana-resultados > div:first-child { padding-left: 0; border-left: 0; }
+  .marketing-app .campana-resultados > div:last-child { padding-right: 0; }
+  .marketing-app .campana-venta { grid-column: auto; }
+}
+
+/* La barra de secciones se desliza en el celular sin mostrar la barra de scroll. */
+.marketing-app .marketing-secciones { scrollbar-width: none; }
+.marketing-app .marketing-secciones::-webkit-scrollbar { display: none; }
+
+/* Sombra compartida de los listados, sólo en modo claro. */
+:root:not(.dark) .marketing-app .lista-sombra {
+  box-shadow: 0 2px 8px rgb(40 24 8 / .04), 0 12px 28px -16px rgb(40 24 8 / .16);
+}
+
+/* En modo claro, las sombras reemplazan los contornos decorativos. */
+:root:not(.dark) .marketing-app :is(.card, .btn-secondary, [class~="ring-line"], [class*="ring-brand/"]):not(.escenario, .escenario *) {
+  --tw-ring-shadow: 0 0 #0000;
+}
+:root:not(.dark) .marketing-app :is(input, select, textarea, [class~="border"], [class*="border-"], .resumen-indicador, .campana-resultados > div):not(.escenario, .escenario *) {
+  border-style: none;
+}
+:root:not(.dark) .marketing-app .guia-pasos > li > span {
+  box-shadow: 0 6px 14px -8px rgb(40 24 8 / .35);
+}
+
+/* La campaña líder es naranja; el reflejo cruza la fila sólo al interactuar. */
+.marketing-app .campana-lider {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 6px 16px -4px rgb(79 35 0 / .32), 0 2px 5px rgb(79 35 0 / .18);
+  color: #fff;
+  background-color: #ff7a00;
+  background-image: linear-gradient(110deg, transparent 15%, rgb(255 255 255 / .12) 35%, rgb(255 255 255 / .5) 50%, rgb(255 255 255 / .12) 65%, transparent 85%);
+  background-repeat: no-repeat;
+  background-size: 240px 100%;
+  background-position: -240px 0;
+}
+.marketing-app .campana-lider:is(:hover, :focus-within) {
+  animation: campana-lider-brillo .3s ease-in-out;
+}
+@keyframes campana-lider-brillo {
+  from { background-position: -240px 0; }
+  to { background-position: calc(100% + 240px) 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marketing-app .campana-lider:is(:hover, :focus-within) { animation: none; }
+}

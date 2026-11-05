@@ -81,9 +81,7 @@ export default function WhatsApp() {
             oracion="Activá el módulo para notificar a tus comensales en tiempo real y eliminar preguntas en caja."
             estado="sin-configurar"
             accionLabel="Ver módulos"
-            onAccion={() => {
-              navigate({ hash: '#modulos-seccion' })
-            }}
+            onAccion={() => navigate('/dashboard/modulos')}
           />
         )}
       </div>

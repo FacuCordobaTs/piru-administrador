@@ -41,7 +41,6 @@ const ICONOS: Record<string, typeof Blocks> = {
   codigos_descuento: Sparkles,
   mercadopago: CreditCard,
   talo: CreditCard,
-  rapiboy: Rocket,
   facturacion_arca: Settings2,
   gestion_stock: Blocks,
   gestion_cadetes: Rocket,
@@ -58,7 +57,6 @@ function requisitoConfiguracion(modulo: Modulo) {
   if (!modulo.activable) return 'Configuración en preparación'
   if (modulo.codigo === 'mercadopago') return 'Requiere conectar Mercado Pago'
   if (modulo.codigo === 'talo') return 'Requiere cargar tus credenciales de Talo'
-  if (modulo.codigo === 'rapiboy') return 'Requiere configurar la integración de Rapiboy'
   if (modulo.codigo === 'facturacion_arca') return 'Requiere completar la configuración de ARCA'
   if (modulo.codigo === 'impresion_comandas') return 'Requiere configurar una impresora'
   return null
@@ -67,18 +65,17 @@ function requisitoConfiguracion(modulo: Modulo) {
 const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mesas: '/dashboard/mesas',
   gestion_stock: '/dashboard/productos?tab=stock',
-  motor_recompra: '/dashboard/clientes?tab=retencion&vista=motor',
-  puntos_clientes: '/dashboard/clientes?tab=retencion&vista=puntos',
-  codigos_descuento: '/dashboard/clientes?tab=adquisicion&vista=cupones',
+  motor_recompra: '/dashboard/marketing/hoy',
+  puntos_clientes: '/dashboard/marketing/puntos',
+  codigos_descuento: '/dashboard/marketing/cupones',
   mercadopago: '/dashboard/ajustes/monetizacion?config=mercadopago',
   talo: '/dashboard/ajustes/monetizacion?config=talo',
-  rapiboy: '/dashboard/ajustes/entregas?config=rapiboy',
   gestion_cadetes: '/dashboard/repartidores',
   facturacion_arca: '/dashboard/ajustes/monetizacion?config=arca',
   impresion_comandas: '/dashboard/ajustes/impresion?config=impresion',
   multisucursal: '/dashboard/ajustes/entregas?config=sucursales',
   avisos_automaticos_whatsapp: '/dashboard/ajustes/whatsapp?config=avisos',
-  crecimiento: '/dashboard/clientes?tab=adquisicion&vista=campanas',
+  crecimiento: '/dashboard/marketing/campanas',
 }
 
 /**
@@ -108,7 +105,7 @@ function AccionModulo({
   if (modulo.estadoProducto === 'proximamente' || !modulo.activable) {
     return <Button className="w-full" variant="secondary" disabled>Próximamente</Button>
   }
-  if ((modulo.estado === 'activo' || modulo.estado === 'cancelacion_programada') && !modulo.activoAhora) return <Button onClick={() => window.location.assign('/dashboard/ajustes/suscripcion')}>Revisar suscripción</Button>
+  if ((modulo.estado === 'activo' || modulo.estado === 'cancelacion_programada') && !modulo.activoAhora) return <Button onClick={() => window.location.assign('/dashboard/ajustes/cuenta')}>Revisar suscripción</Button>
   if (modulo.estado === 'activo') {
     if (modulo.tipo === 'pago') {
       return <div className="grid gap-2">{RUTAS_CONFIGURACION[modulo.codigo] && <Button onClick={onConfigurar}>Configurar módulo</Button>}<Button className="w-full" variant="ghost" disabled={procesando} onClick={onDesactivar}>{procesando ? 'Guardando…' : 'Desactivar al finalizar el período'}</Button></div>
@@ -133,7 +130,7 @@ function AccionModulo({
     return <div className="grid gap-2"><Button variant="outline" disabled={procesando} onClick={onActualizarPago}>Ya pagué, verificar</Button><Button variant="ghost" disabled={procesando} onClick={onActivarPago}>Volver al pago</Button></div>
   }
   if (modulo.estado === 'suspendido') {
-    return <Button className="w-full" variant="outline" onClick={() => window.location.assign('/dashboard/ajustes/suscripcion')}>Revisar suscripción</Button>
+    return <Button className="w-full" variant="outline" onClick={() => window.location.assign('/dashboard/ajustes/cuenta')}>Revisar suscripción</Button>
   }
   return modulo.tipo === 'pago'
     ? <Button className="w-full" disabled={procesando} onClick={onActivarPago}>Activar por {fmtARS(modulo.precioMensual)}/mes</Button>
@@ -172,7 +169,7 @@ function CatalogoSkeleton() {
   )
 }
 
-export default function Modulos({ embedded = false, query = '', codigos, soloActivos = false }: { embedded?: boolean; query?: string; codigos?: string[]; soloActivos?: boolean }) {
+export default function Modulos() {
   const [filtro, setFiltro] = useState<'todos' | 'activos' | 'incluidos' | 'pagos'>('todos')
   const navigate = useNavigate()
   const location = useLocation()
@@ -207,21 +204,23 @@ export default function Modulos({ embedded = false, query = '', codigos, soloAct
         if (!cancelado && intento === 0) toast.info('Estamos verificando la acreditación de tu pago…')
       } catch { /* el próximo intento vuelve a consultar */ }
       if (!cancelado && intento + 1 < demoras.length) window.setTimeout(() => void verificar(intento + 1), demoras[intento + 1])
-      if (!cancelado && intento + 1 === demoras.length) window.history.replaceState({}, '', '/dashboard/ajustes/modulos')
+      if (!cancelado && intento + 1 === demoras.length) window.history.replaceState({}, '', '/dashboard/modulos')
     }
     void verificar(0)
     return () => { cancelado = true }
   }, [cargar, location.search])
 
-  const coincide = (m: Modulo) => `${m.nombre} ${m.descripcion ?? ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(query.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase())
   const categoriasFiltradas = categorias.map(c => ({ ...c, modulos: c.modulos.filter(m =>
-    coincide(m) && (!codigos || codigos.includes(m.codigo)) && (!soloActivos || m.activoAhora)
-    && (!embedded || soloActivos || m.activable || m.activoAhora)
+    (m.activable || m.activoAhora)
     && (filtro === 'todos' || filtro === 'activos' && m.activoAhora || filtro === 'incluidos' && m.tipo === 'incluido' || filtro === 'pagos' && m.tipo === 'pago')
   ) }))
-  const categoriasNormales = categoriasFiltradas.filter(c => c.modulos.some(m => m.tipo === 'incluido'))
-  const pagos = categoriasFiltradas.flatMap(c => c.modulos).filter(m => m.tipo === 'pago')
+  // Campañas de adquisición se lista junto a Códigos de descuento, aunque un
+  // catálogo viejo todavía la tenga como paga: el cobro se resuelve al abrirla.
+  const enCategoria = (m: Modulo) => m.tipo === 'incluido' || m.codigo === 'crecimiento'
+  const categoriasNormales = categoriasFiltradas.filter(c => c.modulos.some(enCategoria))
+  const pagos = categoriasFiltradas.flatMap(c => c.modulos).filter(m => m.tipo === 'pago' && m.codigo !== 'crecimiento')
   const visibles = categoriasFiltradas.flatMap(c => c.modulos)
+  const activos = visibles.filter(m => m.activoAhora)
 
   const activarIncluido = async (modulo: Modulo) => {
     setProcesandoCodigo(modulo.codigo)
@@ -335,16 +334,16 @@ export default function Modulos({ embedded = false, query = '', codigos, soloAct
 
 
   return (
-    <div className={embedded ? "" : "mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14"}>
-      {!embedded && <header className="mx-auto mb-12 max-w-2xl text-center">
+    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
+      <header className="mx-auto mb-12 max-w-2xl text-center">
         <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">Módulos</h1>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
           Activá sólo las herramientas que necesitás. Los módulos incluidos no suman costo; los pagos se agregan a tu suscripción.
         </p>
-      </header>}
+      </header>
 
-      {!embedded && <div aria-label="Filtrar herramientas" className="mb-6 flex flex-wrap gap-2">{([['todos', 'Todas'], ['activos', 'Mis herramientas'], ['incluidos', 'Sin costo extra'], ['pagos', 'Con costo adicional']] as const).map(([id, label]) => <Button key={id} size="sm" variant={filtro === id ? 'default' : 'outline'} aria-pressed={filtro === id} className="rounded-full" onClick={() => setFiltro(id)}>{label}</Button>)}</div>}
-      {!cargando && !error && visibles.length === 0 && <p className="py-6 text-sm text-muted-foreground">{soloActivos ? 'Todavía no tenés módulos activos. Podés activarlos desde las secciones de ajustes de tu negocio.' : 'No hay módulos disponibles en esta sección.'}</p>}
+      <div aria-label="Filtrar herramientas" className="mb-6 flex flex-wrap gap-2">{([['todos', 'Todas'], ['activos', 'Mis herramientas'], ['incluidos', 'Sin costo extra'], ['pagos', 'Con costo adicional']] as const).map(([id, label]) => <Button key={id} size="sm" variant={filtro === id ? 'default' : 'outline'} aria-pressed={filtro === id} className="rounded-full" onClick={() => setFiltro(id)}>{label}</Button>)}</div>
+      {!cargando && !error && visibles.length === 0 && <p className="py-6 text-sm text-muted-foreground">{filtro === 'activos' ? 'Todavía no tenés módulos activos. Elegí uno del catálogo para empezar.' : 'No hay módulos disponibles con este filtro.'}</p>}
       {vieneDeActivarSuscripcion && (
         <div className="mb-8 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm">
           <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
@@ -358,12 +357,39 @@ export default function Modulos({ embedded = false, query = '', codigos, soloAct
           <p className="mt-1 text-sm text-muted-foreground">{error}</p>
           <Button className="mt-4" variant="outline" onClick={() => void cargar(true).catch(() => {})}>Reintentar</Button>
         </div>
-      ) : embedded ? <div className="grid gap-3 sm:grid-cols-2">{visibles.map(modulo => <CardModulo key={modulo.codigo} modulo={modulo} onSeleccionar={() => setModuloSeleccionado(modulo)} />)}</div> : (
+      ) : (
         <div className="space-y-11">
-
+          {filtro === 'todos' && activos.length > 0 && (
+            <section aria-labelledby="modulos-activos">
+              <div>
+                <h2 id="modulos-activos" className="text-lg font-semibold tracking-tight text-foreground">Tus módulos activos</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Ya están funcionando en tu local. Entrá para revisar su configuración.</p>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {activos.map((modulo) => {
+                  const Icon = ICONOS[modulo.codigo] ?? Blocks
+                  return (
+                    <button
+                      key={modulo.codigo}
+                      type="button"
+                      onClick={() => setModuloSeleccionado(modulo)}
+                      className="group flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-left transition-colors hover:border-emerald-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white"><Icon className="size-4" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-foreground">{modulo.nombre}</span>
+                        <span className="mt-0.5 block text-xs font-medium text-emerald-600">Activo</span>
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          )}
 
           {categoriasNormales.map((categoria) => {
-            const modulos = categoria.modulos.filter((modulo) => modulo.tipo === 'incluido')
+            const modulos = categoria.modulos.filter((modulo) => enCategoria(modulo))
             if (!modulos.length) return null
             return (
               <section key={categoria.id} aria-labelledby={`categoria-${categoria.codigo}`}>
@@ -481,7 +507,7 @@ export default function Modulos({ embedded = false, query = '', codigos, soloAct
 
               <SheetFooter className="border-t px-6 py-5">
                 {activo && moduloSeleccionado.estado === 'cancelacion_programada' && RUTAS_CONFIGURACION[moduloSeleccionado.codigo] && <Button onClick={() => configurarModulo(moduloSeleccionado)}>Configurar</Button>}
-                {moduloSeleccionado.tipo === 'pago' && !moduloSeleccionado.activoAhora && !['activa', 'pago_pendiente'].includes(useModulosStore.getState().suscripcion?.estado ?? '') ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Primero necesitás una suscripción base activa. La prueba gratis no incluye herramientas pagas.</p><Button className="w-full" onClick={() => { setModuloSeleccionado(null); navigate('/dashboard/ajustes/suscripcion') }}>Ver mi suscripción</Button></div> : <AccionModulo
+                {moduloSeleccionado.tipo === 'pago' && !moduloSeleccionado.activoAhora && !['activa', 'pago_pendiente'].includes(useModulosStore.getState().suscripcion?.estado ?? '') ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Primero necesitás una suscripción base activa. La prueba gratis no incluye herramientas pagas.</p><Button className="w-full" onClick={() => { setModuloSeleccionado(null); navigate('/dashboard/ajustes/cuenta') }}>Ver mi suscripción</Button></div> : <AccionModulo
                   modulo={moduloSeleccionado}
                   procesando={procesandoCodigo === moduloSeleccionado.codigo}
                   onActivar={() => void activarIncluido(moduloSeleccionado)}

@@ -46,16 +46,38 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* La paleta de la app de marketing (marketers/src/index.css), para la guía (pages/Guia.tsx). */
-@theme {
-  --color-brand-deep: #e66e00;
-  --color-brand-soft: #fff2e3;
-  --color-ink: #191512;
-  --color-ink-2: #4a433c;
-  --color-ink-3: #80776e;
-  --color-paper: #fffcf7;
-  --color-sand: #f6f0e6;
-  --color-line: #ece4d8;
+/*
+ * La paleta de Marketing (marketing/marketing.css) y de la guía del panel (pages/Guia.tsx). Son
+ * variables: dentro de `.marketing-app`, el modo oscuro las redefine; la guía queda siempre clara.
+ */
+@theme inline {
+  --color-brand-deep: var(--marketing-brand-deep);
+  --color-brand-soft: var(--marketing-brand-soft);
+  --color-ink: var(--marketing-ink);
+  --color-ink-2: var(--marketing-ink-2);
+  --color-ink-3: var(--marketing-ink-3);
+  --color-paper: var(--marketing-paper);
+  --color-surface: var(--marketing-surface);
+  --color-cream: var(--marketing-cream);
+  --color-sand: var(--marketing-sand);
+  --color-line: var(--marketing-line);
+  --color-night: var(--marketing-night);
+  --color-wa: var(--marketing-wa);
+}
+
+:root {
+  --marketing-brand-deep: #e66e00;
+  --marketing-brand-soft: #fff2e3;
+  --marketing-ink: #191512;
+  --marketing-ink-2: #4a433c;
+  --marketing-ink-3: #80776e;
+  --marketing-paper: #fffbf0;
+  --marketing-surface: #ffffff;
+  --marketing-cream: #fffbf0;
+  --marketing-sand: #f6f0e6;
+  --marketing-line: #ece4d8;
+  --marketing-night: #120f0d;
+  --marketing-wa: #25d366;
 }
 
 :root {

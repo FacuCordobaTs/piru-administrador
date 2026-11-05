@@ -81,8 +81,8 @@ function Indice({ activa, ir }: { activa: string; ir: (id: string) => void }) {
 }
 
 /**
- * La guía del panel: cómo funciona por dentro, con el estilo de la de la app de marketing
- * (marketers/src/pages/Guia.tsx). No le pide nada a la API. Vive en `/dashboard/guia`, adentro de la
+ * La guía del panel: cómo funciona por dentro, con el estilo de la de Marketing
+ * (src/marketing/pages/Guia.tsx). No le pide nada a la API. Vive en `/dashboard/guia`, adentro de la
  * sesión, para que el panel siga recibiendo e imprimiendo pedidos mientras se lee; `/guia` es la
  * versión pública para compartir, y con sesión lleva a la de adentro.
  */

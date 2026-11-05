@@ -1,25 +1,23 @@
 import { DeliveryAddressSettings } from '../components/DeliveryAddressSettings'
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { Plus, Loader2, Edit, Store, Truck, Package } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Loader2, Truck, Package } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
-import { cn } from '@/lib/utils'
 import { esSesionDemo, restauranteApi, zonasDeliveryApi, zonasEspecialesApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
-import { SucursalDialog } from '../components/SucursalDialog'
+import { SucursalesLista } from '../components/SucursalesLista'
 import { ZonasEspecialesPanel } from '../components/ZonasEspecialesPanel'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
-import { useSucursales, type Sucursal } from '../hooks/useSucursales'
+import { useSucursales } from '../hooks/useSucursales'
 import { useModuloActivo } from '@/store/modulosStore'
 
 // El mapa (Leaflet, ~25KB) se carga solo al entrar a su editor.
 const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
 
-type EditorId = 'tipos' | 'sucursales' | 'eventos' | 'zonas-especiales' | null
+type EditorId = 'tipos' | 'sucursales' | 'zonas-especiales' | null
 
 export default function Entregas() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
@@ -39,20 +37,18 @@ export default function Entregas() {
 
   const mostrarSucursales = sucLoaded && sucursales.filter(s => !s.soloPos).length >= 2
   const multisucursalActiva = useModuloActivo('multisucursal')
-  const rapiboyActivo = useModuloActivo('rapiboy')
   const avisosWhatsappActivos = useModuloActivo('avisos_automaticos_whatsapp')
   const zonasEspecialesHabilitadas = restaurante?.zonasEspecialesHabilitadas === true
   const { texto: zonasEspecialesOracion, estado: zonasEspecialesEstado } = useZonasEspecialesResumen(
     avisosWhatsappActivos && !esDemo && zonasEspecialesHabilitadas,
     editor === null,
   )
-  const eventos = sucursales.filter(s => s.soloPos)
 
   useEffect(() => {
     const config = searchParams.get('config')
-    if ((config === 'sucursales' && multisucursalActiva) || (config === 'rapiboy' && rapiboyActivo)) setEditor('sucursales')
+    if (config === 'sucursales' && multisucursalActiva) setEditor('sucursales')
     else if (config === 'zonas-especiales' && avisosWhatsappActivos && !esDemo) setEditor('zonas-especiales')
-  }, [multisucursalActiva, rapiboyActivo, avisosWhatsappActivos, esDemo, searchParams])
+  }, [multisucursalActiva, avisosWhatsappActivos, esDemo, searchParams])
 
   return (
     <section className="space-y-6">
@@ -103,20 +99,13 @@ export default function Entregas() {
             onAccion={() => setEditor('sucursales')}
           />
         )}
-        <AjusteRow
-          titulo="Eventos con POS"
-          oracion={eventos.some(s => s.activo) ? 'El POS atiende en el evento; la tienda sigue en el local' : 'Tomá e imprimí pedidos fuera del local sin mezclar la tienda'}
-          estado={eventos.some(s => s.activo) ? 'configurado' : 'sin-configurar'}
-          accionLabel={eventos.length ? 'Administrar' : 'Crear evento'}
-          onAccion={() => setEditor('eventos')}
-        />
         {!multisucursalActiva && (
           <AjusteRow
             titulo="Múltiples sucursales"
             oracion="Activá el módulo para administrar más de un local"
             estado="sin-configurar"
             accionLabel="Ver módulos"
-            onAccion={() => navigate('/dashboard/ajustes/entregas#modulos-seccion')}
+            onAccion={() => navigate('/dashboard/modulos')}
           />
         )}
       </div>
@@ -140,11 +129,7 @@ export default function Entregas() {
         titulo="Sucursales"
         descripcion="Tus locales y su ruteo de pedidos."
       >
-        <SucursalesLista sucursales={sucursales.filter(s => !s.soloPos)} onChanged={recargar} rapiboyActivo={rapiboyActivo} />
-      </AjusteEditor>
-
-      <AjusteEditor open={editor === 'eventos'} onOpenChange={o => !o && setEditor(null)} titulo="Eventos con POS" descripcion="En la computadora del evento, elegí su sede desde Cambiar sucursal. La computadora del local conserva su vista habitual.">
-        <SucursalesLista sucursales={eventos} onChanged={recargar} rapiboyActivo={false} soloPos />
+        <SucursalesLista sucursales={sucursales.filter(s => !s.soloPos)} onChanged={recargar} />
       </AjusteEditor>
 
       {/* Zonas: pantalla propia con el mapa lazy */}
@@ -293,64 +278,4 @@ function ToggleFila({
   )
 }
 
-function SucursalesLista({
-  sucursales,
-  onChanged,
-  rapiboyActivo,
-  soloPos = false,
-}: {
-  sucursales: Sucursal[]
-  onChanged: () => void
-  rapiboyActivo: boolean
-  soloPos?: boolean
-}) {
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editando, setEditando] = useState<Sucursal | null>(null)
-
-  const abrir = useCallback((s: Sucursal | null) => {
-    setEditando(s)
-    setDialogOpen(true)
-  }, [])
-
-  return (
-    <div className="space-y-4">
-      <Button
-        variant="outline"
-        onClick={() => abrir(null)}
-        className="h-11 min-h-[44px] w-full font-medium"
-      >
-        <Plus className="mr-2 h-4 w-4" /> {soloPos ? 'Nuevo evento' : 'Nueva sucursal'}
-      </Button>
-      <div className="divide-y divide-border">
-        {sucursales.map((s) => (
-          <div key={s.id} className="flex items-center justify-between gap-3 py-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <Store className={cn('h-5 w-5 shrink-0', s.activo ? 'text-brand' : 'text-muted-foreground')} />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {s.nombre}
-                  {!s.activo && <span className="font-normal text-muted-foreground"> · inactiva</span>}
-                </p>
-                {s.direccion && (
-                  <p className="truncate text-xs font-normal text-muted-foreground">{s.direccion}</p>
-                )}
-              </div>
-            </div>
-            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => abrir(s)}>
-              <Edit className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
-      <SucursalDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        editando={editando}
-        onSaved={onChanged}
-        rapiboyActivo={rapiboyActivo}
-        crearSoloPos={soloPos}
-      />
-    </div>
-  )
-}
 

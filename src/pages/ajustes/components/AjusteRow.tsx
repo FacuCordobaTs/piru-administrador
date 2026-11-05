@@ -16,7 +16,8 @@ interface AjusteRowProps {
 /**
  * Fila de ajuste en modo lectura: una oración que describe el estado actual,
  * nunca un formulario abierto (regla 11 — "cada pregunta visible es una falla
- * de diseño"). El editor aparece recién al tocar el botón de acción.
+ * de diseño"). El editor aparece recién al tocar el botón de acción; el hover
+ * vive sólo en ese botón, no en toda la fila.
  */
 export function AjusteRow({
   titulo,
@@ -27,10 +28,9 @@ export function AjusteRow({
 }: AjusteRowProps) {
   const sinConfigurar = estado === 'sin-configurar'
   const label = accionLabel ?? (sinConfigurar ? 'Configurar' : 'Cambiar')
-  const Row = onAccion ? 'button' : 'div'
 
   return (
-    <Row type={onAccion ? 'button' : undefined} onClick={onAccion} className={cn('flex w-full items-center justify-between gap-4 border-b border-border/50 py-3.5 text-left', onAccion && 'cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand')}>
+    <div className="flex w-full items-center justify-between gap-4 border-b border-border/50 py-3.5 text-left">
       <span className="block min-w-0 space-y-0.5">
         <span className="block text-sm font-medium text-foreground">{titulo}</span>
         <span
@@ -50,10 +50,15 @@ export function AjusteRow({
       </span>
 
       {onAccion && (
-        <span className="inline-flex h-11 min-h-[44px] shrink-0 items-center rounded-md border bg-background px-4 text-sm font-medium">
+        <button
+          type="button"
+          onClick={onAccion}
+          aria-label={`${titulo}: ${label}`}
+          className="inline-flex h-11 min-h-[44px] shrink-0 items-center rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
           {label}
-        </span>
+        </button>
       )}
-    </Row>
+    </div>
   )
 }

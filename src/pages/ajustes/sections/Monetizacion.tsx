@@ -127,7 +127,7 @@ export default function Monetizacion() {
             estado="sin-configurar"
             accionLabel="Ver módulos"
             onAccion={() => {
-              navigate({ hash: '#modulos-seccion' })
+              navigate('/dashboard/modulos')
             }}
           />
         )}
@@ -151,7 +151,7 @@ export default function Monetizacion() {
             estado="sin-configurar"
             accionLabel="Ver módulos"
             onAccion={() => {
-              navigate({ hash: '#modulos-seccion' })
+              navigate('/dashboard/modulos')
             }}
           />
         )}
@@ -187,7 +187,7 @@ export default function Monetizacion() {
             estado="sin-configurar"
             accionLabel="Ver módulos"
             onAccion={() => {
-              navigate({ hash: '#modulos-seccion' })
+              navigate('/dashboard/modulos')
             }}
           />
         )}
@@ -210,7 +210,7 @@ export default function Monetizacion() {
           taloActivo={taloActivo}
           irA={setEditor}
           irAModulo={() => {
-            navigate({ hash: '#modulos-seccion' })
+            navigate('/dashboard/modulos')
           }}
         />
       </AjusteEditor>

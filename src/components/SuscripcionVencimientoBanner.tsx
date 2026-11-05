@@ -48,7 +48,7 @@ export function SuscripcionVencimientoBanner({ onDismiss }: { onDismiss?: () => 
       <CalendarClock className="h-4 w-4 shrink-0 text-amber-600" />
       <p className="min-w-0 flex-1 text-[13px] font-medium text-foreground">{mensaje}</p>
       <Link
-        to="/dashboard/ajustes/suscripcion"
+        to="/dashboard/ajustes/cuenta"
         className={cn('shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-600')}
       >
         {pagoPendiente ? 'Regularizar' : 'Pagar cuota'}

@@ -10,7 +10,8 @@ import {
   Code2,
   CreditCard,
   Download,
-  ExternalLink,
+  BookOpen,
+  Megaphone,
   LayoutDashboard,
   Link2,
   MessageCircle,
@@ -30,7 +31,6 @@ import {
   Users,
   Wallet,
   WifiOff,
-  X,
   Zap,
   type LucideIcon,
 } from 'lucide-react'
@@ -146,7 +146,7 @@ function Circuito() {
 const PANTALLAS: { Icono: LucideIcon; nombre: string; destino: string; texto: string; etiqueta?: string }[] = [
   { Icono: LayoutDashboard, nombre: 'Inicio', destino: '/dashboard', texto: 'Los pedidos del día, el punto de venta, las mesas, el mapa y la caja.' },
   { Icono: Package, nombre: 'Menú', destino: '/dashboard/productos', texto: 'Productos, categorías, variantes, extras y precios.' },
-  { Icono: Users, nombre: 'Clientes', destino: '/dashboard/clientes', texto: 'Abre la app de marketing: tu base, campañas, cupones, puntos y recompra.' },
+  { Icono: Megaphone, nombre: 'Marketing', destino: '/dashboard/marketing', texto: 'Tu base de clientes, campañas, cupones, puntos y recompra.' },
   { Icono: MessageSquare, nombre: 'Mensajes', destino: '/dashboard/mensajes', texto: 'Tus avisos por WhatsApp: cuántos mandaste, tu saldo y las recargas.', etiqueta: 'Según tus módulos' },
   { Icono: TrendingUp, nombre: 'Estadísticas', destino: '/dashboard/metricas', texto: 'Lo que vendiste por mes o entre dos fechas, cómo te pagaron y lo más pedido.' },
   { Icono: Settings, nombre: 'Configuración', destino: '/dashboard/ajustes', texto: 'Tu negocio, tu tienda, entregas, horarios, pagos, WhatsApp, módulos y suscripción.' },
@@ -194,12 +194,13 @@ function Panel({ c }: { c: ContextoGuia }) {
       <h3>Configuración, por dentro</h3>
       <ul className="guia-puntos">
         <li>
-          <strong>Operación</strong>: WhatsApp, Entregas y zonas, Horarios y Ventas en el local. Con Punto de
-          venta y Mesas activos suma Mozos y, en la app de escritorio, Impresión.
+          <strong>Operación</strong>: Entregas y zonas y Horarios siempre; WhatsApp con los Avisos automáticos
+          activos, Ventas en el local con Punto de venta, Mesas o Stock, y Mozos con Punto de venta y Mesas.
+          En la app de escritorio también aparece Impresión.
         </li>
         <li>
-          <strong>Tu negocio</strong>: General (tus datos, tu link, colores y logos), Métodos de pago, Tu
-          marketer, Mis módulos, Suscripción y pagos, y Cuenta.
+          <strong>Tu negocio</strong>: General (tus datos y tu dirección), Tienda, Medición, Métodos de pago,
+          Entregas y zonas, Horarios y Cuenta (con la suscripción y los pagos adentro). Los módulos se activan aparte, en Módulos.
         </li>
       </ul>
       <Nota icono={MonitorSmartphone}>
@@ -492,7 +493,6 @@ function Delivery({ c }: { c: ContextoGuia }) {
       <Clave>
         <li>Fuera de las zonas no se puede pedir delivery: el cliente puede elegir retirar en el local.</li>
         <li>Si cambia lo que cobrás de envío, cambialo en la zona: la tienda lo toma de ahí.</li>
-        <li>¿Trabajás con Rapiboy? La integración se conecta desde Entregas y zonas.</li>
       </Clave>
       <p>
         <Donde texto="Entregas y zonas" icono={Truck} ruta={ruta(c, '/dashboard/ajustes/entregas')} />
@@ -938,7 +938,7 @@ function Sucursales({ c }: { c: ContextoGuia }) {
   )
 }
 
-const APP_MARKETING = [
+const SECCIONES_MARKETING = [
   { Icono: Users, nombre: 'Clientes', texto: 'Tu base, con sus hábitos y sus favoritos.' },
   { Icono: Link2, nombre: 'Campañas y cupones', texto: 'Un link por historia y lo que vendió cada uno.' },
   { Icono: Repeat2, nombre: 'Recompra por WhatsApp', texto: 'Mensajes que salen del WhatsApp de tu local.' },
@@ -955,35 +955,31 @@ function Clientes({ c }: { c: ContextoGuia }) {
         es el celular. Esa base es la que usás para que vuelvan.
       </p>
       <p>
-        En el panel, <strong>Clientes</strong> abre la app de marketing de Piru en otra pestaña, con tu cuenta y
-        sin contraseña. Este panel queda abierto, recibiendo e imprimiendo pedidos.
+        En el menú, <strong>Marketing</strong> reúne todo lo que hacés con esa base. Mientras lo usás, el
+        panel sigue recibiendo e imprimiendo pedidos.
       </p>
       <Tarjetas columnas={3}>
-        {APP_MARKETING.map((x) => (
+        {SECCIONES_MARKETING.map((x) => (
           <Tarjeta key={x.nombre} icono={x.Icono} titulo={x.nombre}>
             {x.texto}
           </Tarjeta>
         ))}
       </Tarjetas>
       <p>
-        Campañas y cupones vienen incluidos: se activan gratis. La recompra y los puntos son parte de{' '}
-        <strong>Retención</strong>, un módulo pago. La app de marketing tiene su propia guía, con todo explicado.
+        Campañas, cupones y <strong>Retención</strong> vienen incluidos: se activan gratis. La recompra y los
+        puntos son parte de Retención. Marketing tiene su propia guía, con todo explicado.
       </p>
-      <Clave>
-        <li>El acceso a la app de marketing dura 12 horas en esa pestaña. Si vence, abrila de nuevo desde Clientes.</li>
-        <li>Si tu navegador bloquea la pestaña nueva, Clientes te deja un link para abrirla.</li>
-      </Clave>
       <p className="flex flex-wrap gap-2">
-        <Donde texto="Clientes" icono={Users} ruta={ruta(c, '/dashboard/clientes')} />
-        <a
-          href={GUIA_MARKETING}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex min-h-9 items-center gap-2 rounded-full bg-white px-3.5 text-[13.5px] font-semibold text-ink ring-1 ring-line hover:bg-sand"
-        >
-          <ExternalLink size={15} className="text-brand-deep" />
-          Guía de la app de marketing
-        </a>
+        <Donde texto="Marketing" icono={Megaphone} ruta={ruta(c, '/dashboard/marketing')} />
+        {c.conSesion && (
+          <Link
+            to={GUIA_MARKETING}
+            className="inline-flex min-h-9 items-center gap-2 rounded-full bg-white px-3.5 text-[13.5px] font-semibold text-ink ring-1 ring-line hover:bg-sand"
+          >
+            <BookOpen size={15} className="text-brand-deep" />
+            Guía de Marketing
+          </Link>
+        )}
       </p>
     </>
   )
@@ -1032,42 +1028,13 @@ function Estadisticas({ c }: { c: ContextoGuia }) {
   )
 }
 
-function TuMarketer({ c }: { c: ContextoGuia }) {
-  return (
-    <>
-      <p>
-        Si trabajás con un marketer, le das acceso con su código en Configuración → Tu marketer. Desde su cuenta
-        ve la misma app de marketing que vos, con los datos de tu local.
-      </p>
-      <Tarjetas>
-        <Tarjeta icono={Check} titulo="Puede" tono="si">
-          Ver tus clientes, crear campañas, links y cupones, configurar los puntos, programar mensajes de
-          recompra desde tu WhatsApp y ver tus estadísticas.
-        </Tarjeta>
-        <Tarjeta icono={X} titulo="No puede" tono="no">
-          Tocar tus cobros, tu suscripción, tu menú y tus precios, tus pedidos ni tu configuración.
-        </Tarjeta>
-      </Tarjetas>
-      <ul className="guia-puntos">
-        <li>Los mensajes salen de tu WhatsApp: los mandás vos, o tu marketer si tiene ese WhatsApp vinculado.</li>
-        <li>Si hace falta un módulo pago, te manda el link de pago: pagás vos.</li>
-        <li>Le sacás el acceso cuando quieras, desde el mismo lugar.</li>
-        <li>Piru le paga una parte de tu suscripción: tu precio no cambia.</li>
-      </ul>
-      <p>
-        <Donde texto="Tu marketer" icono={Users} ruta={ruta(c, '/dashboard/ajustes/marketer')} />
-      </p>
-    </>
-  )
-}
-
 function Modulos({ c }: { c: ContextoGuia }) {
   return (
     <>
       <p>
         Piru se paga con una suscripción mensual que incluye la tienda, el panel y la mayoría de las
         herramientas. Cada herramienta es un <strong>módulo</strong> que activás cuando lo necesitás, desde
-        Configuración → Mis módulos o desde la sección donde se usa.
+        Módulos, en el menú del panel.
       </p>
       <Tarjetas>
         <Tarjeta icono={Check} titulo="Incluidos" tono="si">
@@ -1081,7 +1048,7 @@ function Modulos({ c }: { c: ContextoGuia }) {
       </Tarjetas>
       <h3>Tu suscripción</h3>
       <p>
-        En Configuración → Suscripción y pagos ves tu cuota, los módulos pagos que sumaste y tus comprobantes.
+        En Configuración → Cuenta ves tu cuota, los módulos pagos que sumaste y tus comprobantes.
         Podés pagar la próxima cuota antes: se suma al final de tu cobertura, sin perder días.
       </p>
       <ul className="guia-puntos">
@@ -1103,8 +1070,8 @@ function Modulos({ c }: { c: ContextoGuia }) {
         </li>
       </ul>
       <p className="flex flex-wrap gap-2">
-        <Donde texto="Mis módulos" icono={Package} ruta={ruta(c, '/dashboard/ajustes/modulos')} />
-        <Donde texto="Suscripción y pagos" icono={CreditCard} ruta={ruta(c, '/dashboard/ajustes/suscripcion')} />
+        <Donde texto="Módulos" icono={Package} ruta={ruta(c, '/dashboard/modulos')} />
+        <Donde texto="Suscripción y pagos" icono={CreditCard} ruta={ruta(c, '/dashboard/ajustes/cuenta')} />
       </p>
     </>
   )
@@ -1295,8 +1262,6 @@ export function CuerpoSeccion({ id, c }: { id: string; c: ContextoGuia }) {
       return <Clientes c={c} />
     case 'estadisticas':
       return <Estadisticas c={c} />
-    case 'tu-marketer':
-      return <TuMarketer c={c} />
     case 'modulos':
       return <Modulos c={c} />
     case 'rutina':

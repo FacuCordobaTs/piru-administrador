@@ -2,8 +2,8 @@ import { create } from 'zustand'
 
 /**
  * El recorrido de bienvenida del panel (components/recorrido/RecorridoPanel.tsx): se abre solo la
- * primera vez que alguien entra por la demo de prospección y después, a pedido, desde "Ver recorrido"
- * del menú. Cerrarlo de cualquier forma lo marca como visto en este navegador, para ese local.
+ * primera vez que alguien entra por la demo de prospección. El menú ya no tiene "Ver recorrido";
+ * cerrarlo de cualquier forma lo marca como visto en este navegador, para ese local.
  */
 
 // La v1 permite volver a mostrarlo a todos si un día el recorrido cambia de verdad.

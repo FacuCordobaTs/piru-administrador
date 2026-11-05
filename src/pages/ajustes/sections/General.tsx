@@ -1,67 +1,60 @@
-import { useState } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useState } from 'react'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { restauranteApi } from '@/lib/api'
+import { restauranteApi, zonasDeliveryApi } from '@/lib/api'
+import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { AjusteInput } from '../components/AjusteInput'
-import { ToggleConExplicacion } from '../components/ToggleConExplicacion'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
-import { useAjuste } from '../hooks/useAjuste'
-import { usePrinter } from '@/context/PrinterContext'
 import { esAndroid, pedirExcepcionDeBateria } from '@/utils/piruAndroid'
 import {
   DireccionField,
   SucursalJustInTime,
-  ColorField,
-  LogoField,
   CostoEnvioField,
 } from './general/campos'
 
-type EditorId = 'negocio' | 'tienda' | 'gtm' | 'pixel' | 'envio' | 'logos' | 'avisos' | null
-
-const formatoGtm = (value: string) => value.trim().toUpperCase()
-const validarGtm = (value: string) => {
-  if (value === '') return null
-  return /^GTM-[A-Z0-9]{4,32}$/.test(value)
-    ? null
-    : 'Usá el ID del contenedor, por ejemplo GTM-ABC123.'
-}
-
-// Se pega muy seguido el snippet entero en vez del número: quedarse con los
-// dígitos deja pasar ese caso, y si no alcanzan los 15-16 la validación avisa.
-const formatoPixel = (value: string) => value.trim().replace(/\D/g, '')
-const validarPixel = (value: string) => {
-  if (value === '') return null
-  return /^\d{15,16}$/.test(value)
-    ? null
-    : 'Usá sólo el número de tu pixel, sin el código, por ejemplo 2426435001137598.'
-}
+type EditorId = 'negocio' | 'envio' | 'avisos' | null
 
 export default function General() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
+  const token = useAuthStore((s) => s.token)
   const [editor, setEditor] = useState<EditorId>(null)
-  const { comandaGrandeMayusculas, setComandaGrandeMayusculas } = usePrinter()
+  // Con zonas de delivery cargadas el envío se cobra por zona: el costo fijo
+  // queda escondido para no ofrecer dos configuraciones contradictorias.
+  const [hayZonas, setHayZonas] = useState<boolean | null>(null)
 
   const nombre = restaurante?.nombre?.trim()
-  const dirCorta = restaurante?.direccionTexto?.split(',')[0]?.trim()
-  const username = restaurante?.username?.trim()
-  const tieneLogo = !!(restaurante?.imagenUrl || restaurante?.imagenLightUrl)
+  const direccion = restaurante?.direccionTexto?.trim() || restaurante?.direccion?.trim() || ''
+  const dirCorta = direccion.split(',')[0]?.trim()
   const avisosOn = restaurante?.whatsappEnabled === true
   const telefono = restaurante?.telefono?.trim()
-  const colorUnico = restaurante?.usarColorUnico === true
   const costoEnvioNum = parseFloat(restaurante?.deliveryFee ?? '') || 0
-  const gtmContainerId = restaurante?.gtmContainerId?.trim() || ''
-  const metaPixelId = restaurante?.metaPixelId?.trim() || ''
+
+  useEffect(() => {
+    if (!token) return
+    let cancelado = false
+    zonasDeliveryApi
+      .getAll(token)
+      .then((res: unknown) => {
+        if (cancelado) return
+        const respuesta = res as { success?: boolean; data?: unknown[] }
+        const zonas = respuesta.success ? respuesta.data ?? [] : []
+        setHayZonas(zonas.length > 0)
+      })
+      .catch(() => {
+        if (!cancelado) setHayZonas(false)
+      })
+    return () => { cancelado = true }
+  }, [token])
 
   return (
     <section className="space-y-6">
       <header className="space-y-1">
         <h2 className="text-lg font-medium text-foreground">General</h2>
         <p className="text-sm font-normal text-muted-foreground">
-          Información del negocio, tu link y tu identidad visual.
+          Información del negocio y cómo recibís los pedidos.
         </p>
       </header>
 
@@ -76,48 +69,18 @@ export default function General() {
           estado={nombre ? 'configurado' : 'sin-configurar'}
           onAccion={() => setEditor('negocio')}
         />
-        <AjusteRow
-          titulo="Tu tienda"
-          oracion={
-            username
-              ? `piru.app/${username}`
-              : 'Todavía no elegiste el alias de tu link'
-          }
-          estado={username ? 'configurado' : 'sin-configurar'}
-          onAccion={() => setEditor('tienda')}
-        />
-        <AjusteRow
-          titulo="Google Tag Manager"
-          oracion={
-            gtmContainerId
-              ? `Contenedor ${gtmContainerId} conectado · Medición de visitas y conversiones activa`
-              : 'Sin contenedor configurado — conectá tu ID de GTM para medir pauta digital'
-          }
-          estado={gtmContainerId ? 'configurado' : 'sin-configurar'}
-          accionLabel={gtmContainerId ? 'Editar' : 'Configurar'}
-          onAccion={() => setEditor('gtm')}
-        />
-        <AjusteRow
-          titulo="Meta Pixel"
-          oracion={
-            metaPixelId
-              ? `Pixel ${metaPixelId} conectado · Conversiones de Meta activas`
-              : 'Sin pixel configurado — cargá tu ID para medir conversiones de Meta'
-          }
-          estado={metaPixelId ? 'configurado' : 'sin-configurar'}
-          accionLabel={metaPixelId ? 'Editar' : 'Configurar'}
-          onAccion={() => setEditor('pixel')}
-        />
-        <AjusteRow
-          titulo="Costo de envío"
-          oracion={
-            costoEnvioNum > 0
-              ? `Cobrás $${costoEnvioNum.toLocaleString('es-AR', { minimumFractionDigits: 0 })} por pedido de delivery`
-              : 'Sin costo fijo de envío configurado'
-          }
-          estado={costoEnvioNum > 0 ? 'configurado' : 'sin-configurar'}
-          onAccion={() => setEditor('envio')}
-        />
+        {hayZonas === false && (
+          <AjusteRow
+            titulo="Costo de envío"
+            oracion={
+              costoEnvioNum > 0
+                ? `Cobrás $${costoEnvioNum.toLocaleString('es-AR', { minimumFractionDigits: 0 })} por pedido de delivery`
+                : 'Sin costo fijo de envío configurado'
+            }
+            estado={costoEnvioNum > 0 ? 'configurado' : 'sin-configurar'}
+            onAccion={() => setEditor('envio')}
+          />
+        )}
         <AjusteRow
           titulo="Avisos de pedidos"
           oracion={
@@ -130,32 +93,6 @@ export default function General() {
           estado={avisosOn ? (telefono ? 'configurado' : 'atencion') : 'sin-configurar'}
           onAccion={() => setEditor('avisos')}
         />
-        <AjusteRow
-          titulo="Logos"
-          oracion={tieneLogo ? 'Logo cargado' : 'Sin logo para el link público'}
-          estado={tieneLogo ? 'configurado' : 'atencion'}
-          onAccion={() => setEditor('logos')}
-        />
-        <ToggleConExplicacion
-          campo="orderGroupEnabled"
-          apiFn={restauranteApi.toggleOrderGroupEnabled}
-          titulo="Permitir pedidos en grupo"
-          explicacion="Habilita un botón en la tienda para que un cliente inicie una sala compartida y envíe el link a otros comensales."
-          className="border-b border-border py-4"
-        />
-        <div className="flex items-center justify-between gap-4 border-b border-border py-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">Productos grandes en mayúsculas</p>
-            <p className="mt-0.5 text-[13px] font-normal text-muted-foreground">
-              Usa mayúsculas y agranda sólo productos, variantes, ingredientes, extras y notas.
-            </p>
-          </div>
-          <Switch
-            checked={comandaGrandeMayusculas}
-            onCheckedChange={setComandaGrandeMayusculas}
-            aria-label="Productos grandes en mayúsculas"
-          />
-        </div>
         {esAndroid() && <AjusteBateriaAndroid />}
       </div>
 
@@ -174,97 +111,12 @@ export default function General() {
       </AjusteEditor>
 
       <AjusteEditor
-        open={editor === 'tienda'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Tu tienda"
-        descripcion="Tu link público y los colores de tu tienda."
-      >
-        <div className="space-y-6">
-          <AjusteInput
-            campo="username"
-            label="Alias de tu link"
-            prefix="piru.app/"
-            mono
-            transform={(v) => v.toLowerCase().replace(/[^a-z0-9-]/g, '')}
-            validate={(v) =>
-              !v ? 'El alias no puede quedar vacío' : v.length < 3 ? 'Usá al menos 3 caracteres' : null
-            }
-          />
-          <Button asChild variant="outline"><Link to="/dashboard/ajustes/mi-pagina">Diseño y preferencias de tu tienda</Link></Button>
-          <ModoColorField />
-          {colorUnico ? (
-            <ColorField campo="colorPrimario" label="Color de botones y detalles" fallback="#FF7A00" />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <ColorField campo="colorPrimario" label="Color primario (botones)" fallback="#FF7A00" />
-              <ColorField campo="colorSecundario" label="Color secundario (acentos)" fallback="#FFFFFF" />
-            </div>
-          )}
-        </div>
-      </AjusteEditor>
-
-      <AjusteEditor
-        open={editor === 'gtm'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Google Tag Manager"
-        descripcion="Pegá el ID de tu contenedor para medir visitas y conversiones de tu tienda."
-      >
-        <div className="space-y-3">
-          <AjusteInput
-            campo="gtmContainerId"
-            label="ID del contenedor"
-            placeholder="GTM-ABC123"
-            mono
-            transform={formatoGtm}
-            validate={validarGtm}
-          />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Piru no inyecta scripts pesados por defecto para que la tienda cargue en milisegundos. Usá el contenedor para Google Analytics 4, TikTok Pixel y otras herramientas que administres vos.
-          </p>
-        </div>
-      </AjusteEditor>
-
-      <AjusteEditor
-        open={editor === 'pixel'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Meta Pixel"
-        descripcion="Pegá el ID de tu pixel para medir conversiones de tu tienda."
-      >
-        <div className="space-y-3">
-          <AjusteInput
-            campo="metaPixelId"
-            label="ID del pixel"
-            placeholder="2426435001137598"
-            mono
-            inputMode="tel"
-            transform={formatoPixel}
-            validate={validarPixel}
-          />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Lo encontrás en Meta Events Manager → Orígenes de datos, al lado del nombre de tu pixel: es sólo el número, no el código completo. Con esto la tienda mide visitas, productos vistos, agregados al carrito, inicios de compra y compras.
-          </p>
-        </div>
-      </AjusteEditor>
-
-      <AjusteEditor
         open={editor === 'envio'}
         onOpenChange={(o) => !o && setEditor(null)}
         titulo="Costo de envío"
         descripcion="Se precarga automáticamente en los pedidos de delivery anotados en el POS."
       >
         <CostoEnvioField />
-      </AjusteEditor>
-
-      <AjusteEditor
-        open={editor === 'logos'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Logos"
-        descripcion="Se guardan apenas los subís."
-      >
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <LogoField which="image" campoLocal="imagenUrl" label="Logo (modo oscuro)" current={restaurante?.imagenUrl ?? null} dark />
-          <LogoField which="imageLight" campoLocal="imagenLightUrl" label="Logo (modo claro)" current={restaurante?.imagenLightUrl ?? null} />
-        </div>
       </AjusteEditor>
 
       <AjusteEditor
@@ -286,26 +138,6 @@ export default function General() {
         </div>
       </AjusteEditor>
     </section>
-  )
-}
-
-export function ModoColorField() {
-  const { valor, guardar, status } = useAjuste('usarColorUnico')
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground">Usar un solo color</p>
-          <span className="text-xs text-muted-foreground">
-            {status === 'saving' ? 'Guardando…' : status === 'saved' ? 'Guardado' : ''}
-          </span>
-        </div>
-        <p className="text-[13px] font-normal text-muted-foreground">
-          Se aplica a botones y detalles; cada diseño conserva sus fondos y textos.
-        </p>
-      </div>
-      <Switch checked={valor === true} onCheckedChange={(checked) => void guardar(checked)} />
-    </div>
   )
 }
 

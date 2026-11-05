@@ -10,24 +10,11 @@ import type {
   TiendaMpDto,
 } from './posCobro'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
-export interface MiMarketer { marketer: { nombre: string; codigo: string }; desde: string; origen: string }
-export const miMarketerApi = {
-  get: (token: string) => fetchApi<MiMarketer | null>('/mi-marketer/', { headers: { Authorization: `Bearer ${token}` } }),
-  buscar: (token: string, codigo: string) => fetchApi<{ nombre: string }>(`/mi-marketer/buscar?codigo=${encodeURIComponent(codigo)}`, { headers: { Authorization: `Bearer ${token}` } }),
-  darAcceso: (token: string, codigo: string, reemplazar = false) => fetchApi('/mi-marketer/', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ codigo, reemplazar }) }),
-  quitar: (token: string) => fetchApi('/mi-marketer/', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }),
-}
-
-/** Pase de dos minutos para abrir la app de marketing en modo dueño, sin login (Clientes). */
 /** Páginas (`pages.piru.app`): el panel pide un pase de dos minutos y abre el editor (docs/PAGINAS_PROPIAS.md). */
 export const sitiosApi = {
   entrada: (token: string) => fetchApi<{ success: boolean; data: { url: string } }>('/sitios/entrada', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
-}
-
-export const marketingDuenioApi = {
-  entrada: (token: string) => fetchApi<{ success: boolean; data: { url: string; expira: string } }>('/marketing-duenio/entrada', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
 }
 
 /**
@@ -72,7 +59,7 @@ export class ApiError extends Error {
 }
 
 // Función para hacer logout cuando el token expira
-function handleUnauthorized() {
+export function handleUnauthorized() {
   const authStore = useAuthStore.getState()
   const restauranteStore = useRestauranteStore.getState()
 

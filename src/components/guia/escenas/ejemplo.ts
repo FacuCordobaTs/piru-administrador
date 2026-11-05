@@ -1,6 +1,6 @@
 /**
  * Datos de ejemplo de las escenas de la guía. Son los del local inventado que recorre la landing
- * (`landing/src/data/demo.ts`) y la guía de la app de marketing: Brasa, Martina y su pedido #1284.
+ * (`landing/src/data/demo.ts`) y la guía de Marketing: Brasa, Martina y su pedido #1284.
  * No son datos de ningún local real, y cada escena lo aclara en su epígrafe.
  */
 export const LOCAL_EJEMPLO = 'Brasa'

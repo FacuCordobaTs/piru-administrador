@@ -29,9 +29,8 @@ export const SECCIONES_GUIA: SeccionGuia[] = [
   { id: 'pagos', titulo: 'Cómo te pagan', grupo: 'Tu tienda' },
   { id: 'whatsapp', titulo: 'WhatsApp y avisos', grupo: 'Tu tienda' },
   { id: 'sucursales', titulo: 'Sucursales y eventos', grupo: 'Tu tienda' },
-  { id: 'clientes', titulo: 'Clientes, campañas y recompra', grupo: 'Crecer' },
+  { id: 'clientes', titulo: 'Marketing: clientes, campañas y recompra', grupo: 'Crecer' },
   { id: 'estadisticas', titulo: 'Estadísticas', grupo: 'Crecer' },
-  { id: 'tu-marketer', titulo: 'Si trabajás con un marketer', grupo: 'Tu cuenta' },
   { id: 'modulos', titulo: 'Módulos y suscripción', grupo: 'Tu cuenta' },
   { id: 'rutina', titulo: 'Un día con Piru', grupo: 'Día a día' },
   { id: 'preguntas', titulo: 'Preguntas frecuentes', grupo: 'Día a día' },
@@ -56,8 +55,8 @@ export interface ContextoGuia {
   tienda: string | null
 }
 
-/** La guía de la app de marketing, en la versión para dueños. */
-export const GUIA_MARKETING = 'https://marketing.piru.app/guia?para=duenio'
+/** La guía de Marketing (marketing/pages/Guia.tsx), dentro del panel. */
+export const GUIA_MARKETING = '/dashboard/marketing/guia'
 
 export const AYUDA_WHATSAPP =
   'https://api.whatsapp.com/send?phone=543408681915&text=Hola%2C%20tengo%20una%20consulta%20sobre%20el%20panel%20de%20Piru'

@@ -9,14 +9,13 @@ import { esSesionDemo } from '@/lib/api'
 import { recorridoVisto, useRecorridoPanel } from '@/lib/recorridoPanel'
 import { DemoBanner } from '@/components/DemoBanner'
 import {
-  Compass,
   LayoutDashboard,
   Package,
-  Users,
+  Blocks,
+  Megaphone,
   MessageSquare,
   TrendingUp,
   Settings,
-  BookOpen,
   Shirt,
   Menu,
   PanelLeftClose,
@@ -31,7 +30,7 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
   { icon: Package, label: 'Menú', path: '/dashboard/productos' },
   { icon: Shirt, label: 'Ropa', path: '/dashboard/ropa' },
-  { icon: Users, label: 'Clientes', path: '/dashboard/clientes' },
+  { icon: Megaphone, label: 'Marketing', path: '/dashboard/marketing' },
   { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes' },
   { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas' },
 ]
@@ -50,7 +49,6 @@ const DashboardLayout = () => {
   // a que resuelva fetchData().
   const restauranteId = useAuthStore((s) => s.restaurante?.id)
   const avisosAutomaticosActivos = useModuloActivo('avisos_automaticos_whatsapp')
-  const crecimientoActivo = useModuloActivo('crecimiento')
   const token = useAuthStore((s) => s.token)
   const esDemo = esSesionDemo(token)
   const abrirRecorrido = useRecorridoPanel((s) => s.abrir)
@@ -114,109 +112,97 @@ const DashboardLayout = () => {
   }
 
 
-  // Mensajes concentra los cupos de Avisos y Crecimiento; sólo aparece si alguno está activo.
+  // Mensajes es el saldo de los avisos por WhatsApp: sin ese módulo no hay nada que mostrar.
   // Ropa es de un solo local: el filtro es por id, no por módulo contratable.
   const navItems = NAV_ITEMS.filter((item) => {
-    if (item.path === MENSAJES_PATH) return avisosAutomaticosActivos || crecimientoActivo
+    if (item.path === MENSAJES_PATH) return avisosAutomaticosActivos
     if (item.path === ROPA_PATH) return restauranteId === ROPA_RESTAURANTE_ID
     return true
   })
 
-  // `compact` = rail de solo iconos (aplica en el sidebar de escritorio).
-  // `drawer` = versión móvil (push): el botón de cabecera cierra el drawer.
-  const renderSidebar = (compact: boolean, drawer = false) => (
-    <div className="flex h-full flex-col">
-      {/* Cabecera: botón para colapsar/expandir */}
-      <div className={`flex items-center h-16 shrink-0 ${compact ? 'justify-center px-2' : 'justify-end px-3'}`}>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => (drawer ? setMenuOpen(false) : setCollapsed((v) => !v))}
-          title={drawer ? 'Cerrar menú' : compact ? 'Expandir menú' : 'Comprimir menú'}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          {drawer ? <X className="h-5 w-5" /> : compact ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-        </Button>
-      </div>
+  // En el rail colapsado sólo quedan Inicio y Menú: el resto se alcanza expandiendo el menú.
+  const RAIL_PATHS = new Set(['/dashboard/', '/dashboard/productos'])
 
-      {/* Navegación */}
-      <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const active = isActive(item.path)
-          return (
+  // `compact` = rail de solo iconos (aplica en el sidebar de escritorio).
+  // `drawer` = versión móvil (overlay): el botón de cabecera cierra el drawer.
+  const renderSidebar = (compact: boolean, drawer = false) => {
+    const visibles = compact ? navItems.filter((item) => RAIL_PATHS.has(item.path)) : navItems
+    return (
+      <div className="flex h-full flex-col">
+        {/* Cabecera: botón para colapsar/expandir */}
+        <div className={`flex items-center h-16 shrink-0 ${compact ? 'justify-center px-2' : 'justify-end px-3'}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => (drawer ? setMenuOpen(false) : setCollapsed((v) => !v))}
+            title={drawer ? 'Cerrar menú' : compact ? 'Expandir menú' : 'Comprimir menú'}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {drawer ? <X className="h-5 w-5" /> : compact ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          </Button>
+        </div>
+
+        {/* Navegación */}
+        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+          {visibles.map((item) => {
+            const Icon = item.icon
+            const active = isActive(item.path)
+            return (
+              <button
+                key={item.path}
+                onClick={() => handleNavigation(item.path)}
+                title={compact ? item.label : undefined}
+                className={`group relative w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
+                  compact ? 'justify-center px-0' : 'px-3'
+                } ${
+                  active
+                    ? compact
+                      ? 'bg-muted text-foreground'
+                      : 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+              >
+                <Icon
+                  className={`h-[18px] w-[18px] shrink-0 transition-colors ${
+                    active ? '' : 'text-muted-foreground group-hover:text-foreground'
+                  }`}
+                />
+                {!compact && <span className="flex-1 text-left">{item.label}</span>}
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Footer: módulos y ajustes. En el rail colapsado no se muestra: sólo quedan Inicio y Menú. */}
+        {!compact && (
+          <div className="p-3 space-y-1 shrink-0">
             <button
-              key={item.path}
-              onClick={() => handleNavigation(item.path)}
-              title={compact ? item.label : undefined}
-              className={`group relative w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
-                compact ? 'justify-center px-0' : 'px-3'
-              } ${
-                active
+              onClick={() => handleNavigation('/dashboard/modulos')}
+              className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer px-3 ${
+                isActive('/dashboard/modulos')
                   ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
             >
-              <Icon
-                className={`h-[18px] w-[18px] shrink-0 transition-colors ${
-                  active ? '' : 'text-muted-foreground group-hover:text-foreground'
-                }`}
-              />
-              {!compact && <span className="flex-1 text-left">{item.label}</span>}
+              <Blocks className={`h-[18px] w-[18px] ${isActive('/dashboard/modulos') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
+              Módulos
             </button>
-          )
-        })}
-      </nav>
-
-      {/* Botón de plan: muestra el plan actual y lleva a "Tu plan" (ver / mejorar) */}
-
-
-      {/* Footer: guía y ajustes */}
-      <div className="p-3 space-y-1 shrink-0">
-        <button
-          onClick={() => {
-            abrirRecorrido()
-            setMenuOpen(false)
-          }}
-          title={compact ? 'Ver recorrido' : undefined}
-          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer text-muted-foreground hover:bg-accent hover:text-foreground ${
-            compact ? 'justify-center px-0' : 'px-3'
-          }`}
-        >
-          <Compass className="h-[18px] w-[18px] text-muted-foreground group-hover:text-foreground" />
-          {!compact && 'Ver recorrido'}
-        </button>
-        {/* La guía ocupa toda la pantalla; "Volver al panel" trae de vuelta a esta pantalla. */}
-        <button
-          onClick={() => {
-            navigate('/dashboard/guia', { state: { volver: location.pathname + location.search } })
-            setMenuOpen(false)
-          }}
-          title={compact ? 'Guía' : undefined}
-          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer text-muted-foreground hover:bg-accent hover:text-foreground ${
-            compact ? 'justify-center px-0' : 'px-3'
-          }`}
-        >
-          <BookOpen className="h-[18px] w-[18px] text-muted-foreground group-hover:text-foreground" />
-          {!compact && 'Guía'}
-        </button>
-        <button
-          onClick={() => handleNavigation('/dashboard/ajustes')}
-          title={compact ? 'Configuración' : undefined}
-          className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
-            compact ? 'justify-center px-0' : 'px-3'
-          } ${
-            isActive('/dashboard/ajustes')
-              ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-          }`}
-        >
-          <Settings className={`h-[18px] w-[18px] ${isActive('/dashboard/ajustes') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
-          {!compact && 'Configuración'}
-        </button>
+            <button
+              onClick={() => handleNavigation('/dashboard/ajustes')}
+              className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer px-3 ${
+                isActive('/dashboard/ajustes')
+                  ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              }`}
+            >
+              <Settings className={`h-[18px] w-[18px] ${isActive('/dashboard/ajustes') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
+              Configuración
+            </button>
+          </div>
+        )}
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#FFFBF0] dark:bg-background">
@@ -229,12 +215,18 @@ const DashboardLayout = () => {
         {renderSidebar(collapsed)}
       </aside>
 
-      {/* Sidebar móvil (push) — en el flujo flex: se extiende a la misma altura que el
-          contenido y lo comprime hacia la derecha, en vez de abrirse por encima (el viejo
-          Sheet era un overlay fixed). Se abre/cierra animando el ancho w-0 ↔ w-64. */}
+      {/* Sidebar móvil (overlay) — se desliza por encima del contenido, con borde a la derecha,
+          en vez de comprimirlo hacia la derecha. El velo de atrás cierra el menú. */}
+      {menuOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-30 bg-black/40"
+          aria-hidden="true"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
       <aside
-        className={`md:hidden flex shrink-0 flex-col bg-background border-r border-border transition-[width] duration-200 overflow-hidden ${
-          menuOpen ? 'w-64' : 'w-0'
+        className={`md:hidden fixed inset-y-0 left-0 z-40 flex w-64 max-w-[85vw] flex-col bg-background border-r border-border shadow-xl transition-transform duration-200 ${
+          menuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {renderSidebar(false, true)}
@@ -242,7 +234,7 @@ const DashboardLayout = () => {
 
       {/* Contenido principal */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Barra superior sólo en móvil (para abrir/cerrar el drawer push) */}
+        {/* Barra superior sólo en móvil (para abrir/cerrar el menú) */}
         <div className="md:hidden flex items-center gap-2 h-14 px-3 bg-[#FFFBF0] dark:bg-background shrink-0">
           <Button variant="ghost" size="icon" onClick={() => setMenuOpen((v) => !v)}>
             <Menu className="h-5 w-5" />
@@ -252,11 +244,7 @@ const DashboardLayout = () => {
         {/* Los datos de ejemplo (y la demo de prospección) se avisan arriba de cualquier pantalla. */}
         <DemoBanner />
 
-        {/* Tocar el contenido cierra el drawer (sin scrim: el contenido queda visible). */}
-        <main
-          className="flex-1 min-h-0 overflow-y-auto"
-          onClick={() => menuOpen && setMenuOpen(false)}
-        >
+        <main className="flex-1 min-h-0 overflow-y-auto">
           <Outlet key={versionDatos} />
         </main>
       </div>

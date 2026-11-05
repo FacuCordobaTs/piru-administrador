@@ -16,6 +16,8 @@ for (const width of [1440, 390]) {
         let body: object = { success: true, data: [], franjas: [] }
         if (url.endsWith('/restaurante/horarios')) body = { success: true, horarios: [{ diaSemana: 1, horaApertura: '09:00', horaCierre: '23:30' }] }
         if (url.endsWith('/whatsapp-oauth/status')) body = { success: true, conectado: true, phoneNumber: '3415550000', tokenVencido: false }
+        // Hay zona de delivery: General esconde el costo fijo.
+        if (url.endsWith('/zona-delivery')) body = { success: true, data: [{ id: 1, nombre: 'Centro', precio: '500' }] }
         await route.fulfill({ json: body })
       })
       await page.goto('/tests/ajustes-ui.html')
@@ -32,10 +34,10 @@ for (const width of [1440, 390]) {
       // `null` = destino dentro de Ajustes: ahí no hay sonda de ruta, así que se
       // verifica la pantalla que se renderiza (General es la única con fila de GTM).
       const casos: [string, string | null][] = [
-        ['/dashboard/ajustes/adquisicion', '/dashboard/clientes?tab=adquisicion&vista=campanas'],
-        ['/dashboard/ajustes/crecimiento', '/dashboard/clientes?tab=adquisicion&vista=campanas'],
-        ['/dashboard/ajustes/retencion', '/dashboard/clientes?tab=retencion&vista=motor'],
-        ['/dashboard/ajustes/retencion?config=puntos', '/dashboard/clientes?tab=retencion&vista=puntos'],
+        ['/dashboard/ajustes/adquisicion', '/dashboard/marketing/campanas'],
+        ['/dashboard/ajustes/crecimiento', '/dashboard/marketing/campanas'],
+        ['/dashboard/ajustes/retencion', '/dashboard/marketing/hoy'],
+        ['/dashboard/ajustes/retencion?config=puntos', '/dashboard/marketing/puntos'],
         ['/dashboard/ajustes/activacion', null],
         ['/dashboard/ajustes/experiencia', null],
       ]
@@ -44,11 +46,48 @@ for (const width of [1440, 390]) {
         await page.reload()
         if (destino === null) {
           await expect(page.getByTestId('ruta')).toHaveCount(0)
-          await expect(row(page, 'Google Tag Manager')).toBeVisible()
+          await expect(row(page, 'Tu negocio')).toBeVisible()
         } else {
           await expect(page.getByTestId('ruta')).toHaveText(destino)
         }
       }
+    })
+
+    test('Suscripción y pagos vive dentro de Cuenta', async ({ page }) => {
+      await page.goto('/tests/ajustes-ui.html#/dashboard/ajustes/suscripcion')
+      await page.reload()
+      await expect(page.getByRole('heading', { name: 'Cuenta', exact: true })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Suscripción y pagos', exact: true })).toBeVisible()
+      await expect(page.getByRole('link', { name: /^Suscripción y pagos/ })).toHaveCount(0)
+    })
+
+    test('las secciones de Ajustes aparecen sólo con sus módulos activos', async ({ page }) => {
+      const nav = page.getByRole('navigation', { name: 'Secciones de ajustes' })
+      const whatsapp = nav.getByRole('link', { name: /^WhatsApp/ })
+      const ventas = nav.getByRole('link', { name: /^Ventas en el local/ })
+      const mozos = nav.getByRole('link', { name: /^Mozos/ })
+
+      await expect(whatsapp).toBeVisible()
+      await page.evaluate(() => (window as unknown as { __piruModulo: (codigo: string, activo: boolean) => void }).__piruModulo('avisos_automaticos_whatsapp', false))
+      await expect(whatsapp).toHaveCount(0)
+
+      await expect(ventas).toBeVisible()
+      await page.evaluate(() => (window as unknown as { __piruModulo: (codigo: string, activo: boolean) => void }).__piruModulo('pos', false))
+      await page.evaluate(() => (window as unknown as { __piruModulo: (codigo: string, activo: boolean) => void }).__piruModulo('mesas', false))
+      await expect(ventas).toHaveCount(0)
+      await expect(mozos).toHaveCount(0)
+      // Sin tabs visibles, el grupo tampoco se muestra.
+      await expect(page.getByText('Operación', { exact: true })).toHaveCount(0)
+    })
+
+    test('Módulos vive fuera de Ajustes y muestra los activos y el catálogo completo', async ({ page }) => {
+      await page.goto('/tests/ajustes-ui.html#/dashboard/ajustes/modulos')
+      await page.reload()
+      await expect(page.getByRole('heading', { name: 'Módulos', exact: true })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Tus módulos activos' })).toBeVisible()
+      await expect(page.getByRole('button', { name: /^Punto de venta/ }).first()).toBeVisible()
+      // El catálogo sigue mostrando lo que todavía no está activo.
+      await expect(page.getByRole('button', { name: /^Gestión de stock/ })).toBeVisible()
     })
 
     test('horarios reemplaza el resumen y conserva el autosave al volver', async ({ page }) => {
@@ -62,7 +101,7 @@ for (const width of [1440, 390]) {
       await page.locator('input[type=time]').first().fill('10:00')
       await back(page).click()
       expect((await save).postDataJSON().horarios[0].horaApertura).toBe('10:00')
-      await expect(row(page, 'Horarios de atención')).toContainText('10:00')
+      await expect(page.getByText(/10:00 a 23:30/)).toBeVisible()
       await row(page, 'Horarios de atención').click()
       await expect(page.locator('input[type=time]').first()).toHaveValue('10:00')
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -81,7 +120,7 @@ for (const width of [1440, 390]) {
       await back(page).click()
       await expect(page.getByRole('button', { name: 'Nueva', exact: true })).toBeVisible()
       await back(page).click()
-      await section(page, 'Entregas y zonas')
+      await section(page, 'Ventas en el local')
       await row(page, 'Eventos con POS').click()
       await page.getByRole('button', { name: 'Nuevo evento' }).click()
       await expect(page.getByRole('button', { name: 'Nuevo evento', exact: true })).toBeHidden()
@@ -89,13 +128,23 @@ for (const width of [1440, 390]) {
       await back(page).click()
       await expect(page.getByRole('button', { name: 'Nuevo evento' })).toBeVisible()
       await back(page).click()
+      await section(page, 'Entregas y zonas')
       await row(page, 'Dirección de entrega').click()
       await expect(page.getByRole('switch', { name: 'Pasar a dirección de solo texto' })).toBeVisible()
       await expect(row(page, 'Tipos de pedido')).toBeHidden()
     })
 
-    test('general, cuenta, mozos y módulos usan vistas exclusivas', async ({ page }) => {
+    test('general, cuenta, mozos y ventas usan vistas exclusivas', async ({ page }) => {
       await section(page, 'General')
+      await expect(page.getByText('Av. Siempre Viva 742')).toBeVisible()
+      // Con zonas cargadas el costo fijo desaparece y las opciones de tienda ya no viven acá.
+      await expect(row(page, 'Costo de envío')).toHaveCount(0)
+      await expect(row(page, 'Tu tienda')).toHaveCount(0)
+      await expect(row(page, 'Google Tag Manager')).toHaveCount(0)
+      await expect(row(page, 'Meta Pixel')).toHaveCount(0)
+      await expect(row(page, 'Logos')).toHaveCount(0)
+      await expect(page.getByText('Permitir pedidos en grupo')).toHaveCount(0)
+      await expect(page.getByText('Productos grandes en mayúsculas')).toHaveCount(0)
       await row(page, 'Tu negocio').click()
       await expect(page.getByRole('region', { name: 'Tu negocio', exact: true })).toBeVisible()
       await expect(row(page, 'Tu tienda')).toBeHidden()
@@ -111,7 +160,7 @@ for (const width of [1440, 390]) {
       await back(page).click()
       await section(page, 'Ventas en el local')
       await row(page, 'Punto de venta').click()
-      await expect(page.getByRole('heading', { name: 'Punto de venta', exact: true })).toBeVisible()
+      await expect(page.getByRole('region', { name: 'Configurar punto de venta', exact: true })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Ventas en el local', exact: true })).toBeHidden()
       // Los módulos que se activan en Clientes no caen al fallback "ventas".
       await expect(page.getByText('Campañas de adquisición')).toHaveCount(0)
@@ -121,21 +170,18 @@ for (const width of [1440, 390]) {
       await section(page, 'Métodos de pago')
       await expect(row(page, 'Métodos de pago habilitados')).toBeVisible()
       await row(page, 'Mercado Pago').first().click()
-      await expect(page.getByRole('region', { name: 'Herramientas disponibles', exact: true })).toBeVisible()
+      await expect(page.getByRole('region', { name: 'Mercado Pago', exact: true })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Métodos de pago', exact: true })).toBeHidden()
       await back(page).click()
       await section(page, 'Entregas y zonas')
       await row(page, 'Múltiples sucursales').click()
-      await expect(page.getByRole('region', { name: 'Herramientas disponibles', exact: true })).toBeVisible()
-      await expect(row(page, 'Tipos de pedido')).toBeHidden()
-      await back(page).click()
+      await expect(page.getByRole('heading', { name: 'Módulos', exact: true })).toBeVisible()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     })
 
-    test('Módulos abre la misma configuración del POS que el punto de venta (cobro manual y QR incluidos)', async ({ page }) => {
+    test('Ventas en el local abre la misma configuración del POS (cobro manual y QR incluidos)', async ({ page }) => {
       await section(page, 'Ventas en el local')
       await row(page, 'Punto de venta').click()
-      await page.getByRole('button', { name: 'Configurar', exact: true }).click()
       const configuracion = page.getByRole('region', { name: 'Configurar punto de venta', exact: true })
       await expect(configuracion).toBeVisible()
       // Es el formulario compartido, no una copia: trae lo agregado después (copias de la comanda, cobro manual).
@@ -149,7 +195,7 @@ for (const width of [1440, 390]) {
     })
 
     test('Meta Pixel se configura aparte de GTM', async ({ page }) => {
-      await section(page, 'General')
+      await section(page, 'Medición')
       // Son dos filas separadas: la vieja prometía las dos integraciones y sólo gobernaba GTM.
       await expect(row(page, 'Google Tag Manager')).toBeVisible()
       await row(page, 'Meta Pixel').click()
@@ -169,33 +215,19 @@ for (const width of [1440, 390]) {
       await back(page).click()
     })
 
-    test('general, WhatsApp y mapa respetan la misma profundidad', async ({ page }) => {
-      await section(page, 'General')
+    test('medición, WhatsApp y mapa respetan la misma profundidad', async ({ page }) => {
+      await section(page, 'Medición')
       await row(page, 'Google Tag Manager').click()
       await expect(page.getByRole('region', { name: 'Google Tag Manager', exact: true })).toBeVisible()
-      await expect(row(page, 'Tu negocio')).toBeHidden()
+      await expect(row(page, 'Meta Pixel')).toBeHidden()
       await back(page).click()
-      // La sala grupal dejó de tener editor propio: es un switch en la lista.
-      const salaGrupal = page.getByRole('switch', { name: 'Permitir pedidos en grupo' })
-      await expect(salaGrupal).toBeVisible()
-      const guardaSala = page.waitForRequest(request => request.url().endsWith('/restaurante/toggle-order-group-enabled') && request.method() === 'PUT')
-      await salaGrupal.click()
-      await guardaSala
-      await expect(salaGrupal).not.toBeChecked()
       await section(page, 'WhatsApp')
-      await expect(row(page, 'WhatsApp Business')).toContainText('Conectado')
+      await expect(page.getByText('Conectado · 3415550000')).toBeVisible()
       await row(page, 'WhatsApp Business').click()
       await expect(page.getByRole('heading', { name: 'WhatsApp Business', exact: true })).toBeVisible()
       await back(page).click()
       await row(page, 'Avisos automáticos por WhatsApp').click()
-      await expect(page.getByRole('region', { name: 'Herramientas disponibles', exact: true })).toBeVisible()
-      await row(page, 'Avisos automáticos').click()
-      await expect(page.getByRole('heading', { name: 'Avisos automáticos', exact: true })).toBeVisible()
-      await page.getByRole('button', { name: /^Activar/ }).click()
-      await expect(page.getByRole('heading', { name: 'Activar Avisos automáticos', exact: true })).toBeVisible()
-      await back(page).click()
-      await expect(page.getByRole('heading', { name: 'Avisos automáticos', exact: true })).toBeVisible()
-      await back(page).click()
+      await expect(page.getByRole('heading', { name: 'Avisos automáticos por WhatsApp', exact: true })).toBeVisible()
       await back(page).click()
       await section(page, 'Entregas y zonas')
       await row(page, 'Zonas de delivery').click()

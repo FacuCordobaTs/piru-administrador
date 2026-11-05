@@ -1,15 +1,15 @@
 import { lazy, Suspense, useEffect, useRef, type ComponentType } from 'react'
-import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router'
+import { Link, Navigate, useLocation, useParams } from 'react-router'
 import {
   Store,
   CreditCard,
+  Activity,
   Clock,
   Truck,
   Printer,
   User,
   UtensilsCrossed,
   ArrowLeft,
-  Blocks,
   Copy,
   ExternalLink,
   Code2,
@@ -25,18 +25,15 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModulosStore } from '@/store/modulosStore'
 import { SectionSkeleton } from './components/SectionSkeleton'
 import { DescargarAppBanner } from './components/DescargarAppBanner'
-import Modulos from '../Modulos'
-import MiSuscripcion from '../MiSuscripcion'
 import { SettingsNavigation } from '@/components/SettingsNavigation'
 import { resetSettingsScroll } from '@/components/settings-navigation-context'
-import { AjusteEditor } from './components/AjusteEditor'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean }
 
 const SECTIONS: SectionDef[] = [
   { id: 'mi-pagina', label: 'Tienda', descripcion: 'Plantilla, preferencias y código propio de tu tienda.', Icon: Code2, Component: lazy(() => import('./sections/MiPagina')) },
-  { id: 'marketer', label: 'Tu marketer', descripcion: 'Quién maneja tus clientes, campañas y mensajes.', Icon: User, Component: lazy(() => import('./sections/Marketer')) },
+  { id: 'medicion', label: 'Medición', descripcion: 'Google Tag Manager y Meta Pixel para medir tu tienda.', Icon: Activity, Component: lazy(() => import('./sections/Medicion')) },
   {
     id: 'monetizacion',
     label: 'Métodos de pago',
@@ -70,14 +67,9 @@ const SECTIONS: SectionDef[] = [
   {
     id: 'ventas',
     label: 'Ventas en el local',
-    descripcion: 'Las herramientas para atender, vender y organizar tu operación.',
+    descripcion: 'Punto de venta, mesas y stock: las herramientas para atender y vender en el local.',
     Icon: Store,
-    Component: () => (
-      <SectionHeading
-        title="Ventas en el local"
-        description="Organizá la atención, el punto de venta, mesas y el stock de tu negocio."
-      />
-    ),
+    Component: lazy(() => import('./sections/Ventas')),
   },
   {
     id: 'mozos',
@@ -123,74 +115,65 @@ const ALIASES_SECCION: Record<string, string> = {
 /**
  * URLs que alguna vez apuntaron a una sección de Ajustes y hoy viven en otro
  * lado. Se resuelven con un redirect en vez de "Sección no encontrada" porque
- * Mis módulos todavía emite links viejos guardados por el usuario.
+ * hay enlaces viejos guardados por el usuario.
  */
 const REDIRECTS_SECCION: Record<string, string> = {
-  adquisicion: '/dashboard/clientes?tab=adquisicion&vista=campanas',
+  adquisicion: '/dashboard/marketing/campanas',
   activacion: '/dashboard/ajustes/general',
-  retencion: '/dashboard/clientes?tab=retencion&vista=motor',
+  retencion: '/dashboard/marketing/hoy',
   // La personalización de la tienda se mudó a Páginas: la URL vieja sigue funcionando.
   tienda: '/dashboard/ajustes/mi-pagina',
+  // Módulos dejó de ser una sección de Ajustes y pasó al menú principal.
+  modulos: '/dashboard/modulos',
+  // Suscripción y pagos se integró a Cuenta.
+  suscripcion: '/dashboard/ajustes/cuenta',
 }
-const DESTINO_PUNTOS = '/dashboard/clientes?tab=retencion&vista=puntos'
+const DESTINO_PUNTOS = '/dashboard/marketing/puntos'
 
-const REQUISITOS: Record<string, string[]> = {
-  impresion: ['impresion_comandas'],
-  mozos: ['pos', 'mesas'],
+/**
+ * Qué módulos tiene que tener activos un local para que una sección de Ajustes
+ * tenga sentido. `todos` exige cada código; `alguno` alcanza con uno. Una
+ * sección sin requisitos siempre está disponible.
+ */
+interface RequisitoModulos { todos?: string[]; alguno?: string[] }
+
+const REQUISITOS: Record<string, RequisitoModulos> = {
+  whatsapp: { todos: ['avisos_automaticos_whatsapp'] },
+  ventas: { alguno: ['pos', 'mesas', 'gestion_stock', 'cierre_turno_manual'] },
+  mozos: { todos: ['pos', 'mesas'] },
+  impresion: { todos: ['impresion_comandas'] },
+  medicion: { todos: ['crecimiento'] },
+}
+
+/** Secciones de segundo nivel y la sección desde la que se llega a ellas. */
+const PADRE_SECCION: Record<string, string> = {
+  mozos: 'ventas',
 }
 
 const GROUPS = [
-  { label: 'Operación', ids: ['whatsapp', 'entregas', 'horarios', 'ventas'] },
-  { label: 'Tu negocio', ids: ['general', 'mi-pagina', 'monetizacion', 'marketer', 'modulos', 'suscripcion', 'cuenta'] },
+  { label: 'Tu negocio', ids: ['general', 'mi-pagina', 'medicion', 'monetizacion', 'entregas', 'horarios', 'cuenta'] },
+  { label: 'Operación', ids: ['ventas', 'whatsapp'] },
 ]
-
-// Un único destino canónico por módulo que sí se configura dentro de Ajustes.
-const MODULOS_SECCION: Record<string, string> = {
-  mercadopago: 'monetizacion',
-  talo: 'monetizacion',
-  facturacion_arca: 'monetizacion',
-
-  avisos_automaticos_whatsapp: 'whatsapp',
-  pos: 'ventas',
-  mesas: 'ventas',
-  gestion_stock: 'ventas',
-  cierre_turno_manual: 'ventas',
-  rapiboy: 'entregas',
-  gestion_cadetes: 'entregas',
-  multisucursal: 'entregas',
-  impresion_comandas: 'impresion',
-}
-const seccionModulo = (codigo: string) => MODULOS_SECCION[codigo] ?? 'ventas'
-
-/**
- * Módulos que se activan y configuran donde se usan, no en Ajustes: sus URLs
- * canónicas las emite `Modulos.tsx`. Sin esta lista, `seccionModulo` los mandaría
- * al fallback `ventas` y reaparecerían como "Herramientas disponibles" dentro de
- * Ventas en el local.
- */
-const MODULOS_FUERA_DE_AJUSTES = new Set([
-  'crecimiento',
-  'codigos_descuento',
-  'motor_recompra',
-  'puntos_clientes',
-])
 
 export default function AjustesPage() {
   const { seccion: seccionParam } = useParams()
   const seccion = seccionParam ? ALIASES_SECCION[seccionParam] ?? seccionParam : 'general'
-  const { hash, pathname, search, key: locationKey } = useLocation()
-  const navigate = useNavigate()
+  const { hash, search, key: locationKey } = useLocation()
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const { categorias, suscripcion, cargar, error, cargando } = useModulosStore()
   const contenidoRef = useRef<HTMLDivElement>(null)
   const modulos = categorias.flatMap((c) => c.modulos)
-  const habilitada = (id: string) =>
-    (REQUISITOS[id] ?? []).every((codigo) =>
-      modulos.some((m) => m.codigo === codigo && m.activoAhora)
-    )
+  const activo = (codigo: string) => modulos.some((m) => m.codigo === codigo && m.activoAhora)
+  const habilitada = (id: string) => {
+    const requisito = REQUISITOS[id]
+    if (!requisito) return true
+    if (requisito.alguno && !requisito.alguno.some(activo)) return false
+    return (requisito.todos ?? []).every(activo)
+  }
   const active = SECTIONS.find((s) => s.id === seccion)
   const ActiveSection = active?.Component
-  const secundaria = !!active && !GROUPS.some((g) => g.ids.includes(active.id))
+  const destinoPadre = active ? PADRE_SECCION[active.id] : undefined
+  const secundaria = !!destinoPadre
   // `baseTienda` ya trae el dominio propio si el local lo tiene (o my.piru.app/<username>/).
   // El literal queda sólo como fallback mientras el perfil todavía no cargó.
   const link = restaurante?.baseTienda ?? (restaurante?.username ? `https://my.piru.app/${restaurante.username}` : null)
@@ -202,13 +185,10 @@ export default function AjustesPage() {
       habilitada(s.id) &&
       (!s.tauriOnly || isTauri)
   )
-  const grupos = GROUPS.map((g) =>
-    g.label === 'Operación' ? { ...g, ids: [...g.ids, ...operacion.map((s) => s.id)] } : g
-  )
-  const asociados = modulos
-    .filter((m) => !MODULOS_FUERA_DE_AJUSTES.has(m.codigo) && seccionModulo(m.codigo) === seccion && (m.activable || m.activoAhora))
-    .map((m) => m.codigo)
-  const destinoPadre = seccionModulo(REQUISITOS[seccion]?.[0] ?? '')
+  const grupos = GROUPS.map((g) => {
+    const ids = g.label === 'Operación' ? [...g.ids, ...operacion.map((s) => s.id)] : g.ids
+    return { ...g, ids: ids.filter(habilitada) }
+  }).filter((g) => g.ids.length > 0)
 
   useEffect(() => {
     void cargar().catch(() => {})
@@ -218,10 +198,13 @@ export default function AjustesPage() {
     contenidoRef.current?.focus({ preventScroll: true })
   }, [seccion, hash, locationKey])
 
-  const destinoRedireccion =
+  const destinoBase =
     seccion === 'retencion' && new URLSearchParams(search).get('config') === 'puntos'
       ? DESTINO_PUNTOS
       : REDIRECTS_SECCION[seccion]
+  // El regreso de Mercado Pago trae `?plan=success`; tiene que llegar a Cuenta
+  // para que MiSuscripcion verifique la acreditación.
+  const destinoRedireccion = destinoBase && seccion === 'suscripcion' ? `${destinoBase}${search}` : destinoBase
   if (destinoRedireccion) return <Navigate to={destinoRedireccion} replace />
 
   return <main className="mx-auto min-w-0 w-full max-w-6xl px-5 py-8 sm:px-10 lg:py-16">
@@ -239,29 +222,23 @@ export default function AjustesPage() {
           <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">{grupo.label}</p>
           <div className="space-y-1">{grupo.ids.map(id => {
             const def = SECTIONS.find(s => s.id === id)
-            const Icon = def?.Icon ?? (id === 'modulos' ? Blocks : CreditCard)
-            const label = id === 'general' ? 'General' : def?.label ?? (id === 'modulos' ? 'Mis módulos' : 'Suscripción y pagos')
+            const Icon = def?.Icon ?? CreditCard
+            const label = id === 'general' ? 'General' : def?.label ?? 'Ajustes'
             const selected = id === seccion || (id === destinoPadre && secundaria && !operacion.some(s => s.id === seccion))
-            return <Link key={id} to={`/dashboard/ajustes/${id}`} aria-current={selected ? 'page' : undefined} className={cn('flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand', selected ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground')}><Icon className="size-4 shrink-0" /><span>{label}</span>{id === 'suscripcion' && atencion && <span aria-label="Requiere atención" className="ml-auto size-1.5 shrink-0 rounded-full bg-amber-500" />}</Link>
+            return <Link key={id} to={`/dashboard/ajustes/${id}`} aria-current={selected ? 'page' : undefined} className={cn('flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand', selected ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground')}><Icon className="size-4 shrink-0" /><span>{label}</span>{id === 'cuenta' && atencion && <span aria-label="Requiere atención" className="ml-auto size-1.5 shrink-0 rounded-full bg-amber-500" />}</Link>
           })}</div>
         </div>)}</div>
       </nav>
       <div ref={contenidoRef} tabIndex={-1} className={cn('min-w-0 outline-none md:max-h-[calc(100dvh-240px)] md:overflow-y-auto md:overscroll-contain md:pr-3', !seccionParam && 'hidden md:block')}>
         <SettingsNavigation key={seccion}>
-        <MobileDetailHeader title={seccion === 'modulos' ? 'Mis módulos' : seccion === 'suscripcion' ? 'Suscripción y pagos' : active?.label ?? 'Ajustes'} />
+        <MobileDetailHeader title={active?.label ?? 'Ajustes'} />
         {error && <div role="alert" className="mb-5 rounded-lg border border-amber-500/30 p-3 text-sm">No pudimos actualizar los datos. <Button variant="link" size="sm" onClick={() => void cargar(true).catch(() => {})}>Reintentar</Button></div>}
-        {secundaria && <Link to={`/dashboard/ajustes/${destinoPadre}`} className="mb-6 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />{SECTIONS.find(s => s.id === destinoPadre)?.label}<span>/</span>{active.label}</Link>}
-        {seccion === 'modulos' ? <><SectionHeading title="Mis módulos" description="Tus herramientas activas y su configuración." /><Modulos embedded soloActivos /></>
-          : seccion === 'suscripcion' ? <><SectionHeading title="Suscripción y pagos" description="Tu cuota, los módulos que sumaste y tus comprobantes." /><MiSuscripcion embedded /></>
-          : active ? cargando && modulos.length === 0 && REQUISITOS[active.id] ? <SectionSkeleton />
-            : !habilitada(active.id) ? <div className="space-y-4"><SectionHeading title={active.label} description="Activá el módulo para acceder a su configuración." />{asociados.length === 0 && <Button asChild variant="outline"><Link to={`/dashboard/ajustes/${destinoPadre}`}>Ver módulo<ChevronRight className="size-4" /></Link></Button>}</div>
+        {secundaria && destinoPadre && <Link to={`/dashboard/ajustes/${destinoPadre}`} className="mb-6 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />{SECTIONS.find(s => s.id === destinoPadre)?.label}<span>/</span>{active?.label}</Link>}
+        {active ? cargando && modulos.length === 0 && REQUISITOS[active.id] ? <SectionSkeleton />
+            : !habilitada(active.id) ? <div className="space-y-4"><SectionHeading title={active.label} description="Activá el módulo para acceder a su configuración." /><Button asChild variant="outline"><Link to="/dashboard/modulos">Ver módulos<ChevronRight className="size-4" /></Link></Button></div>
             : active.tauriOnly && !isTauri ? <div className="space-y-4"><SectionHeading title="Impresión" description="Abrí la app de escritorio de Piru para configurar tu impresora." /><DescargarAppBanner /></div>
             : <Suspense key={seccion} fallback={<SectionSkeleton />}>{ActiveSection && <ActiveSection />}</Suspense>
           : <div className="space-y-4"><SectionHeading title="Sección no encontrada" description="Elegí una sección del menú para continuar." /><Button asChild variant="outline"><Link to="/dashboard/ajustes/general">Ir a General</Link></Button></div>}
-        {active && asociados.length > 0 && <section id="modulos-seccion" className="mt-10 border-t border-border/50 pt-7" aria-label="Módulos de esta sección"><header className="mb-4"><h3 className="text-sm font-medium">Herramientas disponibles</h3><p className="mt-1 text-xs text-muted-foreground">Activá o configurá las herramientas que necesitás.</p></header><Modulos key={seccion} embedded codigos={asociados} /></section>}
-        <AjusteEditor open={hash === '#modulos-seccion'} onOpenChange={open => { if (!open) navigate({ pathname, search, hash: '' }, { replace: true }) }} titulo="Herramientas disponibles" descripcion="Activá o configurá las herramientas que necesitás.">
-          <Modulos embedded codigos={asociados} />
-        </AjusteEditor>
         </SettingsNavigation>
       </div>
     </div>
@@ -279,9 +256,9 @@ function MobileSectionList({ grupos, atencion }: { grupos: typeof GROUPS; atenci
       <div className="overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm">
         {grupo.ids.map((id, index) => {
           const def = SECTIONS.find(s => s.id === id)
-          const Icon = def?.Icon ?? (id === 'modulos' ? Blocks : CreditCard)
-          const label = id === 'general' ? 'General' : def?.label ?? (id === 'modulos' ? 'Mis módulos' : 'Suscripción y pagos')
-          const description = def?.descripcion ?? (id === 'modulos' ? 'Activá y configurá las herramientas de tu local.' : 'Tu cuota, pagos y comprobantes.')
+          const Icon = def?.Icon ?? CreditCard
+          const label = id === 'general' ? 'General' : def?.label ?? 'Ajustes'
+          const description = def?.descripcion ?? 'Configuración de tu negocio.'
           return <Link
             key={id}
             to={`/dashboard/ajustes/${id}`}
@@ -291,7 +268,7 @@ function MobileSectionList({ grupos, atencion }: { grupos: typeof GROUPS; atenci
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2 text-sm font-medium">
                 <span className="truncate">{label}</span>
-                {id === 'suscripcion' && atencion && <span aria-label="Requiere atención" className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
+                {id === 'cuenta' && atencion && <span aria-label="Requiere atención" className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
               </span>
               <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>
             </span>

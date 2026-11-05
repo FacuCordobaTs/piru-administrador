@@ -1,6 +1,6 @@
 /*
- * El recorrido de bienvenida del panel (RecorridoPanel.tsx), con el movimiento del de la app de
- * marketing (marketers/src/components/recorrido/recorrido.css). Como en las escenas, cada animación
+ * El recorrido de bienvenida del panel (RecorridoPanel.tsx), con el movimiento del de Marketing
+ * (src/marketing/components/recorrido/recorrido.css). Como en las escenas, cada animación
  * dice de dónde viene la pieza y el estado final es el normal: con movimiento reducido se apagan
  * todas y queda cada paso completo y quieto. Colores como literales: este archivo no pasa por Tailwind.
  */

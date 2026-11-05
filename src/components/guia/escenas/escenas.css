@@ -1,6 +1,6 @@
 /*
- * Escenas ilustradas de la guía (components/guia/escenas/), con las mismas piezas que las de la
- * app de marketing (marketers/src/components/escenas/escenas.css).
+ * Escenas ilustradas de la guía (components/guia/escenas/), con las mismas piezas que las de
+ * Marketing (src/marketing/components/escenas/escenas.css).
  *
  * Regla de oro: el estado final de cada pieza es su estilo normal y la animación sólo dice de dónde
  * viene (`from`, con `both`). Con `prefers-reduced-motion`, guia.css apaga todas las animaciones de

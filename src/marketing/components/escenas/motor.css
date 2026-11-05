@@ -1,0 +1,112 @@
+/*
+ * Escenas SVG del motor de recompra (MotorRecompra.tsx). Misma regla que escenas.css: el estado
+ * final es el estilo normal y la animación sólo dice de dónde viene. Con movimiento reducido,
+ * index.css apaga todo y queda la ilustración completa; los bucles decorativos quedan invisibles.
+ */
+.m-svg * {
+  transform-box: fill-box;
+}
+.m-aparece {
+  animation: m-aparece 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.m-pop {
+  transform-origin: center;
+  animation: m-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d, 0ms) both;
+}
+/* Un trazo que se dibuja: el path lleva `pathLength={1}`. */
+.m-dibuja {
+  stroke-dasharray: 1;
+  animation: m-dibuja 0.9s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.m-crece-x {
+  transform-origin: left center;
+  animation: m-crece-x 0.9s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+.m-crece-y {
+  transform-origin: center bottom;
+  animation: m-crece-y 0.8s cubic-bezier(0.22, 0.61, 0.36, 1) var(--d, 0ms) both;
+}
+/* El marcador "Hoy": viaja desde el último pedido (`--desde`). */
+.m-avanza {
+  animation: m-avanza 1.6s cubic-bezier(0.65, 0, 0.35, 1) var(--d, 0ms) both;
+}
+.m-cae {
+  animation: m-cae 0.7s cubic-bezier(0.34, 1.4, 0.64, 1) var(--d, 0ms) both;
+}
+/* Una onda que late alrededor de un punto. Sin movimiento no se ve. */
+.m-latido {
+  opacity: 0;
+  transform-origin: center;
+  animation: m-latido 2.2s ease-out var(--d, 0ms) infinite;
+}
+.m-flota {
+  animation: m-flota 4s ease-in-out var(--d, 0ms) infinite;
+}
+/* Las filas de la agenda se acomodan cuando alguien sale. */
+.m-fila {
+  transition:
+    transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 0.5s ease;
+}
+.m-fila rect,
+.m-fila text {
+  transition: fill 0.4s ease;
+}
+
+@keyframes m-aparece {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes m-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+@keyframes m-dibuja {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes m-crece-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes m-crece-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes m-avanza {
+  from {
+    transform: translateX(var(--desde, -60px));
+  }
+}
+@keyframes m-cae {
+  from {
+    opacity: 0;
+    transform: translateY(-36px);
+  }
+}
+@keyframes m-latido {
+  0% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+@keyframes m-flota {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}

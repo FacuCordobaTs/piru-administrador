@@ -7,6 +7,7 @@ import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { CambiarEmailDialog } from '../components/CambiarEmailDialog'
 import { CambiarPasswordDialog } from '../components/CambiarPasswordDialog'
+import MiSuscripcion from '../../MiSuscripcion'
 
 export default function Cuenta() {
   const navigate = useNavigate()
@@ -42,7 +43,7 @@ export default function Cuenta() {
       <header className="space-y-1">
         <h2 className="text-lg font-medium text-foreground">Cuenta</h2>
         <p className="text-sm font-normal text-muted-foreground">
-          Tu email, contraseña y sesión.
+          Tu email, contraseña, suscripción y pagos.
         </p>
       </header>
 
@@ -68,6 +69,16 @@ export default function Cuenta() {
           accionLabel={isDark ? 'Modo claro' : 'Modo oscuro'}
           onAccion={toggleTheme}
         />
+      </div>
+
+      <div className="space-y-6 border-t border-border pt-6">
+        <header className="space-y-1">
+          <h3 className="text-base font-medium text-foreground">Suscripción y pagos</h3>
+          <p className="text-sm font-normal text-muted-foreground">
+            Tu cuota, los módulos que sumaste y tus comprobantes.
+          </p>
+        </header>
+        <MiSuscripcion embedded />
       </div>
 
       {/* Zona separada visualmente */}

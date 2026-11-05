@@ -4,6 +4,7 @@ import DashboardLayout from '../src/components/DashboardLayout'
 import DemoPanel from '../src/pages/DemoPanel'
 import { useAuthStore } from '../src/store/authStore'
 import { useRestauranteStore } from '../src/store/restauranteStore'
+import { useRecorridoPanel } from '../src/lib/recorridoPanel'
 import '../src/index.css'
 
 /**
@@ -34,6 +35,9 @@ if (sesion !== 'no') {
   // El perfil ya cargado: el layout no tiene que esperar a la API para pintar el nombre.
   useRestauranteStore.setState({ restaurante: { id: restaurante.id, nombre: restaurante.nombre, username: restaurante.username } as never })
 }
+
+// La entrada del menú ya no existe: la suite vuelve a abrir el recorrido con este disparador.
+;(window as unknown as { abrirRecorrido: () => void }).abrirRecorrido = () => useRecorridoPanel.getState().abrir()
 
 function Destino() {
   const { pathname } = useLocation()

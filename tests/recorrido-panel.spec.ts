@@ -90,6 +90,9 @@ async function abrir(page: Page, query = '') {
 }
 
 const dialogo = (page: Page) => page.getByRole('dialog')
+// El menú ya no tiene "Ver recorrido": el disparador del arnés de test abre el panel.
+const abrirRecorrido = (page: Page) =>
+  page.evaluate(() => (window as unknown as { abrirRecorrido: () => void }).abrirRecorrido())
 // El diálogo trae además su título oculto (`sr-only`) para lectores de pantalla.
 const titulo = (page: Page) => dialogo(page).locator('h2:not(.sr-only)')
 
@@ -122,19 +125,19 @@ test('la primera vez que entra por la demo, el recorrido se abre solo y explica 
   await expect(dialogo(page)).toHaveCount(0)
 })
 
-test('"Ver recorrido" del menú lo vuelve a abrir desde el principio', async ({ page }) => {
+test('el recorrido se puede volver a abrir desde el principio', async ({ page }) => {
   await mockApi(page)
   await abrir(page)
   await dialogo(page).getByRole('button', { name: 'Saltar' }).first().click()
   await expect(dialogo(page)).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Ver recorrido' }).first().click()
+  await abrirRecorrido(page)
   await expect(titulo(page)).toHaveText(PASOS[0])
   await dialogo(page).getByRole('button', { name: 'Siguiente' }).click()
   await expect(titulo(page)).toHaveText(PASOS[1])
   await page.keyboard.press('Escape')
   await expect(dialogo(page)).toHaveCount(0)
-  await page.getByRole('button', { name: 'Ver recorrido' }).first().click()
+  await abrirRecorrido(page)
   await expect(titulo(page)).toHaveText(PASOS[0])
 })
 
@@ -181,7 +184,7 @@ test('el aviso de la demo deja borrar los datos de ejemplo con confirmación y v
   expect(api.pedidos).toContain('DELETE /datos-ejemplo')
 
   // Sin datos de ejemplo, el recorrido no tiene el paso que habla de ellos.
-  await page.getByRole('button', { name: 'Ver recorrido' }).first().click()
+  await abrirRecorrido(page)
   await expect(dialogo(page).getByText('Paso 1 de 7')).toBeVisible()
   await page.keyboard.press('Escape')
 
@@ -197,7 +200,7 @@ test('un dueño de verdad no ve la demo: sin recorrido automático, sin aviso y 
   await expect(dialogo(page)).toHaveCount(0)
   await expect(page.getByRole('region', { name: 'Datos de ejemplo' })).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Ver recorrido' }).first().click()
+  await abrirRecorrido(page)
   await expect(titulo(page)).toHaveText('Este es el panel de Brasa')
   await expect(dialogo(page).getByText('Paso 1 de 7')).toBeVisible()
   await dialogo(page).getByRole('button', { name: 'Paso 7: Listo' }).click()

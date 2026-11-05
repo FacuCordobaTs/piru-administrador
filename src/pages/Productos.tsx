@@ -485,7 +485,7 @@ const Productos = () => {
         permiteNota: formData.permiteNota,
         soloCanjePuntos: formData.soloCanjePuntos,
         tituloNota: formData.tituloNota.trim() || '¿Querés aclarar algo?',
-        // Sólo escribir los puntos editados: el club también se configura desde marketers.
+        // Sólo escribir los puntos editados: el club también se configura desde Marketing.
         ...(panelNuevo || puntosEditados.puntosGanados ? { puntosGanados: formData.puntosGanados ? parseInt(formData.puntosGanados, 10) : 0 } : {}),
         ...(panelNuevo || puntosEditados.puntosNecesarios ? { puntosNecesarios: formData.puntosNecesarios ? parseInt(formData.puntosNecesarios, 10) : 0 } : {}),
         descuento: formData.descuento ? parseInt(formData.descuento, 10) : 0,

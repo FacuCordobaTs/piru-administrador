@@ -2,13 +2,9 @@ import { useEffect, useState } from 'react'
 import { MapPin } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
-import ImageUpload from '@/components/ImageUpload'
-import type { RestauranteData } from '@/store/restauranteStore'
 import { SavedIndicator } from '../../components/SavedIndicator'
 import { SucursalDialog } from '../../components/SucursalDialog'
 import { useAjuste } from '../../hooks/useAjuste'
-import { useOptimisticUpdate } from '../../hooks/useOptimisticUpdate'
 import { useDireccionAutocomplete } from '../../hooks/useDireccionAutocomplete'
 import { useSucursales } from '../../hooks/useSucursales'
 import { useModuloActivo } from '@/store/modulosStore'
@@ -169,40 +165,3 @@ export function ColorField({
   )
 }
 
-/** ImageUpload con guardado inmediato optimista. */
-export function LogoField({
-  which,
-  campoLocal,
-  label,
-  current,
-  dark,
-}: {
-  which: 'image' | 'imageLight'
-  campoLocal: keyof RestauranteData
-  label: string
-  current: string | null
-  dark?: boolean
-}) {
-  const { run, status } = useOptimisticUpdate()
-  const onImageChange = (base64: string | null) => {
-    if (!base64 || !base64.startsWith('data:image')) return
-    void run({ [campoLocal]: base64 } as Partial<RestauranteData>, { [which]: base64 })
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Label className="font-medium">{label}</Label>
-        <SavedIndicator status={status} />
-      </div>
-      <div
-        className={cn(
-          'rounded-2xl border-2 border-dashed p-2 transition-colors',
-          dark ? 'border-zinc-700 bg-zinc-900' : 'border-input bg-white dark:bg-muted'
-        )}
-      >
-        <ImageUpload onImageChange={onImageChange} currentImage={current} maxSize={5} />
-      </div>
-    </div>
-  )
-}

@@ -49,7 +49,7 @@ export function useDireccionAutocomplete() {
   useEffect(() => {
     if (!restaurante || initedRef.current) return
     initedRef.current = true
-    setDireccionState(restaurante.direccionTexto || '')
+    setDireccionState(restaurante.direccionTexto || restaurante.direccion || '')
     latRef.current = restaurante.direccionLat ? parseFloat(restaurante.direccionLat) : null
     lngRef.current = restaurante.direccionLng ? parseFloat(restaurante.direccionLng) : null
     setGeocodificada(latRef.current != null)
@@ -112,7 +112,8 @@ export function useDireccionAutocomplete() {
   }, [])
 
   const guardar = useCallback(() => {
-    const previoTexto = useRestauranteStore.getState().restaurante?.direccionTexto || ''
+    const restauranteActual = useRestauranteStore.getState().restaurante
+    const previoTexto = restauranteActual?.direccionTexto || restauranteActual?.direccion || ''
     const nuevoTexto = direccion.trim()
     if (nuevoTexto === previoTexto) return
     void run(

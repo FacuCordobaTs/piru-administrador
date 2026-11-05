@@ -1,6 +1,6 @@
 /*
- * La guía (pages/Guia.tsx), con el estilo de la de la app de marketing (marketers/src/components/
- * guia/guia.css). Colores como literales: este archivo no pasa por Tailwind. Las reglas van en las
+ * La guía (pages/Guia.tsx), con el estilo de la de Marketing (src/marketing/components/guia/
+ * guia.css). Colores como literales: este archivo no pasa por Tailwind. Las reglas van en las
  * capas `base` y `components` (las de index.css), así cualquier clase de Tailwind les gana, y las
  * de texto sólo tocan a los hijos directos del cuerpo: las escenas quedan como se diseñaron.
  */

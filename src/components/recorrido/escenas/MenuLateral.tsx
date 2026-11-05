@@ -1,4 +1,4 @@
-import { BookOpen, LayoutDashboard, MessageSquare, Package, Settings, TrendingUp, Users, type LucideIcon } from 'lucide-react'
+import { BookOpen, LayoutDashboard, MessageSquare, Package, Settings, TrendingUp, Megaphone, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Escena, type PropsEscena } from '@/components/guia/escenas/Escena'
 import { d, useSecuencia } from '@/components/guia/escenas/animacion'
@@ -7,7 +7,7 @@ import { LOCAL_EJEMPLO } from '@/components/guia/escenas/ejemplo'
 const ITEMS: { Icono: LucideIcon; nombre: string; texto: string }[] = [
   { Icono: LayoutDashboard, nombre: 'Inicio', texto: 'Los pedidos del día, el punto de venta, las mesas y la caja.' },
   { Icono: Package, nombre: 'Menú', texto: 'Productos, categorías, variantes, extras y precios.' },
-  { Icono: Users, nombre: 'Clientes', texto: 'Tu base, y la app de marketing: campañas, cupones, puntos y recompra.' },
+  { Icono: Megaphone, nombre: 'Marketing', texto: 'Tu base de clientes, campañas, cupones, puntos y recompra.' },
   { Icono: MessageSquare, nombre: 'Mensajes', texto: 'Tus avisos por WhatsApp, tu saldo y las recargas.' },
   { Icono: TrendingUp, nombre: 'Estadísticas', texto: 'Lo cobrado por mes o entre dos fechas, y lo más pedido.' },
   { Icono: BookOpen, nombre: 'Guía', texto: 'Cómo funciona cada pantalla, con ejemplos y preguntas frecuentes.' },

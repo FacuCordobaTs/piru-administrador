@@ -73,7 +73,7 @@ function FilaConfig({
 }
 
 /**
- * Formulario de la configuración local del POS. Lo comparten este diálogo (punto de venta) y Ajustes → Módulos,
+ * Formulario de la configuración local del POS. Lo comparten este diálogo (punto de venta) y Ajustes → Ventas en el local,
  * que lo muestra dentro de su propia vista: no debe haber otra copia, o las opciones nuevas no llegan a ese camino.
  */
 export function PosConfigForm({ onSaved }: { onSaved: () => void }) {
