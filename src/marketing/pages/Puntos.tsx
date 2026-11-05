@@ -28,7 +28,7 @@ import type {
 } from "../lib/tipos";
 import { MARKETING } from "../lib/rutas";
 export function Puntos() {
-  const mod = useModulo("motor_recompra");
+  const mod = useModulo("puntos_clientes");
   return (
     <>
       {mod.loading || mod.error ? (
@@ -47,7 +47,7 @@ export function Puntos() {
         pantalla="puntos"
             ayuda={{ seccion: "puntos", texto: "Cómo funciona el club" }}
           />
-          <BloqueoModulo codigo="motor_recompra" nombre="Puntos" />
+          <BloqueoModulo codigo="puntos_clientes" nombre="Puntos" />
         </>
       )}
     </>

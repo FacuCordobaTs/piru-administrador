@@ -60,7 +60,7 @@ export function pasosDelRecorrido({
       titulo: "Piru avisa quién se está yendo",
       texto:
         "Cada cliente tiene su ritmo. Si alguien que pedía cada 12 días lleva 3 semanas sin aparecer, pasa a «Se están yendo». Así sabés a quién escribirle antes de perderlo.",
-      donde: "Resumen y Clientes",
+      donde: "Clientes",
       escena: "ritmo",
     },
     {
@@ -69,7 +69,7 @@ export function pasosDelRecorrido({
       titulo: "Hoy organiza tu semana de mensajes",
       texto: "La agenda se actualiza sola. Podés ver Hoy, Mañana y el resto de la semana. Cada día, Hoy te muestra los mensajes listos para salir del WhatsApp de tu local, en el chat de siempre: los abrís, los mandás y los marcás. Si el cliente no vuelve, sigue el mensaje 2 y después el 3.",
       donde: "Hoy",
-      modulo: "Con Retención",
+      modulo: "Con Recompra",
       escena: "hoy",
     },
     {
@@ -87,7 +87,7 @@ export function pasosDelRecorrido({
       texto:
         "Con el club de puntos, cada pedido cobrado suma para un premio: envío gratis, un descuento o un producto. También podés usar los puntos como incentivo de un link o mensaje, sin regalar descuento. Y con los cupones armás beneficios con usos y ventas medidos.",
       donde: "Puntos y Cupones",
-      modulo: "Puntos: con Retención",
+      modulo: "Con Puntos",
       escena: "puntos",
     },
     {

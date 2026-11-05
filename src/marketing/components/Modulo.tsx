@@ -116,8 +116,12 @@ export function BloqueoModulo({
       </h2>
       <p className="muted mt-3 mb-5">
         {codigo === "motor_recompra"
-          ? "Recuperá clientes desde el WhatsApp de tu local y fidelizalos con puntos."
-          : "Activá esta herramienta incluida para crear links y medir las ventas."}
+          ? "Recuperá clientes desde el WhatsApp de tu local con la agenda de recompra."
+          : codigo === "dias_flojos"
+            ? "Encontrá los días con menos movimiento y llevá clientes justo esos días."
+            : codigo === "puntos_clientes"
+              ? "Sumá puntos en cada compra y dale a tus clientes una razón para volver."
+              : "Activá esta herramienta incluida para crear links y medir las ventas."}
       </p>
       {modulo?.tipo === "pago" && (
         <p className="text-lg font-semibold mb-5">

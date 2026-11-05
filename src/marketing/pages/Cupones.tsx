@@ -1,5 +1,5 @@
 import { SkeletonPantalla } from "../components/SkeletonPantalla";
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { useLocal } from "../components/Layout";
 import { useModulo, BloqueoModulo } from "../components/Modulo";
@@ -557,24 +557,6 @@ function Resultado({ id, filtros = "" }: { id: number; filtros?: string }) {
           ))}
         </div>
       )}
-    </>
-  );
-}
-const EstadisticasAvanzadas = lazy(
-  () => import("../components/estadisticas/EstadisticasAvanzadas"),
-);
-export function Estadisticas() {
-  return (
-    <>
-      <Header
-        title="Los números del local"
-        pantalla="estadisticas"
-        sub="Ventas cobradas, pedidos y productos más elegidos."
-        ayuda={{ seccion: "numeros", texto: "Qué cuenta como venta cobrada" }}
-      />
-      <Suspense fallback={<SkeletonPantalla tipo="estadisticas" />}>
-        <EstadisticasAvanzadas />
-      </Suspense>
     </>
   );
 }

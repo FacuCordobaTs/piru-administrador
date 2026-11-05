@@ -82,7 +82,7 @@ export function Hoy() {
       ) : mod.modulo?.activoAhora ? (
         <HoyContenido key={l.restauranteId} />
       ) : (
-        <BloqueoModulo codigo="motor_recompra" nombre="Retención" />
+        <BloqueoModulo codigo="motor_recompra" nombre="Recompra" />
       )}
     </>
   );
@@ -336,7 +336,9 @@ function HoyContenido() {
           </select>
         </label>
       </div>
-      <DiaFlojoHoy key={fechaElegida} fecha={fechaElegida} onSumados={recargar} />
+      {l.diasFlojosActivo && (
+        <DiaFlojoHoy key={fechaElegida} fecha={fechaElegida} onSumados={recargar} />
+      )}
       <Estado skeleton={<SkeletonPantalla tipo="hoy" />} loading={loading} error={error} reintentar={recargar} />
       {data && (
         <>

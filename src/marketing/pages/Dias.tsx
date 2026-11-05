@@ -2,6 +2,7 @@ import { SkeletonPantalla } from '../components/SkeletonPantalla';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useLocal } from '../components/Layout';
+import { BloqueoModulo, useModulo } from '../components/Modulo';
 import { Header, Card, Chip, Estado, Empty } from '../components/ui';
 import { datosLocal, query } from '../lib/api';
 import { useDatos } from '../lib/useDatos';
@@ -13,6 +14,17 @@ const rangoFranja = (inicio: string, fin: string) => `${hora(inicio)} a ${hora(f
 const dia = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 1 });
 
 export function Dias() {
+  const mod = useModulo('dias_flojos');
+  if (mod.loading || mod.error) {
+    return <><Header pantalla="dias-flojos" title="Llená los días flojos" sub="Mirá cuándo se vende menos y mandá a los clientes justo esos días." ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} /><Estado skeleton={<SkeletonPantalla tipo="dias" />} loading={mod.loading} error={mod.error} reintentar={mod.recargar} /></>;
+  }
+  if (!mod.modulo?.activoAhora) {
+    return <><Header pantalla="dias-flojos" title="Llená los días flojos" ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} /><BloqueoModulo codigo="dias_flojos" nombre="Días flojos" /></>;
+  }
+  return <DiasContenido />;
+}
+
+function DiasContenido() {
   const l = useLocal();
   const [semanas, setSemanas] = useState(8);
   const d = useDatos(() => datosLocal<DiasFlojos>(`/clientes/dias-flojos${query({ semanas })}`), [l.restauranteId, semanas], { conservar: true });

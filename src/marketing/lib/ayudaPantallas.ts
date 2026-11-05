@@ -70,7 +70,7 @@ export function ayudaDePantalla(pantalla: Pantalla): AyudaPantalla {
       puntos: [
         "Buscá por nombre o teléfono; en Filtros elegís segmento, orden y más.",
         "El segmento dice si sigue pidiendo, se está yendo o ya se fue.",
-        "Con Retención, «Del club» muestra a quienes tienen puntos y podés ajustárselos.",
+        "Con Puntos, «Del club» muestra a quienes tienen puntos y podés ajustárselos.",
       ],
       guia: "segmentos",
     },

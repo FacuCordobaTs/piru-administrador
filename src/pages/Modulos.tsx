@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router'
 import {
   BellRing,
   Blocks,
+  CalendarDays,
   Check,
   Clock3,
   CreditCard,
@@ -48,6 +49,7 @@ const ICONOS: Record<string, typeof Blocks> = {
   multisucursal: Blocks,
   avisos_automaticos_whatsapp: BellRing,
   motor_recompra: Sparkles,
+  dias_flojos: CalendarDays,
   crecimiento: TrendingUp,
   cierre_turno_manual: Clock3,
 }
@@ -66,6 +68,7 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mesas: '/dashboard/mesas',
   gestion_stock: '/dashboard/productos?tab=stock',
   motor_recompra: '/dashboard/marketing/hoy',
+  dias_flojos: '/dashboard/marketing/dias-flojos',
   puntos_clientes: '/dashboard/marketing/puntos',
   codigos_descuento: '/dashboard/marketing/cupones',
   mercadopago: '/dashboard/ajustes/monetizacion?config=mercadopago',

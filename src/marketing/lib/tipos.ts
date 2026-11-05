@@ -1037,7 +1037,9 @@ export interface LocalMarketing {
   colorPrimario: string | null;
   baseTienda: string | null;
   whatsappConectado: boolean;
-  retencionActiva: boolean;
+  recompraActiva: boolean;
+  diasFlojosActivo: boolean;
+  puntosActivo: boolean;
   crecimientoActivo: boolean;
   codigosDescuentoActivo: boolean;
   suscripcion: { estado: string; montoMensual: number } | null;

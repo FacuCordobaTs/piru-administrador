@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Check,
   Gauge,
-  LayoutDashboard,
   Link2,
   MessageCircle,
   Moon,
@@ -140,16 +139,15 @@ const PANTALLAS: {
   nombre: string;
   texto: string;
   seccion?: string;
-  retencion?: boolean;
+  modulo?: string;
 }[] = [
-  { Icono: LayoutDashboard, nombre: "Resumen", seccion: "", texto: "Cómo viene el local y lo que podés hacer hoy." },
-  { Icono: MessageCircle, nombre: "Hoy", seccion: "hoy", retencion: true, texto: "Los mensajes del día, listos para mandar." },
-  { Icono: CalendarDays, nombre: "Días flojos", seccion: "dias-flojos", texto: "Qué días y franjas venden menos, y a quién invitar." },
+  { Icono: MessageCircle, nombre: "Hoy", seccion: "hoy", modulo: "Recompra", texto: "Los mensajes del día, listos para mandar." },
+  { Icono: CalendarDays, nombre: "Días flojos", seccion: "dias-flojos", modulo: "Días flojos", texto: "Qué días y franjas venden menos, y a quién invitar." },
   { Icono: Link2, nombre: "Campañas", seccion: "campanas", texto: "Un link por historia o anuncio, con sus ventas cobradas." },
-  { Icono: Users, nombre: "Clientes", seccion: "clientes", texto: "La base, con los hábitos, favoritos y segmento de cada uno." },
-  { Icono: Sparkles, nombre: "Puntos", seccion: "puntos", retencion: true, texto: "El club: cómo se suman y se canjean los puntos." },
+  { Icono: Users, nombre: "Clientes", seccion: "clientes", modulo: "Recompra", texto: "La base, con los hábitos, favoritos y segmento de cada uno." },
+  { Icono: Sparkles, nombre: "Puntos", seccion: "puntos", modulo: "Puntos", texto: "El club: cómo se suman y se canjean los puntos." },
   { Icono: Ticket, nombre: "Cupones", seccion: "cupones", texto: "Códigos de descuento, con sus usos y sus ventas." },
-  { Icono: TrendingUp, nombre: "Estadísticas", seccion: "estadisticas", texto: "Facturación, pedidos, medios de pago y lo más vendido." },
+  { Icono: TrendingUp, nombre: "Estadísticas", texto: "Ventas, pedidos, clientes, recompra y lo más vendido." },
 ];
 
 function Pantallas() {
@@ -169,9 +167,9 @@ function Pantallas() {
               <span className="min-w-0">
                 <span className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
                   {p.nombre}
-                  {p.retencion && (
+                  {p.modulo && (
                     <span className="rounded-full bg-sand px-2 py-0.5 text-[11px] font-semibold text-ink-3">
-                      Retención
+                      {p.modulo}
                     </span>
                   )}
                 </span>
@@ -194,14 +192,13 @@ function Pantallas() {
         })}
       </ul>
       <p>
-        <strong>Hoy, Recompra y Puntos</strong> son parte de <strong>Retención</strong>, un módulo
-        pago del local. Si no lo tenés, cada una de esas pantallas te muestra qué incluye y lo
-        activás pagando con Mercado Pago.{" "}
-        Campañas y Cupones vienen incluidos: se activan gratis desde su pantalla.
+        <strong>Recompra, Días flojos y Puntos</strong> son módulos incluidos e independientes: se
+        activan gratis desde su pantalla y podés usar uno sin los otros. Campañas y Cupones también
+        vienen incluidos.{" "}
       </p>
       <Nota icono={Smartphone}>
-        En el celular, deslizá la barra de secciones para ver todas. «Guía», arriba a la derecha,
-        trae a esta guía.
+        Las pantallas de clientes y crecimiento están en el menú del panel. «Guía», arriba a la
+        derecha, trae a esta guía.
       </Nota>
     </>
   );
@@ -296,7 +293,7 @@ function Segmentos() {
       </Nota>
       <p className="flex flex-wrap gap-2">
         <Donde texto="Clientes" icono={Users} ruta={ruta("clientes")} />
-        <Donde texto="Resumen" icono={LayoutDashboard} ruta={ruta("")} />
+        <Donde texto="Hoy" icono={MessageCircle} ruta={ruta("hoy")} />
       </p>
     </>
   );
@@ -374,7 +371,7 @@ function Campanas() {
 
 function Motor() {
   return <>
-    <p>El motor está siempre activo con Retención. Piru encuentra los clientes que necesitan volver y los distribuye por día de la semana y hora habitual. En <strong>Hoy</strong> ves todos los mensajes del día; también podés mirar <strong>Mañana</strong> y los siguientes días. En manual, el día y la hora son recomendaciones: podés abrir WhatsApp y marcar enviado cuando prefieras.</p>
+    <p>El motor está siempre activo con Recompra. Piru encuentra los clientes que necesitan volver y los distribuye por día de la semana y hora habitual. En <strong>Hoy</strong> ves todos los mensajes del día; también podés mirar <strong>Mañana</strong> y los siguientes días. En manual, el día y la hora son recomendaciones: podés abrir WhatsApp y marcar enviado cuando prefieras.</p>
     <Pasos items={[
       { titulo: "La agenda se actualiza sola", texto: "No hace falta crear tandas ni elegir una cantidad de clientes. El primer mensaje se asigna al día habitual de compra; los clientes perdidos se distribuyen en días con menos movimiento." },
       { titulo: "Mandás y marcás", texto: "Abrís WhatsApp con el texto listo desde el dispositivo del local y marcás enviado después de mandarlo." },
@@ -476,7 +473,7 @@ function DiasFlojos() {
       <p>
         «Crear el link del día» arma una campaña que vale sólo esa fecha, para la historia y el
         estado de WhatsApp de ese día. El análisis y el link los tiene cualquier local; la
-        invitación por WhatsApp necesita Retención.
+        invitación por WhatsApp necesita Días flojos.
       </p>
       <Nota>Hacen falta al menos dos semanas con pedidos para encontrar el patrón.</Nota>
       <p>
@@ -608,8 +605,13 @@ function Numeros() {
       </p>
       <ul className="guia-puntos">
         <li>
-          <strong>Resumen</strong>: las ventas de los últimos 30 días contra los 30 anteriores, los
-          clientes nuevos, los que hay para recuperar y lo que podés hacer hoy.
+          <strong>Estadísticas</strong>: la facturación, los pedidos cobrados y el ticket del
+          período, los clientes nuevos, los que hay para recuperar, la recompra y lo que podés
+          hacer hoy.
+        </li>
+        <li>
+          <strong>Estadísticas → Clientes</strong>: la base de clientes, los segmentos, la recompra
+          y los resultados de campañas.
         </li>
         <li>
           <strong>Estadísticas</strong>: entre las fechas que elijas, la facturación, los pedidos
@@ -634,7 +636,6 @@ function Numeros() {
         </li>
       </Clave>
       <p className="flex flex-wrap gap-2">
-        <Donde texto="Resumen" icono={LayoutDashboard} ruta={ruta("")} />
         <Donde texto="Estadísticas" icono={TrendingUp} ruta={ruta("estadisticas")} />
       </p>
     </>
@@ -662,7 +663,7 @@ function Rutina() {
       detalle: "Para ver el resultado",
       items: [
         "El ranking de campañas contra el orgánico.",
-        "El Resumen: ventas, clientes nuevos y los que volvieron contra el control.",
+        "Estadísticas → Clientes: clientes nuevos y los que volvieron contra el control.",
         "Si nadie llega a canjear puntos, bajá lo que cuestan los premios.",
       ],
     },
@@ -692,8 +693,8 @@ function Rutina() {
 function Preguntas() {
   const preguntas = [
     {
-      p: "¿Por qué no veo Hoy, Recompra o Puntos?",
-      r: "Son parte de Retención: si no la tenés, cada una de esas pantallas te muestra cómo activarla.",
+      p: "¿Por qué no veo Hoy, Días flojos o Puntos?",
+      r: "Son módulos independientes: si no tenés el que abre esa pantalla, la tab no aparece y la URL te muestra cómo activarlo gratis.",
     },
     {
       p: "¿Se paga algo por cada mensaje?",
@@ -761,7 +762,9 @@ const GLOSARIO: [string, string][] = [
   ["Grupo de control", "Grupo histórico de campañas anteriores; la agenda actual no crea controles."],
   ["Mensaje 1, 2 y 3", "Cada intento de la recompra con un mismo cliente."],
   ["Orgánico", "Lo que se vende sin ninguna campaña."],
-  ["Retención", "El módulo incluido que suma el motor de recompra, Hoy y el club de puntos."],
+  ["Recompra", "El módulo incluido con la agenda de mensajes de Hoy."],
+  ["Días flojos", "El módulo incluido que encuentra los días y franjas con menos movimiento."],
+  ["Puntos", "El módulo incluido del club: cómo se suman y se canjean los puntos."],
   ["Retorno", "Las ventas cobradas de una campaña divididas por lo que se invirtió en pauta."],
   ["Segmento", "El grupo de un cliente según su ritmo: primer pedido, habituales, VIP, se están yendo, hace tiempo no vienen o dejaron de pedir."],
   ["Agenda semanal", "Los mensajes pendientes de Hoy, Mañana y los siguientes días, actualizados automáticamente."],

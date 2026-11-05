@@ -1,20 +1,9 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router";
-import {
-  LayoutDashboard,
-  MessageCircle,
-  CalendarDays,
-  Link2,
-  Users,
-  Sparkles,
-  Ticket,
-  TrendingUp,
-  BookOpen,
-  CirclePlay,
-} from "lucide-react";
+import { createContext, lazy, Suspense, useContext, useEffect, useState, type ReactNode } from "react";
+import { Link, Outlet, useLocation } from "react-router";
+import { BookOpen, CirclePlay } from "lucide-react";
 import type { LocalMarketing } from "../lib/tipos";
 import { localApi } from "../lib/api";
-import { GUIA, MARKETING } from "../lib/rutas";
+import { GUIA } from "../lib/rutas";
 import { useRecorrido } from "../store/recorrido";
 import { useDatos } from "../lib/useDatos";
 import { Estado } from "./ui";
@@ -55,17 +44,6 @@ export function RecorridoDiferido() {
   ) : null;
 }
 
-const secciones = [
-  ["", "Resumen", LayoutDashboard],
-  ["hoy", "Hoy", MessageCircle],
-  ["dias-flojos", "Días flojos", CalendarDays],
-  ["campanas", "Campañas", Link2],
-  ["clientes", "Clientes", Users],
-  ["puntos", "Puntos", Sparkles],
-  ["cupones", "Cupones", Ticket],
-  ["estadisticas", "Estadísticas", TrendingUp],
-] as const;
-
 export function Monograma({ local }: { local: LocalMarketing }) {
   return local.imagenUrl ? (
     <img
@@ -89,9 +67,9 @@ export function Monograma({ local }: { local: LocalMarketing }) {
 export function LocalChips({ local }: { local: LocalMarketing }) {
   return (
     <div className="flex flex-wrap gap-2 text-xs font-medium">
-      {!local.retencionActiva && (
+      {!local.recompraActiva && (
         <span className="rounded-full bg-sand px-2 py-1 text-ink-3">
-          Sin Retención
+          Sin recompra
         </span>
       )}
       {local.suscripcion?.estado === "trial" && (
@@ -111,11 +89,11 @@ export function LocalChips({ local }: { local: LocalMarketing }) {
 }
 
 /**
- * Marketing del panel: clientes, campañas, cupones, puntos, recompra y días flojos del local.
- * Vive dentro del panel (DashboardLayout), con su propia paleta (`marketing.css`) y su barra de
- * secciones; el panel sigue recibiendo e imprimiendo pedidos mientras se usa.
+ * Envoltorio de las pantallas de clientes y crecimiento. Aporta la paleta de
+ * Marketing y la tarjeta del local a cualquier pantalla, tenga o no la barra
+ * de secciones. Las tabs viven ahora en el navbar del panel.
  */
-export function Layout() {
+export function MarketingShell({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const [raiz, setRaiz] = useState<HTMLDivElement | null>(null);
   const { data: local, error, loading, recargar } = useDatos(
@@ -136,20 +114,8 @@ export function Layout() {
   return (
     <div ref={setRaiz} className="marketing-app min-h-full bg-paper text-ink">
       <RaizMarketing.Provider value={raiz}>
-      <div className="mx-auto w-full max-w-[1200px] px-4 pb-16 pt-6 sm:px-8 lg:pt-8">
-        <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            {local && <Monograma local={local} />}
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 text-xs font-semibold text-brand-deep">
-                <span className="text-brand">✳</span> Marketing
-              </p>
-              <p className="truncate text-lg font-semibold leading-tight">
-                {local?.nombre ?? "Tu local"}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="mx-auto w-full max-w-[1200px] px-4 pb-16 pt-6 sm:px-8 lg:pt-8">
+          <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
             <Link
               to={GUIA}
               state={{ volver: location.pathname + location.search }}
@@ -167,37 +133,23 @@ export function Layout() {
               <span className="hidden sm:inline">Ver el recorrido</span>
             </button>
           </div>
-        </header>
-        <nav
-          aria-label="Secciones de marketing"
-          className="marketing-secciones -mx-4 mb-8 flex gap-1 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0"
-        >
-          {secciones.map(([path, text, Icon]) => (
-            <NavLink
-              key={path}
-              to={path ? `${MARKETING}/${path}` : MARKETING}
-              end
-              className={({ isActive }) =>
-                `flex min-h-10 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-medium ${isActive ? "bg-ink text-white" : "text-ink-2 hover:bg-sand"}`
-              }
-            >
-              <Icon size={16} />
-              {text}
-            </NavLink>
-          ))}
-        </nav>
-        <main className="min-w-0">
-          {loading || error || !local ? (
-            <Estado loading={loading} error={error} reintentar={recargar} />
-          ) : (
-            <Context.Provider value={{ local, recargar }}>
-              <Outlet />
-            </Context.Provider>
-          )}
-        </main>
-      </div>
-      <RecorridoDiferido />
+          <main className="min-w-0">
+            {loading || error || !local ? (
+              <Estado loading={loading} error={error} reintentar={recargar} />
+            ) : (
+              <Context.Provider value={{ local, recargar }}>
+                {children ?? <Outlet />}
+              </Context.Provider>
+            )}
+          </main>
+        </div>
+        <RecorridoDiferido />
       </RaizMarketing.Provider>
     </div>
   );
+}
+
+/** Layout de las rutas de Marketing: sólo aporta el contexto y la paleta. */
+export function Layout() {
+  return <MarketingShell />;
 }

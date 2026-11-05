@@ -13,10 +13,15 @@ import {
   Package,
   Blocks,
   Megaphone,
+  MessageCircle,
   MessageSquare,
+  CalendarDays,
+  Sparkles,
+  Ticket,
   TrendingUp,
   Settings,
   Shirt,
+  Users,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -27,15 +32,20 @@ import {
 const RecorridoPanel = lazy(() => import('@/components/recorrido/RecorridoPanel'))
 
 const NAV_ITEMS = [
-  { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/' },
-  { icon: Package, label: 'Menú', path: '/dashboard/productos' },
-  { icon: Shirt, label: 'Ropa', path: '/dashboard/ropa' },
-  { icon: Megaphone, label: 'Marketing', path: '/dashboard/marketing' },
-  { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes' },
-  { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas' },
-]
-
-const MENSAJES_PATH = '/dashboard/mensajes'
+  { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/', modulo: null },
+  { icon: Package, label: 'Menú', path: '/dashboard/productos', modulo: null },
+  { icon: Shirt, label: 'Ropa', path: '/dashboard/ropa', modulo: null },
+  // Las tabs de Marketing ahora viven en el navbar del panel. Cada una se
+  // muestra sólo con el módulo que la habilita (ver `navItems`).
+  { icon: Users, label: 'Clientes', path: '/dashboard/marketing/clientes', modulo: null },
+  { icon: MessageCircle, label: 'Hoy', path: '/dashboard/marketing/hoy', modulo: 'motor_recompra' },
+  { icon: CalendarDays, label: 'Días flojos', path: '/dashboard/marketing/dias-flojos', modulo: 'dias_flojos' },
+  { icon: Megaphone, label: 'Campañas', path: '/dashboard/marketing/campanas', modulo: 'crecimiento' },
+  { icon: Sparkles, label: 'Puntos', path: '/dashboard/marketing/puntos', modulo: 'puntos_clientes' },
+  { icon: Ticket, label: 'Cupones', path: '/dashboard/marketing/cupones', modulo: 'codigos_descuento' },
+  { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes', modulo: 'avisos_automaticos_whatsapp' },
+  { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas', modulo: null },
+] as const
 
 /** Tienda de indumentaria: pantalla de un solo local. El backend también lo exige. */
 const ROPA_PATH = '/dashboard/ropa'
@@ -49,6 +59,11 @@ const DashboardLayout = () => {
   // a que resuelva fetchData().
   const restauranteId = useAuthStore((s) => s.restaurante?.id)
   const avisosAutomaticosActivos = useModuloActivo('avisos_automaticos_whatsapp')
+  const recompraActiva = useModuloActivo('motor_recompra')
+  const diasFlojosActivo = useModuloActivo('dias_flojos')
+  const campanasActivas = useModuloActivo('crecimiento')
+  const puntosActivos = useModuloActivo('puntos_clientes')
+  const cuponesActivos = useModuloActivo('codigos_descuento')
   const token = useAuthStore((s) => s.token)
   const esDemo = esSesionDemo(token)
   const abrirRecorrido = useRecorridoPanel((s) => s.abrir)
@@ -114,9 +129,18 @@ const DashboardLayout = () => {
 
   // Mensajes es el saldo de los avisos por WhatsApp: sin ese módulo no hay nada que mostrar.
   // Ropa es de un solo local: el filtro es por id, no por módulo contratable.
+  // El resto de las tabs de clientes y crecimiento se muestran sólo con su módulo.
+  const modulosActivos: Record<string, boolean> = {
+    avisos_automaticos_whatsapp: avisosAutomaticosActivos,
+    motor_recompra: recompraActiva,
+    dias_flojos: diasFlojosActivo,
+    crecimiento: campanasActivas,
+    puntos_clientes: puntosActivos,
+    codigos_descuento: cuponesActivos,
+  }
   const navItems = NAV_ITEMS.filter((item) => {
-    if (item.path === MENSAJES_PATH) return avisosAutomaticosActivos
     if (item.path === ROPA_PATH) return restauranteId === ROPA_RESTAURANTE_ID
+    if (item.modulo) return modulosActivos[item.modulo] === true
     return true
   })
 
@@ -236,7 +260,7 @@ const DashboardLayout = () => {
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Barra superior sólo en móvil (para abrir/cerrar el menú) */}
         <div className="md:hidden flex items-center gap-2 h-14 px-3 bg-[#FFFBF0] dark:bg-background shrink-0">
-          <Button variant="ghost" size="icon" onClick={() => setMenuOpen((v) => !v)}>
+          <Button variant="ghost" size="icon" aria-label="Abrir menú" onClick={() => setMenuOpen((v) => !v)}>
             <Menu className="h-5 w-5" />
           </Button>
         </div>

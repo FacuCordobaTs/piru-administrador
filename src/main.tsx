@@ -201,19 +201,22 @@ const router = createBrowserRouter([
             element: <Ropa />,
           },
           {
-            // Marketing: clientes, campañas, cupones, puntos, recompra y días flojos del local.
+            // Clientes, recompra, días flojos, campañas, puntos y cupones: las tabs
+            // viven en el navbar del panel. El layout sólo aporta la paleta y el local.
             path: "marketing",
             lazy: marketing('Layout'),
             children: [
-              { index: true, lazy: marketing('Resumen') },
+              { index: true, element: <Navigate to="/dashboard/metricas?seccion=clientes" replace /> },
               { path: "hoy", lazy: marketing('Hoy') },
               { path: "dias-flojos", lazy: marketing('Dias') },
               { path: "campanas", lazy: marketing('Campanas') },
               { path: "clientes", lazy: marketing('Clientes') },
               { path: "puntos", lazy: marketing('Puntos') },
               { path: "cupones", lazy: marketing('Cupones') },
-              { path: "estadisticas", lazy: marketing('Estadisticas') },
-              { path: "*", element: <Navigate to="/dashboard/marketing" replace /> },
+              // El resumen y las estadísticas de clientes se unificaron en la tab
+              // Estadísticas del panel (ver Metricas.tsx).
+              { path: "estadisticas", element: <Navigate to="/dashboard/metricas" replace /> },
+              { path: "*", element: <Navigate to="/dashboard/metricas?seccion=clientes" replace /> },
             ],
           },
           {

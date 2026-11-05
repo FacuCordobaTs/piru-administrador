@@ -43,7 +43,7 @@ export function FiltrosClientesDialog({
   campanas: CampanaCrecimiento[];
   cupones: CodigoDescuentoGrowth[];
   total: number;
-  /** El local tiene Retención: hay clientes con puntos. */
+  /** El local tiene Puntos: hay clientes con puntos. */
   club: boolean;
 }) {
   const cambiar = (parcial: Partial<FiltrosClientes>) =>

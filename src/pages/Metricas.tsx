@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, lazy, Suspense } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useAuthStore } from '@/store/authStore'
 import { useModuloActivo } from '@/store/modulosStore'
 import { metricasApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, TrendingUp, Truck, Globe, ShoppingBag } from 'lucide-react'
+import { Loader2, TrendingUp, Truck, Globe, ShoppingBag, Users } from 'lucide-react'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -15,7 +16,11 @@ import Repartidores from './Repartidores'
 // (brand) para la sección activa y las acciones principales.
 // =============================================================================
 
-type SeccionMetricas = 'estadisticas' | 'repartidores'
+type SeccionMetricas = 'estadisticas' | 'clientes' | 'repartidores'
+
+const ResumenClientes = lazy(() =>
+  import('@/marketing/pages/ResumenClientes').then((m) => ({ default: m.ResumenClientes })),
+)
 
 interface SeccionMeta {
   key: SeccionMetricas
@@ -32,6 +37,12 @@ const SECCIONES: SeccionMeta[] = [
     descripcion: 'Facturación, medios de pago, origen de las ventas y productos.',
   },
   {
+    key: 'clientes',
+    label: 'Clientes',
+    icon: Users,
+    descripcion: 'Base de clientes, recompra, días flojos y campañas.',
+  },
+  {
     key: 'repartidores',
     label: 'Repartidores',
     icon: Truck,
@@ -39,41 +50,28 @@ const SECCIONES: SeccionMeta[] = [
   },
 ]
 
+const seccionValida = (valor: string | null): SeccionMetricas | null =>
+  SECCIONES.some((seccion) => seccion.key === valor) ? (valor as SeccionMetricas) : null
+
 export default function Metricas() {
   const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
-  const [tab, setTab] = useState<SeccionMetricas | null>(null)
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState<SeccionMetricas>(
+    () => seccionValida(searchParams.get('seccion')) ?? 'estadisticas',
+  )
   const secciones = gestionCadetesActiva
     ? SECCIONES
     : SECCIONES.filter((seccion) => seccion.key !== 'repartidores')
 
   // La estadística general continúa disponible; la de cadetes no queda abierta
   // si el módulo se desactiva durante la sesión.
-  useEffect(() => {
-    if (!gestionCadetesActiva && tab === 'repartidores') setTab('estadisticas')
-  }, [gestionCadetesActiva, tab])
-
-  if (tab === null) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center h-full overflow-auto bg-[#FFFBF0] dark:bg-background px-6 py-12">
-        <div className="w-full max-w-xl text-center">
-          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground mb-10">
-            Estadísticas
-          </h1>
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">
-            ¿Qué querés ver?
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1.5">
-            Elegí una sección para empezar.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8">
-            {secciones.map(seccion => (
-              <SeccionCard key={seccion.key} seccion={seccion} onClick={() => setTab(seccion.key)} />
-            ))}
-          </div>
-        </div>
-      </div>
-    )
+  const tabEfectiva: SeccionMetricas =
+    tab === 'repartidores' && !gestionCadetesActiva ? 'estadisticas' : tab
+  const seccionActual = secciones.find((seccion) => seccion.key === tabEfectiva) ?? secciones[0]
+  const cambiarTab = (key: SeccionMetricas) => {
+    setTab(key)
+    navigate(key === 'estadisticas' ? '/dashboard/metricas' : `/dashboard/metricas?seccion=${key}`, { replace: true })
   }
 
   return (
@@ -85,7 +83,7 @@ export default function Metricas() {
             <TabButton
               key={seccion.key}
               active={tab === seccion.key}
-              onClick={() => setTab(seccion.key)}
+              onClick={() => cambiarTab(seccion.key)}
               icon={seccion.icon}
             >
               {seccion.label}
@@ -95,30 +93,17 @@ export default function Metricas() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {tab === 'estadisticas' ? <MetricasPanel /> : gestionCadetesActiva ? <Repartidores /> : <MetricasPanel />}
+        {seccionActual.key === 'clientes' ? (
+          <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-7 w-7 animate-spin text-brand" /></div>}>
+            <ResumenClientes />
+          </Suspense>
+        ) : seccionActual.key === 'repartidores' && gestionCadetesActiva ? (
+          <Repartidores />
+        ) : (
+          <MetricasPanel />
+        )}
       </div>
     </div>
-  )
-}
-
-function SeccionCard({ seccion, onClick }: {
-  seccion: SeccionMeta
-  onClick: () => void
-}) {
-  const Icon = seccion.icon
-  return (
-    <button
-      onClick={onClick}
-      className="group flex flex-col items-center text-center gap-3 p-6 rounded-2xl bg-white dark:bg-muted/40 transition-colors cursor-pointer hover:bg-muted"
-    >
-      <div className="w-12 h-12 rounded-2xl bg-[#FFFBF0] dark:bg-background flex items-center justify-center text-brand shadow-sm">
-        <Icon className="w-5 h-5" />
-      </div>
-      <div>
-        <h2 className="text-sm font-semibold text-foreground">{seccion.label}</h2>
-        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{seccion.descripcion}</p>
-      </div>
-    </button>
   )
 }
 

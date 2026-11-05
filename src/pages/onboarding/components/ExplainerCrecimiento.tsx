@@ -52,7 +52,7 @@ export function ExplainerCrecimiento({ onContinue }: ExplainerCrecimientoProps) 
 
         <div className="space-y-1">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            04 <span className="text-foreground font-bold">· Retención</span>
+            04 <span className="text-foreground font-bold">· Recompra</span>
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">
             Recompra automática calculando la cadencia de cada comensal con su plato favorito.

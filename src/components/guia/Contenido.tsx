@@ -11,7 +11,6 @@ import {
   CreditCard,
   Download,
   BookOpen,
-  Megaphone,
   LayoutDashboard,
   Link2,
   MessageCircle,
@@ -146,7 +145,7 @@ function Circuito() {
 const PANTALLAS: { Icono: LucideIcon; nombre: string; destino: string; texto: string; etiqueta?: string }[] = [
   { Icono: LayoutDashboard, nombre: 'Inicio', destino: '/dashboard', texto: 'Los pedidos del día, el punto de venta, las mesas, el mapa y la caja.' },
   { Icono: Package, nombre: 'Menú', destino: '/dashboard/productos', texto: 'Productos, categorías, variantes, extras y precios.' },
-  { Icono: Megaphone, nombre: 'Marketing', destino: '/dashboard/marketing', texto: 'Tu base de clientes, campañas, cupones, puntos y recompra.' },
+  { Icono: Users, nombre: 'Clientes y crecimiento', destino: '/dashboard/marketing/clientes', texto: 'Clientes, recompra, días flojos, campañas, puntos y cupones, cada uno en su tab.' },
   { Icono: MessageSquare, nombre: 'Mensajes', destino: '/dashboard/mensajes', texto: 'Tus avisos por WhatsApp: cuántos mandaste, tu saldo y las recargas.', etiqueta: 'Según tus módulos' },
   { Icono: TrendingUp, nombre: 'Estadísticas', destino: '/dashboard/metricas', texto: 'Lo que vendiste por mes o entre dos fechas, cómo te pagaron y lo más pedido.' },
   { Icono: Settings, nombre: 'Configuración', destino: '/dashboard/ajustes', texto: 'Tu negocio, tu tienda, entregas, horarios, pagos, WhatsApp, módulos y suscripción.' },
@@ -199,8 +198,9 @@ function Panel({ c }: { c: ContextoGuia }) {
           En la app de escritorio también aparece Impresión.
         </li>
         <li>
-          <strong>Tu negocio</strong>: General (tus datos y tu dirección), Tienda, Medición, Métodos de pago,
-          Entregas y zonas, Horarios y Cuenta (con la suscripción y los pagos adentro). Los módulos se activan aparte, en Módulos.
+          <strong>Tu negocio</strong>: General (tus datos y tu dirección), Tienda, Métodos de pago, Entregas y
+          zonas, Horarios y Cuenta (con la suscripción y los pagos adentro). <strong>Clientes y fidelización</strong>{' '}
+          suma Medición cuando Campañas está activo. Los módulos se activan aparte, en Módulos.
         </li>
       </ul>
       <Nota icono={MonitorSmartphone}>
@@ -955,8 +955,9 @@ function Clientes({ c }: { c: ContextoGuia }) {
         es el celular. Esa base es la que usás para que vuelvan.
       </p>
       <p>
-        En el menú, <strong>Marketing</strong> reúne todo lo que hacés con esa base. Mientras lo usás, el
-        panel sigue recibiendo e imprimiendo pedidos.
+        En el menú, esas pantallas viven cada una en su tab: <strong>Clientes</strong>, Hoy,
+        Días flojos, Campañas, Puntos y Cupones. Mientras las usás, el panel sigue recibiendo e
+        imprimiendo pedidos.
       </p>
       <Tarjetas columnas={3}>
         {SECCIONES_MARKETING.map((x) => (
@@ -966,11 +967,11 @@ function Clientes({ c }: { c: ContextoGuia }) {
         ))}
       </Tarjetas>
       <p>
-        Campañas, cupones y <strong>Retención</strong> vienen incluidos: se activan gratis. La recompra y los
-        puntos son parte de Retención. Marketing tiene su propia guía, con todo explicado.
+        Campañas, cupones, recompra, días flojos y puntos vienen incluidos: se activan gratis desde
+        su pantalla y podés usar uno sin los otros. Marketing tiene su propia guía, con todo explicado.
       </p>
       <p className="flex flex-wrap gap-2">
-        <Donde texto="Marketing" icono={Megaphone} ruta={ruta(c, '/dashboard/marketing')} />
+        <Donde texto="Estadísticas y clientes" icono={TrendingUp} ruta={ruta(c, '/dashboard/metricas?seccion=clientes')} />
         {c.conSesion && (
           <Link
             to={GUIA_MARKETING}
@@ -1042,7 +1043,7 @@ function Modulos({ c }: { c: ContextoGuia }) {
           cadetes, Múltiples sucursales, Mercado Pago, Campañas, Cupones y más.
         </Tarjeta>
         <Tarjeta icono={CreditCard} titulo="Pagos">
-          Se suman a tu cuota, como Retención o los Avisos automáticos por WhatsApp. Se activan cuando se acredita
+          Se suman a tu cuota, como los Avisos automáticos por WhatsApp. Se activan cuando se acredita
           el pago y, si los das de baja, siguen hasta el final del período pagado.
         </Tarjeta>
       </Tarjetas>

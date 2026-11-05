@@ -7,7 +7,9 @@ const local = (id: number, nombre: string) => ({
   colorPrimario: null,
   baseTienda: `https://my.piru.app/${nombre.toLowerCase()}/`,
   whatsappConectado: false,
-  retencionActiva: true,
+  recompraActiva: true,
+  diasFlojosActivo: true,
+  puntosActivo: true,
   crecimientoActivo: true,
   codigosDescuentoActivo: true,
   suscripcion: { estado: "active", montoMensual: 10000 },
@@ -372,18 +374,21 @@ async function mock(
         envelope([
           {
             id: 1,
-            modulos: ["motor_recompra", "crecimiento", "codigos_descuento"].map(
-              (codigo) => ({
-                codigo,
-                tipo: codigo === "motor_recompra" ? "pago" : "incluido",
-                activoAhora:
-                  codigo !== "motor_recompra" || retencion === "activo",
-                estado: codigo === "motor_recompra" ? retencion : "activo",
-                precioMensual:
-                  codigo === "motor_recompra" ? "15000.00" : "0.00",
-                precioMensualCongelado: null,
-              }),
-            ),
+            modulos: [
+              "motor_recompra",
+              "dias_flojos",
+              "puntos_clientes",
+              "crecimiento",
+              "codigos_descuento",
+            ].map((codigo) => ({
+              codigo,
+              tipo: "incluido",
+              activoAhora:
+                codigo === "motor_recompra" ? retencion === "activo" : true,
+              estado: codigo === "motor_recompra" ? retencion : "activo",
+              precioMensual: "0.00",
+              precioMensualCongelado: null,
+            })),
           },
         ]),
       );
@@ -789,14 +794,13 @@ test("cada pantalla de Marketing carga dentro del panel, sin errores", async ({ 
   const errores: string[] = [];
   page.on("pageerror", (e) => errores.push(e.message + "\n" + (e.stack ?? "")));
   for (const [ruta, titulo] of [
-    ["/dashboard/marketing", "Brasa"],
+    ["/dashboard/marketing", "Clientes"],
     ["/dashboard/marketing/hoy", "Tu semana de mensajes"],
     ["/dashboard/marketing/dias-flojos", "Llená los días flojos"],
     ["/dashboard/marketing/campanas", "Cada historia, su link"],
     ["/dashboard/marketing/clientes", "Tus clientes, con nombre"],
     ["/dashboard/marketing/puntos", "El club del local"],
     ["/dashboard/marketing/cupones", "Cupones que traen pedidos"],
-    ["/dashboard/marketing/estadisticas", "Los números del local"],
   ]) {
     await ir(page, ruta);
     await expect(page.getByRole("heading", { name: titulo, exact: true })).toBeVisible();
@@ -808,6 +812,21 @@ test("cada pantalla de Marketing carga dentro del panel, sin errores", async ({ 
   // Marketing usa la sesión del panel: no pide llaves de local ni pases.
   expect(m.requests.some((r) => r.startsWith("/marketer") || r.startsWith("/marketing-duenio"))).toBe(false);
   expect(m.autorizacion("/marketing-local")).toMatch(/^Bearer test\./);
+});
+
+test("Estadísticas unifica las ventas del panel con el resumen de clientes", async ({ page }) => {
+  const errores: string[] = [];
+  page.on("pageerror", (e) => errores.push(e.message));
+  await mock(page);
+  await ir(page, "/dashboard/metricas");
+  await expect(page.getByRole("main").getByRole("button", { name: "Estadísticas" })).toBeVisible();
+  await expect(page.getByText(/Facturado ·/)).toBeVisible();
+
+  await ir(page, "/dashboard/metricas?seccion=clientes");
+  await expect(page.getByRole("heading", { name: "Clientes", exact: true })).toBeVisible();
+  await expect(page.getByText("Clientes nuevos", { exact: true })).toBeVisible();
+  await expect(page.getByText("Clientes para recuperar", { exact: true })).toBeVisible();
+  expect(errores).toEqual([]);
 });
 
 test("los estilos de Marketing no se escapan al resto del panel", async ({ page }) => {
@@ -831,7 +850,7 @@ test("los estilos de Marketing no se escapan al resto del panel", async ({ page 
   const fuera = await medir(false);
   expect(fuera.input).not.toBe("44px");
   expect(fuera.card).not.toBe("20px");
-  await expect(page.getByRole("button", { name: "Marketing" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Clientes" }).first()).toBeVisible();
 });
 
 test("los diálogos se montan dentro de Marketing, con su estilo", async ({ page }) => {
@@ -853,11 +872,29 @@ test("la guía y el recorrido de Marketing", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Este es el marketing de tu local" })).toBeVisible();
 });
 
-test("en el celular la barra de secciones se desliza sin desbordar la página", async ({ page }) => {
+test("en el celular la pantalla no desborda y las tabs siguen accesibles desde el menú", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mock(page);
   await ir(page, "/dashboard/marketing/hoy");
   await expect(page.getByRole("heading", { name: "Tu semana de mensajes", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("button", { name: "Abrir menú" }).click();
+  await expect(page.getByRole("button", { name: "Clientes" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cupones" })).toBeVisible();
   await page.screenshot({ path: "node_modules/.cache/marketing-results/hoy-390.png", fullPage: true });
+});
+
+test("las tabs aparecen según los módulos activos", async ({ page }) => {
+  await mock(page);
+  await ir(page, "/dashboard/marketing/campanas");
+  await expect(page.getByRole("button", { name: "Clientes" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Días flojos" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Puntos" })).toBeVisible();
+
+  await mock(page, { retencion: "inactivo" });
+  await ir(page, "/dashboard/marketing/dias-flojos");
+  await expect(page.getByRole("button", { name: "Clientes" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hoy" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Días flojos" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Puntos" })).toBeVisible();
 });

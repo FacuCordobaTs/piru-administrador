@@ -30,6 +30,9 @@ import type {
 } from "../lib/tipos";
 const POR_PAGINA = 25;
 export function Clientes() {
+  return <ClientesContenido />;
+}
+function ClientesContenido() {
   const l = useLocal();
   const [buscar, setBuscar] = useState("");
   const busqueda = useDebounce(buscar);
@@ -37,7 +40,7 @@ export function Clientes() {
   const [params] = useSearchParams();
   const [filtros, setFiltros] = useState<FiltrosClientes>(() => ({
     ...FILTROS_CLIENTES_VACIOS,
-    conPuntos: params.get("club") === "1" && l.retencionActiva,
+    conPuntos: params.get("club") === "1" && l.puntosActivo,
   }));
   const [verFiltros, setVerFiltros] = useState(false);
   const [pagina, setPagina] = useState(1);
@@ -52,14 +55,14 @@ export function Clientes() {
     [l.restauranteId, pagina, busqueda, filtros],
     { conservar: true },
   );
-  // Los números del club, para la franja de arriba. Sin Retención no hay club.
+  // Los números del club, para la franja de arriba. Sin Puntos no hay club.
   const club = useDatos(
     async () =>
-      l.retencionActiva
+      l.puntosActivo
         ? await datosLocal<ResumenPuntosData>("/puntos/resumen",
           ).catch(() => null)
         : null,
-    [l.restauranteId, l.retencionActiva],
+    [l.restauranteId, l.puntosActivo],
   );
   // Las campañas y los cupones para filtrar.
   const referencias = useDatos(
@@ -130,7 +133,7 @@ export function Clientes() {
         </Button>
       </div>
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        {l.retencionActiva && (
+        {l.puntosActivo && (
           <>
             <Chip
               className="min-h-9"
@@ -201,7 +204,7 @@ export function Clientes() {
             clientes={pag.items}
             orden={filtros.orden}
             onOrden={(orden: OrdenClientes) => cambiar({ orden })}
-            club={l.retencionActiva}
+            club={l.puntosActivo}
             cargando={d.loading}
             onElegir={setCliente}
           />
@@ -224,11 +227,11 @@ export function Clientes() {
         campanas={referencias.data?.campanas ?? []}
         cupones={referencias.data?.cupones ?? []}
         total={pag?.total ?? 0}
-        club={l.retencionActiva}
+        club={l.puntosActivo}
       />
       <FichaDelCliente
         cliente={cliente}
-        club={l.retencionActiva}
+        club={l.puntosActivo}
         nombreSucursal={nombreSucursal}
         onCerrar={() => setCliente(null)}
         onCambio={(actualizado) => {

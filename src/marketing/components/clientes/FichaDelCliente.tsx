@@ -31,7 +31,7 @@ export function FichaDelCliente({
   onCambio,
 }: {
   cliente: ClienteGrowth | null;
-  /** El local tiene Retención: hay club de puntos. */
+  /** El local tiene Puntos: hay club de puntos. */
   club: boolean;
   nombreSucursal: (id?: number | null) => string | null | undefined;
   onCerrar: () => void;

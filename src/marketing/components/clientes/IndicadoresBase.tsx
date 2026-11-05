@@ -1,7 +1,7 @@
 import { cn } from "../ui";
 import type { ResumenClientes, ResumenPuntosData } from "../../lib/tipos";
 /**
- * Los números de la base de un vistazo: cuántos clientes hay y, si el local tiene Retención, cómo
+ * Los números de la base de un vistazo: cuántos clientes hay y, si el local tiene Puntos, cómo
  * va su club de puntos. Es la misma franja que el Resumen: lo grande a la izquierda y los demás
  * indicadores al lado.
  */
@@ -12,7 +12,7 @@ export function IndicadoresBase({
 }: {
   resumen: ResumenClientes;
   nuevos30d: number;
-  /** Los números del club; null si el local no tiene Retención. */
+  /** Los números del club; null si el local no tiene Puntos. */
   club: ResumenPuntosData | null;
 }) {
   const habituales = resumen.porSegmento.activo + resumen.porSegmento.vip;
