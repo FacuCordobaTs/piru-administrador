@@ -51,7 +51,6 @@ export function Cupones() {
         <>
           <Header
             title="Cupones que traen pedidos"
-        pantalla="cupones"
             ayuda={{ seccion: "cupones", texto: "Cómo se miden los cupones" }}
           />
           <BloqueoModulo codigo="codigos_descuento" nombre="Cupones" />
@@ -114,7 +113,6 @@ function CuponesContenido() {
     <>
       <Header
         title="Cupones que traen pedidos"
-        pantalla="cupones"
         sub="Beneficios claros, resultados medidos."
         ayuda={{ seccion: "cupones", texto: "Cómo se miden los cupones" }}
       >

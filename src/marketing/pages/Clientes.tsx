@@ -96,7 +96,6 @@ function ClientesContenido() {
     <>
       <Header
         title="Tus clientes, con nombre"
-        pantalla="clientes"
         sub="Conocé sus hábitos y qué los hace volver."
         ayuda={{ seccion: "segmentos", texto: "Qué quiere decir cada segmento" }}
       />

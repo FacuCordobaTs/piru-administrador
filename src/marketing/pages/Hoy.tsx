@@ -68,7 +68,6 @@ export function Hoy() {
     <>
       <Header
         title="Tu semana de mensajes"
-        pantalla="hoy"
         sub="Desde el WhatsApp de tu local, en el chat de siempre."
         ayuda={{ seccion: "whatsapp", texto: "Cómo funcionan los mensajes" }}
       />

@@ -5,8 +5,6 @@ import { cva } from "class-variance-authority";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { X, Copy, AlertCircle, BookOpen } from "lucide-react";
-import { AyudaPantalla } from "../AyudaPantalla";
-import type { Pantalla } from "../../lib/ayudaPantallas";
 import { toast } from "sonner";
 import { GUIA } from "../../lib/rutas";
 import { PortalMarketing } from "../portal";
@@ -118,13 +116,10 @@ export function Header({
   title,
   sub,
   ayuda,
-  pantalla,
   children,
 }: {
   title: string;
   sub?: string;
-  /** Con la clave de la pantalla, el título lleva un (?) que explica qué se hace ahí. */
-  pantalla?: Pantalla;
   /** Un link a la sección de la guía que explica cómo funciona esta pantalla por dentro. */
   ayuda?: { seccion: string; texto: string };
   children?: ReactNode;
@@ -134,7 +129,6 @@ export function Header({
       <div>
         <div className="flex items-center gap-3">
           <h1>{title}</h1>
-          {pantalla && <AyudaPantalla pantalla={pantalla} />}
         </div>
         {sub && <p className="muted mt-2">{sub}</p>}
         {ayuda && (

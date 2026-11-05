@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
-import { facturacionApi } from '@/lib/api'
-import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
-import FacturacionAfipSection from '@/components/FacturacionAfipSection'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { useMetodosPago } from '../hooks/useMetodosPago'
@@ -18,14 +15,12 @@ import {
 } from './pagos/IntegracionEditors'
 import type { PagosEditorId } from './pagos/types'
 
-type MonetizacionEditorId = PagosEditorId | 'arca' | null
+type MonetizacionEditorId = PagosEditorId | null
 
 export default function Monetizacion() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const fetchData = useRestauranteStore((s) => s.fetchData)
-  const token = useAuthStore((s) => s.token)
   const [editor, setEditor] = useState<MonetizacionEditorId>(null)
-  const [arcaHabilitada, setArcaHabilitada] = useState<boolean | null>(null)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const metodos = useMetodosPago()
@@ -59,18 +54,6 @@ export default function Monetizacion() {
     }
   }, [fetchData])
 
-  // Estado de Facturación ARCA
-  useEffect(() => {
-    if (!token || !facturacionActiva) return
-    facturacionApi
-      .getEstado(token)
-      .then((res) => {
-        const data = res as { success: boolean; data?: { habilitado?: boolean } }
-        setArcaHabilitada(!!data.data?.habilitado)
-      })
-      .catch(() => setArcaHabilitada(false))
-  }, [token, facturacionActiva])
-
   const cucuruOk = !!restaurante?.cucuruConfigurado
   const taloOk = !!(restaurante?.taloClientId && restaurante?.taloClientSecret && restaurante?.taloUserId)
   const mpOk = !!restaurante?.mpConnected
@@ -80,8 +63,9 @@ export default function Monetizacion() {
     const config = searchParams.get('config')
     if (config === 'mercadopago' && mercadoPagoActivo) setEditor('mercadopago')
     if (config === 'talo' && taloActivo) setEditor('talo')
-    if (config === 'arca' && facturacionActiva) setEditor('arca')
-  }, [searchParams, mercadoPagoActivo, taloActivo, facturacionActiva])
+    // Enlaces guardados de cuando ARCA vivía en Métodos de pago.
+    if (config === 'arca') navigate('/dashboard/facturacion', { replace: true })
+  }, [searchParams, mercadoPagoActivo, taloActivo, navigate])
 
   return (
     <section className="space-y-8">
@@ -166,31 +150,15 @@ export default function Monetizacion() {
           />
         )}
 
-        {facturacionActiva ? (
-          <AjusteRow
-            titulo="Facturación electrónica (ARCA / AFIP)"
-            oracion={
-              arcaHabilitada === null
-                ? 'Cargando estado fiscal…'
-                : arcaHabilitada
-                ? 'Configurada · Emisión automática de comprobantes fiscales autorizados'
-                : 'Sin configurar · Conectá tu CUIT y clave fiscal de ARCA'
-            }
-            estado={arcaHabilitada ? 'configurado' : 'sin-configurar'}
-            accionLabel={arcaHabilitada ? 'Cambiar' : 'Configurar'}
-            onAccion={() => setEditor('arca')}
-          />
-        ) : (
-          <AjusteRow
-            titulo="Facturación electrónica (ARCA / AFIP)"
-            oracion="Activá el módulo para emitir comprobantes fiscales electrónicos de AFIP/ARCA automáticamente."
-            estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => {
-              navigate('/dashboard/modulos')
-            }}
-          />
-        )}
+        <AjusteRow
+          titulo="Facturación electrónica (ARCA / AFIP)"
+          oracion={facturacionActiva
+            ? 'Emití comprobantes fiscales desde el cierre de turno'
+            : 'Activá el módulo para emitir comprobantes fiscales'}
+          estado={facturacionActiva ? 'configurado' : 'sin-configurar'}
+          accionLabel={facturacionActiva ? 'Abrir' : 'Ver módulos'}
+          onAccion={() => navigate(facturacionActiva ? '/dashboard/facturacion' : '/dashboard/modulos')}
+        />
       </div>
 
       {/* Editores modales */}
@@ -242,14 +210,6 @@ export default function Monetizacion() {
         <CucuruEditor conectado={cucuruOk} />
       </AjusteEditor>
 
-      <AjusteEditor
-        open={editor === 'arca' && facturacionActiva}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Facturación electrónica (ARCA / AFIP)"
-        descripcion="Conectá tu CUIT y clave fiscal de ARCA para emitir comprobantes legales."
-      >
-        <FacturacionAfipSection />
-      </AjusteEditor>
     </section>
   )
 }

@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState, useCallback, lazy, Suspense } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useAuthStore } from '@/store/authStore'
-import { useModuloActivo } from '@/store/modulosStore'
 import { metricasApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, TrendingUp, Truck, Globe, ShoppingBag, Users } from 'lucide-react'
+import { Loader2, TrendingUp, Globe, ShoppingBag, Users } from 'lucide-react'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import Repartidores from './Repartidores'
 
 // =============================================================================
 // ESTADÍSTICAS — contenedor con pantalla de selección + tabs flotantes
@@ -16,7 +14,7 @@ import Repartidores from './Repartidores'
 // (brand) para la sección activa y las acciones principales.
 // =============================================================================
 
-type SeccionMetricas = 'estadisticas' | 'clientes' | 'repartidores'
+type SeccionMetricas = 'estadisticas' | 'clientes'
 
 const ResumenClientes = lazy(() =>
   import('@/marketing/pages/ResumenClientes').then((m) => ({ default: m.ResumenClientes })),
@@ -42,33 +40,24 @@ const SECCIONES: SeccionMeta[] = [
     icon: Users,
     descripcion: 'Base de clientes, recompra, días flojos y campañas.',
   },
-  {
-    key: 'repartidores',
-    label: 'Repartidores',
-    icon: Truck,
-    descripcion: 'Pedidos entregados y total recaudado en envíos por repartidor.',
-  },
 ]
 
 const seccionValida = (valor: string | null): SeccionMetricas | null =>
   SECCIONES.some((seccion) => seccion.key === valor) ? (valor as SeccionMetricas) : null
 
 export default function Metricas() {
-  const gestionCadetesActiva = useModuloActivo('gestion_cadetes')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [tab, setTab] = useState<SeccionMetricas>(
     () => seccionValida(searchParams.get('seccion')) ?? 'estadisticas',
   )
-  const secciones = gestionCadetesActiva
-    ? SECCIONES
-    : SECCIONES.filter((seccion) => seccion.key !== 'repartidores')
+  const secciones = SECCIONES
+  const seccionActual = secciones.find((seccion) => seccion.key === tab) ?? secciones[0]
 
-  // La estadística general continúa disponible; la de cadetes no queda abierta
-  // si el módulo se desactiva durante la sesión.
-  const tabEfectiva: SeccionMetricas =
-    tab === 'repartidores' && !gestionCadetesActiva ? 'estadisticas' : tab
-  const seccionActual = secciones.find((seccion) => seccion.key === tabEfectiva) ?? secciones[0]
+  // Cadetes dejó de ser una pestaña de Estadísticas: los enlaces viejos van a su pantalla.
+  useEffect(() => {
+    if (searchParams.get('seccion') === 'repartidores') navigate('/dashboard/repartidores', { replace: true })
+  }, [searchParams, navigate])
   const cambiarTab = (key: SeccionMetricas) => {
     setTab(key)
     navigate(key === 'estadisticas' ? '/dashboard/metricas' : `/dashboard/metricas?seccion=${key}`, { replace: true })
@@ -97,8 +86,6 @@ export default function Metricas() {
           <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-7 w-7 animate-spin text-brand" /></div>}>
             <ResumenClientes />
           </Suspense>
-        ) : seccionActual.key === 'repartidores' && gestionCadetesActiva ? (
-          <Repartidores />
         ) : (
           <MetricasPanel />
         )}
@@ -257,7 +244,11 @@ interface MetricasData {
 const fmtMoney = (n: number) =>
   `$${n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
-function MetricasPanel() {
+/**
+ * Panel de estadísticas reutilizable: Estadísticas lo muestra completo y la
+ * pantalla de Sucursales lo acota a la sede elegida.
+ */
+export function MetricasPanel({ sucursalId = null }: { sucursalId?: number | null }) {
   const token = useAuthStore(s => s.token)
   const [data, setData] = useState<MetricasData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -272,7 +263,10 @@ function MetricasPanel() {
     if (p.mode === 'range' && (!p.from || !p.to)) return
     setLoading(true)
     try {
-      const filters = p.mode === 'range' ? { from: p.from, to: p.to } : { month: p.mes, year: p.anio }
+      const filters = {
+        ...(p.mode === 'range' ? { from: p.from, to: p.to } : { month: p.mes, year: p.anio }),
+        sucursalId: sucursalId ?? undefined,
+      }
       const response = await metricasApi.get(token, filters) as { success: boolean; data: MetricasData }
       if (response.success) setData(response.data)
     } catch (error) {
@@ -281,12 +275,12 @@ function MetricasPanel() {
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [token, sucursalId])
 
   useEffect(() => {
     fetchMetricas(period)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, period.mode, period.mes, period.anio, period.from, period.to])
+  }, [token, period.mode, period.mes, period.anio, period.from, period.to, sucursalId])
 
   const periodLabel = periodLabelOf(period)
 

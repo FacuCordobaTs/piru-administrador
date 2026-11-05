@@ -26,6 +26,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   X,
+  Armchair,
+  Bike,
+  Boxes,
+  Monitor,
+  Printer,
+  Receipt,
+  Store,
 } from 'lucide-react'
 
 // El recorrido de bienvenida se carga aparte: el uso de todos los días no lo descarga.
@@ -35,6 +42,14 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/', modulo: null },
   { icon: Package, label: 'Menú', path: '/dashboard/productos', modulo: null },
   { icon: Shirt, label: 'Ropa', path: '/dashboard/ropa', modulo: null },
+  // Herramientas de operación: cada módulo activo suma su propia pantalla.
+  { icon: Boxes, label: 'Stock', path: '/dashboard/stock', modulo: 'gestion_stock' },
+  { icon: Monitor, label: 'Punto de venta', path: '/dashboard/punto-de-venta', modulo: 'pos' },
+  { icon: Armchair, label: 'Mesas', path: '/dashboard/mesas', modulo: 'mesas' },
+  { icon: Bike, label: 'Cadetes', path: '/dashboard/repartidores', modulo: 'gestion_cadetes' },
+  { icon: Store, label: 'Sucursales', path: '/dashboard/sucursales', modulo: 'multisucursal' },
+  { icon: Receipt, label: 'Facturación', path: '/dashboard/facturacion', modulo: 'facturacion_arca' },
+  { icon: Printer, label: 'Impresión', path: '/dashboard/impresion', modulo: 'impresion_comandas' },
   // Las tabs de Marketing ahora viven en el navbar del panel. Cada una se
   // muestra sólo con el módulo que la habilita (ver `navItems`).
   { icon: Users, label: 'Clientes', path: '/dashboard/marketing/clientes', modulo: null },
@@ -64,6 +79,13 @@ const DashboardLayout = () => {
   const campanasActivas = useModuloActivo('crecimiento')
   const puntosActivos = useModuloActivo('puntos_clientes')
   const cuponesActivos = useModuloActivo('codigos_descuento')
+  const stockActivo = useModuloActivo('gestion_stock')
+  const posActivo = useModuloActivo('pos')
+  const mesasActivo = useModuloActivo('mesas')
+  const cadetesActivos = useModuloActivo('gestion_cadetes')
+  const multisucursalActiva = useModuloActivo('multisucursal')
+  const facturacionActiva = useModuloActivo('facturacion_arca')
+  const impresionActiva = useModuloActivo('impresion_comandas')
   const token = useAuthStore((s) => s.token)
   const esDemo = esSesionDemo(token)
   const abrirRecorrido = useRecorridoPanel((s) => s.abrir)
@@ -137,6 +159,13 @@ const DashboardLayout = () => {
     crecimiento: campanasActivas,
     puntos_clientes: puntosActivos,
     codigos_descuento: cuponesActivos,
+    gestion_stock: stockActivo,
+    pos: posActivo,
+    mesas: mesasActivo,
+    gestion_cadetes: cadetesActivos,
+    multisucursal: multisucursalActiva,
+    facturacion_arca: facturacionActiva,
+    impresion_comandas: impresionActiva,
   }
   const navItems = NAV_ITEMS.filter((item) => {
     if (item.path === ROPA_PATH) return restauranteId === ROPA_RESTAURANTE_ID

@@ -138,7 +138,14 @@ export default function Repartidores() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto w-full px-6 py-8 space-y-14">
+    <div className="max-w-2xl mx-auto w-full px-6 py-8 space-y-10">
+
+      <header className="space-y-2">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Gestión de cadetes</h1>
+        <p className="text-sm text-muted-foreground">
+          Tu equipo de reparto y lo que recaudó en envíos. Sumá o desactivá cadetes desde acá.
+        </p>
+      </header>
 
       {/* Selector de período, centrado */}
       <div className="flex justify-center">

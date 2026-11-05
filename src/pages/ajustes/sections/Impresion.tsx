@@ -50,7 +50,8 @@ export default function Impresion() {
     return (
       <section className="space-y-6">
         <header className="space-y-1">
-          <h2 className="text-lg font-medium text-foreground">Impresión</h2>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Impresión</h1>
+          <p className="text-sm text-muted-foreground">Impresora térmica para tus comandas.</p>
         </header>
         <AjusteRow
           titulo="Impresión de comandas"
@@ -67,7 +68,8 @@ export default function Impresion() {
     return (
       <section className="space-y-6">
         <header className="space-y-1">
-          <h2 className="text-lg font-medium text-foreground">Impresión</h2>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Impresión</h1>
+          <p className="text-sm text-muted-foreground">Impresora térmica para tus comandas.</p>
         </header>
         <p className="text-sm font-normal text-muted-foreground">
           La impresión automática funciona en la app de escritorio.{' '}
@@ -87,7 +89,7 @@ export default function Impresion() {
   return (
     <section className="space-y-6">
       <header className="space-y-1">
-        <h2 className="text-lg font-medium text-foreground">Impresión</h2>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Impresión</h1>
         <p className="text-sm font-normal text-muted-foreground">
           Impresora térmica para tus comandas.
         </p>

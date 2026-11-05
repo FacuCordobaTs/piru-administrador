@@ -62,7 +62,6 @@ export function Campanas() {
         <>
           <Header
             title="Cada historia, su link"
-            pantalla="campanas"
             ayuda={{ seccion: "campanas", texto: "Cómo se mide un link" }}
           />
           <BloqueoModulo codigo="crecimiento" nombre="Campañas" />
@@ -134,7 +133,6 @@ function CampanasContenido() {
     <>
       <Header
         title="Cada historia, su link"
-            pantalla="campanas"
         sub="Medí qué campañas traen clientes nuevos y ventas cobradas."
         ayuda={{ seccion: "campanas", texto: "Cómo se mide un link" }}
       >

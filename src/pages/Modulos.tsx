@@ -24,7 +24,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/settings-dialog'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/settings-dialog'
 import { cn } from '@/lib/utils'
-import { PosConfigForm } from '@/components/PosConfigDialog'
 import { useModulosStore } from '@/store/modulosStore'
 import type { Modulo } from '@/lib/api'
 
@@ -65,8 +64,9 @@ function requisitoConfiguracion(modulo: Modulo) {
 }
 
 const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
+  pos: '/dashboard/punto-de-venta',
   mesas: '/dashboard/mesas',
-  gestion_stock: '/dashboard/productos?tab=stock',
+  gestion_stock: '/dashboard/stock',
   motor_recompra: '/dashboard/marketing/hoy',
   dias_flojos: '/dashboard/marketing/dias-flojos',
   puntos_clientes: '/dashboard/marketing/puntos',
@@ -74,9 +74,9 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   mercadopago: '/dashboard/ajustes/monetizacion?config=mercadopago',
   talo: '/dashboard/ajustes/monetizacion?config=talo',
   gestion_cadetes: '/dashboard/repartidores',
-  facturacion_arca: '/dashboard/ajustes/monetizacion?config=arca',
-  impresion_comandas: '/dashboard/ajustes/impresion?config=impresion',
-  multisucursal: '/dashboard/ajustes/entregas?config=sucursales',
+  facturacion_arca: '/dashboard/facturacion',
+  impresion_comandas: '/dashboard/impresion',
+  multisucursal: '/dashboard/sucursales',
   avisos_automaticos_whatsapp: '/dashboard/ajustes/whatsapp?config=avisos',
   crecimiento: '/dashboard/marketing/campanas',
 }
@@ -113,8 +113,7 @@ function AccionModulo({
     if (modulo.tipo === 'pago') {
       return <div className="grid gap-2">{RUTAS_CONFIGURACION[modulo.codigo] && <Button onClick={onConfigurar}>Configurar módulo</Button>}<Button className="w-full" variant="ghost" disabled={procesando} onClick={onDesactivar}>{procesando ? 'Guardando…' : 'Desactivar al finalizar el período'}</Button></div>
     }
-    // El POS no navega a una pantalla: abre su propia configuración en esta página.
-    const conConfiguracion = RUTAS_CONFIGURACION[modulo.codigo] || modulo.codigo === 'pos'
+    const conConfiguracion = Boolean(RUTAS_CONFIGURACION[modulo.codigo])
     return (
       <div className={cn('grid gap-2', conConfiguracion && 'grid-cols-2')}>
         {conConfiguracion ? (
@@ -190,7 +189,6 @@ export default function Modulos() {
   const moduloSeleccionado = categorias.flatMap(c => c.modulos).find(m => m.codigo === seleccion?.codigo) ?? seleccion
   const [moduloPagoSeleccionado, setModuloPagoSeleccionado] = useState<Modulo | null>(null)
   const [confirmandoBaja, setConfirmandoBaja] = useState<Modulo | null>(null)
-  const [configurandoPos, setConfigurandoPos] = useState(false)
   const vieneDeActivarSuscripcion = new URLSearchParams(location.search).get('origen') === 'suscripcion'
 
   useEffect(() => {
@@ -258,11 +256,6 @@ export default function Modulos() {
   }
 
   const configurarModulo = (modulo: Modulo) => {
-    if (modulo.codigo === 'pos') {
-      setModuloSeleccionado(null)
-      setConfigurandoPos(true)
-      return
-    }
     const ruta = RUTAS_CONFIGURACION[modulo.codigo]
     if (ruta) { setModuloSeleccionado(null); navigate(ruta) }
   }
@@ -543,18 +536,6 @@ export default function Modulos() {
             <Button variant="outline" disabled={Boolean(procesandoCodigo)} onClick={() => void enviarLinkPago()}><MessageCircle className="h-4 w-4" />Link por WhatsApp</Button>
             <Button disabled={Boolean(procesandoCodigo)} onClick={() => void iniciarCheckout()}>{procesandoCodigo ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pagar ahora'}</Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={configurandoPos} onOpenChange={(abierto) => !abierto && setConfigurandoPos(false)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Configurar punto de venta</DialogTitle>
-            <DialogDescription>
-              Elegí qué datos y opciones se cargan al anotar un pedido. La configuración se guarda en este dispositivo.
-            </DialogDescription>
-          </DialogHeader>
-          {configurandoPos && <PosConfigForm onSaved={() => setConfigurandoPos(false)} />}
         </DialogContent>
       </Dialog>
 

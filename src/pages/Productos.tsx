@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router'
+import { Navigate, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -13,11 +13,10 @@ import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, agregadosApi, sucursalesApi } from '@/lib/api'
 import { toast } from 'sonner'
 import FotosProducto from '@/components/FotosProducto'
-import { StockPanel } from '@/components/stock/StockPanel'
 import { cn } from '@/lib/utils'
 import {
   Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
-  X, AlertTriangle, Percent, Package,
+  X, AlertTriangle, Percent,
   ChevronDown, GripVertical, ArrowUpDown, Check, SquareCheck
 } from 'lucide-react'
 
@@ -46,8 +45,7 @@ const phantomInputClass = "h-14 rounded-2xl bg-white dark:bg-zinc-900/50 border-
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
   const token = useAuthStore((state) => state.token)
-  const [searchParams, setSearchParams] = useSearchParams()
-  const vista = searchParams.get('tab') === 'stock' ? 'stock' : 'catalogo'
+  const [searchParams] = useSearchParams()
   const [busqueda, setBusqueda] = useState('')
   const [eventos, setEventos] = useState<Array<{ id: number; nombre: string; activo: boolean; soloPos: boolean }>>([])
   useEffect(() => {
@@ -218,18 +216,6 @@ const Productos = () => {
     }
     cargarAgregados()
   }, [token])
-
-  const cambiarVista = (nueva: 'catalogo' | 'stock') => {
-    // El panel lateral pertenece al catálogo: al entrar a Stock no debe quedar
-    // un editor abierto ni una selección múltiple activa.
-    setActivePanelType(null)
-    setSeleccionando(false)
-    setProductosSeleccionados([])
-    const params = new URLSearchParams(searchParams)
-    if (nueva === 'stock') params.set('tab', 'stock')
-    else params.delete('tab')
-    setSearchParams(params, { replace: true })
-  }
 
   // ─────────────────────────────────────────────
   // Panel actions
@@ -881,9 +867,12 @@ const Productos = () => {
   const cantidadFotos = (imageBase64 && imageBase64.length > 10 ? 1 : 0) + imagenesExtra.length
   const summaryImagen = cantidadFotos === 0 ? 'Sin imagen' : cantidadFotos === 1 ? 'Con imagen' : `${cantidadFotos} fotos`
 
-  // Stock no depende del catálogo de productos: si se entra directo a la tab
-  // mientras el menú carga, no tiene sentido bloquear toda la pantalla.
-  if (isLoading && vista === 'catalogo') {
+  // Stock se mudó a su propia pantalla; los enlaces viejos siguen funcionando.
+  if (searchParams.get('tab') === 'stock') {
+    return <Navigate to="/dashboard/stock" replace />
+  }
+
+  if (isLoading) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-[#FFFBF0] dark:bg-[#0A0A0A]">
         <Loader2 className="h-8 w-8 animate-spin text-[#FF7A00]" />
@@ -899,7 +888,7 @@ const Productos = () => {
           60% — nunca queda debajo de un overlay. ── */}
       <div className={cn(
         "h-full transition-[width] duration-300 ease-out overflow-y-auto min-w-0",
-        vista === 'catalogo' && activePanelType ? "hidden md:block md:w-[60%]" : "w-full"
+        activePanelType ? "hidden md:block md:w-[60%]" : "w-full"
       )}>
 
         {/* ── Header (not sticky — flows with document) ── */}
@@ -908,50 +897,15 @@ const Productos = () => {
             {/* Line 1: title */}
             <div className="text-center">
               <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-zinc-950 dark:text-white">
-                {vista === 'stock' ? 'Stock' : 'Catálogo'}
+                Catálogo
               </h1>
               <p className="text-sm text-muted-foreground dark:text-zinc-500 mt-2">
-                {vista === 'stock'
-                  ? 'Insumos, compras y consumo por producto'
-                  : 'Gestiona el menú de tu restaurante'}
+                Gestiona el menú de tu restaurante
               </p>
             </div>
 
-            {/* Tabs de la pantalla: Catálogo y Stock */}
-            <div className="mt-5 flex justify-center">
-              <div className="inline-flex items-center gap-1 rounded-2xl border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
-                <button
-                  type="button"
-                  onClick={() => cambiarVista('catalogo')}
-                  className={cn(
-                    'flex h-9 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold transition-colors',
-                    vista === 'catalogo'
-                      ? 'bg-[#FF7A00] text-white shadow-sm'
-                      : 'text-muted-foreground hover:bg-zinc-100 hover:text-foreground dark:hover:bg-zinc-800 dark:hover:text-white',
-                  )}
-                >
-                  <UtensilsCrossed className="h-4 w-4" />
-                  Catálogo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => cambiarVista('stock')}
-                  className={cn(
-                    'flex h-9 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold transition-colors',
-                    vista === 'stock'
-                      ? 'bg-[#FF7A00] text-white shadow-sm'
-                      : 'text-muted-foreground hover:bg-zinc-100 hover:text-foreground dark:hover:bg-zinc-800 dark:hover:text-white',
-                  )}
-                >
-                  <Package className="h-4 w-4" />
-                  Stock
-                </button>
-              </div>
-            </div>
-
-            {/* Line 2: search + secondary actions (sólo catálogo) */}
-            {vista === 'catalogo' && (
-              <div className="flex flex-col items-center gap-3 mt-6">
+            {/* Line 2: search + secondary actions */}
+            <div className="flex flex-col items-center gap-3 mt-6">
                 <div className="relative w-full sm:w-1/2">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-zinc-500" />
                   <Input
@@ -961,7 +915,7 @@ const Productos = () => {
                     className="pl-10 h-10 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-transparent focus:border-[#FF7A00] dark:focus:border-white/20 transition-colors text-zinc-950 dark:text-white placeholder:text-muted-foreground dark:placeholder:text-zinc-500 text-sm"
                   />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                   <button
                     onClick={seleccionando ? salirModoSeleccion : entrarModoSeleccion}
                     className={cn("h-9 px-4 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5", seleccionando ? "bg-zinc-700 text-white" : "bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white")}
@@ -988,6 +942,12 @@ const Productos = () => {
                   >
                     Descuentos
                   </button>
+                  <button
+                    onClick={abrirGestionCategorias}
+                    className="h-9 px-4 rounded-lg text-sm font-medium bg-white text-muted-foreground hover:bg-zinc-200 hover:text-foreground dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white transition-colors"
+                  >
+                    Categorías
+                  </button>
                   {productosSinEtiqueta > 0 && (
                     <button
                       onClick={backfillEtiquetas}
@@ -999,15 +959,11 @@ const Productos = () => {
                     </button>
                   )}
                 </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
-        {vista === 'stock' ? (
-          <StockPanel token={token} />
-        ) : (
-        /* ── Grid ── */
+        {/* ── Grid ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-8 pb-24">
           {productosFiltrados.length === 0 ? (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
@@ -1226,11 +1182,10 @@ const Productos = () => {
             </div>
           )}
         </div>
-        )}
       </div>
 
       {/* Barra de selección múltiple — visible solo en modo selección */}
-      {seleccionando && vista === 'catalogo' && (
+      {seleccionando && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 sm:gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 rounded-2xl shadow-xl px-3 py-2.5 sm:px-4">
           <span className="text-sm font-semibold text-zinc-950 dark:text-white whitespace-nowrap">
             {productosSeleccionados.length} seleccionado{productosSeleccionados.length !== 1 ? 's' : ''}
@@ -1260,7 +1215,7 @@ const Productos = () => {
 
       {/* FAB (Mobile Only) — oculto mientras el panel full-width está abierto */}
       <Button
-        className={cn("sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50", (activePanelType || vista === 'stock') && "hidden", seleccionando && "hidden")}
+        className={cn("sm:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-[#FF7A00] hover:bg-[#E66E00] text-white shadow-xl shadow-orange-500/30 z-50", activePanelType && "hidden", seleccionando && "hidden")}
         onClick={abrirPanelNuevo}
       >
         <Plus className="h-6 w-6" />
@@ -1276,7 +1231,7 @@ const Productos = () => {
         className={cn(
           "relative h-full shrink-0 bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-white/5 overflow-hidden",
           "transition-[width] duration-300 ease-out",
-          vista === 'catalogo' && activePanelType ? "w-full md:w-[40%]" : "w-0"
+          activePanelType ? "w-full md:w-[40%]" : "w-0"
         )}
       >
         {/* X button */}

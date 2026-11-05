@@ -49,7 +49,6 @@ function Contenido() {
     <>
       <Header
         title="Clientes"
-        pantalla="resumen"
         sub="La base del local, la recompra y las campañas."
         ayuda={{ seccion: "numeros", texto: "Qué cuenta como venta cobrada" }}
       >

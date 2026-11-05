@@ -193,9 +193,9 @@ function Panel({ c }: { c: ContextoGuia }) {
       <h3>Configuración, por dentro</h3>
       <ul className="guia-puntos">
         <li>
-          <strong>Operación</strong>: Entregas y zonas y Horarios siempre; WhatsApp con los Avisos automáticos
-          activos, Ventas en el local con Punto de venta, Mesas o Stock, y Mozos con Punto de venta y Mesas.
-          En la app de escritorio también aparece Impresión.
+          <strong>Operación</strong>: WhatsApp con los Avisos automáticos activos y Mozos con Punto de venta y
+          Mesas. Las herramientas de venta —Stock, Punto de venta, Mesas, Cadetes, Sucursales, Facturación e
+          Impresión— tienen cada una su propia entrada en el menú lateral cuando el módulo está activo.
         </li>
         <li>
           <strong>Tu negocio</strong>: General (tus datos y tu dirección), Tienda, Métodos de pago, Entregas y
@@ -338,8 +338,8 @@ function Mesas({ c }: { c: ContextoGuia }) {
       </Figura>
       <h3>Armá tu salón</h3>
       <p>
-        En el plano de mesas (Configuración → Ventas en el local → Mesas → Configurar) agregás cada mesa, la
-        ubicás como está en tu local y le ponés nombre, capacidad y sucursal.
+        En <strong>Mesas</strong>, en el menú lateral, agregás cada mesa, la ubicás como está en tu local y le
+        ponés nombre, capacidad y sucursal.
       </p>
       <h3>Atender una mesa</h3>
       <Pasos
@@ -427,8 +427,9 @@ function Comandas({ c }: { c: ContextoGuia }) {
       </p>
       <h3>Configurar la impresora</h3>
       <p>
-        En la app de escritorio, Configuración → Impresión: elegís la impresora y cómo está conectada —la de
-        Windows, por puerto serie, por red o por Bluetooth; en Android, también por USB— y probás una comanda.
+        En la app de escritorio, <strong>Impresión</strong> en el menú lateral: elegís la impresora y cómo está
+        conectada —la de Windows, por puerto serie, por red o por Bluetooth; en Android, también por USB— y
+        probás una comanda.
       </p>
       <ul className="guia-puntos">
         <li>
@@ -445,12 +446,12 @@ function Comandas({ c }: { c: ContextoGuia }) {
         </li>
       </ul>
       <Nota icono={MonitorSmartphone}>
-        Desde el navegador el panel no puede imprimir solo: en Configuración → Impresión te ofrece descargar la
+        Desde el navegador el panel no puede imprimir solo: en <strong>Impresión</strong> te ofrece descargar la
         app de escritorio. En Android, activá «Que Android no duerma la app» (Configuración → General) para que
         no se corte una impresión.
       </Nota>
       <p>
-        <Donde texto="Impresión" icono={Printer} ruta={ruta(c, '/dashboard/ajustes/impresion')} />
+        <Donde texto="Impresión" icono={Printer} ruta={ruta(c, '/dashboard/impresion')} />
       </p>
     </>
   )
@@ -485,10 +486,10 @@ function Delivery({ c }: { c: ContextoGuia }) {
       </ul>
       <h3>Repartidores</h3>
       <p>
-        Con <strong>Gestión de cadetes</strong> cargás a tus repartidores (Inicio → los tres puntos de la lista
-        → Repartidores) y asignás quién lleva cada delivery desde su detalle. Si tenés más de uno activo, al
-        despachar te pregunta «¿Quién hace el envío?». En Estadísticas, la pestaña Repartidores muestra los
-        pedidos que entregó cada uno y lo recaudado en envíos.
+        Con <strong>Gestión de cadetes</strong> cargás a tus repartidores en la pantalla <strong>Cadetes</strong>
+        del menú lateral y asignás quién lleva cada delivery desde su detalle. Si tenés más de uno activo, al
+        despachar te pregunta «¿Quién hace el envío?». La misma pantalla muestra los pedidos que entregó cada uno
+        y lo recaudado en envíos.
       </p>
       <Clave>
         <li>Fuera de las zonas no se puede pedir delivery: el cliente puede elegir retirar en el local.</li>
@@ -530,7 +531,7 @@ function Caja({ c }: { c: ContextoGuia }) {
       <h3>Cerrar el turno a mano</h3>
       <p>
         Si tu turno cruza la medianoche o querés cortar la caja al terminar cada turno, activá{' '}
-        <strong>Cerrar turno manualmente</strong> (Configuración → Ventas en el local). Inicio deja de mostrar
+        <strong>Cerrar turno manualmente</strong> (Módulos → Punto de venta). Inicio deja de mostrar
         días y muestra el <strong>Turno actual</strong>, desde que lo abriste.
       </p>
       <Pasos
@@ -904,9 +905,9 @@ function Sucursales({ c }: { c: ContextoGuia }) {
   return (
     <>
       <p>
-        Con el módulo <strong>Múltiples sucursales</strong> cargás tus locales en Configuración → Entregas y
-        zonas → Sucursales. Cada uno tiene sus pedidos y, si querés, su propio WhatsApp y su alias para
-        transferencias.
+        Con el módulo <strong>Múltiples sucursales</strong> cargás tus locales en <strong>Sucursales</strong>, en
+        el menú lateral. Cada uno tiene sus pedidos y, si querés, su propio WhatsApp y su alias para
+        transferencias. Ahí mismo ves la facturación y los productos de cada sede.
       </p>
       <ul className="guia-puntos">
         <li>
@@ -918,9 +919,9 @@ function Sucursales({ c }: { c: ContextoGuia }) {
       </ul>
       <h3>Eventos con POS</h3>
       <p>
-        Para vender en una feria o un evento sin mezclarlo con tu local: en Entregas y zonas → Eventos con POS
-        creás una sede de evento. En la compu del evento la elegís con Cambiar sucursal y vendés con el punto de
-        venta, con su propia cola de impresión. La tienda sigue atendiendo en el local.
+        Para vender en una feria o un evento sin mezclarlo con tu local: en <strong>Punto de venta</strong> creás
+        una sede de evento. En la compu del evento la elegís con Cambiar sucursal y vendés con el punto de venta,
+        con su propia cola de impresión. La tienda sigue atendiendo en el local.
       </p>
       <ul className="guia-puntos">
         <li>
@@ -932,7 +933,7 @@ function Sucursales({ c }: { c: ContextoGuia }) {
         <li>Con el evento cerrado, sus pedidos se consultan pero no se anotan nuevos.</li>
       </ul>
       <p>
-        <Donde texto="Entregas y zonas" icono={Truck} ruta={ruta(c, '/dashboard/ajustes/entregas')} />
+        <Donde texto="Sucursales" icono={Store} ruta={ruta(c, '/dashboard/sucursales')} />
       </p>
     </>
   )
@@ -1133,7 +1134,7 @@ function Rutina() {
 const PREGUNTAS = [
   {
     p: '¿Por qué no se imprimió un pedido?',
-    r: 'La impresión automática necesita la app de Piru para Windows (o Android) abierta, con la impresora configurada en Configuración → Impresión. Los pedidos que se pagan online se imprimen recién cuando se acredita el pago. Para otra copia, abrí el pedido y tocá «Reimprimir comprobante».',
+    r: 'La impresión automática necesita la app de Piru para Windows (o Android) abierta, con la impresora configurada en Impresión. Los pedidos que se pagan online se imprimen recién cuando se acredita el pago. Para otra copia, abrí el pedido y tocá «Reimprimir comprobante».',
   },
   {
     p: '¿Por qué un pedido dice «Pendiente»?',
@@ -1161,7 +1162,7 @@ const PREGUNTAS = [
   },
   {
     p: '¿Por qué no veo Mesas o Mozos?',
-    r: 'Aparecen con los módulos Punto de venta y Mesas activos. Se activan gratis desde Configuración → Ventas en el local.',
+    r: 'Aparecen con los módulos Punto de venta y Mesas activos. Se activan gratis desde Módulos y se configuran en Punto de venta y Mesas.',
   },
   {
     p: '¿Puedo usar el panel en varias compus a la vez?',

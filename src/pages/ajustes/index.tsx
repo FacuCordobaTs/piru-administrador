@@ -6,7 +6,6 @@ import {
   Activity,
   Clock,
   Truck,
-  Printer,
   User,
   UtensilsCrossed,
   ArrowLeft,
@@ -24,15 +23,13 @@ import { cn } from '@/lib/utils'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModulosStore } from '@/store/modulosStore'
 import { SectionSkeleton } from './components/SectionSkeleton'
-import { DescargarAppBanner } from './components/DescargarAppBanner'
 import { SettingsNavigation } from '@/components/SettingsNavigation'
 import { resetSettingsScroll } from '@/components/settings-navigation-context'
 
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType; tauriOnly?: boolean }
+interface SectionDef { id: string; label: string; descripcion: string; Icon: LucideIcon; Component: ComponentType }
 
 const SECTIONS: SectionDef[] = [
-  { id: 'mi-pagina', label: 'Tienda', descripcion: 'Plantilla, preferencias y código propio de tu tienda.', Icon: Code2, Component: lazy(() => import('./sections/MiPagina')) },
+  { id: 'mi-pagina', label: 'Tienda', descripcion: 'Tu página: secciones, marca, pedido en grupo y código propio.', Icon: Code2, Component: lazy(() => import('./sections/MiPagina')) },
   { id: 'medicion', label: 'Medición', descripcion: 'Google Tag Manager y Meta Pixel para medir tu tienda.', Icon: Activity, Component: lazy(() => import('./sections/Medicion')) },
   {
     id: 'monetizacion',
@@ -65,26 +62,11 @@ const SECTIONS: SectionDef[] = [
     Component: lazy(() => import('./sections/Horarios')),
   },
   {
-    id: 'ventas',
-    label: 'Ventas en el local',
-    descripcion: 'Punto de venta, mesas y stock: las herramientas para atender y vender en el local.',
-    Icon: Store,
-    Component: lazy(() => import('./sections/Ventas')),
-  },
-  {
     id: 'mozos',
     label: 'Mozos',
     descripcion: 'Códigos de acceso y usuarios para la app de mozos.',
     Icon: UtensilsCrossed,
     Component: lazy(() => import('./sections/Mozos')),
-  },
-  {
-    id: 'impresion',
-    label: 'Impresión',
-    descripcion: 'Impresora térmica para tus comandas.',
-    Icon: Printer,
-    Component: lazy(() => import('./sections/Impresion')),
-    tauriOnly: true,
   },
 
   // --- Negocio y Cuenta ---
@@ -109,7 +91,6 @@ const ALIASES_SECCION: Record<string, string> = {
   experiencia: 'activacion',
   pagos: 'monetizacion',
   avisos: 'whatsapp',
-  facturacion: 'monetizacion',
 }
 
 /**
@@ -127,6 +108,10 @@ const REDIRECTS_SECCION: Record<string, string> = {
   modulos: '/dashboard/modulos',
   // Suscripción y pagos se integró a Cuenta.
   suscripcion: '/dashboard/ajustes/cuenta',
+  // Las herramientas de operación tienen su propia pantalla en el navbar.
+  ventas: '/dashboard/punto-de-venta',
+  impresion: '/dashboard/impresion',
+  facturacion: '/dashboard/facturacion',
 }
 const DESTINO_PUNTOS = '/dashboard/marketing/puntos'
 
@@ -139,20 +124,16 @@ interface RequisitoModulos { todos?: string[]; alguno?: string[] }
 
 const REQUISITOS: Record<string, RequisitoModulos> = {
   whatsapp: { todos: ['avisos_automaticos_whatsapp'] },
-  ventas: { alguno: ['pos', 'mesas', 'gestion_stock', 'cierre_turno_manual'] },
   mozos: { todos: ['pos', 'mesas'] },
-  impresion: { todos: ['impresion_comandas'] },
   medicion: { todos: ['crecimiento'] },
 }
 
-/** Secciones de segundo nivel y la sección desde la que se llega a ellas. */
-const PADRE_SECCION: Record<string, string> = {
-  mozos: 'ventas',
-}
-
 const GROUPS = [
-  { label: 'Tu negocio', ids: ['general', 'mi-pagina', 'medicion', 'monetizacion', 'entregas', 'horarios', 'cuenta'] },
-  { label: 'Operación', ids: ['ventas', 'whatsapp'] },
+  { label: 'Tu negocio', ids: ['general', 'mi-pagina', 'monetizacion', 'entregas', 'horarios', 'cuenta'] },
+  // Medición (GTM y Meta Pixel) pertenece a Campañas de adquisición, que el
+  // catálogo agrupa en "Clientes y fidelización".
+  { label: 'Clientes y fidelización', ids: ['medicion'] },
+  { label: 'Operación', ids: ['whatsapp'] },
 ]
 
 export default function AjustesPage() {
@@ -172,18 +153,13 @@ export default function AjustesPage() {
   }
   const active = SECTIONS.find((s) => s.id === seccion)
   const ActiveSection = active?.Component
-  const destinoPadre = active ? PADRE_SECCION[active.id] : undefined
-  const secundaria = !!destinoPadre
   // `baseTienda` ya trae el dominio propio si el local lo tiene (o my.piru.app/<username>/).
   // El literal queda sólo como fallback mientras el perfil todavía no cargó.
   const link = restaurante?.baseTienda ?? (restaurante?.username ? `https://my.piru.app/${restaurante.username}` : null)
   const hostLink = link?.replace(/^https?:\/\//, '').replace(/\/$/, '') ?? null
   const atencion = ['suspendida', 'cancelada', 'pago_pendiente'].includes(suscripcion?.estado ?? '')
   const operacion = SECTIONS.filter(
-    (s) =>
-      !GROUPS.some((g) => g.ids.includes(s.id)) &&
-      habilitada(s.id) &&
-      (!s.tauriOnly || isTauri)
+    (s) => !GROUPS.some((g) => g.ids.includes(s.id)) && habilitada(s.id)
   )
   const grupos = GROUPS.map((g) => {
     const ids = g.label === 'Operación' ? [...g.ids, ...operacion.map((s) => s.id)] : g.ids
@@ -224,7 +200,7 @@ export default function AjustesPage() {
             const def = SECTIONS.find(s => s.id === id)
             const Icon = def?.Icon ?? CreditCard
             const label = id === 'general' ? 'General' : def?.label ?? 'Ajustes'
-            const selected = id === seccion || (id === destinoPadre && secundaria && !operacion.some(s => s.id === seccion))
+            const selected = id === seccion
             return <Link key={id} to={`/dashboard/ajustes/${id}`} aria-current={selected ? 'page' : undefined} className={cn('flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand', selected ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground')}><Icon className="size-4 shrink-0" /><span>{label}</span>{id === 'cuenta' && atencion && <span aria-label="Requiere atención" className="ml-auto size-1.5 shrink-0 rounded-full bg-amber-500" />}</Link>
           })}</div>
         </div>)}</div>
@@ -233,10 +209,8 @@ export default function AjustesPage() {
         <SettingsNavigation key={seccion}>
         <MobileDetailHeader title={active?.label ?? 'Ajustes'} />
         {error && <div role="alert" className="mb-5 rounded-lg border border-amber-500/30 p-3 text-sm">No pudimos actualizar los datos. <Button variant="link" size="sm" onClick={() => void cargar(true).catch(() => {})}>Reintentar</Button></div>}
-        {secundaria && destinoPadre && <Link to={`/dashboard/ajustes/${destinoPadre}`} className="mb-6 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />{SECTIONS.find(s => s.id === destinoPadre)?.label}<span>/</span>{active?.label}</Link>}
         {active ? cargando && modulos.length === 0 && REQUISITOS[active.id] ? <SectionSkeleton />
             : !habilitada(active.id) ? <div className="space-y-4"><SectionHeading title={active.label} description="Activá el módulo para acceder a su configuración." /><Button asChild variant="outline"><Link to="/dashboard/modulos">Ver módulos<ChevronRight className="size-4" /></Link></Button></div>
-            : active.tauriOnly && !isTauri ? <div className="space-y-4"><SectionHeading title="Impresión" description="Abrí la app de escritorio de Piru para configurar tu impresora." /><DescargarAppBanner /></div>
             : <Suspense key={seccion} fallback={<SectionSkeleton />}>{ActiveSection && <ActiveSection />}</Suspense>
           : <div className="space-y-4"><SectionHeading title="Sección no encontrada" description="Elegí una sección del menú para continuar." /><Button asChild variant="outline"><Link to="/dashboard/ajustes/general">Ir a General</Link></Button></div>}
         </SettingsNavigation>

@@ -58,7 +58,7 @@ export function StockAlertaBanner({ refreshKey }: { refreshKey?: number }) {
           <p className="truncate text-[11px] text-amber-700/80 dark:text-amber-300/80">{detalle}</p>
         </div>
         <Link
-          to="/dashboard/productos?tab=stock"
+          to="/dashboard/stock"
           className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500/15 px-2.5 py-1.5 text-[11px] font-bold text-amber-800 transition-colors hover:bg-amber-500/25 dark:text-amber-200"
         >
           Ver stock

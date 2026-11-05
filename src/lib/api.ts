@@ -1942,12 +1942,13 @@ export const pedidosApi = {
 
 // Metricas API
 export const metricasApi = {
-  get: async (token: string, filters?: { month?: number; year?: number; from?: string; to?: string }) => {
+  get: async (token: string, filters?: { month?: number; year?: number; from?: string; to?: string; sucursalId?: number }) => {
     const params = new URLSearchParams()
     if (filters?.month) params.append('month', String(filters.month))
     if (filters?.year) params.append('year', String(filters.year))
     if (filters?.from) params.append('from', filters.from)
     if (filters?.to) params.append('to', filters.to)
+    if (filters?.sucursalId) params.append('sucursalId', String(filters.sucursalId))
     const query = params.toString() ? `?${params.toString()}` : ''
 
     return fetchApi(`/metricas${query}`, {

@@ -73,10 +73,10 @@ function FilaConfig({
 }
 
 /**
- * Formulario de la configuración local del POS. Lo comparten este diálogo (punto de venta) y Ajustes → Ventas en el local,
+ * Formulario de la configuración local del POS. Lo comparten este diálogo y la pantalla Punto de venta,
  * que lo muestra dentro de su propia vista: no debe haber otra copia, o las opciones nuevas no llegan a ese camino.
  */
-export function PosConfigForm({ onSaved }: { onSaved: () => void }) {
+export function PosConfigForm({ onSaved, enPagina = false }: { onSaved: () => void; enPagina?: boolean }) {
   const [config, setConfig] = useState<PosConfig>(getPosConfig)
   const restauranteId = useAuthStore(s => s.restaurante?.id)
   const token = useAuthStore(s => s.token)
@@ -192,7 +192,7 @@ export function PosConfigForm({ onSaved }: { onSaved: () => void }) {
   }
 
   return (
-    <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
+    <div className={enPagina ? 'space-y-5' : 'max-h-[70vh] space-y-5 overflow-y-auto pr-1'}>
       <FilaConfig
         icon={Columns3}
         label="Mostrar columna de pedidos"
@@ -317,8 +317,8 @@ export function PosConfigForm({ onSaved }: { onSaved: () => void }) {
         </div>
       </div>
       <DialogFooter className="gap-2 sm:gap-2">
-        <Button variant="outline" onClick={onSaved}>Cancelar</Button>
-        <Button onClick={guardar}>Guardar</Button>
+        {!enPagina && <Button variant="outline" onClick={onSaved}>Cancelar</Button>}
+        <Button onClick={guardar}>{enPagina ? 'Guardar cambios' : 'Guardar'}</Button>
       </DialogFooter>
     </div>
   )

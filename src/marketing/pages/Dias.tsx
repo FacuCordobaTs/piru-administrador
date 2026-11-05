@@ -16,10 +16,10 @@ const dia = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 1 
 export function Dias() {
   const mod = useModulo('dias_flojos');
   if (mod.loading || mod.error) {
-    return <><Header pantalla="dias-flojos" title="Llená los días flojos" sub="Mirá cuándo se vende menos y mandá a los clientes justo esos días." ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} /><Estado skeleton={<SkeletonPantalla tipo="dias" />} loading={mod.loading} error={mod.error} reintentar={mod.recargar} /></>;
+    return <><Header title="Llená los días flojos" sub="Mirá cuándo se vende menos y mandá a los clientes justo esos días." ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} /><Estado skeleton={<SkeletonPantalla tipo="dias" />} loading={mod.loading} error={mod.error} reintentar={mod.recargar} /></>;
   }
   if (!mod.modulo?.activoAhora) {
-    return <><Header pantalla="dias-flojos" title="Llená los días flojos" ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} /><BloqueoModulo codigo="dias_flojos" nombre="Días flojos" /></>;
+    return <><Header title="Llená los días flojos" ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} /><BloqueoModulo codigo="dias_flojos" nombre="Días flojos" /></>;
   }
   return <DiasContenido />;
 }
@@ -34,7 +34,7 @@ function DiasContenido() {
   // La fila de hoy se marca: es la que se busca primero.
   const hoy = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date()) + 'T12:00:00-03:00').getUTCDay();
   const diaLink = (n: number) => `${MARKETING}/hoy${query({ diaSemana: n })}`;
-  return <><Header pantalla="dias-flojos" title="Llená los días flojos" sub="Mirá cuándo se vende menos y mandá a los clientes justo esos días." ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} />
+  return <><Header title="Llená los días flojos" sub="Mirá cuándo se vende menos y mandá a los clientes justo esos días." ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} />
     <div role="group" aria-label="Ventana de análisis" className="mb-5 flex flex-wrap gap-2">
       {[4, 8, 12, 26].map(n => <Chip key={n} className="min-h-10" activo={semanas === n} onClick={() => setSemanas(n)}>Últimas {n} semanas</Chip>)}
     </div>

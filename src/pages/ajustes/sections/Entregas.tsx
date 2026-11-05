@@ -1,31 +1,24 @@
 import { DeliveryAddressSettings } from '../components/DeliveryAddressSettings'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { Loader2, Truck, Package } from 'lucide-react'
+import { Truck, Package } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { esSesionDemo, restauranteApi, zonasDeliveryApi, zonasEspecialesApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
-import { SucursalesLista } from '../components/SucursalesLista'
 import { ZonasEspecialesPanel } from '../components/ZonasEspecialesPanel'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
-import { useSucursales } from '../hooks/useSucursales'
 import { useModuloActivo } from '@/store/modulosStore'
 
-// El mapa (Leaflet, ~25KB) se carga solo al entrar a su editor.
-const ZonasDeliveryMap = lazy(() => import('@/components/ZonasDeliveryMap'))
-
-type EditorId = 'tipos' | 'sucursales' | 'zonas-especiales' | null
+type EditorId = 'tipos' | 'zonas-especiales' | null
 
 export default function Entregas() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const [editor, setEditor] = useState<EditorId>(null)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const [zonasOpen, setZonasOpen] = useState(false)
-  const { sucursales, loaded: sucLoaded, recargar } = useSucursales()
 
   const token = useAuthStore((s) => s.token)
   const esDemo = esSesionDemo(token)
@@ -35,7 +28,6 @@ export default function Entregas() {
 
   const { texto: zonasOracion, estado: zonasEstado } = useZonasResumen()
 
-  const mostrarSucursales = sucLoaded && sucursales.filter(s => !s.soloPos).length >= 2
   const multisucursalActiva = useModuloActivo('multisucursal')
   const avisosWhatsappActivos = useModuloActivo('avisos_automaticos_whatsapp')
   const zonasEspecialesHabilitadas = restaurante?.zonasEspecialesHabilitadas === true
@@ -46,9 +38,10 @@ export default function Entregas() {
 
   useEffect(() => {
     const config = searchParams.get('config')
-    if (config === 'sucursales' && multisucursalActiva) setEditor('sucursales')
+    // Enlaces guardados de cuando Sucursales vivía en Entregas.
+    if (config === 'sucursales' && multisucursalActiva) navigate('/dashboard/sucursales', { replace: true })
     else if (config === 'zonas-especiales' && avisosWhatsappActivos && !esDemo) setEditor('zonas-especiales')
-  }, [multisucursalActiva, avisosWhatsappActivos, esDemo, searchParams])
+  }, [multisucursalActiva, avisosWhatsappActivos, esDemo, searchParams, navigate])
 
   return (
     <section className="space-y-6">
@@ -70,7 +63,7 @@ export default function Entregas() {
           titulo="Zonas de delivery"
           oracion={zonasOracion}
           estado={zonasEstado}
-          onAccion={() => setZonasOpen(true)}
+          onAccion={() => navigate('/dashboard/ajustes/entregas/zonas')}
         />
         {!esDemo && (
           <AjusteRow
@@ -91,21 +84,12 @@ export default function Entregas() {
               : navigate('/dashboard/ajustes/whatsapp')}
           />
         )}
-        {multisucursalActiva && mostrarSucursales && (
+        {multisucursalActiva && (
           <AjusteRow
             titulo="Sucursales"
-            oracion={`${sucursales.filter(s => !s.soloPos).length} sucursales`}
+            oracion="Administrá tus locales y mirá los datos de cada uno"
             estado="configurado"
-            onAccion={() => setEditor('sucursales')}
-          />
-        )}
-        {!multisucursalActiva && (
-          <AjusteRow
-            titulo="Múltiples sucursales"
-            oracion="Activá el módulo para administrar más de un local"
-            estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => navigate('/dashboard/modulos')}
+            onAccion={() => navigate('/dashboard/sucursales')}
           />
         )}
       </div>
@@ -120,23 +104,6 @@ export default function Entregas() {
         descripcion="Qué formas de entrega ofrecés."
       >
         <TiposEditor />
-      </AjusteEditor>
-
-      {/* Sucursales (solo con 2+) */}
-      <AjusteEditor
-        open={editor === 'sucursales'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Sucursales"
-        descripcion="Tus locales y su ruteo de pedidos."
-      >
-        <SucursalesLista sucursales={sucursales.filter(s => !s.soloPos)} onChanged={recargar} />
-      </AjusteEditor>
-
-      {/* Zonas: pantalla propia con el mapa lazy */}
-      <AjusteEditor open={zonasOpen} onOpenChange={setZonasOpen} titulo="Zonas de delivery">
-        <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-          <ZonasDeliveryMap />
-        </Suspense>
       </AjusteEditor>
 
       <AjusteEditor

@@ -71,7 +71,7 @@ test('el índice lleva a cada sección y marca la que se está leyendo', async (
 test('los "dónde está" llevan a la pantalla del panel', async ({ page }) => {
   await abrir(page)
   await page.getByRole('link', { name: 'Impresión →' }).click()
-  await expect(page.getByTestId('destino')).toHaveText('/dashboard/ajustes/impresion')
+  await expect(page.getByTestId('destino')).toHaveText('/dashboard/impresion')
 })
 
 test('sin sesión es pública: invita a entrar y no lleva a pantallas del panel', async ({ page }) => {

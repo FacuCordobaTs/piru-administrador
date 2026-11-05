@@ -15,6 +15,11 @@ import Dashboard from './pages/Dashboard'
 import Pedidos from './pages/Pedidos'
 import Pedido from './pages/Pedido'
 import Productos from './pages/Productos'
+import Stock from './pages/Stock'
+import PuntoDeVenta from './pages/PuntoDeVenta'
+import Facturacion from './pages/Facturacion'
+import Sucursales from './pages/Sucursales'
+import Impresion from './pages/Impresion'
 import Modulos from './pages/Modulos'
 import AjustesPage from './pages/ajustes'
 import Mensajes from './pages/Mensajes'
@@ -49,6 +54,7 @@ window.addEventListener('vite:preloadError', (event) => {
 
 // La guía se carga aparte: el uso de todos los días no la descarga.
 const Guia = lazy(() => import('./pages/Guia'))
+const ZonasDelivery = lazy(() => import('./pages/ajustes/zonas/ZonasDelivery'))
 const GuiaPublica = lazy(() => import('./pages/Guia').then((m) => ({ default: m.GuiaPublica })))
 
 
@@ -197,6 +203,26 @@ const router = createBrowserRouter([
             element: <Productos />,
           },
           {
+            path: "stock",
+            element: <Stock />,
+          },
+          {
+            path: "punto-de-venta",
+            element: <PuntoDeVenta />,
+          },
+          {
+            path: "facturacion",
+            element: <Facturacion />,
+          },
+          {
+            path: "sucursales",
+            element: <Sucursales />,
+          },
+          {
+            path: "impresion",
+            element: <Impresion />,
+          },
+          {
             path: "ropa",
             element: <Ropa />,
           },
@@ -269,6 +295,15 @@ const router = createBrowserRouter([
             element: <PerfilRedirect />,
           },
         ],
+      },
+      {
+        // Zonas de delivery: el mapa necesita toda la pantalla (sobre todo en el celular).
+        path: "ajustes/entregas/zonas",
+        element: (
+          <Suspense fallback={null}>
+            <ZonasDelivery />
+          </Suspense>
+        ),
       },
       {
         // La guía de Marketing, como la del panel: toda la pantalla, dentro de la sesión.

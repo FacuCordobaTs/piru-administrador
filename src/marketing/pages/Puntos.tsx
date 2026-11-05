@@ -44,7 +44,6 @@ export function Puntos() {
         <>
           <Header
             title="El club del local"
-        pantalla="puntos"
             ayuda={{ seccion: "puntos", texto: "Cómo funciona el club" }}
           />
           <BloqueoModulo codigo="puntos_clientes" nombre="Puntos" />
@@ -68,7 +67,6 @@ function PuntosContenido() {
     <>
       <Header
         title="El club del local"
-        pantalla="puntos"
         sub="Cada pedido suma una razón para volver."
         ayuda={{ seccion: "puntos", texto: "Cómo funciona el club" }}
       />
