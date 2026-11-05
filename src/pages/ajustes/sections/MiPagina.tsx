@@ -4,6 +4,7 @@ import { ExternalLink, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { sitiosApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { EscenaTienda } from '../components/EscenaTienda'
 
 /**
  * Tienda (Páginas): la plantilla, las preferencias y el código de la tienda viven en
@@ -29,20 +30,17 @@ export default function MiPagina() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2 text-sm text-muted-foreground">
-        <p>
-          En <strong className="text-foreground">Páginas</strong> elegís la plantilla y las preferencias de tu tienda (colores,
-          textos, fotos y productos destacados) y después editás el código de la página que nace de ellas. Todo en{' '}
-          <strong className="text-foreground">tu-local.piru.app</strong>.
-        </p>
-        <p>
-          La carta, los precios, los horarios y los pedidos siguen saliendo de este panel. El cobro se hace siempre en la tienda
-          de Piru, y tu tienda de siempre sigue funcionando en my.piru.app.
-        </p>
-        <p>Las preferencias también se cambian desde el editor de código, con el botón «Preferencias».</p>
+    <div className="mx-auto flex max-w-xl flex-col items-center gap-7 py-2 text-center">
+      <div className="w-full overflow-hidden rounded-3xl border border-border/60 shadow-sm">
+        <EscenaTienda />
       </div>
-      <Button onClick={abrir} disabled={abriendo || !token}>
+      <div className="space-y-3">
+        <h2 className="text-balance text-2xl font-semibold tracking-tight sm:text-3xl">Diseñá tu tienda en Páginas</h2>
+        <p className="mx-auto max-w-md text-balance text-sm text-muted-foreground">
+          Secciones, colores, letras, logos y pedido en grupo, a mano o con tu IA. La carta, los precios y los pedidos siguen saliendo de este panel.
+        </p>
+      </div>
+      <Button size="lg" onClick={abrir} disabled={abriendo || !token}>
         {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
         Abrir Páginas
       </Button>
