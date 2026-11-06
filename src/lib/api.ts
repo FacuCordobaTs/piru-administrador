@@ -1387,13 +1387,24 @@ export const productosApi = {
     })
   },
 
+  /** Copia a R2 fotos de producto que vienen por URL (importación de carta en JSON). */
+  importarImagenes: async (token: string, urls: string[]) => {
+    return fetchApi('/producto/imagenes/desde-url', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ urls }),
+    })
+  },
+
   create: async (
     token: string,
     data: {
       nombre: string
       descripcion: string
       precio: number
-      image?: string // Base64 string
+      image?: string // Data URL (se sube) o URL propia de R2 ya subida (se conserva)
       /** Fotos adicionales en orden: data URL nueva o URL ya subida (se conserva). */
       imagenesExtra?: string[]
       activo?: boolean
@@ -1433,7 +1444,7 @@ export const productosApi = {
       nombre?: string
       descripcion?: string
       precio?: number
-      image?: string // Base64 string, o una URL que el producto ya tenía para promoverla a portada
+      image?: string // Data URL, URL propia de R2 o una URL que el producto ya tenía para promoverla a portada
       eliminarImagen?: boolean
       imagenesExtra?: string[]
       categoriaId?: number | null

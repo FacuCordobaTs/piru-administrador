@@ -129,6 +129,63 @@ async function fileToResizedDataUrl(file: File, maxDim = 1600, quality = 0.82): 
   return canvas.toDataURL('image/jpeg', quality)
 }
 
+type ResultadoImagenImportada = { url: string; imagenUrl?: string; error?: string }
+
+/**
+ * Copia a R2 las fotos que vinieron en el JSON de la carta. Cada producto se resuelve
+ * aparte (portada + hasta 5 extras) y los errores no abortan el resto: el producto se
+ * crea sin la foto que falló.
+ */
+async function resolverImagenesCarta(
+  token: string,
+  carta: CartaEditable,
+  alProgresar?: (hechos: number, total: number) => void,
+): Promise<{ importadas: number; errores: string[] }> {
+  const conFotos = carta.categorias
+    .flatMap(cat => cat.productos)
+    .filter(p => p.imagenUrl || (p.imagenesExtra?.length ?? 0) > 0)
+  if (conFotos.length === 0) return { importadas: 0, errores: [] }
+
+  let importadas = 0
+  let hechos = 0
+  const errores: string[] = []
+  const cola = [...conFotos]
+
+  const trabajar = async () => {
+    while (cola.length > 0) {
+      const producto = cola.shift()!
+      const urls = [...new Set([producto.imagenUrl, ...(producto.imagenesExtra ?? [])].filter((u): u is string => !!u))]
+      try {
+        const res = await productosApi.importarImagenes(token, urls) as { imagenes?: ResultadoImagenImportada[] }
+        const resultados = res.imagenes ?? []
+        const exitosas = resultados.filter(r => r.imagenUrl).map(r => r.imagenUrl!)
+        if (exitosas.length > 0) {
+          producto.imagenUrl = exitosas[0]
+          producto.imagenesExtra = exitosas.slice(1)
+          importadas += exitosas.length
+        } else {
+          producto.imagenUrl = null
+          producto.imagenesExtra = []
+        }
+        for (const fallida of resultados.filter(r => r.error)) {
+          errores.push(`${producto.nombre}: ${fallida.error}`)
+        }
+        if (resultados.length !== urls.length) errores.push(`${producto.nombre}: no se pudo importar alguna foto`)
+      } catch (error) {
+        producto.imagenUrl = null
+        producto.imagenesExtra = []
+        errores.push(`${producto.nombre}: ${error instanceof Error ? error.message : 'no se pudo importar la foto'}`)
+      } finally {
+        hechos++
+        alProgresar?.(hechos, conFotos.length)
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(4, cola.length) }, trabajar))
+  return { importadas, errores }
+}
+
 // Menú ficticio que "detecta la IA" (simulado). Al confirmar se crean como productos reales.
 const MENU_SIMULADO = [
   { nombre: 'Hamburguesa Clásica', descripcion: 'Carne, cheddar, lechuga, tomate y salsa de la casa', precio: 7200, ambiguo: '¿Viene con papas?' },
@@ -1105,6 +1162,25 @@ const SelfServeOnboarding = () => {
       if (!res.success || !res.carta) throw new Error(res.message || 'La carta no tiene productos válidos')
       const preparada = prepararCarta(res.carta)
       const total = preparada.categorias.reduce((acc, cat) => acc + cat.productos.length, 0)
+      const conFotos = preparada.categorias
+        .flatMap(cat => cat.productos)
+        .filter(p => p.imagenUrl || (p.imagenesExtra?.length ?? 0) > 0).length
+
+      if (conFotos > 0) {
+        const toastFotos = toast.loading('Importando fotos de los productos…')
+        const { importadas, errores } = await resolverImagenesCarta(token, preparada, (hechos, totalFotos) => {
+          toast.loading(`Importando fotos ${hechos}/${totalFotos}…`, { id: toastFotos })
+        })
+        if (errores.length > 0) {
+          toast.warning(`Se importaron ${importadas} foto${importadas === 1 ? '' : 's'}`, {
+            id: toastFotos,
+            description: errores.slice(0, 3).join(' · '),
+          })
+        } else {
+          toast.success(`Se importaron ${importadas} foto${importadas === 1 ? '' : 's'}`, { id: toastFotos })
+        }
+      }
+
       patch({ cartaDetectada: preparada })
       setIaTotal(total); setIaProgress(100); setIaEstado('listo'); setIaError('')
       if (res.avisos?.length) {
@@ -1135,7 +1211,7 @@ const SelfServeOnboarding = () => {
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
           <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Importá tu carta en JSON</h1>
           <p className="text-[15px] text-muted-foreground mt-3">
-            Descargá el instructivo, pegáselo a una IA junto con tu carta y traé el archivo que te devuelva. También podés pegar un JSON armado a mano.
+            Descargá el instructivo, pegáselo a una IA junto con tu carta y traé el archivo que te devuelva. También podés pegar un JSON armado a mano. Si el JSON trae las URLs de las fotos (<code>imagenUrl</code> e <code>imagenesExtra</code>), se descargan y se cargan solas.
           </p>
 
           <button
@@ -1188,7 +1264,7 @@ const SelfServeOnboarding = () => {
             disabled={importandoCartaJson || !cartaJson.trim()}
             className="w-full h-14 mt-5 rounded-2xl text-[15px] font-semibold bg-[#FF7A00] hover:bg-[#E66E00] text-white active:scale-[0.985] transition-all disabled:opacity-40"
           >
-            {importandoCartaJson ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Validando carta…</> : <><FileJson className="mr-2 h-4 w-4" /> Importar carta</>}
+            {importandoCartaJson ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importando carta…</> : <><FileJson className="mr-2 h-4 w-4" /> Importar carta</>}
           </Button>
           <button onClick={() => setCartaModo('opciones')} className="w-full text-center text-sm text-muted-foreground hover:text-foreground mt-4 transition-colors">
             Elegir otra forma

@@ -24,6 +24,8 @@ export type ProductoCarta = {
   image?: string | null
   eliminarImagen?: boolean
   imagenUrl?: string | null
+  /** Fotos adicionales ya subidas a R2 (importadas desde el JSON de la carta). */
+  imagenesExtra?: string[]
   activo?: boolean
   etiquetas?: string[]
   puntosGanados?: number
@@ -37,7 +39,7 @@ export type CartaEditable = { categorias: { nombre: string; esBebida?: boolean; 
 type IdNombre = { id: number; nombre: string }
 type ExtraCatalogo = IdNombre & { precio: string | number; activo?: boolean }
 type OpcionServidor = Omit<OpcionCarta, 'precio'> & { precio: string | number }
-type ProductoGuardado = { success: boolean; message?: string; data?: [{ insertId: number }]; productoId?: number; imagenUrl?: string | null; variantes?: OpcionServidor[]; variantesSecundarias?: OpcionServidor[]; etiquetaAutoGenerada?: string }
+type ProductoGuardado = { success: boolean; message?: string; data?: [{ insertId: number }]; productoId?: number; imagenUrl?: string | null; imagenesExtra?: string[]; variantes?: OpcionServidor[]; variantesSecundarias?: OpcionServidor[]; etiquetaAutoGenerada?: string }
 
 export function prepararCarta(carta: CartaEditable): CartaEditable {
   return { categorias: carta.categorias.map(cat => ({ ...cat, productos: cat.productos.map(p => ({
@@ -110,10 +112,16 @@ export function crearGuardadorCarta(token: string) {
       const ex = p.extrasSecundarios![i]
       secundarios[i] = await resolver(extras, `${extraKey(ex.nombre, ex.precio)}:segundo-grupo`, () => crearExtra(ex))
     }
+    // Si el usuario quitó la portada en la revisión, la primera foto extra pasa a ser la tapa
+    // (mismo criterio que FotosProducto en Productos).
+    const extrasPrevias = p.imagenesExtra ?? []
+    const portada = p.eliminarImagen ? extrasPrevias[0] : (p.image || p.imagenUrl || undefined)
+    const extrasFotos = p.eliminarImagen ? extrasPrevias.slice(1) : extrasPrevias
     const payload = {
       nombre: p.nombre.trim(), descripcion: p.descripcion?.trim() || '', precio, categoriaId,
-      image: p.image?.startsWith('data:') ? p.image : undefined,
+      image: portada,
       eliminarImagen: p.eliminarImagen === true,
+      imagenesExtra: extrasFotos.length ? extrasFotos : undefined,
       ingredienteIds, agregadoIds: [...new Set(primarios)], agregadoIdsSecundarios: [...new Set(secundarios)],
       variantes: p.variantes ?? [], variantesSecundarias: p.variantesSecundarias ?? [],
       tituloVariantesPrimarias: p.tituloVariantesPrimarias ?? 'Elegí una opción',
@@ -129,7 +137,8 @@ export function crearGuardadorCarta(token: string) {
     if (!res.success) throw new Error(res.message || 'No se pudo guardar el producto')
     const variantes = (opciones: OpcionServidor[]) => opciones.map(v => ({ ...v, precio: Number(v.precio) }))
     return { ...p, id: p.id ?? res.productoId ?? Number(res.data?.[0]?.insertId), guardado: true, image: null, eliminarImagen: false,
-      imagenUrl: p.eliminarImagen ? null : res.imagenUrl ?? p.imagenUrl,
+      imagenUrl: res.imagenUrl ?? portada ?? null,
+      imagenesExtra: res.imagenesExtra ?? extrasFotos,
       extras: (p.extras ?? []).map((ex, i) => ({ ...ex, id: primarios[i] })),
       extrasSecundarios: (p.extrasSecundarios ?? []).map((ex, i) => ({ ...ex, id: secundarios[i] })),
       etiquetas: !p.id && res.etiquetaAutoGenerada ? [res.etiquetaAutoGenerada, ...p.etiquetas ?? []] : p.etiquetas,
