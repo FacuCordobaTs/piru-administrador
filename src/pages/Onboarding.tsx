@@ -1108,14 +1108,27 @@ const SelfServeOnboarding = () => {
 
   // ── Carta en JSON: el instructivo se descarga desde el backend y el archivo
   //    lo valida el servidor antes de entrar al mismo flujo de revisión. ──
-  const descargarInstructivoCarta = () => {
-    const link = document.createElement('a')
-    // Query de versión: evita que el navegador reutilice un instructivo viejo cacheado.
-    link.href = `${cartaIaApi.instructivoUrl}?v=${Date.now()}`
-    link.download = 'carta-json-piru.md'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+  const descargarInstructivoCarta = async () => {
+    try {
+      // Lo bajamos con cache:no-store y armamos el archivo en el navegador.
+      // Así no depende de que el backend pueda reiniciarse con headers nuevos.
+      const res = await fetch(`${cartaIaApi.instructivoUrl}?v=${Date.now()}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error(`El servidor respondió ${res.status}`)
+      const texto = await res.text()
+      if (!texto.trim()) throw new Error('El instructivo vino vacío')
+      const url = URL.createObjectURL(new Blob([texto], { type: 'text/markdown;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'carta-json-piru.md'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (error) {
+      toast.error('No se pudo descargar el instructivo', {
+        description: error instanceof Error ? error.message : 'Probá de nuevo en unos segundos',
+      })
+    }
   }
 
   const leerArchivoCartaJson = async (file: File | undefined) => {
@@ -1216,7 +1229,7 @@ const SelfServeOnboarding = () => {
           </p>
 
           <button
-            onClick={descargarInstructivoCarta}
+            onClick={() => void descargarInstructivoCarta()}
             className="mt-6 w-full text-left rounded-2xl border border-[#FF7A00]/30 bg-orange-50/60 dark:bg-orange-950/20 p-4 flex items-start gap-3 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"
           >
             <span className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-900 shadow-sm flex items-center justify-center shrink-0">
