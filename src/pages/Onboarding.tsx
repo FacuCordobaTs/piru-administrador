@@ -1110,7 +1110,8 @@ const SelfServeOnboarding = () => {
   //    lo valida el servidor antes de entrar al mismo flujo de revisión. ──
   const descargarInstructivoCarta = () => {
     const link = document.createElement('a')
-    link.href = cartaIaApi.instructivoUrl
+    // Query de versión: evita que el navegador reutilice un instructivo viejo cacheado.
+    link.href = `${cartaIaApi.instructivoUrl}?v=${Date.now()}`
     link.download = 'carta-json-piru.md'
     document.body.appendChild(link)
     link.click()
