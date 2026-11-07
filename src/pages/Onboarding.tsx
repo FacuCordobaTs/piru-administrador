@@ -26,12 +26,13 @@ import { toast } from 'sonner'
 import {
   onboardingApi, productosApi, pedidoUnificadoApi, zonasDeliveryApi, cartaIaApi, restauranteApi,
   modulosApi, sucursalesApi, mesasLocalesApi, suscripcionApi,
-  esConstructorInterno,
+  esConstructorInterno, altaJsonKey,
   type ClaimInventario, type MiSuscripcion
 } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
+import { useGoogleMapsScript } from '@/hooks/useGoogleMapsScript'
 import { TiendaPreview, type PreviewItem, type PreviewProduct } from '@/components/TiendaPreview'
 import { ProductoEditor } from './onboarding/components/ProductoEditor'
 import { ColoresTienda } from './onboarding/components/ColoresTienda'
@@ -130,6 +131,10 @@ async function fileToResizedDataUrl(file: File, maxDim = 1600, quality = 0.82): 
 }
 
 type ResultadoImagenImportada = { url: string; imagenUrl?: string; error?: string }
+type NegocioImportado = {
+  nombre: string | null; telefono: string | null; direccion: string | null
+  lat: number | null; lng: number | null; logoUrl: string | null
+}
 
 /**
  * Copia a R2 las fotos que vinieron en el JSON de la carta. Cada producto se resuelve
@@ -607,6 +612,68 @@ const SelfServeOnboarding = () => {
   }, [phase, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (p: Partial<typeof formData>) => setFormData((prev: any) => ({ ...prev, ...p }))
+
+  // ── JSON del local subido en el alta interna: precarga nombre, logo y dirección al
+  //    arrancar, y la carta se importa sola al llegar a ese paso. ──
+  const cartaJsonPendienteRef = useRef(false)
+  const [geocodificarDireccion, setGeocodificarDireccion] = useState(false)
+  const mapsListo = useGoogleMapsScript()
+  useEffect(() => {
+    if (!token || !restaurante?.id) return
+    const clave = altaJsonKey(restaurante.id)
+    const texto = sessionStorage.getItem(clave)
+    if (!texto) return
+    sessionStorage.removeItem(clave)
+    setCartaJson(texto)
+    setCartaModo('json')
+    cartaJsonPendienteRef.current = true
+    void (async () => {
+      try {
+        const parsed = JSON.parse(texto)
+        const carta = parsed && typeof parsed === 'object' && 'carta' in parsed ? parsed.carta : parsed
+        const res = await cartaIaApi.importar(token, carta) as { negocio?: NegocioImportado | null }
+        const negocio = res.negocio
+        if (!negocio) return
+        setFormData((prev: any) => ({
+          ...prev,
+          nombre: prev.nombre || negocio.nombre || '',
+          address: prev.address || negocio.direccion || '',
+          lat: prev.address ? prev.lat : negocio.lat,
+          lng: prev.address ? prev.lng : negocio.lng,
+          whatsappNumber: prev.whatsappNumber || negocio.telefono || '',
+        }))
+        if (negocio.direccion && (negocio.lat == null || negocio.lng == null)) setGeocodificarDireccion(true)
+        if (negocio.logoUrl && !formData.logo) {
+          const logo = await productosApi.importarImagenes(token, [negocio.logoUrl]) as { imagenes?: ResultadoImagenImportada[] }
+          const url = logo.imagenes?.[0]?.imagenUrl
+          if (url) patch({ logo: url })
+          else toast.warning('No se pudo importar el logo', { description: logo.imagenes?.[0]?.error })
+        }
+        toast.success('Datos del local precargados desde el JSON')
+      } catch (error) {
+        // La carta se valida de nuevo al importarla; acá sólo perdemos la precarga.
+        toast.warning('No se pudieron precargar los datos del local', {
+          description: error instanceof Error ? error.message : undefined,
+        })
+      }
+    })()
+  }, [token, restaurante?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dirección del JSON sin coordenadas: la ubicamos con Google para el mapa y las zonas.
+  useEffect(() => {
+    if (!geocodificarDireccion || !mapsListo || !formData.address) return
+    setGeocodificarDireccion(false)
+    new google.maps.Geocoder().geocode({ address: formData.address, region: 'ar' }, (resultados, estado) => {
+      const lugar = estado === 'OK' ? resultados?.[0] : undefined
+      if (!lugar?.geometry?.location) return
+      setFormData((prev: any) => prev.lat != null ? prev : ({
+        ...prev,
+        address: lugar.formatted_address || prev.address,
+        lat: lugar.geometry.location.lat(),
+        lng: lugar.geometry.location.lng(),
+      }))
+    })
+  }, [geocodificarDireccion, mapsListo, formData.address])
   const productosDestacables = [...new Map<number, ProductoDestacable>([
     ...restauranteStore.productos.map(p => [p.id, p] as const),
     ...(formData.cartaDetectada?.categorias.flatMap((c: CategoriaExtraida) => c.productos.filter(p => p.id).map(p => [p.id!, { ...p, id: p.id! }] as const)) ?? []),
@@ -1145,9 +1212,9 @@ const SelfServeOnboarding = () => {
     }
   }
 
-  const importarCartaJson = async () => {
+  const importarCartaJson = async (textoJson = cartaJson) => {
     if (!token || importandoCartaJson) return
-    const texto = cartaJson.trim()
+    const texto = textoJson.trim()
     if (!texto) {
       setCartaJsonError('Pegá el JSON o subí un archivo .json')
       return
@@ -1210,6 +1277,13 @@ const SelfServeOnboarding = () => {
     }
   }
 
+  // La carta del JSON del alta se importa sola al llegar a este paso.
+  useEffect(() => {
+    if (phase !== 'carta' || !cartaJsonPendienteRef.current || !cartaJson.trim()) return
+    cartaJsonPendienteRef.current = false
+    void importarCartaJson(cartaJson)
+  }, [phase, cartaJson]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const renderCarta = () => {
     const opciones = [
       { id: 'foto', icon: Camera, title: 'Sacale una foto', desc: 'A tu carta impresa o pizarra', hint: 'Lo más rápido', activa: true },
@@ -1225,7 +1299,7 @@ const SelfServeOnboarding = () => {
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
           <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Importá tu carta en JSON</h1>
           <p className="text-[15px] text-muted-foreground mt-3">
-            Descargá el instructivo, pegáselo a una IA junto con tu carta y traé el archivo que te devuelva. También podés pegar un JSON armado a mano. Si el JSON trae las URLs de las fotos (<code>imagenUrl</code> e <code>imagenesExtra</code>), se descargan y se cargan solas.
+            Descargá el instructivo, pegáselo a una IA junto con tu carta y traé el archivo que te devuelva. También podés pegar un JSON armado a mano. Si el JSON trae las URLs de las fotos (<code>imagenUrl</code> e <code>imagenesExtra</code>), se descargan y se cargan solas. Con <code>negocio</code> también se cargan el nombre, el logo y la dirección del local.
           </p>
 
           <button

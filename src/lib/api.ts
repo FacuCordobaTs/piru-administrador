@@ -237,6 +237,9 @@ export const altaInternaApi = {
   }),
 }
 
+/** JSON del local subido en el alta interna; el onboarding lo usa para precargar negocio y carta. */
+export const altaJsonKey = (restauranteId: number) => `piru:alta-json:${restauranteId}`
+
 export function esConstructorInterno(token: string | null): boolean {
   if (!token || isTokenExpired(token)) return false
   try {
