@@ -42,6 +42,22 @@ const panelInputClass = "h-12 rounded-lg bg-white dark:bg-zinc-800 border border
 const panelLabelClass = "text-xs font-semibold text-muted-foreground dark:text-zinc-400 uppercase tracking-wide mb-1.5 block"
 const phantomInputClass = "h-14 rounded-2xl bg-white dark:bg-zinc-900/50 border-transparent focus:bg-background focus:border-[#FF7A00] focus:ring-2 focus:ring-[#FF7A00]/20 transition-all text-base px-5 w-full"
 
+/**
+ * Mueve el elemento `id` a la posición `destino` sin mutar la lista original.
+ * Se identifica por id (no por índice) para que los `dragover` seguidos no
+ * muevan el elemento equivocado cuando el estado todavía no se actualizó.
+ */
+function moverPorId<T extends { id: number }>(lista: T[], id: number, destino: number): T[] {
+  const desde = lista.findIndex((item) => item.id === id)
+  if (desde === -1) return lista
+  const hasta = Math.max(0, Math.min(destino, lista.length - 1))
+  if (desde === hasta) return lista
+  const siguiente = [...lista]
+  const [movido] = siguiente.splice(desde, 1)
+  siguiente.splice(hasta, 0, movido)
+  return siguiente
+}
+
 const Productos = () => {
   const { productos, categorias, isLoading, fetchData, restaurante, setCategorias } = useRestauranteStore()
   const token = useAuthStore((state) => state.token)
@@ -143,7 +159,7 @@ const Productos = () => {
   const [categoriaAEliminar, setCategoriaAEliminar] = useState<typeof categorias[0] | null>(null)
   const [isEliminandoCategoria, setIsEliminandoCategoria] = useState(false)
   const [ordenCategoriasLocal, setOrdenCategoriasLocal] = useState<typeof categorias>([])
-  const [dragCategoriaIndex, setDragCategoriaIndex] = useState<number | null>(null)
+  const [categoriaArrastradaId, setCategoriaArrastradaId] = useState<number | null>(null)
   const [isGuardandoOrdenCategorias, setIsGuardandoOrdenCategorias] = useState(false)
   const [categoriaBebidaActualizandoId, setCategoriaBebidaActualizandoId] = useState<number | null>(null)
   const [categoriaEditandoId, setCategoriaEditandoId] = useState<number | null>(null)
@@ -180,7 +196,7 @@ const Productos = () => {
   // ─── Reordenar productos por categoría (drag & drop) ───
   const [reordenandoCategoria, setReordenandoCategoria] = useState<string | null>(null)
   const [ordenLocal, setOrdenLocal] = useState<typeof productos>([])
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [productoArrastradoId, setProductoArrastradoId] = useState<number | null>(null)
   const [isGuardandoOrden, setIsGuardandoOrden] = useState(false)
 
   useEffect(() => {
@@ -746,21 +762,28 @@ const Productos = () => {
     setOrdenCategoriasLocal([...categorias].sort((a, b) =>
       (a.orden ?? 0) - (b.orden ?? 0) || a.nombre.localeCompare(b.nombre) || a.id - b.id
     ))
-    setDragCategoriaIndex(null)
+    setCategoriaArrastradaId(null)
     cancelarEdicionCategoria()
     setDialogGestionCategoriasAbierto(true)
   }
 
-  const handleCategoriaDragOver = (e: React.DragEvent, index: number) => {
+  const empezarArrastreCategoria = (e: React.DragEvent, categoria: typeof categorias[0]) => {
+    setCategoriaArrastradaId(categoria.id)
+    // Firefox no inicia un arrastre nativo sin datos en el dataTransfer.
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(categoria.id))
+  }
+
+  const arrastrarCategoriaSobre = (e: React.DragEvent, index: number) => {
     e.preventDefault()
-    if (dragCategoriaIndex === null || dragCategoriaIndex === index) return
-    setOrdenCategoriasLocal((actual) => {
-      const siguiente = [...actual]
-      const [movida] = siguiente.splice(dragCategoriaIndex, 1)
-      siguiente.splice(index, 0, movida)
-      return siguiente
-    })
-    setDragCategoriaIndex(index)
+    e.dataTransfer.dropEffect = 'move'
+    if (categoriaArrastradaId === null) return
+    setOrdenCategoriasLocal((actual) => moverPorId(actual, categoriaArrastradaId, index))
+  }
+
+  const soltarCategoria = (e: React.DragEvent) => {
+    e.preventDefault()
+    setCategoriaArrastradaId(null)
   }
 
   const guardarOrdenCategorias = async () => {
@@ -775,7 +798,7 @@ const Productos = () => {
       toast.error('Error al ordenar categorías', { description: error instanceof Error ? error.message : 'Error de conexión' })
     } finally {
       setIsGuardandoOrdenCategorias(false)
-      setDragCategoriaIndex(null)
+      setCategoriaArrastradaId(null)
     }
   }
 
@@ -805,26 +828,33 @@ const Productos = () => {
     cerrarPanel()
     setReordenandoCategoria(categoriaNombre)
     setOrdenLocal(productosCat)
-    setDragIndex(null)
+    setProductoArrastradoId(null)
   }
 
   const cancelarReorden = () => {
     setReordenandoCategoria(null)
     setOrdenLocal([])
-    setDragIndex(null)
+    setProductoArrastradoId(null)
   }
 
-  // Reordenado en vivo: al pasar por encima de otro item, el arrastrado toma su lugar
-  const handleReorderDragOver = (e: React.DragEvent, index: number) => {
+  const empezarArrastreProducto = (e: React.DragEvent, producto: typeof productos[0]) => {
+    setProductoArrastradoId(producto.id)
+    // Firefox no inicia un arrastre nativo sin datos en el dataTransfer.
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(producto.id))
+  }
+
+  // Reordenado en vivo: al pasar por encima de otro item, el arrastrado toma su lugar.
+  const arrastrarProductoSobre = (e: React.DragEvent, index: number) => {
     e.preventDefault()
-    if (dragIndex === null || dragIndex === index) return
-    setOrdenLocal(prev => {
-      const next = [...prev]
-      const [movido] = next.splice(dragIndex, 1)
-      next.splice(index, 0, movido)
-      return next
-    })
-    setDragIndex(index)
+    e.dataTransfer.dropEffect = 'move'
+    if (productoArrastradoId === null) return
+    setOrdenLocal((actual) => moverPorId(actual, productoArrastradoId, index))
+  }
+
+  const soltarProducto = (e: React.DragEvent) => {
+    e.preventDefault()
+    setProductoArrastradoId(null)
   }
 
   const guardarOrden = async () => {
@@ -845,12 +875,16 @@ const Productos = () => {
   // ─────────────────────────────────────────────
   // Filtered
   // ─────────────────────────────────────────────
-  const productosFiltrados = productos.filter(p => {
-    const term = busqueda.toLowerCase()
-    return p.nombre.toLowerCase().includes(term) ||
-      (p.descripcion && p.descripcion.toLowerCase().includes(term)) ||
-      (p.etiquetas && p.etiquetas.some(e => e.nombre.toLowerCase().includes(term)))
-  })
+  const productosFiltrados = productos
+    .filter(p => {
+      const term = busqueda.toLowerCase()
+      return p.nombre.toLowerCase().includes(term) ||
+        (p.descripcion && p.descripcion.toLowerCase().includes(term)) ||
+        (p.etiquetas && p.etiquetas.some(e => e.nombre.toLowerCase().includes(term)))
+    })
+    // El perfil ya llega ordenado, pero ordenamos también acá para respetar el
+    // orden manual en catálogos guardados antes de que el perfil devolviera `orden`.
+    .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || a.id - b.id)
 
   const productosSinEtiqueta = productos.filter(p => !p.etiquetas || p.etiquetas.length === 0).length
 
@@ -1047,12 +1081,13 @@ const Productos = () => {
                             <div
                               key={producto.id}
                               draggable
-                              onDragStart={() => setDragIndex(index)}
-                              onDragOver={(e) => handleReorderDragOver(e, index)}
-                              onDragEnd={() => setDragIndex(null)}
+                              onDragStart={(e) => empezarArrastreProducto(e, producto)}
+                              onDragOver={(e) => arrastrarProductoSobre(e, index)}
+                              onDrop={soltarProducto}
+                              onDragEnd={() => setProductoArrastradoId(null)}
                               className={cn(
                                 "flex items-center gap-3 p-2 pr-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-transparent transition-all select-none cursor-grab active:cursor-grabbing",
-                                dragIndex === index ? "border-orange-500/70 opacity-60 shadow-lg" : "border-zinc-200 dark:border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/70",
+                                productoArrastradoId === producto.id ? "border-orange-500/70 opacity-60 shadow-lg" : "border-zinc-200 dark:border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/70",
                                 !producto.activo && "opacity-50"
                               )}
                             >
@@ -2247,12 +2282,13 @@ const Productos = () => {
                 <div
                   key={categoria.id}
                   draggable={!isGuardandoOrdenCategorias && categoriaEditandoId !== categoria.id}
-                  onDragStart={() => setDragCategoriaIndex(index)}
-                  onDragOver={(e) => handleCategoriaDragOver(e, index)}
-                  onDragEnd={() => setDragCategoriaIndex(null)}
+                  onDragStart={(e) => empezarArrastreCategoria(e, categoria)}
+                  onDragOver={(e) => arrastrarCategoriaSobre(e, index)}
+                  onDrop={soltarCategoria}
+                  onDragEnd={() => setCategoriaArrastradaId(null)}
                   className={cn(
                     "flex items-center justify-between p-3 rounded-2xl border bg-white dark:bg-[#121212] select-none cursor-grab active:cursor-grabbing transition-all",
-                    dragCategoriaIndex === index ? "border-orange-500/70 opacity-60 shadow-md" : "border-zinc-200 dark:border-zinc-800"
+                    categoriaArrastradaId === categoria.id ? "border-orange-500/70 opacity-60 shadow-md" : "border-zinc-200 dark:border-zinc-800"
                   )}
                 >
                   <div className="min-w-0 flex items-center gap-3">
