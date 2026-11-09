@@ -59,12 +59,25 @@ export function useMetodosPago() {
     savedTimer.current = setTimeout(() => setStatus('idle'), 2000)
   }, [])
 
-  // Guarda la config completa (updateMetodosPago sobrescribe todo).
+  // Guarda sólo lo que cambió: el backend mezcla el payload con la config
+  // vigente. Mandar la config completa hacía que editar el alias de la
+  // transferencia manual exigiera tener activo Mercado Pago o Talo.
   const persistir = useCallback(
     async (config: MetodosConfig, aliasValor: string) => {
       const token = useAuthStore.getState().token
       if (!token) return
       const prev = useRestauranteStore.getState().restaurante
+      const actual = derivar(prev).config
+
+      const payload: Parameters<typeof restauranteApi.updateMetodosPago>[1] = {}
+      if (config.checkout !== actual.checkout) payload.mercadopagoCheckout = config.checkout
+      if (config.bricks !== actual.bricks) payload.mercadopagoBricks = config.bricks
+      if (config.tfAuto !== actual.tfAuto) payload.transferenciaAutomatica = config.tfAuto
+      if (config.tfManual !== actual.tfManual) payload.transferenciaManual = config.tfManual
+      if (config.efectivo !== actual.efectivo) payload.efectivo = config.efectivo
+      if (aliasValor !== (prev?.transferenciaAlias ?? '')) payload.transferenciaAlias = aliasValor
+      if (Object.keys(payload).length === 0) return
+
       const prevPatch: Partial<RestauranteData> = {
         metodosPagoConfig: prev?.metodosPagoConfig ?? null,
         transferenciaAlias: prev?.transferenciaAlias ?? null,
@@ -72,14 +85,7 @@ export function useMetodosPago() {
       setLocal({ metodosPagoConfig: aStore(config), transferenciaAlias: aliasValor })
       setStatus('saving')
       try {
-        await restauranteApi.updateMetodosPago(token, {
-          mercadopagoCheckout: config.checkout,
-          mercadopagoBricks: config.bricks,
-          transferenciaAutomatica: config.tfAuto,
-          transferenciaManual: config.tfManual,
-          efectivo: config.efectivo,
-          transferenciaAlias: aliasValor,
-        })
+        await restauranteApi.updateMetodosPago(token, payload)
         marcarGuardado()
       } catch (e) {
         setLocal(prevPatch)
