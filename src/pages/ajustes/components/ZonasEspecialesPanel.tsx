@@ -35,23 +35,44 @@ type FormZona = {
   precio: string
   horaInicio: string
   horaFin: string
+  diasReparto: number[]
   activa: boolean
 }
 
 const FORM_VACIO: FormZona = {
   nombre: '',
   precio: '0',
-  horaInicio: '17:00',
-  horaFin: '20:00',
+  horaInicio: '10:00',
+  horaFin: '16:00',
+  diasReparto: [3],
   activa: true,
 }
 
+// Lunes primero; el valor es el de Date#getDay (0 = domingo).
+const DIAS = [
+  { valor: 1, corto: 'Lun', largo: 'lunes' },
+  { valor: 2, corto: 'Mar', largo: 'martes' },
+  { valor: 3, corto: 'Mié', largo: 'miércoles' },
+  { valor: 4, corto: 'Jue', largo: 'jueves' },
+  { valor: 5, corto: 'Vie', largo: 'viernes' },
+  { valor: 6, corto: 'Sáb', largo: 'sábados' },
+  { valor: 0, corto: 'Dom', largo: 'domingos' },
+]
+
 const horaBonita = (hora: string) => hora.slice(0, 5)
+
+function describirDias(dias: number[] | undefined) {
+  const lista = DIAS.filter((d) => (dias ?? []).includes(d.valor))
+  if (lista.length === 0 || lista.length === 7) return 'Todos los días'
+  const nombres = lista.map((d) => d.largo)
+  const texto = nombres.length === 1 ? nombres[0] : `${nombres.slice(0, -1).join(', ')} y ${nombres.at(-1)}`
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
+}
 
 function resumenZona(zona: ZonaEspecial) {
   const precio = fmtARS(zona.precio)
   const envio = precio === null || Number(zona.precio) === 0 ? 'Envío gratis' : `Envío ${precio}`
-  return `${horaBonita(zona.horaInicio)} a ${horaBonita(zona.horaFin)} · ${envio}`
+  return `${describirDias(zona.diasReparto)} · pedidos de ${horaBonita(zona.horaInicio)} a ${horaBonita(zona.horaFin)} · ${envio}`
 }
 
 /**
@@ -109,6 +130,7 @@ export function ZonasEspecialesPanel() {
       precio: zona.precio,
       horaInicio: horaBonita(zona.horaInicio),
       horaFin: horaBonita(zona.horaFin),
+      diasReparto: zona.diasReparto?.length ? zona.diasReparto : DIAS.map((d) => d.valor),
       activa: zona.activa,
     })
     setEditorOpen(true)
@@ -127,7 +149,11 @@ export function ZonasEspecialesPanel() {
       return
     }
     if (!form.horaInicio || !form.horaFin) {
-      toast.error('Completá el horario de entrega')
+      toast.error('Completá el horario para pre ordenar')
+      return
+    }
+    if (form.diasReparto.length === 0) {
+      toast.error('Elegí al menos un día de reparto')
       return
     }
     if (form.horaInicio === form.horaFin) {
@@ -142,6 +168,7 @@ export function ZonasEspecialesPanel() {
         precio: precio.toFixed(2),
         horaInicio: form.horaInicio,
         horaFin: form.horaFin,
+        diasReparto: form.diasReparto,
         activa: form.activa,
       }
       const res = editando
@@ -259,7 +286,7 @@ export function ZonasEspecialesPanel() {
         <div className="max-w-xl space-y-1">
           <p className="text-sm font-medium text-foreground">Countries y barrios cerrados</p>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Cada zona tiene su horario de entrega. El cliente elige el country en el checkout y el pedido se entrega en su puerta.
+            Cada zona tiene sus días de reparto y un horario para pre ordenar. La opción country sólo aparece en la tienda esos días; el horario de entrega se avisa por WhatsApp cuando salen.
           </p>
         </div>
         <Button type="button" onClick={abrirNueva} className="gap-2">
@@ -276,7 +303,7 @@ export function ZonasEspecialesPanel() {
         <div className="rounded-2xl border border-dashed border-border px-5 py-8 text-center">
           <p className="text-sm font-medium">Todavía no cargaste zonas especiales</p>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            Creá el primer country con su horario de entrega y su costo de envío.
+            Creá el primer country con sus días de reparto, el horario para pre ordenar y su costo de envío.
           </p>
         </div>
       ) : (
@@ -296,7 +323,7 @@ export function ZonasEspecialesPanel() {
                     'rounded-full px-2 py-0.5 text-[11px] font-medium',
                     zona.enVentana ? 'bg-emerald-500/10 text-emerald-700' : 'bg-muted text-muted-foreground',
                   )}>
-                    {zona.enVentana ? 'En ventana' : 'Fuera de ventana'}
+                    {zona.enVentana ? 'Tomando pedidos' : 'Sin tomar pedidos'}
                   </span>
                   {!zona.activa && (
                     <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
@@ -307,7 +334,7 @@ export function ZonasEspecialesPanel() {
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-muted-foreground">
                   <Clock className="size-3.5 shrink-0" />
                   <span>{resumenZona(zona)}</span>
-                  {zona.proximaVentana && <span className="text-muted-foreground/70">· Próxima: {zona.proximaVentana}</span>}
+                  {zona.proximaVentana && <span className="text-muted-foreground/70">· Próximos pedidos: {zona.proximaVentana}</span>}
                 </p>
                 {(zona.pedidosPendientes ?? 0) > 0 && (
                   <p className="text-[12px] font-medium text-foreground/70">
@@ -348,17 +375,17 @@ export function ZonasEspecialesPanel() {
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 px-4 py-3.5">
         <div className="max-w-xl space-y-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">Permitir pedidos pre ordenados</p>
+            <p className="text-sm font-medium">Pre ordenar con el local cerrado</p>
             <SavedIndicator status={prepedidos.status} />
           </div>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Deja armar el pedido fuera de la ventana de entrega (o con el local cerrado) para la próxima entrega del country.
+            Deja pre ordenar para un country dentro de su horario aunque el local esté cerrado.
           </p>
         </div>
         <Switch
           checked={prepedidos.checked}
           onCheckedChange={prepedidos.toggle}
-          aria-label="Permitir pedidos pre ordenados"
+          aria-label="Pre ordenar con el local cerrado"
         />
       </div>
 
@@ -371,7 +398,7 @@ export function ZonasEspecialesPanel() {
           <DialogHeader>
             <DialogTitle>{editando ? 'Editar zona especial' : 'Nueva zona especial'}</DialogTitle>
             <DialogDescription>
-              El horario es la ventana en la que el local entrega en esa zona.
+              La zona sólo aparece en la tienda los días de reparto, y dentro del horario se toman los pre-pedidos. La entrega se avisa cuando salen.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -384,9 +411,38 @@ export function ZonasEspecialesPanel() {
                 placeholder="Ej: Country Los Aromos"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label>Días de reparto</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {DIAS.map((d) => {
+                  const activo = form.diasReparto.includes(d.valor)
+                  return (
+                    <button
+                      key={d.valor}
+                      type="button"
+                      aria-pressed={activo}
+                      onClick={() => setForm((prev) => ({
+                        ...prev,
+                        diasReparto: activo
+                          ? prev.diasReparto.filter((v) => v !== d.valor)
+                          : [...prev.diasReparto, d.valor],
+                      }))}
+                      className={cn(
+                        'h-9 min-w-12 rounded-lg border px-3 text-sm font-medium transition-colors',
+                        activo
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {d.corto}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="zona-especial-inicio">Entrega desde</Label>
+                <Label htmlFor="zona-especial-inicio">Pedidos desde</Label>
                 <Input
                   id="zona-especial-inicio"
                   type="time"
@@ -395,7 +451,7 @@ export function ZonasEspecialesPanel() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="zona-especial-fin">Entrega hasta</Label>
+                <Label htmlFor="zona-especial-fin">Pedidos hasta</Label>
                 <Input
                   id="zona-especial-fin"
                   type="time"

@@ -2723,6 +2723,8 @@ export type ZonaEspecial = {
   precio: string
   horaInicio: string
   horaFin: string
+  /** Días de reparto (0 = domingo). */
+  diasReparto: number[]
   activa: boolean
   createdAt: string
   enVentana?: boolean
@@ -2750,7 +2752,7 @@ export const zonasEspecialesApi = {
 
   create: async (
     token: string,
-    data: { nombre: string; precio: string; horaInicio: string; horaFin: string; activa?: boolean },
+    data: { nombre: string; precio: string; horaInicio: string; horaFin: string; diasReparto: number[]; activa?: boolean },
   ) => {
     return fetchApi<{ success: boolean; data: ZonaEspecial; message?: string }>('/zonas-especiales/create', {
       method: 'POST',
@@ -2762,7 +2764,7 @@ export const zonasEspecialesApi = {
   update: async (
     token: string,
     id: number,
-    data: Partial<{ nombre: string; precio: string; horaInicio: string; horaFin: string; activa: boolean }>,
+    data: Partial<{ nombre: string; precio: string; horaInicio: string; horaFin: string; diasReparto: number[]; activa: boolean }>,
   ) => {
     return fetchApi<{ success: boolean; data: ZonaEspecial; message?: string }>(`/zonas-especiales/${id}`, {
       method: 'PUT',

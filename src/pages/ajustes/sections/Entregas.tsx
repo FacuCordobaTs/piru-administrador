@@ -110,7 +110,7 @@ export default function Entregas() {
         open={editor === 'zonas-especiales' && avisosWhatsappActivos && !esDemo}
         onOpenChange={(o) => !o && setEditor(null)}
         titulo="Zonas especiales"
-        descripcion="Countries y barrios cerrados con una ventana horaria de entrega."
+        descripcion="Countries y barrios cerrados con días de reparto y horario para pre ordenar."
       >
         <ZonasEspecialesPanel />
       </AjusteEditor>
@@ -159,7 +159,7 @@ function useZonasResumen() {
   return { texto, estado }
 }
 
-/** Oración de zonas especiales: "{n} countries, entrega 17:00 a 20:00". */
+/** Oración de zonas especiales: "{n} countries, pedidos 10:00 a 16:00". */
 function useZonasEspecialesResumen(activo: boolean, refrescar: boolean) {
   const [texto, setTexto] = useState('Cargando…')
   const [estado, setEstado] = useState<'configurado' | 'sin-configurar'>('sin-configurar')
@@ -178,7 +178,7 @@ function useZonasEspecialesResumen(activo: boolean, refrescar: boolean) {
           return
         }
         const primera = zonas[0]
-        setTexto(`${zonas.length} ${zonas.length === 1 ? 'zona' : 'zonas'}, entrega ${primera.horaInicio.slice(0, 5)} a ${primera.horaFin.slice(0, 5)}`)
+        setTexto(`${zonas.length} ${zonas.length === 1 ? 'zona' : 'zonas'}, pedidos ${primera.horaInicio.slice(0, 5)} a ${primera.horaFin.slice(0, 5)}`)
         setEstado('configurado')
       } catch {
         setTexto('No se pudieron cargar las zonas especiales')
