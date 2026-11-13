@@ -2480,6 +2480,32 @@ export const repartidoresApi = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+  actualizarPagos: async (
+    token: string,
+    id: number,
+    pagos: { precioEnvio: number; pagoDiaHabil: number; pagoFinDeSemana: number; pagoFeriado: number },
+  ) =>
+    fetchApi(`/repartidores/${id}/pagos`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(pagos),
+    }),
+  feriados: async (token: string, anio: number) =>
+    fetchApi(`/repartidores/feriados?anio=${anio}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  crearFeriado: async (token: string, fecha: string, nombre: string) =>
+    fetchApi('/repartidores/feriados', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ fecha, nombre }),
+    }),
+  eliminarFeriado: async (token: string, id: number) =>
+    fetchApi(`/repartidores/feriados/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
 }
 
 // Delivery API - usa pedidoUnificado por detrás (compatibilidad)

@@ -2,23 +2,13 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { repartidoresApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, UserRound, Plus, X } from 'lucide-react'
+import { Loader2, UserRound, Plus, X, Pencil } from 'lucide-react'
 import { PeriodSelector, periodLabelOf, type PeriodValue } from './Metricas'
 import { useModuloActivo } from '@/store/modulosStore'
 import { useNavigate } from 'react-router'
-
-interface RepartidorStat {
-  id: number
-  nombre: string
-  estado: 'activo' | 'inactivo'
-  cantidadPedidos: number
-  pedidosPagados: number
-  totalRecaudado: number
-  totalPedidos: number
-}
-
-const fmtMoney = (n: number) =>
-  `$${n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+import { PagosRepartidorDialog } from '@/components/repartidores/PagosRepartidorDialog'
+import { FeriadosPanel } from '@/components/repartidores/FeriadosPanel'
+import { formatearPesos, tienePagoConfigurado, type RepartidorStat } from '@/lib/repartidores'
 
 const rangoDeMes = (mes: number, anio: number) => {
   const first = `${anio}-${String(mes).padStart(2, '0')}-01`
@@ -44,6 +34,7 @@ export default function Repartidores() {
   const [nuevoNombre, setNuevoNombre] = useState('')
   const [creando, setCreando] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
+  const [editandoPagos, setEditandoPagos] = useState<RepartidorStat | null>(null)
 
   const fetchStats = useCallback(async (todo: boolean, p: PeriodValue) => {
     if (!token) return
@@ -72,6 +63,10 @@ export default function Repartidores() {
     if (gestionCadetesActiva) fetchStats(verTodo, period)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, gestionCadetesActiva, verTodo, period.mode, period.mes, period.anio, period.from, period.to])
+
+  const refrescar = useCallback(() => {
+    void fetchStats(verTodo, period)
+  }, [fetchStats, verTodo, period])
 
   const handleCrear = async () => {
     if (!token) return
@@ -116,16 +111,19 @@ export default function Repartidores() {
   const totales = useMemo(() => {
     return stats.reduce(
       (acc, r) => {
-        acc.pedidos += r.cantidadPedidos
+        acc.entregas += r.entregas
+        acc.dias += r.diasTrabajados
         acc.recaudado += r.totalRecaudado
+        acc.pago += r.pagoTotal
         if (r.estado === 'activo') acc.activos += 1
         return acc
       },
-      { pedidos: 0, recaudado: 0, activos: 0 }
+      { entregas: 0, dias: 0, recaudado: 0, pago: 0, activos: 0 }
     )
   }, [stats])
 
   const periodLabel = periodLabelOf(period, verTodo)
+  const equipoSinConfigurar = stats.length > 0 && stats.every((r) => !tienePagoConfigurado(r))
 
   if (!gestionCadetesActiva) {
     return (
@@ -143,7 +141,8 @@ export default function Repartidores() {
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">Gestión de cadetes</h1>
         <p className="text-sm text-muted-foreground">
-          Tu equipo de reparto y lo que recaudó en envíos. Sumá o desactivá cadetes desde acá.
+          Tu equipo de reparto, lo que recaudó en envíos y lo que hay que pagarle. Definí el pago
+          por envío y el fijo por día de cada cadete.
         </p>
       </header>
 
@@ -156,19 +155,34 @@ export default function Repartidores() {
         />
       </div>
 
-      {/* Hero: recaudado en envíos */}
-      <div className="text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Recaudado en envíos · {periodLabel}
-        </p>
-        <h1 className="text-6xl sm:text-7xl font-semibold tracking-tight text-foreground tabular-nums mt-3">
-          {fmtMoney(totales.recaudado)}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-4">
-          {totales.pedidos} {totales.pedidos === 1 ? 'entrega' : 'entregas'}
-          {' · '}
-          <span className="text-foreground font-medium">{totales.activos}</span> repartidor{totales.activos === 1 ? '' : 'es'} activo{totales.activos === 1 ? '' : 's'}
-        </p>
+      {/* Hero: recaudado en envíos y liquidación del equipo */}
+      <div className="grid gap-8 sm:grid-cols-2 text-center">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Recaudado en envíos · {periodLabel}
+          </p>
+          <h2 className="text-5xl sm:text-6xl font-semibold tracking-tight text-foreground tabular-nums mt-3">
+            {formatearPesos(totales.recaudado)}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-3">
+            {totales.entregas} {totales.entregas === 1 ? 'entrega' : 'entregas'}
+            {' · '}
+            <span className="text-foreground font-medium">{totales.activos}</span> repartidor{totales.activos === 1 ? '' : 'es'} activo{totales.activos === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            A pagar al equipo · {periodLabel}
+          </p>
+          <h2 className="text-5xl sm:text-6xl font-semibold tracking-tight text-foreground tabular-nums mt-3">
+            {formatearPesos(totales.pago)}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-3">
+            {totales.dias} {totales.dias === 1 ? 'día trabajado' : 'días trabajados'}
+            {' · '}
+            {totales.entregas} {totales.entregas === 1 ? 'envío' : 'envíos'}
+          </p>
+        </div>
       </div>
 
       {/* Ranking */}
@@ -176,6 +190,13 @@ export default function Repartidores() {
         <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground text-center">
           Ranking del equipo
         </p>
+
+        {equipoSinConfigurar && (
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            Todavía no cargaste importes. Usá <span className="font-medium text-foreground">Pagos</span> en
+            cada cadete para saber cuánto liquidar.
+          </p>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-14">
@@ -189,6 +210,8 @@ export default function Repartidores() {
           <div className="mt-4 max-w-xl mx-auto divide-y divide-border/40">
             {stats.map((r, idx) => {
               const inactivo = r.estado === 'inactivo'
+              const configurado = tienePagoConfigurado(r)
+              const detalle = `${r.entregas} ${r.entregas === 1 ? 'envío' : 'envíos'} × ${formatearPesos(r.precioEnvio)} + ${r.diasHabiles} hábil${r.diasHabiles === 1 ? '' : 'es'}, ${r.diasFinDeSemana} fin de semana, ${r.diasFeriados} feriado${r.diasFeriados === 1 ? '' : 's'}`
               return (
                 <div key={r.id} className={`group flex items-center gap-4 py-4 ${inactivo ? 'opacity-50' : ''}`}>
                   <span className="text-lg font-semibold tabular-nums text-muted-foreground/40 w-6 shrink-0">
@@ -205,21 +228,48 @@ export default function Repartidores() {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {r.cantidadPedidos} entrega{r.cantidadPedidos === 1 ? '' : 's'}
+                      {r.entregas} entrega{r.entregas === 1 ? '' : 's'}
+                      {r.diasTrabajados > 0 && ` · ${r.diasTrabajados} día${r.diasTrabajados === 1 ? '' : 's'}`}
                       {r.pedidosPagados > 0 && ` · ${r.pedidosPagados} pagada${r.pedidosPagados === 1 ? '' : 's'}`}
                     </div>
+                    <div className="text-[11px] text-muted-foreground/80 mt-0.5">
+                      Recaudó {formatearPesos(r.totalRecaudado)} en envíos
+                    </div>
+                    <div className="mt-1 flex items-center gap-3 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setEditandoPagos(r)}
+                        className="inline-flex items-center gap-1 text-muted-foreground hover:text-brand transition-colors"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        Pagos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggle(r)}
+                        disabled={togglingId === r.id}
+                        className="text-muted-foreground hover:text-brand transition-colors disabled:opacity-50 inline-flex items-center gap-1"
+                      >
+                        {togglingId === r.id && <Loader2 className="w-3 h-3 animate-spin" />}
+                        {inactivo ? 'Activar' : 'Desactivar'}
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-sm font-semibold tabular-nums text-foreground">{fmtMoney(r.totalRecaudado)}</div>
-                    <button
-                      type="button"
-                      onClick={() => handleToggle(r)}
-                      disabled={togglingId === r.id}
-                      className="text-[11px] text-muted-foreground hover:text-brand transition-colors disabled:opacity-50 inline-flex items-center gap-1"
-                    >
-                      {togglingId === r.id && <Loader2 className="w-3 h-3 animate-spin" />}
-                      {inactivo ? 'Activar' : 'Desactivar'}
-                    </button>
+                  <div className="text-right shrink-0" title={configurado ? detalle : undefined}>
+                    {configurado ? (
+                      <>
+                        <div className="text-sm font-semibold tabular-nums text-foreground">{formatearPesos(r.pagoTotal)}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">a pagar</div>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEditandoPagos(r)}
+                        className="text-[11px] text-muted-foreground hover:text-brand transition-colors"
+                      >
+                        Configurar pagos
+                      </button>
+                    )}
                   </div>
                 </div>
               )
@@ -272,6 +322,16 @@ export default function Repartidores() {
           )}
         </div>
       </section>
+
+      <FeriadosPanel token={token} onCambio={refrescar} />
+
+      <PagosRepartidorDialog
+        open={editandoPagos !== null}
+        onOpenChange={(open) => { if (!open) setEditandoPagos(null) }}
+        token={token}
+        repartidor={editandoPagos}
+        onGuardado={refrescar}
+      />
     </div>
   )
 }

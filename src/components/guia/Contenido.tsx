@@ -488,8 +488,19 @@ function Delivery({ c }: { c: ContextoGuia }) {
       <p>
         Con <strong>Gestión de cadetes</strong> cargás a tus repartidores en la pantalla <strong>Cadetes</strong>
         del menú lateral y asignás quién lleva cada delivery desde su detalle. Si tenés más de uno activo, al
-        despachar te pregunta «¿Quién hace el envío?». La misma pantalla muestra los pedidos que entregó cada uno
-        y lo recaudado en envíos.
+        despachar te pregunta «¿Quién hace el envío?». La misma pantalla muestra los pedidos que entregó cada uno,
+        lo recaudado en envíos y <strong>lo que hay que pagarle</strong> en el período que elijas.
+      </p>
+      <p>
+        En <strong>Pagos</strong>, dentro de cada cadete, definís cuánto le pagás por envío y el fijo por día
+        trabajado: uno para los días hábiles, otro para sábados y domingos y otro para feriados. Un día cuenta
+        como trabajado si ese cadete tiene al menos una entrega asignada; el feriado tiene prioridad sobre el fin
+        de semana.
+      </p>
+      <p>
+        Los <strong>feriados nacionales</strong> se reconocen solos, incluidos Carnaval, Viernes Santo y los que se
+        trasladan al lunes. Abajo del ranking podés sumar los <strong>puentes turísticos</strong> y los feriados
+        de tu ciudad: esos días se liquidan con el importe de feriado.
       </p>
       <Clave>
         <li>Fuera de las zonas no se puede pedir delivery: el cliente puede elegir retirar en el local.</li>
@@ -1012,8 +1023,8 @@ function Estadisticas({ c }: { c: ContextoGuia }) {
         </li>
       </ul>
       <p>
-        Con Gestión de cadetes se suma la pestaña <strong>Repartidores</strong>: los pedidos que entregó cada uno
-        y lo recaudado en envíos.
+        Con Gestión de cadetes se suma la pestaña <strong>Repartidores</strong>: los pedidos que entregó cada uno,
+        lo recaudado en envíos y lo que hay que pagarle según los importes que cargaste.
       </p>
       <Clave titulo="Para leerlas bien">
         <li>Compará un mes con el anterior, no con diciembre.</li>
