@@ -24,7 +24,7 @@ export function ClubPuntos({ siempreActiva }: PropsEscena) {
     <Escena
       ancho={460}
       alto={300}
-      etiqueta={`Un pedido cobrado de ${pesos(PEDIDO)} le suma ${SUMA} puntos a ${CLIENTA.corto}, que llega a ${ANTES + SUMA} puntos y ya puede canjear el envío gratis o el descuento; le faltan pocos para el producto gratis.`}
+      etiqueta={`Un pedido despachado de ${pesos(PEDIDO)} le suma ${SUMA} puntos a ${CLIENTA.corto}, que llega a ${ANTES + SUMA} puntos y ya puede canjear el envío gratis o el descuento; le faltan pocos para el producto gratis.`}
       siempreActiva={siempreActiva}
     >
       <div className="e-izquierda e-tarjeta absolute left-[18px] top-[28px] w-[178px] p-4" style={d(0)}>
@@ -124,7 +124,7 @@ export function ClubPuntos({ siempreActiva }: PropsEscena) {
         className="e-aparece absolute left-[18px] top-[272px] text-[10.5px] text-ink-3"
         style={d(1400)}
       >
-        Ejemplo: 1 punto cada {pesos(PESOS_POR_PUNTO)} · se acreditan cuando el pedido se cobra
+        Ejemplo: 1 punto cada {pesos(PESOS_POR_PUNTO)} · se acreditan cuando el pedido se despacha
       </p>
     </Escena>
   );

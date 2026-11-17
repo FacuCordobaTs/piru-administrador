@@ -85,7 +85,7 @@ export function pasosDelRecorrido({
       etiqueta: "Puntos",
       titulo: "Puntos y cupones para que vuelvan",
       texto:
-        "Con el club de puntos, cada pedido cobrado suma para un premio: envío gratis, un descuento o un producto. También podés usar los puntos como incentivo de un link o mensaje, sin regalar descuento. Y con los cupones armás beneficios con usos y ventas medidos.",
+        "Con el club de puntos, cada pedido despachado suma para un premio: envío gratis, un descuento o un producto. También podés usar los puntos como incentivo de un link o mensaje, sin regalar descuento. Y con los cupones armás beneficios con usos y ventas medidos.",
       donde: "Puntos y Cupones",
       modulo: "Con Puntos",
       escena: "puntos",

@@ -76,7 +76,7 @@ export function ayudaDePantalla(pantalla: Pantalla): AyudaPantalla {
     },
     puntos: {
       titulo: "El club de puntos",
-      texto: "Cada pedido cobrado suma puntos que se canjean por envío gratis, descuentos o productos.",
+      texto: "Cada pedido despachado suma puntos que se canjean por envío gratis, descuentos o productos.",
       puntos: [
         "Definí cómo se suman y se canjean los puntos en «Modificar club».",
         "Los clientes del club y sus ajustes están en Clientes.",

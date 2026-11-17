@@ -96,6 +96,7 @@ function PuntosContenido() {
               {[
                 ["Estado", d.data.config.activo ? "Activo" : "Pausado"],
                 ["Cómo se suman", ({monto: "Por el monto del pedido", producto: "Por los productos", ambos: "Monto y productos"})[d.data.config.modoAcumulacion || "monto"]],
+                ["Cuándo se suman", "Al despachar el pedido"],
                 ["Pesos por punto", "$" + d.data.config.pesosPorPunto],
                 ["Bienvenida", d.data.config.puntosPrimerPedido + " puntos"],
                 ["Mínimo para canjear", d.data.config.puntosMinimosCanje + " puntos"],

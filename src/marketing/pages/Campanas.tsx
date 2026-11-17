@@ -671,7 +671,7 @@ function FormCampana({
             <option value="descuento">Descuento en el producto</option>
           )}
           <option value="puntos" disabled={!clubActivo}>
-            Puntos extra al cobrarse el pedido
+            Puntos extra al despacharse el pedido
           </option>
         </select>
         {beneficio === "puntos" && !clubActivo && (
@@ -746,7 +746,7 @@ function FormCampana({
             />
           </label>
           <p className="muted text-sm sm:col-span-2">
-            El bonus se acredita cuando el pedido se cobra. Con esta compra
+            El bonus se acredita cuando el pedido se despacha. Con esta compra
             mínima, el sistema admite hasta {maxPuntosPorMinimo.toLocaleString("es-AR")} puntos
             {puntosBeneficio > maxPuntosPorMinimo
               ? `: los ${puntosBeneficio.toLocaleString("es-AR")} se ajustan al cobrar para no superar el ${topePorcentaje}% del ticket.`

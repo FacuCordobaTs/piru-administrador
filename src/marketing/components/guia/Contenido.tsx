@@ -328,7 +328,7 @@ function Campanas() {
         </li>
         <li>
           <strong>Puntos extra</strong>: el link promete puntos que se acreditan cuando el pedido se
-          cobra, con una compra mínima y un cupo. Nunca se suman con un descuento.
+          despacha, con una compra mínima y un cupo. Nunca se suman con un descuento.
         </li>
         <li>
           <strong>Un carrito armado</strong>: los productos ya cargados, listos para pedir. Ideal
@@ -487,7 +487,7 @@ function Puntos() {
   return (
     <>
       <p>
-        Cada pedido cobrado le suma puntos al cliente, y con los puntos canjea premios. Es una
+        Cada pedido despachado le suma puntos al cliente, y con los puntos canjea premios. Es una
         razón concreta para volver a pedir en el local y no por otro lado.
       </p>
       <Figura pie="Ejemplo con 1 punto cada $100: un pedido de $13.500 suma 135 puntos.">
@@ -528,7 +528,7 @@ function Puntos() {
       <p>
         Los puntos también sirven para recuperar clientes sin regalar margen. En un link de campaña
         o en un mensaje manual podés elegir <strong>sumar puntos extra</strong> en vez de un
-        descuento: se acreditan recién cuando el pedido se cobra. Para que el premio no salga más
+        descuento: se acreditan recién cuando el pedido se despacha. Para que el premio no salga más
         caro que la venta, el local define tres topes: cuánto puede valer el bonus sobre el pedido,
         cuántos puntos como máximo por pedido y cuántas veces por cliente cada 30 días. La compra
         mínima del link se calcula con esos topes y se anuncia en el mensaje.
@@ -543,8 +543,8 @@ function Puntos() {
       </Clave>
       <Clave>
         <li>
-          Los puntos se acreditan cuando el pedido se cobra. Si el pedido se cancela, se descuentan
-          y lo canjeado vuelve al saldo.
+          Los puntos se acreditan cuando el pedido se despacha. Si el pedido se cancela,
+          se descuentan y lo canjeado vuelve al saldo.
         </li>
         <li>
           Podés sumar o restar puntos a mano a un cliente, siempre con un motivo: queda en sus

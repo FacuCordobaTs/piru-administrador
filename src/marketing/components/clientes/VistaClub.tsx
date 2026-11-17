@@ -80,7 +80,7 @@ export function VistaClub({
                   </span>
                 </div>
                 <p className="muted mt-2">
-                  Cada pedido cobrado suma puntos y con los puntos se canjean
+                  Cada pedido despachado suma puntos y con los puntos se canjean
                   premios.
                 </p>
               </div>

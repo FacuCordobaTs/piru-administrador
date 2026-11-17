@@ -261,6 +261,7 @@ function Pedidos({ c }: { c: ContextoGuia }) {
       </p>
       <Clave>
         <li>Despachar no borra nada: el pedido sigue en Historial y en Caja.</li>
+        <li>Al despachar se suman los puntos del club del cliente.</li>
         <li>
           <strong>Eliminar</strong>, el tacho del detalle, sí lo borra para siempre. Usalo sólo para pruebas o
           errores.
