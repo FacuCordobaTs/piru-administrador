@@ -32,7 +32,8 @@ import {
 } from './impresionEditor'
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-const DOWNLOAD_URL = 'https://piru.app'
+const DOWNLOAD_FALLBACK_URL = 'https://piru.app'
+const LATEST_JSON_URL = 'https://api.piru.app/public/updates/latest.json'
 
 export default function Impresion() {
   const [editor, setEditor] = useState(false)
@@ -40,6 +41,22 @@ export default function Impresion() {
   const navigate = useNavigate()
   const impresionActiva = useModuloActivo('impresion_comandas')
   const { selectedPrinter } = usePrinter()
+  const [downloadUrl, setDownloadUrl] = useState(DOWNLOAD_FALLBACK_URL)
+
+  useEffect(() => {
+    if (isTauri) return
+    let vivo = true
+    fetch(LATEST_JSON_URL)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data) => {
+        const url = data?.platforms?.['windows-x86_64']?.url
+        if (vivo && url) setDownloadUrl(url)
+      })
+      .catch(() => {})
+    return () => {
+      vivo = false
+    }
+  }, [])
 
   useEffect(() => {
     if (searchParams.get('config') === 'impresion' && impresionActiva) setEditor(true)
@@ -74,9 +91,10 @@ export default function Impresion() {
         <p className="text-sm font-normal text-muted-foreground">
           La impresión automática funciona en la app de escritorio.{' '}
           <a
-            href={DOWNLOAD_URL}
+            href={downloadUrl}
             target="_blank"
             rel="noreferrer"
+            download
             className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
           >
             Descargar app <ExternalLink className="h-3.5 w-3.5" />
