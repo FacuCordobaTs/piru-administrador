@@ -1131,8 +1131,8 @@ const Productos = () => {
                               producto.imagenUrl
                                 ? "rounded-4xl overflow-hidden"
                                 : "min-h-[140px] rounded-[24px] border border-zinc-200/70 dark:border-white/5 p-4 flex flex-col justify-between hover:border-orange-500/30",
-                              // Ejemplo: borde punteado violeta, el mismo lenguaje que su etiqueta y el aviso.
-                              producto.esEjemplo && "border border-dashed border-violet-400/70 dark:border-violet-400/50",
+                              // Ejemplo: borde punteado neutro, junto con la etiqueta "Ejemplo".
+                              producto.esEjemplo && "border border-dashed border-zinc-300 dark:border-zinc-700",
                               seleccionando && isChecked && "ring-2 ring-[#FF7A00]",
                               !seleccionando && isSelected && "border-l-2 border-orange-500",
                               !producto.activo && "opacity-50"

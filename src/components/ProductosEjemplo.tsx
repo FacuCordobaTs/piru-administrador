@@ -21,7 +21,7 @@ export function EtiquetaEjemplo({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-violet-400/70 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium leading-none text-violet-700 dark:text-violet-300',
+        'inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium leading-none text-muted-foreground',
         className,
       )}
     >
@@ -70,11 +70,11 @@ export function AvisoProductosEjemplo({ enCarta = false, className }: { enCarta?
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 rounded-2xl border border-dashed border-violet-400/60 bg-violet-500/[0.06] p-4 sm:flex-row sm:items-center',
+        'flex flex-col gap-3 rounded-2xl border bg-muted/40 p-4 sm:flex-row sm:items-center',
         className,
       )}
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
         <FlaskConical className="size-5" />
       </span>
       <div className="min-w-0 flex-1 text-sm">
