@@ -63,7 +63,7 @@ export default function Planes() {
       <div className="mx-auto max-w-xl px-4 py-16 text-center">
         <h1 className="text-3xl font-semibold tracking-tight">Plan Evolución</h1>
         <p className="mt-3 text-muted-foreground">Tu cuenta tiene todas las herramientas de Piru con tu suscripción de siempre.</p>
-        <Button className="mt-6" variant="outline" onClick={() => navigate('/dashboard/ajustes/cuenta')}>Ver mi suscripción</Button>
+        <Button className="mt-6" variant="outline" onClick={() => navigate('/dashboard/ajustes')}>Ver mi suscripción</Button>
       </div>
     )
   }

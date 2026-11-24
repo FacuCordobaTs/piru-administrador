@@ -42,35 +42,37 @@ export default function Cuenta() {
 
   return (
     <section className="space-y-6">
-      <header className="space-y-1">
-        <h2 className="text-lg font-medium text-foreground">Cuenta</h2>
-        <p className="text-sm font-normal text-muted-foreground">
-          Tu email, contraseña, suscripción y pagos.
-        </p>
-      </header>
+      <div className="space-y-3">
+        <header className="space-y-1">
+          <h2 className="text-lg font-medium text-foreground">Cuenta</h2>
+          <p className="text-sm font-normal text-muted-foreground">
+            Tu email, contraseña y cómo se ve el panel.
+          </p>
+        </header>
 
-      <div>
-        <AjusteRow
-          titulo="Email"
-          oracion={email || 'Sin email'}
-          estado={email ? 'configurado' : 'sin-configurar'}
-          accionLabel={email ? 'Cambiar' : 'Configurar'}
-          onAccion={() => setEmailOpen(true)}
-        />
-        <AjusteRow
-          titulo="Contraseña"
-          oracion={tienePassword ? 'Entrás con tu email y contraseña' : 'Entrás con tu celular. Podés crear una contraseña.'}
-          estado={tienePassword ? 'configurado' : 'sin-configurar'}
-          accionLabel={tienePassword ? 'Cambiar' : 'Crear'}
-          onAccion={() => setPasswordOpen(true)}
-        />
-        <AjusteRow
-          titulo="Tema"
-          oracion={isDark ? 'Estás usando el modo oscuro' : 'Estás usando el modo claro'}
-          estado="configurado"
-          accionLabel={isDark ? 'Modo claro' : 'Modo oscuro'}
-          onAccion={toggleTheme}
-        />
+        <div>
+          <AjusteRow
+            titulo="Email"
+            oracion={email || 'Sin email'}
+            estado={email ? 'configurado' : 'sin-configurar'}
+            accionLabel={email ? 'Cambiar' : 'Configurar'}
+            onAccion={() => setEmailOpen(true)}
+          />
+          <AjusteRow
+            titulo="Contraseña"
+            oracion={tienePassword ? 'Entrás con tu email y contraseña' : 'Entrás con tu celular. Podés crear una contraseña.'}
+            estado={tienePassword ? 'configurado' : 'sin-configurar'}
+            accionLabel={tienePassword ? 'Cambiar' : 'Crear'}
+            onAccion={() => setPasswordOpen(true)}
+          />
+          <AjusteRow
+            titulo="Tema"
+            oracion={isDark ? 'Estás usando el modo oscuro' : 'Estás usando el modo claro'}
+            estado="configurado"
+            accionLabel={isDark ? 'Modo claro' : 'Modo oscuro'}
+            onAccion={toggleTheme}
+          />
+        </div>
       </div>
 
       <div className="space-y-6 border-t border-border pt-6">

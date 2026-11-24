@@ -7,55 +7,76 @@ import { AjusteInput } from '../components/AjusteInput'
 import { esAndroid, pedirExcepcionDeBateria } from '@/utils/piruAndroid'
 import { DireccionField, SucursalJustInTime, WhatsappPedidosField } from './general/campos'
 
-type EditorId = 'negocio' | null
+type EditorId = 'whatsapp' | 'nombre' | 'direccion' | null
 
 /**
- * Datos del negocio y el WhatsApp donde llegan los pedidos. El costo de envío vive en Entregas y
- * zonas, junto con el resto de lo que decide cuánto se cobra por llevar un pedido.
+ * Tu negocio: el WhatsApp donde llegan los pedidos, el nombre y la dirección. Cada dato es una
+ * fila con su «Cambiar», como los de Cuenta. El costo de envío vive en Entregas y zonas, junto con
+ * el resto de lo que decide cuánto se cobra por llevar un pedido.
  */
 export default function General() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
   const [editor, setEditor] = useState<EditorId>(null)
+  const cerrar = (o: boolean) => !o && setEditor(null)
 
+  const telefono = restaurante?.telefono?.trim()
   const nombre = restaurante?.nombre?.trim()
   const direccion = restaurante?.direccionTexto?.trim() || restaurante?.direccion?.trim() || ''
-  const dirCorta = direccion.split(',')[0]?.trim()
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-3">
       <header className="space-y-1">
-        <h2 className="text-lg font-medium text-foreground">General</h2>
+        <h2 className="text-lg font-medium text-foreground">Tu negocio</h2>
         <p className="text-sm font-normal text-muted-foreground">
           Información del negocio y dónde recibís los pedidos.
         </p>
       </header>
 
-      <div className="border-b border-border/50 pb-5">
-        <WhatsappPedidosField />
-      </div>
-
       <div>
         <AjusteRow
-          titulo="Tu negocio"
-          oracion={
-            nombre
-              ? `${nombre}${dirCorta ? ` · ${dirCorta}` : ' · sin dirección cargada'}`
-              : 'Todavía no cargaste el nombre de tu local'
-          }
+          titulo="WhatsApp para recibir pedidos"
+          oracion={telefono || 'Sin número: cargalo para que te lleguen los pedidos'}
+          estado={telefono ? 'configurado' : 'atencion'}
+          onAccion={() => setEditor('whatsapp')}
+        />
+        <AjusteRow
+          titulo="Nombre del local"
+          oracion={nombre || 'Todavía no cargaste el nombre de tu local'}
           estado={nombre ? 'configurado' : 'sin-configurar'}
-          onAccion={() => setEditor('negocio')}
+          onAccion={() => setEditor('nombre')}
+        />
+        <AjusteRow
+          titulo="Dirección del local"
+          oracion={direccion || 'Sin dirección cargada'}
+          estado={direccion ? 'configurado' : 'sin-configurar'}
+          onAccion={() => setEditor('direccion')}
         />
         {esAndroid() && <AjusteBateriaAndroid />}
       </div>
 
       <AjusteEditor
-        open={editor === 'negocio'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Tu negocio"
-        descripcion="Se guarda solo al salir de cada campo."
+        open={editor === 'whatsapp'}
+        onOpenChange={cerrar}
+        titulo="WhatsApp para recibir pedidos"
+        descripcion="Se guarda solo al salir del campo."
+      >
+        <WhatsappPedidosField conEtiqueta={false} autoFocus />
+      </AjusteEditor>
+      <AjusteEditor
+        open={editor === 'nombre'}
+        onOpenChange={cerrar}
+        titulo="Nombre del local"
+        descripcion="Se guarda solo al salir del campo."
+      >
+        <AjusteInput campo="nombre" label="Nombre del local" placeholder="Ej: Burger Bros" />
+      </AjusteEditor>
+      <AjusteEditor
+        open={editor === 'direccion'}
+        onOpenChange={cerrar}
+        titulo="Dirección del local"
+        descripcion="Se guarda sola al elegir la dirección o salir del campo."
       >
         <div className="space-y-5">
-          <AjusteInput campo="nombre" label="Nombre del local" placeholder="Ej: Burger Bros" />
           <DireccionField />
           <SucursalJustInTime />
         </div>

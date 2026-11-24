@@ -9,8 +9,16 @@ import { useDatosEjemplo } from '@/store/datosEjemploStore'
 import { esSesionDemo } from '@/lib/api'
 import { recorridoVisto, useRecorridoPanel } from '@/lib/recorridoPanel'
 import { DemoBanner } from '@/components/DemoBanner'
+import { toast } from 'sonner'
+import { useAbrirPaginas } from '@/hooks/useAbrirPaginas'
 import {
-  LayoutDashboard,
+  ClipboardList,
+  ChevronDown,
+  Clock,
+  CreditCard,
+  ExternalLink,
+  Globe,
+  Truck,
   Package,
   Blocks,
   Megaphone,
@@ -36,6 +44,7 @@ import {
   Store,
   ListChecks,
   Gem,
+  type LucideIcon,
 } from 'lucide-react'
 
 // El recorrido de bienvenida se carga aparte: el uso de todos los días no lo descarga.
@@ -43,31 +52,74 @@ const RecorridoPanel = lazy(() => import('@/components/recorrido/RecorridoPanel'
 
 /** Tab de las tiendas self-serve (plan de tienda) mientras queden pasos por completar. */
 const PRIMEROS_PASOS_PATH = '/dashboard/primeros-pasos'
+/** Tienda abre Páginas en otra pestaña con cualquier plan (el Inicial sólo mira). */
+const TIENDA_PATH = '/dashboard/tienda'
 
-const NAV_ITEMS = [
+type NavItem = { icon: LucideIcon; label: string; path: string; modulo: string | null }
+
+/** Siempre a la vista (y las únicas en el rail colapsado): lo de todos los días. */
+const NAV_PRINCIPAL: NavItem[] = [
   { icon: ListChecks, label: 'Primeros pasos', path: PRIMEROS_PASOS_PATH, modulo: null },
-  { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/', modulo: null },
+  { icon: ClipboardList, label: 'Pedidos', path: '/dashboard/', modulo: null },
   { icon: Package, label: 'Menú', path: '/dashboard/productos', modulo: null },
   { icon: Shirt, label: 'Ropa', path: '/dashboard/ropa', modulo: null },
-  // Herramientas de operación: cada módulo activo suma su propia pantalla.
-  { icon: Boxes, label: 'Stock', path: '/dashboard/stock', modulo: 'gestion_stock' },
-  { icon: Monitor, label: 'Punto de venta', path: '/dashboard/punto-de-venta', modulo: 'pos' },
-  { icon: Armchair, label: 'Mesas', path: '/dashboard/mesas', modulo: 'mesas' },
-  { icon: Bike, label: 'Cadetes', path: '/dashboard/repartidores', modulo: 'gestion_cadetes' },
-  { icon: Store, label: 'Sucursales', path: '/dashboard/sucursales', modulo: 'multisucursal' },
-  { icon: Receipt, label: 'Facturación', path: '/dashboard/facturacion', modulo: 'facturacion_arca' },
-  { icon: Printer, label: 'Impresión', path: '/dashboard/impresion', modulo: 'impresion_comandas' },
-  // Las tabs de Marketing ahora viven en el navbar del panel. Cada una se
-  // muestra sólo con el módulo que la habilita (ver `navItems`).
-  { icon: Users, label: 'Clientes', path: '/dashboard/marketing/clientes', modulo: null },
-  { icon: MessageCircle, label: 'Recompra', path: '/dashboard/marketing/recompra', modulo: 'motor_recompra' },
-  { icon: CalendarDays, label: 'Días flojos', path: '/dashboard/marketing/dias-flojos', modulo: 'dias_flojos' },
-  { icon: Megaphone, label: 'Campañas', path: '/dashboard/marketing/campanas', modulo: 'crecimiento' },
-  { icon: Sparkles, label: 'Puntos', path: '/dashboard/marketing/puntos', modulo: 'puntos_clientes' },
-  { icon: Ticket, label: 'Cupones', path: '/dashboard/marketing/cupones', modulo: 'codigos_descuento' },
-  { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes', modulo: 'avisos_automaticos_whatsapp' },
-  { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas', modulo: null },
-] as const
+  { icon: Globe, label: 'Tienda', path: TIENDA_PATH, modulo: null },
+]
+
+/**
+ * El resto del navbar va en secciones que se abren y cierran. Cada item con `modulo` se muestra
+ * sólo con ese módulo activo; una sección sin items visibles no se muestra.
+ */
+const NAV_SECCIONES: { id: string; label: string; items: NavItem[] }[] = [
+  {
+    // Lo que antes eran tabs de Ajustes: cómo cobrás, cómo entregás y cuándo abrís.
+    id: 'tienda',
+    label: 'Configuración de la tienda',
+    items: [
+      { icon: CreditCard, label: 'Métodos de pago', path: '/dashboard/pagos', modulo: null },
+      { icon: Truck, label: 'Entregas y zonas', path: '/dashboard/entregas', modulo: null },
+      { icon: Clock, label: 'Horarios', path: '/dashboard/horarios', modulo: null },
+    ],
+  },
+  {
+    id: 'clientes',
+    label: 'Clientes y ventas',
+    items: [
+      { icon: Users, label: 'Clientes', path: '/dashboard/marketing/clientes', modulo: null },
+      { icon: TrendingUp, label: 'Estadísticas', path: '/dashboard/metricas', modulo: null },
+      { icon: MessageCircle, label: 'Recompra', path: '/dashboard/marketing/recompra', modulo: 'motor_recompra' },
+      { icon: CalendarDays, label: 'Días flojos', path: '/dashboard/marketing/dias-flojos', modulo: 'dias_flojos' },
+      { icon: Megaphone, label: 'Campañas', path: '/dashboard/marketing/campanas', modulo: 'crecimiento' },
+      { icon: Sparkles, label: 'Puntos', path: '/dashboard/marketing/puntos', modulo: 'puntos_clientes' },
+      { icon: Ticket, label: 'Cupones', path: '/dashboard/marketing/cupones', modulo: 'codigos_descuento' },
+      { icon: MessageSquare, label: 'Mensajes', path: '/dashboard/mensajes', modulo: 'avisos_automaticos_whatsapp' },
+    ],
+  },
+  {
+    // Herramientas de operación: cada módulo activo suma su propia pantalla.
+    id: 'operacion',
+    label: 'Operación',
+    items: [
+      { icon: Boxes, label: 'Stock', path: '/dashboard/stock', modulo: 'gestion_stock' },
+      { icon: Monitor, label: 'Punto de venta', path: '/dashboard/punto-de-venta', modulo: 'pos' },
+      { icon: Armchair, label: 'Mesas', path: '/dashboard/mesas', modulo: 'mesas' },
+      { icon: Bike, label: 'Cadetes', path: '/dashboard/repartidores', modulo: 'gestion_cadetes' },
+      { icon: Store, label: 'Sucursales', path: '/dashboard/sucursales', modulo: 'multisucursal' },
+      { icon: Receipt, label: 'Facturación', path: '/dashboard/facturacion', modulo: 'facturacion_arca' },
+      { icon: Printer, label: 'Impresión', path: '/dashboard/impresion', modulo: 'impresion_comandas' },
+    ],
+  },
+]
+
+const SECCIONES_KEY = 'piru-sidebar-secciones'
+
+function leerSeccionesAbiertas(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(SECCIONES_KEY) ?? '{}') as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
 
 /** Tienda de indumentaria: pantalla de un solo local. El backend también lo exige. */
 const ROPA_PATH = '/dashboard/ropa'
@@ -105,6 +157,11 @@ const DashboardLayout = () => {
   const versionDatos = useDatosEjemplo((s) => s.version)
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('piru-sidebar-collapsed') === '1')
+  const [seccionesAbiertas, setSeccionesAbiertas] = useState(leerSeccionesAbiertas)
+  // Tienda abre Páginas en otra pestaña con cualquier plan: sin el diseño propio (plan Inicial) se
+  // entra sólo a mirar los temas. La demo no entra a Páginas.
+  const tiendaExterna = !esDemo
+  const paginas = useAbrirPaginas()
 
   // Aplicar el tema guardado al iniciar. El cambio de tema vive en Ajustes > Cuenta.
   useEffect(() => {
@@ -129,6 +186,17 @@ const DashboardLayout = () => {
   useEffect(() => {
     localStorage.setItem('piru-sidebar-collapsed', collapsed ? '1' : '0')
   }, [collapsed])
+
+  useEffect(() => {
+    localStorage.setItem(SECCIONES_KEY, JSON.stringify(seccionesAbiertas))
+  }, [seccionesAbiertas])
+
+  // Si el navegador bloqueó la pestaña de Páginas, el link queda a mano en el aviso.
+  useEffect(() => {
+    if (!paginas.bloqueada) return
+    const url = paginas.bloqueada
+    toast('El navegador bloqueó la pestaña', { action: { label: 'Abrir Páginas', onClick: () => window.open(url, '_blank') } })
+  }, [paginas.bloqueada])
 
   // Escape cierra el drawer móvil (reemplaza el esc del Sheet overlay viejo).
   useEffect(() => {
@@ -178,20 +246,61 @@ const DashboardLayout = () => {
     facturacion_arca: facturacionActiva,
     impresion_comandas: impresionActiva,
   }
-  const navItems = NAV_ITEMS.filter((item) => {
+  const visible = (item: NavItem) => {
     if (item.path === ROPA_PATH) return restauranteId === ROPA_RESTAURANTE_ID
     if (item.path === PRIMEROS_PASOS_PATH) return mostrarPasos || isActive(PRIMEROS_PASOS_PATH)
     if (item.modulo) return modulosActivos[item.modulo] === true
     return true
-  })
+  }
+  const principales = NAV_PRINCIPAL.filter(visible)
+  const secciones = NAV_SECCIONES.map((seccion) => ({ ...seccion, items: seccion.items.filter(visible) })).filter(
+    (seccion) => seccion.items.length > 0,
+  )
+  // La sección de la pantalla actual queda abierta aunque el dueño la haya cerrado.
+  const seccionAbierta = (seccion: (typeof secciones)[number]) =>
+    seccion.items.some((item) => isActive(item.path)) || seccionesAbiertas[seccion.id] === true
 
-  // En el rail colapsado sólo quedan Inicio y Menú: el resto se alcanza expandiendo el menú.
-  const RAIL_PATHS = new Set([PRIMEROS_PASOS_PATH, '/dashboard/', '/dashboard/productos'])
+  const abrirTienda = () => {
+    if (tiendaExterna && paginas.disponible) {
+      void paginas.abrir()
+      setMenuOpen(false)
+    } else handleNavigation(TIENDA_PATH)
+  }
+
+  const renderItem = (item: NavItem, compact: boolean) => {
+    const Icon = item.icon
+    const active = isActive(item.path)
+    const externa = item.path === TIENDA_PATH && tiendaExterna
+    return (
+      <button
+        key={item.path}
+        onClick={() => (item.path === TIENDA_PATH ? abrirTienda() : handleNavigation(item.path))}
+        disabled={externa && paginas.abriendo}
+        title={compact ? item.label : externa ? 'Abre Páginas en otra pestaña' : undefined}
+        className={`group relative w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer disabled:cursor-wait disabled:opacity-70 ${
+          compact ? 'justify-center px-0' : 'px-3'
+        } ${
+          active
+            ? compact
+              ? 'bg-muted text-foreground'
+              : 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        }`}
+      >
+        <Icon
+          className={`h-[18px] w-[18px] shrink-0 transition-colors ${
+            active ? '' : 'text-muted-foreground group-hover:text-foreground'
+          }`}
+        />
+        {!compact && <span className="flex-1 text-left">{item.label}</span>}
+        {!compact && externa && <ExternalLink aria-label="Se abre en otra pestaña" className="h-3.5 w-3.5 shrink-0 opacity-70" />}
+      </button>
+    )
+  }
 
   // `compact` = rail de solo iconos (aplica en el sidebar de escritorio).
   // `drawer` = versión móvil (overlay): el botón de cabecera cierra el drawer.
   const renderSidebar = (compact: boolean, drawer = false) => {
-    const visibles = compact ? navItems.filter((item) => RAIL_PATHS.has(item.path)) : navItems
     return (
       <div className="flex h-full flex-col">
         {/* Cabecera: botón para colapsar/expandir */}
@@ -207,38 +316,35 @@ const DashboardLayout = () => {
           </Button>
         </div>
 
-        {/* Navegación */}
-        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          {visibles.map((item) => {
-            const Icon = item.icon
-            const active = isActive(item.path)
-            return (
-              <button
-                key={item.path}
-                onClick={() => handleNavigation(item.path)}
-                title={compact ? item.label : undefined}
-                className={`group relative w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer ${
-                  compact ? 'justify-center px-0' : 'px-3'
-                } ${
-                  active
-                    ? compact
-                      ? 'bg-muted text-foreground'
-                      : 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-              >
-                <Icon
-                  className={`h-[18px] w-[18px] shrink-0 transition-colors ${
-                    active ? '' : 'text-muted-foreground group-hover:text-foreground'
-                  }`}
-                />
-                {!compact && <span className="flex-1 text-left">{item.label}</span>}
-              </button>
-            )
-          })}
+        {/* Navegación: lo principal siempre a la vista; el resto en secciones colapsables.
+            En el rail colapsado sólo quedan las principales. */}
+        <nav className="flex-1 px-3 py-2 overflow-y-auto">
+          <div className="space-y-1">{principales.map((item) => renderItem(item, compact))}</div>
+          {!compact &&
+            secciones.map((seccion) => {
+              const abierta = seccionAbierta(seccion)
+              const contenidoId = `nav-seccion-${seccion.id}`
+              return (
+                <div key={seccion.id} className="mt-4">
+                  <button
+                    type="button"
+                    aria-expanded={abierta}
+                    aria-controls={contenidoId}
+                    onClick={() => setSeccionesAbiertas((actual) => ({ ...actual, [seccion.id]: !abierta }))}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                  >
+                    <span className="flex-1 text-left">{seccion.label}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${abierta ? '' : '-rotate-90'}`} />
+                  </button>
+                  <div id={contenidoId} hidden={!abierta} className="mt-1 space-y-1">
+                    {seccion.items.map((item) => renderItem(item, false))}
+                  </div>
+                </div>
+              )
+            })}
         </nav>
 
-        {/* Footer: módulos y ajustes. En el rail colapsado no se muestra: sólo quedan Inicio y Menú. */}
+        {/* Footer: módulos y ajustes. En el rail colapsado no se muestra: sólo quedan las principales. */}
         {!compact && (
           <div className="p-3 space-y-1 shrink-0">
             {conPlan && (

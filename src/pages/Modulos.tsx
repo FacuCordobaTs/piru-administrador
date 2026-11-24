@@ -72,8 +72,8 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   dias_flojos: '/dashboard/marketing/dias-flojos',
   puntos_clientes: '/dashboard/marketing/puntos',
   codigos_descuento: '/dashboard/marketing/cupones',
-  mercadopago: '/dashboard/ajustes/monetizacion?config=mercadopago',
-  talo: '/dashboard/ajustes/monetizacion?config=talo',
+  mercadopago: '/dashboard/pagos?config=mercadopago',
+  talo: '/dashboard/pagos?config=talo',
   gestion_cadetes: '/dashboard/repartidores',
   facturacion_arca: '/dashboard/facturacion',
   impresion_comandas: '/dashboard/impresion',
@@ -115,7 +115,7 @@ function AccionModulo({
   if (modulo.estadoProducto === 'proximamente' || !modulo.activable) {
     return <Button className="w-full" variant="secondary" disabled>Próximamente</Button>
   }
-  if ((modulo.estado === 'activo' || modulo.estado === 'cancelacion_programada') && !modulo.activoAhora) return <Button onClick={() => window.location.assign('/dashboard/ajustes/cuenta')}>Revisar suscripción</Button>
+  if ((modulo.estado === 'activo' || modulo.estado === 'cancelacion_programada') && !modulo.activoAhora) return <Button onClick={() => window.location.assign('/dashboard/ajustes')}>Revisar suscripción</Button>
   if (modulo.estado === 'activo') {
     if (modulo.tipo === 'pago') {
       return <div className="grid gap-2">{RUTAS_CONFIGURACION[modulo.codigo] && <Button onClick={onConfigurar}>Configurar módulo</Button>}<Button className="w-full" variant="ghost" disabled={procesando} onClick={onDesactivar}>{procesando ? 'Guardando…' : 'Desactivar al finalizar el período'}</Button></div>
@@ -139,7 +139,7 @@ function AccionModulo({
     return <div className="grid gap-2"><Button variant="outline" disabled={procesando} onClick={onActualizarPago}>Ya pagué, verificar</Button><Button variant="ghost" disabled={procesando} onClick={onActivarPago}>Volver al pago</Button></div>
   }
   if (modulo.estado === 'suspendido') {
-    return <Button className="w-full" variant="outline" onClick={() => window.location.assign('/dashboard/ajustes/cuenta')}>Revisar suscripción</Button>
+    return <Button className="w-full" variant="outline" onClick={() => window.location.assign('/dashboard/ajustes')}>Revisar suscripción</Button>
   }
   return modulo.tipo === 'pago'
     ? <Button className="w-full" disabled={procesando} onClick={onActivarPago}>Activar por {fmtARS(modulo.precioMensual)}/mes</Button>
@@ -523,7 +523,7 @@ export default function Modulos() {
 
               <SheetFooter className="border-t px-6 py-5">
                 {activo && moduloSeleccionado.estado === 'cancelacion_programada' && RUTAS_CONFIGURACION[moduloSeleccionado.codigo] && <Button onClick={() => configurarModulo(moduloSeleccionado)}>Configurar</Button>}
-                {!bloqueoPlan(moduloSeleccionado) && moduloSeleccionado.tipo === 'pago' && !moduloSeleccionado.activoAhora && !['activa', 'pago_pendiente'].includes(useModulosStore.getState().suscripcion?.estado ?? '') ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Primero necesitás una suscripción base activa. La prueba gratis no incluye herramientas pagas.</p><Button className="w-full" onClick={() => { setModuloSeleccionado(null); navigate('/dashboard/ajustes/cuenta') }}>Ver mi suscripción</Button></div> : <AccionModulo
+                {!bloqueoPlan(moduloSeleccionado) && moduloSeleccionado.tipo === 'pago' && !moduloSeleccionado.activoAhora && !['activa', 'pago_pendiente'].includes(useModulosStore.getState().suscripcion?.estado ?? '') ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Primero necesitás una suscripción base activa. La prueba gratis no incluye herramientas pagas.</p><Button className="w-full" onClick={() => { setModuloSeleccionado(null); navigate('/dashboard/ajustes') }}>Ver mi suscripción</Button></div> : <AccionModulo
                   bloqueoPlan={bloqueoPlan(moduloSeleccionado)}
                   modulo={moduloSeleccionado}
                   procesando={procesandoCodigo === moduloSeleccionado.codigo}

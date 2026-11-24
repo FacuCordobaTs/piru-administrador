@@ -59,19 +59,19 @@ const PASOS: Record<PasoId, DefinicionPaso> = {
     titulo: 'Definir horarios',
     detalle: 'Mientras no cargues tus horarios, la tienda figura cerrada y no toma pedidos.',
     Icon: Clock,
-    accion: { texto: 'Cargar horarios', ruta: '/dashboard/ajustes/horarios' },
+    accion: { texto: 'Cargar horarios', ruta: '/dashboard/horarios' },
   },
   entregas: {
     titulo: 'Configurar formas de entrega',
     detalle: 'Retiro en el local con tu dirección, delivery con zonas y precios, o las dos.',
     Icon: Truck,
-    accion: { texto: 'Configurar', ruta: '/dashboard/ajustes/entregas' },
+    accion: { texto: 'Configurar', ruta: '/dashboard/entregas' },
   },
   pagos: {
     titulo: 'Configurar medios de pago',
     detalle: 'Conectá Mercado Pago o cargá tu alias para transferencias. El efectivo ya está habilitado.',
     Icon: CreditCard,
-    accion: { texto: 'Configurar', ruta: '/dashboard/ajustes/monetizacion' },
+    accion: { texto: 'Configurar', ruta: '/dashboard/pagos' },
   },
 }
 

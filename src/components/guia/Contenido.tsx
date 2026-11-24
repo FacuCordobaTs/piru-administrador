@@ -122,7 +122,7 @@ function Circuito() {
         items={[
           { icono: Store, titulo: 'Tienda', texto: 'Tu cliente abre tu link, arma el pedido y elige cómo pagar. No descarga nada ni crea un usuario.' },
           { icono: MessageCircle, titulo: 'WhatsApp', texto: 'El pedido te llega escrito a tu WhatsApp de siempre, en el chat con ese cliente.' },
-          { icono: LayoutDashboard, titulo: 'Panel', texto: 'Al mismo tiempo entra en Inicio, con la comanda, los datos del cliente y cómo pagó.' },
+          { icono: LayoutDashboard, titulo: 'Panel', texto: 'Al mismo tiempo entra en Pedidos, con la comanda, los datos del cliente y cómo pagó.' },
           { icono: Printer, titulo: 'Cocina', texto: 'Con la app de Piru para Windows y una impresora térmica, la comanda sale sola.' },
           { icono: Bike, titulo: 'Despacho', texto: 'Cuando sale, lo despachás: pasa al historial y queda en la caja del día.' },
         ]}
@@ -143,12 +143,13 @@ function Circuito() {
 }
 
 const PANTALLAS: { Icono: LucideIcon; nombre: string; destino: string; texto: string; etiqueta?: string }[] = [
-  { Icono: LayoutDashboard, nombre: 'Inicio', destino: '/dashboard', texto: 'Los pedidos del día, el punto de venta, las mesas, el mapa y la caja.' },
+  { Icono: LayoutDashboard, nombre: 'Pedidos', destino: '/dashboard', texto: 'Los pedidos del día, el punto de venta, las mesas, el mapa y la caja.' },
   { Icono: Package, nombre: 'Menú', destino: '/dashboard/productos', texto: 'Productos, categorías, variantes, extras y precios.' },
   { Icono: Users, nombre: 'Clientes y crecimiento', destino: '/dashboard/marketing/clientes', texto: 'Clientes, recompra, días flojos, campañas, puntos y cupones, cada uno en su tab.' },
   { Icono: MessageSquare, nombre: 'Mensajes', destino: '/dashboard/mensajes', texto: 'Tus avisos por WhatsApp: cuántos mandaste, tu saldo y las recargas.', etiqueta: 'Según tus módulos' },
   { Icono: TrendingUp, nombre: 'Estadísticas', destino: '/dashboard/metricas', texto: 'Lo que vendiste por mes o entre dos fechas, cómo te pagaron y lo más pedido.' },
-  { Icono: Settings, nombre: 'Configuración', destino: '/dashboard/ajustes', texto: 'Tu negocio, tu tienda, entregas, horarios, pagos, WhatsApp, módulos y suscripción.' },
+  { Icono: CreditCard, nombre: 'Pagos, entregas y horarios', destino: '/dashboard/pagos', texto: 'Cómo cobrás, cómo entregás y cuándo abrís, cada uno con su pantalla en el menú.' },
+  { Icono: Settings, nombre: 'Configuración', destino: '/dashboard/ajustes', texto: 'Tu negocio, WhatsApp, tu cuenta y tu suscripción.' },
 ]
 
 function Panel({ c }: { c: ContextoGuia }) {
@@ -216,7 +217,7 @@ function Pedidos({ c }: { c: ContextoGuia }) {
   return (
     <>
       <p>
-        Inicio es la pantalla del servicio. A la izquierda, los pedidos activos; a la derecha, el que tocás,
+        Pedidos es la pantalla del servicio. A la izquierda, los pedidos activos; a la derecha, el que tocás,
         para leerlo como una comanda.
       </p>
       <Figura pie="Ejemplo: entra el #1284 de Martina, lo abrís, ves su comanda y lo despachás.">
@@ -272,7 +273,7 @@ function Pedidos({ c }: { c: ContextoGuia }) {
         </li>
       </Clave>
       <p>
-        <Donde texto="Inicio" icono={LayoutDashboard} ruta={ruta(c, '/dashboard')} />
+        <Donde texto="Pedidos" icono={LayoutDashboard} ruta={ruta(c, '/dashboard')} />
       </p>
     </>
   )
@@ -290,7 +291,7 @@ function PuntoDeVenta({ c }: { c: ContextoGuia }) {
       </Figura>
       <Pasos
         items={[
-          { titulo: 'Nuevo pedido', texto: 'En Inicio, «+ Nuevo pedido». En la compu, la comanda queda abierta a la derecha.' },
+          { titulo: 'Nuevo pedido', texto: 'En Pedidos, «+ Nuevo pedido». En la compu, la comanda queda abierta a la derecha.' },
           { titulo: 'Productos', texto: 'Buscalos por nombre y tocalos. Si tienen variantes o extras, elegís en el momento. Tocá uno de la comanda para cambiarlo.' },
           { titulo: 'Tipo y cliente', texto: 'Delivery o takeaway, y los datos del cliente: al escribir el nombre o el celular te sugiere los que ya pidieron. Con delivery, la dirección y el envío.' },
           { titulo: 'Cómo paga', texto: 'Efectivo, tarjeta, transferencia o Mercado Pago.' },
@@ -321,7 +322,7 @@ function PuntoDeVenta({ c }: { c: ContextoGuia }) {
         </li>
       </Clave>
       <p>
-        <Donde texto="Inicio" icono={LayoutDashboard} ruta={ruta(c, '/dashboard')} />
+        <Donde texto="Pedidos" icono={LayoutDashboard} ruta={ruta(c, '/dashboard')} />
       </p>
     </>
   )
@@ -331,7 +332,7 @@ function Mesas({ c }: { c: ContextoGuia }) {
   return (
     <>
       <p>
-        Con Punto de venta y Mesas activos, Inicio suma la pestaña <strong>Mesas</strong>: el salón de un
+        Con Punto de venta y Mesas activos, Pedidos suma la pestaña <strong>Mesas</strong>: el salón de un
         vistazo, con las libres en verde y las ocupadas en naranja, con su cliente y su total.
       </p>
       <Figura pie="Ejemplo: el mozo suma unas papas a la Mesa 4 desde su celular. En la cocina sale sólo lo nuevo.">
@@ -478,7 +479,7 @@ function Delivery({ c }: { c: ContextoGuia }) {
           <strong>Zonas</strong>: cada zona es un área del mapa con su precio de envío.
         </li>
         <li>
-          <strong>Mapa de pedidos</strong>: en Inicio, «Mapa» muestra los pedidos activos con dirección.
+          <strong>Mapa de pedidos</strong>: en Pedidos, «Mapa» muestra los pedidos activos con dirección.
         </li>
         <li>
           <strong>Envío del mostrador</strong>: el delivery que anotás en el punto de venta toma el costo de
@@ -508,7 +509,7 @@ function Delivery({ c }: { c: ContextoGuia }) {
         <li>Si cambia lo que cobrás de envío, cambialo en la zona: la tienda lo toma de ahí.</li>
       </Clave>
       <p>
-        <Donde texto="Entregas y zonas" icono={Truck} ruta={ruta(c, '/dashboard/ajustes/entregas')} />
+        <Donde texto="Entregas y zonas" icono={Truck} ruta={ruta(c, '/dashboard/entregas')} />
       </p>
     </>
   )
@@ -518,7 +519,7 @@ function Caja({ c }: { c: ContextoGuia }) {
   return (
     <>
       <p>
-        <strong>Caja</strong>, en Inicio, es el resumen del día: el total, cuánto entró en efectivo, por Mercado
+        <strong>Caja</strong>, en Pedidos, es el resumen del día: el total, cuánto entró en efectivo, por Mercado
         Pago y por transferencia, cuánto vino de la tienda y cuánto anotaste a mano, y los pedidos uno por uno.
       </p>
       <Figura pie="Ejemplo: la caja de un turno. Al cerrarlo, queda con su resumen y empieza uno nuevo.">
@@ -543,12 +544,12 @@ function Caja({ c }: { c: ContextoGuia }) {
       <h3>Cerrar el turno a mano</h3>
       <p>
         Si tu turno cruza la medianoche o querés cortar la caja al terminar cada turno, activá{' '}
-        <strong>Cerrar turno manualmente</strong> (Módulos → Punto de venta). Inicio deja de mostrar
+        <strong>Cerrar turno manualmente</strong> (Módulos → Punto de venta). Pedidos deja de mostrar
         días y muestra el <strong>Turno actual</strong>, desde que lo abriste.
       </p>
       <Pasos
         items={[
-          { icono: Clock, titulo: 'Cerrar turno', texto: 'Al terminar, tocá «Cerrar turno» en Inicio.' },
+          { icono: Clock, titulo: 'Cerrar turno', texto: 'Al terminar, tocá «Cerrar turno» en Pedidos.' },
           { icono: CalendarDays, titulo: 'Queda agrupado', texto: 'Los pedidos desde la apertura quedan en ese turno, con su caja.' },
           { icono: RefreshCw, titulo: 'Empieza otro', texto: 'Se abre un turno nuevo en el momento. Los anteriores se eligen desde el título.' },
         ]}
@@ -557,7 +558,7 @@ function Caja({ c }: { c: ContextoGuia }) {
         Las mesas sin despachar quedan fuera del cierre: despachalas antes de cerrar el turno.
       </Nota>
       <p>
-        <Donde texto="Inicio" icono={LayoutDashboard} ruta={ruta(c, '/dashboard')} />
+        <Donde texto="Pedidos" icono={LayoutDashboard} ruta={ruta(c, '/dashboard')} />
       </p>
     </>
   )
@@ -685,7 +686,7 @@ function Tienda({ c }: { c: ContextoGuia }) {
           {
             icono: LayoutDashboard,
             titulo: 'Entra al panel',
-            texto: 'El pedido ya está en Inicio. Si pagó online, aparece cuando el pago se acredita.',
+            texto: 'El pedido ya está en Pedidos. Si pagó online, aparece cuando el pago se acredita.',
           },
         ]}
       />
@@ -720,17 +721,17 @@ function Tienda({ c }: { c: ContextoGuia }) {
         cambiar desde el editor, con el botón «Preferencias».
       </p>
       <p>
-        <Donde texto="Tienda" icono={Code2} ruta={ruta(c, '/dashboard/ajustes/mi-pagina')} />
+        <Donde texto="Tienda" icono={Code2} ruta={ruta(c, '/dashboard/tienda')} />
       </p>
       <Clave>
-        <li>Cuando no tenés ningún pedido abierto, Inicio te muestra tu link para copiarlo.</li>
+        <li>Cuando no tenés ningún pedido abierto, Pedidos te muestra tu link para copiarlo.</li>
         <li>
           Ponelo en tu bio de Instagram, en tu estado de WhatsApp y en un QR en el mostrador: cuanto más se pide
           por tu link, menos dependés de las apps de delivery.
         </li>
       </Clave>
       <p>
-        <Donde texto="General" icono={Store} ruta={ruta(c, '/dashboard/ajustes/general')} />
+        <Donde texto="Configuración" icono={Settings} ruta={ruta(c, '/dashboard/ajustes')} />
       </p>
     </>
   )
@@ -815,12 +816,12 @@ function Horarios({ c }: { c: ContextoGuia }) {
           <strong>Solo pedidos programados</strong>: nadie puede pedir para ahora; todos eligen franja.
         </li>
         <li>
-          En Inicio, un pedido programado lleva su hora en la lista y, en el detalle, «Programado para las
+          En Pedidos, un pedido programado lleva su hora en la lista y, en el detalle, «Programado para las
           21:30».
         </li>
       </ul>
       <p>
-        <Donde texto="Horarios" icono={Clock} ruta={ruta(c, '/dashboard/ajustes/horarios')} />
+        <Donde texto="Horarios" icono={Clock} ruta={ruta(c, '/dashboard/horarios')} />
       </p>
     </>
   )
@@ -849,7 +850,7 @@ function Pagos({ c }: { c: ContextoGuia }) {
         </Tarjeta>
       </Tarjetas>
       <p>
-        Un pedido pagado online entra en Inicio recién cuando el pago se acredita: no ves pedidos a medio pagar.
+        Un pedido pagado online entra en Pedidos recién cuando el pago se acredita: no ves pedidos a medio pagar.
         Uno en efectivo o con transferencia manual entra como <strong>Pendiente</strong> hasta que se cobra.
       </p>
       <Clave>
@@ -861,7 +862,7 @@ function Pagos({ c }: { c: ContextoGuia }) {
         <li>En el punto de venta elegís el medio en cada pedido: no depende de lo que ofrece la tienda.</li>
       </Clave>
       <p>
-        <Donde texto="Métodos de pago" icono={CreditCard} ruta={ruta(c, '/dashboard/ajustes/monetizacion')} />
+        <Donde texto="Métodos de pago" icono={CreditCard} ruta={ruta(c, '/dashboard/pagos')} />
       </p>
     </>
   )
@@ -923,7 +924,7 @@ function Sucursales({ c }: { c: ContextoGuia }) {
       </p>
       <ul className="guia-puntos">
         <li>
-          En Inicio, <strong>Cambiar sucursal</strong> (en los tres puntos de la lista) elige qué local ve esa
+          En Pedidos, <strong>Cambiar sucursal</strong> (en los tres puntos de la lista) elige qué local ve esa
           compu. Cada dispositivo recuerda el suyo.
         </li>
         <li>Las comandas que imprime cada compu son las de su sucursal.</li>
@@ -1067,11 +1068,11 @@ function Modulos({ c }: { c: ContextoGuia }) {
       </p>
       <ul className="guia-puntos">
         <li>
-          <strong>Prueba gratis</strong>: arriba de Inicio ves cuántos días te quedan y lo que ya vendiste con
+          <strong>Prueba gratis</strong>: arriba de Pedidos ves cuántos días te quedan y lo que ya vendiste con
           Piru.
         </li>
         <li>
-          <strong>Si vence la cuota</strong>, tenés unos días de gracia: Inicio te avisa hasta cuándo podés
+          <strong>Si vence la cuota</strong>, tenés unos días de gracia: Pedidos te avisa hasta cuándo podés
           pagarla sin cortes.
         </li>
         <li>
@@ -1085,7 +1086,7 @@ function Modulos({ c }: { c: ContextoGuia }) {
       </ul>
       <p className="flex flex-wrap gap-2">
         <Donde texto="Módulos" icono={Package} ruta={ruta(c, '/dashboard/modulos')} />
-        <Donde texto="Suscripción y pagos" icono={CreditCard} ruta={ruta(c, '/dashboard/ajustes/cuenta')} />
+        <Donde texto="Configuración → Suscripción y pagos" icono={CreditCard} ruta={ruta(c, '/dashboard/ajustes')} />
       </p>
     </>
   )

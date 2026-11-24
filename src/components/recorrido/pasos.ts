@@ -20,7 +20,7 @@ export interface PasoRecorrido {
 }
 
 /**
- * Los pasos del recorrido de bienvenida. Primero el panel y cómo moverse (Inicio y el menú), después
+ * Los pasos del recorrido de bienvenida. Primero el panel y cómo moverse (Pedidos y el menú), después
  * las pantallas de todos los días y, al final, lo que el dueño tiene que saber de la demo: qué son los
  * datos "EJEMPLO" y cómo borrarlos. Repite lo que explica la guía (pages/Guia.tsx, components/guia/
  * Contenido.tsx): si cambia el nombre de una pantalla o una regla, cambian las dos.
@@ -49,11 +49,11 @@ export function pasosDelRecorrido({
     },
     {
       id: 'inicio',
-      etiqueta: 'Inicio',
-      titulo: 'Inicio: los pedidos del día',
+      etiqueta: 'Pedidos',
+      titulo: 'Pedidos: lo que entra hoy',
       texto:
         'Es la pantalla del servicio. A la izquierda están los pedidos activos; tocás uno y lo leés como una comanda. Cuando sale, lo despachás y pasa al historial.',
-      donde: 'Inicio',
+      donde: 'Pedidos',
       escena: 'inicio',
     },
     {
@@ -61,7 +61,7 @@ export function pasosDelRecorrido({
       etiqueta: 'Menú',
       titulo: 'Todo está en el menú de la izquierda',
       texto:
-        'Inicio, Menú, Clientes, Estadísticas y Configuración, y Mensajes cuando tenés avisos o campañas activos. La Guía, justo arriba de Configuración, explica cada pantalla con ejemplos. En el celular, el menú se abre con el botón de arriba.',
+        'Pedidos, Menú y Tienda arriba; abajo, secciones que se abren: Configuración de la tienda (pagos, entregas y horarios), Clientes y Estadísticas, y Operación con las herramientas que actives. La Guía, justo arriba de Configuración, explica cada pantalla con ejemplos. En el celular, el menú se abre con el botón de arriba.',
       donde: 'Menú lateral',
       escena: 'menu-lateral',
     },
@@ -89,7 +89,7 @@ export function pasosDelRecorrido({
       titulo: 'Cuánto vendiste, sin planillas',
       texto:
         'La caja del día separa cómo te pagaron y de dónde vino cada pedido: la tienda o lo que anotaste a mano. Estadísticas suma lo cobrado de un mes o entre dos fechas y te muestra lo más pedido.',
-      donde: 'Inicio → Caja, y Estadísticas',
+      donde: 'Pedidos → Caja, y Estadísticas',
       escena: 'caja',
     },
   ]
@@ -109,7 +109,7 @@ export function pasosDelRecorrido({
     titulo: demo ? 'Recorrelo a tu ritmo' : 'Todo listo para empezar',
     texto: demo
       ? 'Abrí un pedido, mirá tu menú o entrá a Clientes. Si te gusta, escribinos y lo dejamos andando con tu WhatsApp y tus medios de pago: el pedido te llega a tu número, sin comisiones.'
-      : 'Empezá por Inicio: ahí entran los pedidos. Si te queda una duda, la Guía explica cómo funciona cada cosa por dentro, y a un mensaje de WhatsApp tenés a una persona del equipo.',
+      : 'Empezá por Pedidos: ahí entran los pedidos. Si te queda una duda, la Guía explica cómo funciona cada cosa por dentro, y a un mensaje de WhatsApp tenés a una persona del equipo.',
     escena: 'whatsapp',
   })
   return pasos

@@ -20,6 +20,7 @@ import PuntoDeVenta from './pages/PuntoDeVenta'
 import Facturacion from './pages/Facturacion'
 import Sucursales from './pages/Sucursales'
 import Impresion from './pages/Impresion'
+import { MetodosPago, Entregas, Horarios, Tienda } from './pages/PantallasConfiguracion'
 import Modulos from './pages/Modulos'
 import CrearTienda from './pages/CrearTienda'
 import PrimerosPasos from './pages/PrimerosPasos'
@@ -245,6 +246,24 @@ const router = createBrowserRouter([
             element: <Impresion />,
           },
           {
+            // Métodos de pago, Entregas y zonas, Horarios y Tienda salieron de Ajustes al navbar.
+            // `/dashboard/ajustes/<sección>` redirige acá conservando el query (OAuth, `?config=`).
+            path: "pagos",
+            element: <MetodosPago />,
+          },
+          {
+            path: "entregas",
+            element: <Entregas />,
+          },
+          {
+            path: "horarios",
+            element: <Horarios />,
+          },
+          {
+            path: "tienda",
+            element: <Tienda />,
+          },
+          {
             path: "ropa",
             element: <Ropa />,
           },
@@ -331,12 +350,17 @@ const router = createBrowserRouter([
       },
       {
         // Zonas de delivery: el mapa necesita toda la pantalla (sobre todo en el celular).
-        path: "ajustes/entregas/zonas",
+        path: "entregas/zonas",
         element: (
           <Suspense fallback={null}>
             <ZonasDelivery />
           </Suspense>
         ),
+      },
+      {
+        // Enlaces guardados de cuando Entregas vivía en Ajustes.
+        path: "ajustes/entregas/zonas",
+        element: <Navigate to="/dashboard/entregas/zonas" replace />,
       },
       {
         // La guía de Marketing, como la del panel: toda la pantalla, dentro de la sesión.
@@ -363,7 +387,7 @@ function PerfilRedirect() {
   if (params.get('state') === 'whatsapp') {
     return <Navigate to={`/dashboard/ajustes/whatsapp${search}`} replace />
   }
-  return <Navigate to={`/dashboard/ajustes/monetizacion${search}`} replace />
+  return <Navigate to={`/dashboard/pagos${search}`} replace />
 }
 
 function App() {

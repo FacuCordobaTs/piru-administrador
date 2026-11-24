@@ -70,7 +70,7 @@ export default function Entregas() {
           titulo="Zonas de delivery"
           oracion={zonasOracion}
           estado={zonasEstado}
-          onAccion={() => navigate('/dashboard/ajustes/entregas/zonas')}
+          onAccion={() => navigate('/dashboard/entregas/zonas')}
         />
         {conCostoFijo && (
           <AjusteRow

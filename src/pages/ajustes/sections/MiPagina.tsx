@@ -37,10 +37,16 @@ export default function MiPagina() {
           <p className="mx-auto max-w-md text-balance text-sm">
             Hoy tu tienda usa el diseño de Piru. Desde el plan {nombrePlan(plan, 'esencial')} elegís una plantilla y la personalizás con tu marca.
           </p>
-          <Button size="lg" onClick={() => navigate('/dashboard/planes')}>
-            <Gem className="size-4" />
-            Ver planes
-          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button size="lg" onClick={() => navigate('/dashboard/planes')}>
+              <Gem className="size-4" />
+              Ver planes
+            </Button>
+            <Button size="lg" variant="outline" onClick={abrir} disabled={abriendo || !disponible}>
+              {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
+              Mirar los temas
+            </Button>
+          </div>
         </div>
       )}
       {bloqueada && (

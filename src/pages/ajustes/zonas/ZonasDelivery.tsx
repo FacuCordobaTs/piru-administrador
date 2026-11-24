@@ -43,7 +43,7 @@ type Modo =
 
 const COLORES = ['#FF7A00', '#3b82f6', '#ef4444', '#22c55e', '#8b5cf6', '#ec4899', '#06b6d4', '#eab308']
 const CENTRO_POR_DEFECTO: [number, number] = [-31.6333, -60.7]
-const VOLVER_A = '/dashboard/ajustes/entregas'
+const VOLVER_A = '/dashboard/entregas'
 
 function siguienteColor(zonas: ZonaDelivery[]) {
   const usados = new Set(zonas.map(z => z.color))
