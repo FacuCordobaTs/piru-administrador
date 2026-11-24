@@ -81,6 +81,18 @@ export interface Tanda {
   mensajes: MensajeTanda[];
 }
 
+/** Mensajes de marketing para el envío automático: cada mensaje de la tanda usa uno. */
+export interface PackMensajes {
+  id: number;
+  nombre: string;
+  cantidad: number;
+  precio: number;
+}
+export interface SaldoMensajes {
+  disponibles: number;
+  packs: PackMensajes[];
+}
+
 const ruta = (tanda: number, mensaje: number, accion: string) =>
   `/recompra-tandas/${tanda}/mensajes/${mensaje}/${accion}`;
 
@@ -90,6 +102,10 @@ export const tandasApi = {
   leer: (id: number) => datosLocal<Tanda>(`/recompra-tandas/${id}`),
   crear: (cantidad: number, presupuesto: number) =>
     datosLocal<Tanda>("/recompra-tandas", { method: "POST", body: { cantidad, presupuesto } }),
+  mensajes: () => datosLocal<SaldoMensajes>("/recompra-tandas/mensajes"),
+  /** Inicia el pago del pack en Mercado Pago; al volver, el panel abre `volver`. */
+  comprarPack: (packId: number, volver: string) =>
+    datosLocal<{ url_pago: string }>("/mensajes/recarga/checkout", { method: "POST", body: { packId, volver } }),
   cancelar: (id: number) => apiLocal<{ success: boolean }>(`/recompra-tandas/${id}`, { method: "DELETE" }),
   accion: (tanda: number, mensaje: number, accion: "abrir" | "deshacer" | "descartar" | "enviar") =>
     apiLocal<{ success: boolean; data: MensajeTanda }>(ruta(tanda, mensaje, accion), { method: "POST" }).then((r) => r.data),

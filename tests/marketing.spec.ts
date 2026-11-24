@@ -337,6 +337,8 @@ async function mock(
     motor?: "activa" | "pausada_manual" | "pausada_sin_saldo";
     /** Recompra ya tiene una tanda armada. */
     conTandas?: boolean;
+    /** Envío automático por Meta, con este saldo de mensajes de marketing. */
+    mensajesMarketing?: number;
   } = {},
 ) {
   const envio = opciones.envio ?? { puedeEnviar: true, motivo: null };
@@ -384,8 +386,19 @@ async function mock(
     if (path === "/recompra-tandas/preparacion")
       return fulfill(envelope({
         elegibles: 18, recomendado: 6, maximo: 18, presupuestoSugerido: 9000, ticketPromedio: 21000,
-        canal: "manual", conPuntos: false, localNombre: "Brasa", tieneTienda: true,
+        canal: opciones.mensajesMarketing != null ? "api" : "manual", conPuntos: false, localNombre: "Brasa", tieneTienda: true,
       }));
+    if (path === "/recompra-tandas/mensajes")
+      return fulfill(envelope({
+        disponibles: opciones.mensajesMarketing ?? 0,
+        packs: [
+          { id: 11, nombre: "Chico", cantidad: 100, precio: 15000 },
+          { id: 12, nombre: "Mediano", cantidad: 500, precio: 60000 },
+          { id: 13, nombre: "Grande", cantidad: 1000, precio: 100000 },
+        ],
+      }));
+    if (path === "/mensajes/recarga/checkout")
+      return fulfill(envelope({ url_pago: "https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=pack" }));
     if (path === "/recompra-tandas" && req.method() === "POST") {
       const t = { ...tandaEjemplo, id: 41 + tandas.length, cantidadPedida: req.postDataJSON().cantidad };
       tandas = [t, ...tandas];
@@ -400,7 +413,10 @@ async function mock(
       tandas = tandas.filter((t) => t.id !== id);
       return fulfill({ success: true });
     }
-    if (/^\/recompra-tandas\/\d+$/.test(path)) return fulfill(envelope(tandas.find((t) => t.id === id) ?? tandaEjemplo));
+    if (/^\/recompra-tandas\/\d+$/.test(path)) {
+      const t = tandas.find((x) => x.id === id) ?? tandaEjemplo;
+      return fulfill(envelope(opciones.mensajesMarketing != null ? { ...t, canal: "api" } : t));
+    }
     if (/^\/recompra-tandas\/\d+\/mensajes\/\d+\/abrir$/.test(path)) {
       const m = tandaEjemplo.mensajes.find((x) => x.id === id)!;
       return fulfill(envelope({ ...m, estado: "enviado", canalEnvio: "wa_me", enviadoAt: new Date().toISOString() }));
@@ -820,7 +836,7 @@ async function mock(
       return fulfill({ success: true, message: "Código eliminado" });
     }
     // El resto del panel (perfil, módulos del menú, avisos…) no es parte de esta suite.
-    if (!/^\/(clientes|marketing|codigo-descuento|puntos|modulos|metricas|producto|categoria|recompra-tandas)(\/|$)/.test(path))
+    if (!/^\/(clientes|marketing|codigo-descuento|puntos|modulos|metricas|producto|categoria|recompra-tandas|mensajes)(\/|$)/.test(path))
       return fulfill(envelope(null));
     return fulfill({ message: `Sin fixture: ${path}` }, 500);
   });
@@ -945,6 +961,38 @@ test("Recompra arma una tanda: cuántos, cuánto invertir y los mensajes con su 
   await expect(page.getByRole("dialog").getByText(/Hace un mes que no pasás/)).toBeVisible();
   await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-vista-previa.png" });
   expect(errores).toEqual([]);
+});
+
+test("sin mensajes de marketing, la tanda automática ofrece los packs y suma su precio al costo", async ({ page }) => {
+  const m = await mock(page, { mensajesMarketing: 0 });
+  await page.route("https://www.mercadopago.com.ar/**", (r) => r.fulfill({ contentType: "text/html", body: "<h1>Mercado Pago</h1>" }));
+  await ir(page, "/dashboard/marketing/recompra");
+  await page.getByRole("button", { name: "Armar una tanda de mensajes" }).click();
+  await expect(page.getByText(/Tenés\s*0\s*mensajes de marketing/)).toBeVisible();
+  await page.getByRole("button", { name: "Seguir", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "No tenés mensajes de marketing" })).toBeVisible();
+  await expect(page.getByRole("radio")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Seguir", exact: true })).toBeDisabled();
+  await page.getByRole("radio", { name: /100\s*mensajes/ }).click();
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-packs.png" });
+  await page.getByRole("button", { name: "Seguir", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /¿Cuánto querés invertir/ })).toBeVisible();
+  await expect(page.getByText("Costo de esta tanda")).toBeVisible();
+  await expect(page.getByText(/pack de 100/)).toBeVisible();
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-costo.png" });
+  await page.getByRole("button", { name: /Armar la tanda y pagar/ }).click();
+  await expect(page.getByRole("heading", { name: "Mercado Pago" })).toBeVisible();
+  expect(m.posts.find((p) => p.path === "/mensajes/recarga/checkout")?.body).toEqual({ packId: 11, volver: "/dashboard/marketing/recompra?tanda=41" });
+});
+
+test("una tanda automática sin saldo no deja enviar y ofrece comprar mensajes", async ({ page }) => {
+  await mock(page, { conTandas: true, mensajesMarketing: 0 });
+  await ir(page, "/dashboard/marketing/recompra?tanda=40");
+  await expect(page.getByText("No te quedan mensajes de marketing.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sin mensajes" }).first()).toBeDisabled();
+  await page.getByRole("button", { name: "Comprar mensajes" }).click();
+  await expect(page.getByRole("dialog").getByRole("radio")).toHaveCount(3);
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-sin-saldo.png" });
 });
 
 test("Recompra deja cancelar una tanda y la borra", async ({ page }) => {

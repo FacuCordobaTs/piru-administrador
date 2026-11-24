@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { DropdownMenu } from "radix-ui";
 import {
   ArrowLeft,
@@ -11,6 +12,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   RotateCcw,
+  ShoppingCart,
   Trash2,
   Send,
   ShoppingBag,
@@ -22,7 +24,8 @@ import { PortalMenuMarketing } from "../portal";
 import { SkeletonPantalla } from "../SkeletonPantalla";
 import { useDatos } from "../../lib/useDatos";
 import { pesos } from "../../lib/formato";
-import { fechaTanda, tandasApi, type MensajeTanda, type Tanda } from "../../lib/tandas";
+import { fechaTanda, tandasApi, type MensajeTanda, type PackMensajes, type Tanda } from "../../lib/tandas";
+import { Packs } from "./Packs";
 import { VistaPrevia } from "./VistaPrevia";
 
 /** El segmento de una persona (la lista de Clientes los nombra en plural). */
@@ -70,10 +73,43 @@ export function TandaDetalle({
   const [viendo, setViendo] = useState<MensajeTanda | null>(null);
   const [verDescartados, setVerDescartados] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  // Envío automático: el saldo de mensajes de marketing manda. Sin saldo no sale ninguno.
+  const esApi = data?.canal === "api";
+  const saldo = useDatos(() => (esApi ? tandasApi.mensajes() : Promise.resolve(null)), [esApi], { conservar: true });
+  const [comprando, setComprando] = useState(false);
+  const [pack, setPack] = useState<PackMensajes | null>(null);
+  const [pagando, setPagando] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const recargaVuelta = params.get("recarga");
+  useEffect(() => {
+    if (!recargaVuelta) return;
+    // Vuelta de Mercado Pago: el saldo se acredita por webhook en unos segundos.
+    if (recargaVuelta === "success") toast.success("¡Pago recibido! Estamos acreditando tus mensajes…");
+    const p = new URLSearchParams(params);
+    p.delete("recarga");
+    setParams(p, { replace: true });
+    const timers = [1500, 4000, 8000, 15000].map((ms) => window.setTimeout(saldo.recargar, ms));
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recargaVuelta]);
 
   if (!data) return <Estado skeleton={<SkeletonPantalla tipo="hoy" />} loading={loading} error={error} reintentar={recargar} />;
 
   const api = data.canal === "api";
+  const disponibles = saldo.data?.disponibles ?? 0;
+  const sinSaldo = api && !!saldo.data && disponibles <= 0;
+
+  async function pagarPack() {
+    if (!pack) return;
+    setPagando(true);
+    try {
+      const pago = await tandasApi.comprarPack(pack.id, `/dashboard/marketing/recompra?tanda=${data!.id}`);
+      window.location.assign(pago.url_pago);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No pudimos abrir el pago. Probá de nuevo.");
+      setPagando(false);
+    }
+  }
   const mensajes = data.mensajes.map((m) => cambios[m.id] ?? m);
   const pendientes = mensajes.filter((m) => m.estado === "pendiente");
   const enviados = mensajes.filter((m) => m.estado === "enviado");
@@ -111,6 +147,7 @@ export function TandaDetalle({
     setEnviando(m.id);
     const r = await accion(m, "enviar");
     setEnviando(null);
+    saldo.recargar();
     if (r?.estado === "enviado") toast.success(`Enviado a ${r.clienteNombre.split(" ")[0]}`);
   }
 
@@ -158,6 +195,23 @@ export function TandaDetalle({
         </p>
       </header>
 
+      {api && saldo.data && (
+        <div className={cn("tanda-saldo mb-4", sinSaldo && "tanda-saldo--vacio")}>
+          <MessageCircle size={18} className={sinSaldo ? "text-rose-600" : "text-emerald-600"} />
+          <p className="min-w-0 flex-1 text-sm">
+            {sinSaldo ? (
+              <><b>No te quedan mensajes de marketing.</b> Sin saldo no se puede enviar ninguno por el WhatsApp automático.</>
+            ) : (
+              <>Te quedan <b className="tabular-nums">{disponibles}</b> mensajes de marketing{pendientes.length > disponibles ? `: alcanzan para ${disponibles} de los ${pendientes.length} que faltan` : ""}. Cada envío usa uno.</>
+            )}
+          </p>
+          <Button variant={sinSaldo ? "primary" : "secondary"} className="min-h-10 px-4 text-sm" onClick={() => setComprando(true)}>
+            <ShoppingCart size={15} />
+            Comprar mensajes
+          </Button>
+        </div>
+      )}
+
       <div className="card mb-6 !p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-lg font-semibold tabular-nums">
@@ -203,6 +257,7 @@ export function TandaDetalle({
               onVer={() => setViendo(m)}
               onAbrir={() => abrir(m)}
               onEnviar={() => void enviar(m)}
+              sinSaldo={sinSaldo}
               onDescartar={() => void accion(m, "descartar")}
             />
           ))}
@@ -281,7 +336,7 @@ export function TandaDetalle({
             {viendo.estado === "pendiente" && (
               <div className="mt-6 flex flex-wrap gap-2">
                 {api ? (
-                  <Button disabled={enviando !== null} onClick={() => void enviar(viendo)}>
+                  <Button disabled={enviando !== null || sinSaldo} onClick={() => void enviar(viendo)}>
                     <Send size={16} />
                     {enviando === viendo.id ? "Enviando…" : "Enviar ahora"}
                   </Button>
@@ -300,6 +355,22 @@ export function TandaDetalle({
           </>
         )}
       </Sheet>
+
+      <Sheet open={comprando} onOpenChange={setComprando} title="Mensajes de marketing">
+        <p className="muted mb-6">
+          Cada mensaje que sale por el WhatsApp automático usa 1. Te quedan {disponibles}
+          {pendientes.length ? ` y faltan mandar ${pendientes.length}` : ""}. Se paga por Mercado Pago y volvés a esta tanda.
+        </p>
+        <Packs
+          packs={saldo.data?.packs ?? []}
+          elegido={pack?.id ?? null}
+          necesarios={Math.max(0, pendientes.length - disponibles) || undefined}
+          onElegir={setPack}
+        />
+        <Button className="mt-8 w-full" disabled={!pack || pagando} onClick={() => void pagarPack()}>
+          {pagando ? "Abriendo el pago…" : pack ? `Pagar ${pesos(pack.precio)}` : "Elegí un pack"}
+        </Button>
+      </Sheet>
     </div>
   );
 }
@@ -312,7 +383,9 @@ function Tarjeta({
   onAbrir,
   onEnviar,
   onDescartar,
+  sinSaldo,
 }: {
+  sinSaldo: boolean;
   m: MensajeTanda;
   api: boolean;
   enviando: number | null;
@@ -379,9 +452,9 @@ function Tarjeta({
 
       <div className="mt-4 flex items-center gap-2">
         {api ? (
-          <Button className="flex-1" disabled={enviando !== null} onClick={onEnviar}>
+          <Button className="flex-1" disabled={enviando !== null || sinSaldo} onClick={onEnviar}>
             <Send size={16} />
-            {enviando === m.id ? "Enviando…" : "Enviar"}
+            {enviando === m.id ? "Enviando…" : sinSaldo ? "Sin mensajes" : "Enviar"}
           </Button>
         ) : (
           <a className="btn btn-wa flex-1" href={m.waMeUrl} target="_blank" rel="noreferrer" onClick={onAbrir}>
