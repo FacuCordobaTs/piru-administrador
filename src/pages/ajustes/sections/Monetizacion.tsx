@@ -7,7 +7,7 @@ import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { useMetodosPago } from '../hooks/useMetodosPago'
 import { SavedIndicator } from '../components/SavedIndicator'
-import { MetodosEditor } from './pagos/MetodosEditor'
+import { MetodosHabilitados } from './pagos/MetodosHabilitados'
 import {
   MercadoPagoEditor,
   CucuruEditor,
@@ -68,6 +68,18 @@ export default function Monetizacion() {
     if (config === 'arca') navigate('/dashboard/facturacion', { replace: true })
   }, [searchParams, mercadoPagoActivo, taloActivo, navigate])
 
+  // Cada proveedor aparece una sola vez: su fila dice si falta activarlo, conectarlo o ya está.
+  const mercadoPago = !mercadoPagoActivo
+    ? { oracion: 'Activá el módulo para cobrar con tarjetas y dinero en cuenta.', estado: 'sin-configurar' as const, accion: 'Ver módulos', ir: () => navigate('/dashboard/modulos') }
+    : mpOk
+      ? { oracion: 'Conectado · tarjetas y dinero en cuenta', estado: 'configurado' as const, accion: 'Cambiar', ir: () => setEditor('mercadopago') }
+      : { oracion: 'Sin conectar · vinculá tu cuenta en un click', estado: 'sin-configurar' as const, accion: 'Conectar', ir: () => setEditor('mercadopago') }
+  const talo = !taloActivo
+    ? { oracion: 'Activá el módulo para recibir transferencias verificadas al instante.', estado: 'sin-configurar' as const, accion: 'Ver módulos', ir: () => navigate('/dashboard/modulos') }
+    : taloOk
+      ? { oracion: 'Conectado · transferencias verificadas al instante', estado: 'configurado' as const, accion: 'Cambiar', ir: () => setEditor('talo') }
+      : { oracion: 'Sin conectar · cargá tus credenciales de Talo', estado: 'sin-configurar' as const, accion: 'Configurar', ir: () => setEditor('talo') }
+
   return (
     <section className="space-y-8">
       <header className="space-y-1">
@@ -77,99 +89,34 @@ export default function Monetizacion() {
         </p>
       </header>
 
-      {/* Lo que se decide más seguido va a la vista: prender y apagar cada medio. */}
+      {/* Lo que el local ya puede ofrecer: prender y apagar cada medio. */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium text-foreground">Métodos habilitados</h3>
           <SavedIndicator status={metodos.status} />
         </div>
-        <div className="rounded-2xl border border-border/60 px-4 py-1">
-          <MetodosEditor
-            metodos={metodos}
-            mpOk={mpOk}
-            cucuruOk={cucuruOk}
-            taloOk={taloOk}
-            mercadoPagoActivo={mercadoPagoActivo}
-            taloActivo={taloActivo}
-            irA={setEditor}
-            irAModulo={() => {
-              navigate('/dashboard/modulos')
-            }}
-          />
+        <div className="rounded-2xl border border-border/60 px-4">
+          <MetodosHabilitados metodos={metodos} mpOk={mpOk} cucuruOk={cucuruOk} taloOk={taloOk} />
         </div>
       </div>
 
-      {/* Conexiones con proveedores y facturación */}
+      {/* Proveedores para cobrar online y facturación: activar, conectar o cambiar. */}
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">Conexiones</h3>
         <div>
-        {mercadoPagoActivo ? (
+          <AjusteRow titulo="Mercado Pago" oracion={mercadoPago.oracion} estado={mercadoPago.estado} accionLabel={mercadoPago.accion} onAccion={mercadoPago.ir} />
+          <AjusteRow titulo="Talo" oracion={talo.oracion} estado={talo.estado} accionLabel={talo.accion} onAccion={talo.ir} />
+          {/* Cucuru: sólo las cuentas que ya lo tenían (Alfajor). */}
+          {cucuruOk && (
+            <AjusteRow titulo="Cucuru" oracion="Conectado · transferencias directas" estado="configurado" onAccion={() => setEditor('cucuru')} />
+          )}
           <AjusteRow
-            titulo="Mercado Pago"
-            oracion={
-              mpOk
-                ? 'Conectado · Tarjetas de crédito, débito y dinero disponible en cuenta'
-                : 'Sin conectar · Vinculá tu cuenta de Mercado Pago en un click'
-            }
-            estado={mpOk ? 'configurado' : 'sin-configurar'}
-            accionLabel={mpOk ? 'Cambiar' : 'Conectar'}
-            onAccion={() => setEditor('mercadopago')}
+            titulo="Facturación electrónica (ARCA)"
+            oracion={facturacionActiva ? 'Emití comprobantes desde el cierre de turno.' : 'Activá el módulo para emitir comprobantes fiscales.'}
+            estado={facturacionActiva ? 'configurado' : 'sin-configurar'}
+            accionLabel={facturacionActiva ? 'Abrir' : 'Ver módulos'}
+            onAccion={() => navigate(facturacionActiva ? '/dashboard/facturacion' : '/dashboard/modulos')}
           />
-        ) : (
-          <AjusteRow
-            titulo="Mercado Pago"
-            oracion="Activá el módulo desde Módulos para cobrar online con tarjetas y saldo de Mercado Pago."
-            estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => {
-              navigate('/dashboard/modulos')
-            }}
-          />
-        )}
-
-        {taloActivo ? (
-          <AjusteRow
-            titulo="Talo (Transferencias 3.0 en tiempo real)"
-            oracion={
-              taloOk
-                ? 'Conectado · Transferencias automáticas cuenta a cuenta validadas al instante'
-                : 'Sin conectar · Ingresá tus credenciales de API de Talo'
-            }
-            estado={taloOk ? 'configurado' : 'sin-configurar'}
-            accionLabel={taloOk ? 'Cambiar' : 'Configurar'}
-            onAccion={() => setEditor('talo')}
-          />
-        ) : (
-          <AjusteRow
-            titulo="Talo (Transferencias 3.0 en tiempo real)"
-            oracion="Activá el módulo para recibir transferencias inmediatas verificadas automáticamente por webhook."
-            estado="sin-configurar"
-            accionLabel="Ver módulos"
-            onAccion={() => {
-              navigate('/dashboard/modulos')
-            }}
-          />
-        )}
-
-        {/* Cucuru: soporte de cuentas previas como Alfajor */}
-        {cucuruOk && (
-          <AjusteRow
-            titulo="Cucuru"
-            oracion="Conectado · Transferencias directas"
-            estado="configurado"
-            onAccion={() => setEditor('cucuru')}
-          />
-        )}
-
-        <AjusteRow
-          titulo="Facturación electrónica (ARCA / AFIP)"
-          oracion={facturacionActiva
-            ? 'Emití comprobantes fiscales desde el cierre de turno'
-            : 'Activá el módulo para emitir comprobantes fiscales'}
-          estado={facturacionActiva ? 'configurado' : 'sin-configurar'}
-          accionLabel={facturacionActiva ? 'Abrir' : 'Ver módulos'}
-          onAccion={() => navigate(facturacionActiva ? '/dashboard/facturacion' : '/dashboard/modulos')}
-        />
         </div>
       </div>
 

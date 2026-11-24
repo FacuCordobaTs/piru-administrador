@@ -29,7 +29,8 @@ import type { PasoId } from '@/lib/api'
 
 interface DefinicionPaso {
   titulo: string
-  detalle: string
+  /** Texto del paso abierto. Un paso en línea no lo lleva: su campo ya explica qué hace. */
+  detalle?: string
   Icon: LucideIcon
   accion?: { texto: string; ruta: string }
   /** El paso se completa ahí mismo, sin ir a otra pantalla. */
@@ -51,7 +52,6 @@ const PASOS: Record<PasoId, DefinicionPaso> = {
   },
   whatsapp: {
     titulo: 'WhatsApp para recibir pedidos',
-    detalle: 'Cada pedido de tu tienda llega a este número con todo el detalle, listo para confirmar.',
     Icon: MessageCircle,
     enLinea: true,
   },
@@ -183,7 +183,7 @@ export default function PrimerosPasos() {
                     <div className="px-5 pb-5 pl-[3.25rem]">
                       {def.enLinea ? (
                         <div className="max-w-sm">
-                          <WhatsappPedidosField autoFocus={abiertoElegido === paso.id && !paso.hecho} onGuardado={recargarPasos} />
+                          <WhatsappPedidosField conEtiqueta={false} autoFocus={abiertoElegido === paso.id && !paso.hecho} onGuardado={recargarPasos} />
                         </div>
                       ) : (
                         <p className="text-sm text-muted-foreground">
@@ -218,14 +218,14 @@ export default function PrimerosPasos() {
 
 /**
  * El diseño no es un paso (no hace falta para vender), pero es lo que más ganas da de hacer: va
- * aparte, con un acceso directo. Con el plan que lo incluye abre Páginas sin pasar por Ajustes; en
- * Inicial lleva a los planes.
+ * aparte, con un acceso directo a Páginas. Sólo aparece si el plan lo incluye: Primeros pasos es
+ * para dejar la tienda andando, no para ofrecer planes.
  */
 function DisenoTienda() {
-  const navigate = useNavigate()
   const { plan } = usePlanTienda()
   const { abrir, abriendo, bloqueada, disponible } = useAbrirPaginas()
-  const conDiseno = planIncluye(plan, 'diseno_personalizado')
+
+  if (!planIncluye(plan, 'diseno_personalizado')) return null
 
   return (
     <div className="mt-6 overflow-hidden rounded-2xl border bg-gradient-to-br from-orange-500/[0.07] via-background to-background">
@@ -236,22 +236,13 @@ function DisenoTienda() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground">Personalizá tu diseño</p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {conDiseno
-              ? 'Tu logo, tus colores, tus fotos y las secciones que quieras, en el editor de Páginas.'
-              : `Tu tienda usa el diseño de Piru. Desde el plan ${nombrePlan(plan, 'esencial')} la diseñás con tu marca.`}
+            Tu logo, tus colores, tus fotos y las secciones que quieras, en el editor de Páginas.
           </p>
         </div>
-        {conDiseno ? (
-          <Button onClick={() => void abrir()} disabled={abriendo || !disponible} className="shrink-0">
-            {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ArrowUpRight className="size-4" />}
-            Abrir Páginas
-          </Button>
-        ) : (
-          <Button variant="outline" onClick={() => navigate('/dashboard/planes')} className="shrink-0">
-            <Gem className="size-4" />
-            Ver planes
-          </Button>
-        )}
+        <Button onClick={() => void abrir()} disabled={abriendo || !disponible} className="shrink-0">
+          {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ArrowUpRight className="size-4" />}
+          Abrir Páginas
+        </Button>
       </div>
       {bloqueada && (
         <p className="border-t px-5 py-3 text-sm">

@@ -173,8 +173,18 @@ const errorWhatsapp = (v: string) => (v.replace(/\D/g, '').length >= 8 ? null : 
  * WhatsApp donde llega cada pedido de la tienda (`telefono`: la tienda abre ese chat con el pedido
  * listo). Es el dato del que depende vender, así que va a la vista, sin abrir un editor.
  * `onGuardado` avisa cuando el servidor confirmó el número (Primeros pasos recalcula su checklist).
+ * `conEtiqueta={false}` cuando ya está dentro de algo titulado igual (el paso de Primeros pasos):
+ * la etiqueta queda sólo para lectores de pantalla y no se repite el título.
  */
-export function WhatsappPedidosField({ onGuardado, autoFocus }: { onGuardado?: () => void; autoFocus?: boolean }) {
+export function WhatsappPedidosField({
+  onGuardado,
+  autoFocus,
+  conEtiqueta = true,
+}: {
+  onGuardado?: () => void
+  autoFocus?: boolean
+  conEtiqueta?: boolean
+}) {
   const { valor, guardar, status } = useAjuste('telefono')
   // `null` mientras no se edita: el campo muestra lo guardado y sigue sus cambios.
   const [draft, setDraft] = useState<string | null>(null)
@@ -200,11 +210,11 @@ export function WhatsappPedidosField({ onGuardado, autoFocus }: { onGuardado?: (
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
+      <div className={conEtiqueta ? 'flex items-center gap-2' : 'sr-only'}>
         <Label htmlFor="ajuste-whatsapp-pedidos" className="font-medium">
           WhatsApp para recibir pedidos
         </Label>
-        <SavedIndicator status={status} />
+        {conEtiqueta && <SavedIndicator status={status} />}
       </div>
       <div className="relative">
         <MessageCircle className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-600" />
@@ -231,9 +241,12 @@ export function WhatsappPedidosField({ onGuardado, autoFocus }: { onGuardado?: (
           className="h-11 pl-9"
         />
       </div>
-      <p id="ajuste-whatsapp-pedidos-ayuda" className={error ? 'text-xs text-destructive' : 'text-xs font-normal text-muted-foreground'}>
-        {error ?? 'Cada pedido de tu tienda llega a este chat con todo el detalle, listo para confirmar.'}
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <p id="ajuste-whatsapp-pedidos-ayuda" className={error ? 'text-xs text-destructive' : 'text-xs font-normal text-muted-foreground'}>
+          {error ?? 'Cada pedido de tu tienda llega a este chat con todo el detalle, listo para confirmar.'}
+        </p>
+        {!conEtiqueta && <SavedIndicator status={status} className="shrink-0" />}
+      </div>
     </div>
   )
 }
