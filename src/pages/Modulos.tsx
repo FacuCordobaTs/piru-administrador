@@ -7,10 +7,20 @@ import {
   Check,
   Clock3,
   CreditCard,
-  Rocket,
-  Settings2,
-  Sparkles,
-  TrendingUp,
+  MonitorSmartphone,
+  Armchair,
+  Star,
+  TicketPercent,
+  Wallet,
+  Receipt,
+  Package,
+  Bike,
+  Printer,
+  Store,
+  Repeat,
+  Megaphone,
+  Search,
+  ArrowLeft,
   Loader2,
   MessageCircle,
   Wrench,
@@ -35,23 +45,29 @@ const fmtARS = (monto: string | number) =>
     maximumFractionDigits: 0,
   }).format(Number(monto))
 
-const ICONOS: Record<string, typeof Blocks> = {
-  pos: Blocks,
-  mesas: Blocks,
-  puntos_clientes: Sparkles,
-  codigos_descuento: Sparkles,
-  mercadopago: CreditCard,
-  talo: CreditCard,
-  facturacion_arca: Settings2,
-  gestion_stock: Blocks,
-  gestion_cadetes: Rocket,
-  impresion_comandas: Settings2,
-  multisucursal: Blocks,
-  avisos_automaticos_whatsapp: BellRing,
-  motor_recompra: Sparkles,
-  dias_flojos: CalendarDays,
-  crecimiento: TrendingUp,
-  cierre_turno_manual: Clock3,
+// Cada módulo con su ícono y color propio, como las apps de una tienda: se reconoce de un vistazo.
+const ICONOS: Record<string, [typeof Blocks, string]> = {
+  pos: [MonitorSmartphone, 'from-violet-500 to-indigo-600'],
+  mesas: [Armchair, 'from-amber-400 to-orange-500'],
+  puntos_clientes: [Star, 'from-yellow-400 to-amber-500'],
+  codigos_descuento: [TicketPercent, 'from-pink-500 to-rose-600'],
+  mercadopago: [CreditCard, 'from-sky-400 to-blue-600'],
+  talo: [Wallet, 'from-teal-400 to-emerald-600'],
+  facturacion_arca: [Receipt, 'from-slate-500 to-slate-700'],
+  gestion_stock: [Package, 'from-orange-400 to-red-500'],
+  gestion_cadetes: [Bike, 'from-lime-500 to-green-600'],
+  impresion_comandas: [Printer, 'from-zinc-500 to-zinc-800'],
+  multisucursal: [Store, 'from-cyan-400 to-sky-600'],
+  avisos_automaticos_whatsapp: [BellRing, 'from-green-400 to-emerald-600'],
+  motor_recompra: [Repeat, 'from-fuchsia-500 to-purple-600'],
+  dias_flojos: [CalendarDays, 'from-blue-400 to-indigo-500'],
+  crecimiento: [Megaphone, 'from-rose-400 to-red-600'],
+  cierre_turno_manual: [Clock3, 'from-stone-400 to-stone-600'],
+}
+
+function IconoModulo({ codigo, className }: { codigo: string; className?: string }) {
+  const [Icon, color] = ICONOS[codigo] ?? [Blocks, 'from-zinc-400 to-zinc-600']
+  return <span className={cn('flex shrink-0 items-center justify-center rounded-[22%] bg-gradient-to-br text-white shadow-sm ring-1 ring-black/5', color, className)}><Icon className="size-[45%]" strokeWidth={2.2} /></span>
 }
 
 function requisitoConfiguracion(modulo: Modulo) {
@@ -146,22 +162,91 @@ function AccionModulo({
     : <Button className="w-full" disabled={procesando} onClick={onActivar}>{procesando ? 'Activando…' : 'Activar gratis'}</Button>
 }
 
+function estadoCorto(modulo: Modulo) {
+  if (modulo.estadoProducto === 'proximamente' || !modulo.activable) return 'Pronto'
+  if (modulo.estado === 'cancelacion_programada') return 'Baja programada'
+  if (modulo.estado === 'pendiente_pago') return 'Pago pendiente'
+  if (modulo.activoAhora) return 'Activo'
+  if (modulo.estado === 'activo' || modulo.estado === 'suspendido') return 'Revisar'
+  return null
+}
+
+/** Ficha de módulo estilo tienda de apps: ícono, nombre, una línea y la píldora de acción. */
 function CardModulo({
   modulo,
   onSeleccionar,
   bloqueoPlan,
+  variante = 'carrusel',
 }: {
   modulo: Modulo
   onSeleccionar: () => void
   bloqueoPlan?: string | null
+  variante?: 'carrusel' | 'lista'
 }) {
-  const proximamente = modulo.estadoProducto === 'proximamente' || !modulo.activable
-  const Icon = ICONOS[modulo.codigo] ?? Blocks
-  const estado = proximamente ? 'En preparación' : modulo.estado === 'cancelacion_programada' ? 'Baja programada' : modulo.estado === 'pendiente_pago' ? 'Pago pendiente' : modulo.activoAhora ? 'Activo' : modulo.estado === 'activo' || modulo.estado === 'suspendido' ? 'Revisar suscripción' : 'Sin activar'
-  return <button type="button" onClick={onSeleccionar} className="group flex h-full w-full items-start gap-3 rounded-2xl border bg-background p-5 text-left transition-colors hover:border-brand/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-    <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', modulo.activoAhora ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}><Icon className="size-5" /></span>
-    <span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{modulo.nombre}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></span><span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{modulo.descripcion || 'Sumá esta herramienta a tu negocio.'}</span><span className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs"><span className={modulo.activoAhora ? 'font-medium text-emerald-600' : 'text-muted-foreground'}>{estado}</span><span className="font-medium">{bloqueoPlan ? `Desde el plan ${bloqueoPlan}` : modulo.tipo === 'pago' ? `+${fmtARS(modulo.precioMensualCongelado ?? modulo.precioMensual)}/mes` : 'Incluido · sin costo extra'}</span></span></span>
-  </button>
+  const estado = estadoCorto(modulo)
+  const precio = bloqueoPlan ? `Plan ${bloqueoPlan}` : modulo.tipo === 'pago' ? `${fmtARS(modulo.precioMensualCongelado ?? modulo.precioMensual)}/mes` : 'Gratis'
+  const pildora = estado ?? (modulo.tipo === 'pago' && !bloqueoPlan ? 'Ver' : 'Activar')
+  return (
+    <button
+      type="button"
+      onClick={onSeleccionar}
+      className={cn(
+        'group flex w-full items-center gap-3.5 rounded-2xl p-2.5 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+        variante === 'carrusel' && 'snap-start',
+      )}
+    >
+      <IconoModulo codigo={modulo.codigo} className="size-16" />
+      <span className="min-w-0 flex-1 self-stretch border-b border-border/60 pb-2.5 group-last:border-0">
+        <span className="block truncate text-[15px] font-semibold text-foreground">{modulo.nombre}</span>
+        <span className="mt-0.5 line-clamp-2 text-xs leading-snug text-muted-foreground">{modulo.descripcion || 'Sumá esta herramienta a tu negocio.'}</span>
+        <span className="mt-1 block text-[11px] font-medium text-muted-foreground/80">{precio}</span>
+      </span>
+      <span className={cn(
+        'shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold',
+        modulo.activoAhora ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : estado ? 'bg-muted text-muted-foreground' : 'bg-brand/10 text-brand group-hover:bg-brand group-hover:text-white',
+      )}>{pildora}</span>
+    </button>
+  )
+}
+
+/** Fila de una sección: carrusel horizontal en columnas de 3 fichas, con "Ver todos". */
+function SeccionModulos({
+  titulo,
+  descripcion,
+  modulos,
+  onVerTodos,
+  renderCard,
+}: {
+  titulo: string
+  descripcion?: string | null
+  modulos: Modulo[]
+  onVerTodos: () => void
+  renderCard: (m: Modulo) => React.ReactNode
+}) {
+  const columnas: Modulo[][] = []
+  for (let i = 0; i < modulos.length; i += 3) columnas.push(modulos.slice(i, i + 3))
+  return (
+    <section>
+      <div className="mb-2 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">{titulo}</h2>
+          {descripcion && <p className="mt-0.5 truncate text-sm text-muted-foreground">{descripcion}</p>}
+        </div>
+        {modulos.length > 3 && (
+          <button type="button" onClick={onVerTodos} className="flex shrink-0 items-center gap-0.5 text-sm font-semibold text-brand hover:underline">
+            Ver todos <ChevronRight className="size-4" />
+          </button>
+        )}
+      </div>
+      <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-px-4 px-4 pb-2 [scrollbar-width:none] sm:-mx-6 sm:scroll-px-6 sm:px-6 [&::-webkit-scrollbar]:hidden">
+        {columnas.map((col, i) => (
+          <div key={i} className={cn('flex shrink-0 snap-start flex-col', columnas.length > 1 ? 'w-[86%] sm:w-[420px]' : 'w-full sm:max-w-[420px]')}>
+            {col.map(m => <div key={m.codigo} className="group">{renderCard(m)}</div>)}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function CatalogoSkeleton() {
@@ -170,9 +255,12 @@ function CatalogoSkeleton() {
       {[0, 1, 2].map((grupo) => (
         <section key={grupo}>
           <Skeleton className="h-6 w-44" />
-          <Skeleton className="mt-2 h-4 w-72" />
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            {[0, 1, 2].map((card) => <Skeleton key={card} className="h-64 rounded-2xl" />)}
+          <div className="mt-4 flex gap-4 overflow-hidden">
+            {[0, 1].map((col) => (
+              <div key={col} className="w-[86%] shrink-0 space-y-4 sm:w-[420px]">
+                {[0, 1, 2].map((card) => <div key={card} className="flex items-center gap-3.5"><Skeleton className="size-16 rounded-2xl" /><div className="flex-1 space-y-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-48" /></div></div>)}
+              </div>
+            ))}
           </div>
         </section>
       ))}
@@ -180,8 +268,12 @@ function CatalogoSkeleton() {
   )
 }
 
+const activos_ = (ms: Modulo[]) => ms.filter(m => m.activoAhora)
+
 export default function Modulos() {
   const [filtro, setFiltro] = useState<'todos' | 'activos' | 'incluidos' | 'pagos'>('todos')
+  const [busqueda, setBusqueda] = useState('')
+  const [seccionAbierta, setSeccionAbierta] = useState<string | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
   const categoriasStore = useModulosStore((state) => state.categorias)
@@ -241,7 +333,17 @@ export default function Modulos() {
   const categoriasNormales = categoriasFiltradas.filter(c => c.modulos.some(enCategoria))
   const pagos = categoriasFiltradas.flatMap(c => c.modulos).filter(m => m.tipo === 'pago' && m.codigo !== 'crecimiento')
   const visibles = categoriasFiltradas.flatMap(c => c.modulos)
-  const activos = visibles.filter(m => m.activoAhora)
+  const normalizar = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const termino = normalizar(busqueda.trim())
+  const resultados = termino ? visibles.filter(m => normalizar(`${m.nombre} ${m.descripcion ?? ''}`).includes(termino)) : []
+  // Secciones del catálogo en orden: activos, cada categoría y los pagos al final.
+  const secciones = [
+    ...(filtro === 'todos' && activos_(visibles).length ? [{ id: 'activos', titulo: 'Tus módulos activos', descripcion: 'Ya funcionan en tu local.', modulos: activos_(visibles) }] : []),
+    ...categoriasNormales.map(c => ({ id: c.codigo, titulo: c.nombre, descripcion: c.descripcion, modulos: c.modulos.filter(enCategoria) })),
+    ...(pagos.length ? [{ id: 'pagos', titulo: 'Módulos pagos', descripcion: 'Se suman a tu suscripción mensual.', modulos: pagos }] : []),
+  ].filter(sec => sec.modulos.length)
+  const seccion = secciones.find(sec => sec.id === seccionAbierta)
+  const card = (m: Modulo, variante?: 'carrusel' | 'lista') => <CardModulo modulo={m} variante={variante} bloqueoPlan={bloqueoPlan(m)} onSeleccionar={() => setModuloSeleccionado(m)} />
 
   const activarIncluido = async (modulo: Modulo) => {
     setProcesandoCodigo(modulo.codigo)
@@ -349,17 +451,40 @@ export default function Modulos() {
   }
 
 
+  const listaGrid = (ms: Modulo[]) => (
+    <div className="grid gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+      {ms.map(m => <div key={m.codigo} className="group">{card(m, 'lista')}</div>)}
+    </div>
+  )
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
-      <header className="mx-auto mb-12 max-w-2xl text-center">
-        <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">Módulos</h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-          Activá sólo las herramientas que necesitás. Los módulos incluidos no suman costo; los pagos se agregan a tu suscripción.
-        </p>
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Módulos</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Sumá sólo las herramientas que tu local necesita.</p>
+        </div>
+        <label className="relative block sm:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={busqueda}
+            onChange={e => { setBusqueda(e.target.value); setSeccionAbierta(null) }}
+            placeholder="Buscar módulos"
+            aria-label="Buscar módulos"
+            className="h-10 w-full rounded-full border-0 bg-muted pl-9 pr-4 text-sm outline-none ring-brand placeholder:text-muted-foreground focus-visible:ring-2"
+          />
+        </label>
       </header>
 
-      <div aria-label="Filtrar herramientas" className="mb-6 flex flex-wrap gap-2">{([['todos', 'Todas'], ['activos', 'Mis herramientas'], ['incluidos', 'Sin costo extra'], ['pagos', 'Con costo adicional']] as const).map(([id, label]) => <Button key={id} size="sm" variant={filtro === id ? 'default' : 'outline'} aria-pressed={filtro === id} className="rounded-full" onClick={() => setFiltro(id)}>{label}</Button>)}</div>
-      {!cargando && !error && visibles.length === 0 && <p className="py-6 text-sm text-muted-foreground">{filtro === 'activos' ? 'Todavía no tenés módulos activos. Elegí uno del catálogo para empezar.' : 'No hay módulos disponibles con este filtro.'}</p>}
+      {!termino && !seccion && (
+        <div aria-label="Filtrar herramientas" className="-mx-4 mb-8 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
+          {([['todos', 'Todos'], ['activos', 'Mis módulos'], ['incluidos', 'Gratis'], ['pagos', 'Pagos']] as const).map(([id, label]) => (
+            <Button key={id} size="sm" variant={filtro === id ? 'default' : 'secondary'} aria-pressed={filtro === id} className="shrink-0 rounded-full px-4" onClick={() => setFiltro(id)}>{label}</Button>
+          ))}
+        </div>
+      )}
+
       {vieneDeActivarSuscripcion && (
         <div className="mb-8 flex items-start gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm">
           <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
@@ -373,72 +498,33 @@ export default function Modulos() {
           <p className="mt-1 text-sm text-muted-foreground">{error}</p>
           <Button className="mt-4" variant="outline" onClick={() => void cargar(true).catch(() => {})}>Reintentar</Button>
         </div>
+      ) : termino ? (
+        <section>
+          <p className="mb-3 text-sm text-muted-foreground">{resultados.length ? `${resultados.length} resultado${resultados.length === 1 ? '' : 's'}` : `No encontramos módulos para “${busqueda.trim()}”.`}</p>
+          {listaGrid(resultados)}
+        </section>
+      ) : seccion ? (
+        <section>
+          <button type="button" onClick={() => setSeccionAbierta(null)} className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline">
+            <ArrowLeft className="size-4" /> Todos los módulos
+          </button>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{seccion.titulo}</h2>
+          {seccion.descripcion && <p className="mt-1 text-sm text-muted-foreground">{seccion.descripcion}</p>}
+          <div className="mt-5">{listaGrid(seccion.modulos)}</div>
+        </section>
       ) : (
-        <div className="space-y-11">
-          {filtro === 'todos' && activos.length > 0 && (
-            <section aria-labelledby="modulos-activos">
-              <div>
-                <h2 id="modulos-activos" className="text-lg font-semibold tracking-tight text-foreground">Tus módulos activos</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Ya están funcionando en tu local. Entrá para revisar su configuración.</p>
-              </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {activos.map((modulo) => {
-                  const Icon = ICONOS[modulo.codigo] ?? Blocks
-                  return (
-                    <button
-                      key={modulo.codigo}
-                      type="button"
-                      onClick={() => setModuloSeleccionado(modulo)}
-                      className="group flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-left transition-colors hover:border-emerald-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                    >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white"><Icon className="size-4" /></span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-foreground">{modulo.nombre}</span>
-                        <span className="mt-0.5 block text-xs font-medium text-emerald-600">Activo</span>
-                      </span>
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
-          )}
-
-          {categoriasNormales.map((categoria) => {
-            const modulos = categoria.modulos.filter((modulo) => enCategoria(modulo))
-            if (!modulos.length) return null
-            return (
-              <section key={categoria.id} aria-labelledby={`categoria-${categoria.codigo}`}>
-                <div>
-                  <h2 id={`categoria-${categoria.codigo}`} className="text-lg font-semibold tracking-tight text-foreground">{categoria.nombre}</h2>
-                  {categoria.descripcion && <p className="mt-1 text-sm text-muted-foreground">{categoria.descripcion}</p>}
-                </div>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  {modulos.map((modulo) => (
-                    <CardModulo key={modulo.codigo} modulo={modulo} bloqueoPlan={bloqueoPlan(modulo)} onSeleccionar={() => setModuloSeleccionado(modulo)} />
-                  ))}
-                </div>
-              </section>
-            )
-          })}
-
-          {pagos.length > 0 && (
-            <section aria-labelledby="modulos-pagos">
-              <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950"><Sparkles className="h-5 w-5" /></span>
-                <div>
-                  <h2 id="modulos-pagos" className="text-lg font-semibold tracking-tight text-foreground">Módulos pagos</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Se suman a tu suscripción mensual. Elegís cuáles activar.</p>
-                </div>
-              </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                {pagos.map((modulo) => (
-                  <CardModulo key={modulo.codigo} modulo={modulo} bloqueoPlan={bloqueoPlan(modulo)} onSeleccionar={() => setModuloSeleccionado(modulo)} />
-                ))}
-              </div>
-            </section>
-          )}
-
+        <div className="space-y-10">
+          {secciones.length === 0 && <p className="py-6 text-sm text-muted-foreground">{filtro === 'activos' ? 'Todavía no tenés módulos activos. Elegí uno del catálogo para empezar.' : 'No hay módulos disponibles con este filtro.'}</p>}
+          {secciones.map(sec => (
+            <SeccionModulos
+              key={sec.id}
+              titulo={sec.titulo}
+              descripcion={sec.descripcion}
+              modulos={sec.modulos}
+              onVerTodos={() => { setSeccionAbierta(sec.id); window.scrollTo({ top: 0 }) }}
+              renderCard={m => card(m)}
+            />
+          ))}
           {error && <p className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><Clock3 className="h-4 w-4" /> Mostramos la última información disponible. {error}</p>}
         </div>
       )}
@@ -470,12 +556,7 @@ export default function Modulos() {
             return <>
               <SheetHeader className="border-b px-6 py-6 pr-12 text-left">
                 <div className="flex items-center gap-3">
-                  <span className={cn(
-                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
-                    proximamente ? 'bg-muted text-muted-foreground' : activo ? 'bg-emerald-600 text-white' : moduloSeleccionado.tipo === 'pago' ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950' : 'bg-brand/10 text-brand',
-                  )}>
-                    {(() => { const Icon = ICONOS[moduloSeleccionado.codigo] ?? Blocks; return <Icon className="h-5 w-5" /> })()}
-                  </span>
+                  <IconoModulo codigo={moduloSeleccionado.codigo} className={cn('size-14', proximamente && 'opacity-60 grayscale')} />
                   <div>
                     <SheetTitle className="text-xl font-semibold tracking-tight">{moduloSeleccionado.nombre}</SheetTitle>
                     {moduloSeleccionado.tipo === 'pago' && <p className="mt-0.5 text-sm font-medium text-muted-foreground">+{fmtARS(moduloSeleccionado.precioMensual)}/mes</p>}
