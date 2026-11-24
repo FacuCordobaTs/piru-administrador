@@ -11,12 +11,13 @@ import {
   MessageCircle,
   MoreHorizontal,
   RotateCcw,
+  Trash2,
   Send,
   ShoppingBag,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, Estado, Sheet, cn, copiar } from "../ui";
+import { Button, Confirmar, Estado, Sheet, cn, copiar } from "../ui";
 import { PortalMenuMarketing } from "../portal";
 import { SkeletonPantalla } from "../SkeletonPantalla";
 import { useDatos } from "../../lib/useDatos";
@@ -68,6 +69,7 @@ export function TandaDetalle({
   const [enviando, setEnviando] = useState<number | null>(null);
   const [viendo, setViendo] = useState<MensajeTanda | null>(null);
   const [verDescartados, setVerDescartados] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
 
   if (!data) return <Estado skeleton={<SkeletonPantalla tipo="hoy" />} loading={loading} error={error} reintentar={recargar} />;
 
@@ -114,10 +116,34 @@ export function TandaDetalle({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Button variant="ghost" className="-ml-3 mb-4 px-3" onClick={onVolver}>
-        <ArrowLeft size={16} />
-        Tus tandas
-      </Button>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <Button variant="ghost" className="-ml-3 px-3" onClick={onVolver}>
+          <ArrowLeft size={16} />
+          Tus tandas
+        </Button>
+        <Button variant="ghost" className="px-3 text-rose-700" onClick={() => setCancelando(true)}>
+          <Trash2 size={16} />
+          Cancelar tanda
+        </Button>
+      </div>
+      <Confirmar
+        open={cancelando}
+        onOpenChange={setCancelando}
+        title="¿Cancelar esta tanda?"
+        text={enviados.length
+          ? `Se borra la tanda y los mensajes que faltan mandar, con sus cupones. Los ${enviados.length} ya enviados conservan su beneficio.`
+          : "Se borra la tanda con sus mensajes y cupones. Esos clientes vuelven a estar disponibles para otra tanda."}
+        confirmLabel="Cancelar y borrar"
+        onConfirm={async () => {
+          try {
+            await tandasApi.cancelar(data.id);
+            toast.success("Tanda cancelada");
+            onVolver();
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "No pudimos cancelar la tanda.");
+          }
+        }}
+      />
 
       <header className="mb-6">
         <p className="text-xs font-semibold tracking-[.12em] text-ink-3 uppercase">

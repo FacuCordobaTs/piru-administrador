@@ -396,6 +396,10 @@ async function mock(
         id: t.id, canal: t.canal, createdAt: t.createdAt, presupuesto: t.presupuesto, presupuestoAsignado: t.presupuestoAsignado,
         conPuntos: false, total: t.mensajes.length, enviados: 0, descartados: 0, volvieron: 0, ventas: 0, nombres: ["Ana", "Beto"],
       }))));
+    if (/^\/recompra-tandas\/\d+$/.test(path) && req.method() === "DELETE") {
+      tandas = tandas.filter((t) => t.id !== id);
+      return fulfill({ success: true });
+    }
     if (/^\/recompra-tandas\/\d+$/.test(path)) return fulfill(envelope(tandas.find((t) => t.id === id) ?? tandaEjemplo));
     if (/^\/recompra-tandas\/\d+\/mensajes\/\d+\/abrir$/.test(path)) {
       const m = tandaEjemplo.mensajes.find((x) => x.id === id)!;
@@ -941,6 +945,16 @@ test("Recompra arma una tanda: cuántos, cuánto invertir y los mensajes con su 
   await expect(page.getByRole("dialog").getByText(/Hace un mes que no pasás/)).toBeVisible();
   await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-vista-previa.png" });
   expect(errores).toEqual([]);
+});
+
+test("Recompra deja cancelar una tanda y la borra", async ({ page }) => {
+  const m = await mock(page, { conTandas: true });
+  await ir(page, "/dashboard/marketing/recompra");
+  await page.getByRole("list", { name: "Tus tandas" }).getByRole("button").first().click();
+  await page.getByRole("button", { name: "Cancelar tanda" }).click();
+  await page.getByRole("button", { name: "Cancelar y borrar" }).click();
+  await expect(page.getByRole("heading", { name: "Que tus clientes vuelvan a pedir" })).toBeVisible();
+  expect(m.borrados).toContain("/recompra-tandas/40");
 });
 
 test("Recompra lista las tandas anteriores y deja crear otra", async ({ page }) => {

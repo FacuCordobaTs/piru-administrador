@@ -90,6 +90,7 @@ export const tandasApi = {
   leer: (id: number) => datosLocal<Tanda>(`/recompra-tandas/${id}`),
   crear: (cantidad: number, presupuesto: number) =>
     datosLocal<Tanda>("/recompra-tandas", { method: "POST", body: { cantidad, presupuesto } }),
+  cancelar: (id: number) => apiLocal<{ success: boolean }>(`/recompra-tandas/${id}`, { method: "DELETE" }),
   accion: (tanda: number, mensaje: number, accion: "abrir" | "deshacer" | "descartar" | "enviar") =>
     apiLocal<{ success: boolean; data: MensajeTanda }>(ruta(tanda, mensaje, accion), { method: "POST" }).then((r) => r.data),
 };
