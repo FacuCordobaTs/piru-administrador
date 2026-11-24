@@ -6,7 +6,7 @@ import { useModuloActivo } from '@/store/modulosStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { useMetodosPago } from '../hooks/useMetodosPago'
-import { describirMetodos, hayAlgunMetodo } from './pagos/describir'
+import { SavedIndicator } from '../components/SavedIndicator'
 import { MetodosEditor } from './pagos/MetodosEditor'
 import {
   MercadoPagoEditor,
@@ -15,6 +15,7 @@ import {
 } from './pagos/IntegracionEditors'
 import type { PagosEditorId } from './pagos/types'
 
+/** Los métodos se eligen en la vista principal; los editores son de cada conexión. */
 type MonetizacionEditorId = PagosEditorId | null
 
 export default function Monetizacion() {
@@ -69,29 +70,39 @@ export default function Monetizacion() {
 
   return (
     <section className="space-y-8">
-      <header className="space-y-3">
-        <h2 className="text-xl font-medium tracking-tight text-foreground">
-          Métodos de pago
-        </h2>
-        <div className="space-y-2 text-sm text-muted-foreground leading-relaxed max-w-2xl">
-          <p>
-            Configurá los medios de cobro habilitados para tu tienda web: pagos online con tarjetas y saldo mediante Mercado Pago, o transferencias directas cuenta a cuenta 3.0 a través de Talo con verificación automática por webhook.
-          </p>
-          <p>
-            También podés ofrecer cobro en efectivo al entregar o retirar y activar la emisión de facturación electrónica automática autorizada por AFIP/ARCA.
-          </p>
-        </div>
+      <header className="space-y-1">
+        <h2 className="text-lg font-medium text-foreground">Métodos de pago</h2>
+        <p className="text-sm font-normal text-muted-foreground">
+          Qué medios de pago ofrecés en tu tienda. Se guarda al tocar cada uno.
+        </p>
       </header>
 
-      {/* Ajustes y herramientas del pilar */}
-      <div className="space-y-1">
-        <AjusteRow
-          titulo="Métodos de pago habilitados"
-          oracion={describirMetodos(metodos.config, mpOk, cucuruOk, taloOk)}
-          estado={hayAlgunMetodo(metodos.config, mpOk, cucuruOk, taloOk) ? 'configurado' : 'sin-configurar'}
-          onAccion={() => setEditor('metodos')}
-        />
+      {/* Lo que se decide más seguido va a la vista: prender y apagar cada medio. */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-foreground">Métodos habilitados</h3>
+          <SavedIndicator status={metodos.status} />
+        </div>
+        <div className="rounded-2xl border border-border/60 px-4 py-1">
+          <MetodosEditor
+            metodos={metodos}
+            mpOk={mpOk}
+            cucuruOk={cucuruOk}
+            taloOk={taloOk}
+            mercadoPagoActivo={mercadoPagoActivo}
+            taloActivo={taloActivo}
+            irA={setEditor}
+            irAModulo={() => {
+              navigate('/dashboard/modulos')
+            }}
+          />
+        </div>
+      </div>
 
+      {/* Conexiones con proveedores y facturación */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-foreground">Conexiones</h3>
+        <div>
         {mercadoPagoActivo ? (
           <AjusteRow
             titulo="Mercado Pago"
@@ -159,30 +170,10 @@ export default function Monetizacion() {
           accionLabel={facturacionActiva ? 'Abrir' : 'Ver módulos'}
           onAccion={() => navigate(facturacionActiva ? '/dashboard/facturacion' : '/dashboard/modulos')}
         />
+        </div>
       </div>
 
-      {/* Editores modales */}
-      <AjusteEditor
-        open={editor === 'metodos'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Métodos de cobro"
-        descripcion="Elegí qué medios de pago ofrecés a tus comensales en la tienda web."
-        status={metodos.status}
-      >
-        <MetodosEditor
-          metodos={metodos}
-          mpOk={mpOk}
-          cucuruOk={cucuruOk}
-          taloOk={taloOk}
-          mercadoPagoActivo={mercadoPagoActivo}
-          taloActivo={taloActivo}
-          irA={setEditor}
-          irAModulo={() => {
-            navigate('/dashboard/modulos')
-          }}
-        />
-      </AjusteEditor>
-
+      {/* Editores de cada conexión */}
       <AjusteEditor
         open={editor === 'mercadopago' && mercadoPagoActivo}
         onOpenChange={(o) => !o && setEditor(null)}

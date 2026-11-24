@@ -37,6 +37,8 @@ interface Producto {
   categoria: string | null
   categoriaEsBebida?: boolean
   orden?: number | null
+  /** Producto de ejemplo de la tienda nueva: se marca en la carta y se quita junto con los demás. */
+  esEjemplo?: boolean
   descuento?: number | null
   puntosGanados?: number | null
   puntosNecesarios?: number | null

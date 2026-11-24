@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import {
+  ArrowUpRight,
   Check,
   ChevronDown,
   Clock,
   CreditCard,
   ExternalLink,
   Gem,
+  Loader2,
   MessageCircle,
   Package,
   Palette,
@@ -19,7 +21,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useAuthStore } from '@/store/authStore'
-import { nombrePlan, usePlanTienda, usePlanTiendaStore } from '@/store/planTiendaStore'
+import { nombrePlan, planIncluye, usePlanTienda, usePlanTiendaStore } from '@/store/planTiendaStore'
+import { useAbrirPaginas } from '@/hooks/useAbrirPaginas'
+import { AvisoProductosEjemplo } from '@/components/ProductosEjemplo'
+import { WhatsappPedidosField } from './ajustes/sections/general/campos'
 import type { PasoId } from '@/lib/api'
 
 interface DefinicionPaso {
@@ -27,6 +32,8 @@ interface DefinicionPaso {
   detalle: string
   Icon: LucideIcon
   accion?: { texto: string; ruta: string }
+  /** El paso se completa ahí mismo, sin ir a otra pantalla. */
+  enLinea?: boolean
 }
 
 /** Textos y destino de cada paso. Qué está hecho lo decide el backend (`lib/primeros-pasos.ts`). */
@@ -46,7 +53,7 @@ const PASOS: Record<PasoId, DefinicionPaso> = {
     titulo: 'WhatsApp para recibir pedidos',
     detalle: 'Cada pedido de tu tienda llega a este número con todo el detalle, listo para confirmar.',
     Icon: MessageCircle,
-    accion: { texto: 'Cargar número', ruta: '/dashboard/ajustes/general' },
+    enLinea: true,
   },
   horarios: {
     titulo: 'Definir horarios',
@@ -66,12 +73,6 @@ const PASOS: Record<PasoId, DefinicionPaso> = {
     Icon: CreditCard,
     accion: { texto: 'Configurar', ruta: '/dashboard/ajustes/monetizacion' },
   },
-  diseno: {
-    titulo: 'Personalizar diseño',
-    detalle: 'Elegí una plantilla y ajustala con tu logo, tus colores y tus fotos.',
-    Icon: Palette,
-    accion: { texto: 'Personalizar', ruta: '/dashboard/ajustes/mi-pagina' },
-  },
 }
 
 export default function PrimerosPasos() {
@@ -89,6 +90,7 @@ export default function PrimerosPasos() {
   useEffect(() => {
     void recargar(true)
   }, [recargar])
+  const recargarPasos = useCallback(() => void recargar(true), [recargar])
 
   // Recién creada la cuenta, el perfil puede no haber llegado: la sesión ya trae el link.
   const usernameSesion = useAuthStore((s) => s.restaurante?.username ?? null)
@@ -98,6 +100,8 @@ export default function PrimerosPasos() {
 
   // Los locales anteriores (Evolución) no tienen primeros pasos: ya estaban armados.
   if (plan?.esLegado) return <Navigate to="/dashboard" replace />
+  // Una tienda nueva que todavía no respondió las preguntas iniciales las ve primero.
+  if (pasos && !pasos.configurada) return <Navigate to="/configurar-tienda" replace />
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
@@ -115,6 +119,8 @@ export default function PrimerosPasos() {
           </div>
         </div>
       )}
+
+      <AvisoProductosEjemplo className="mt-6" />
 
       <div className="mt-8 flex items-baseline justify-between gap-4">
         <p className="text-sm font-medium text-foreground">
@@ -143,7 +149,6 @@ export default function PrimerosPasos() {
           : pasos.pasos.map((paso) => {
               const def = PASOS[paso.id]
               const expandido = abierto === paso.id
-              const bloqueadoPorPlan = paso.id === 'diseno' && paso.opcional
               const Icono = def.Icon
               return (
                 <div key={paso.id} className="border-b last:border-b-0">
@@ -176,14 +181,18 @@ export default function PrimerosPasos() {
                   </div>
                   {expandido && paso.id !== 'crear_tienda' && (
                     <div className="px-5 pb-5 pl-[3.25rem]">
-                      <p className="text-sm text-muted-foreground">
-                        {bloqueadoPorPlan
-                          ? `Tu tienda usa el diseño de Piru. Desde el plan ${nombrePlan(plan, 'esencial')} elegís una plantilla y la personalizás con tu marca.`
-                          : def.detalle}
-                      </p>
-                      {bloqueadoPorPlan ? (
-                        <Button size="sm" className="mt-3" onClick={() => navigate('/dashboard/planes')}>Ver planes</Button>
-                      ) : def.accion ? (
+                      {def.enLinea ? (
+                        <div className="max-w-sm">
+                          <WhatsappPedidosField autoFocus={abiertoElegido === paso.id && !paso.hecho} onGuardado={recargarPasos} />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {paso.id === 'productos' && !paso.hecho && pasos.productosEjemplo > 0
+                            ? `${def.detalle} Los de ejemplo no cuentan: este paso se completa con tu primer producto.`
+                            : def.detalle}
+                        </p>
+                      )}
+                      {def.accion ? (
                         <Button size="sm" className="mt-3" variant={paso.hecho ? 'outline' : 'default'} onClick={() => navigate(def.accion!.ruta)}>
                           {paso.hecho ? 'Revisar' : def.accion.texto}
                         </Button>
@@ -195,12 +204,63 @@ export default function PrimerosPasos() {
             })}
       </div>
 
+      <DisenoTienda />
+
       <p className="mt-6 text-center text-sm text-muted-foreground">
         {planActual && <>Plan {planActual} · </>}
         <button type="button" onClick={() => navigate('/dashboard/guia', { state: { volver: '/dashboard/primeros-pasos' } })} className="underline underline-offset-2 hover:text-foreground">
           Cómo funciona el panel
         </button>
       </p>
+    </div>
+  )
+}
+
+/**
+ * El diseño no es un paso (no hace falta para vender), pero es lo que más ganas da de hacer: va
+ * aparte, con un acceso directo. Con el plan que lo incluye abre Páginas sin pasar por Ajustes; en
+ * Inicial lleva a los planes.
+ */
+function DisenoTienda() {
+  const navigate = useNavigate()
+  const { plan } = usePlanTienda()
+  const { abrir, abriendo, bloqueada, disponible } = useAbrirPaginas()
+  const conDiseno = planIncluye(plan, 'diseno_personalizado')
+
+  return (
+    <div className="mt-6 overflow-hidden rounded-2xl border bg-gradient-to-br from-orange-500/[0.07] via-background to-background">
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#FF7A00] text-white">
+          <Palette className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">Personalizá tu diseño</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {conDiseno
+              ? 'Tu logo, tus colores, tus fotos y las secciones que quieras, en el editor de Páginas.'
+              : `Tu tienda usa el diseño de Piru. Desde el plan ${nombrePlan(plan, 'esencial')} la diseñás con tu marca.`}
+          </p>
+        </div>
+        {conDiseno ? (
+          <Button onClick={() => void abrir()} disabled={abriendo || !disponible} className="shrink-0">
+            {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ArrowUpRight className="size-4" />}
+            Abrir Páginas
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => navigate('/dashboard/planes')} className="shrink-0">
+            <Gem className="size-4" />
+            Ver planes
+          </Button>
+        )}
+      </div>
+      {bloqueada && (
+        <p className="border-t px-5 py-3 text-sm">
+          El navegador bloqueó la pestaña.{' '}
+          <a className="font-semibold underline" href={bloqueada} target="_blank" rel="noopener noreferrer">
+            Abrir Páginas
+          </a>
+        </p>
+      )}
     </div>
   )
 }

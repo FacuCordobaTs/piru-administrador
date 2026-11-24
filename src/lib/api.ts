@@ -1525,6 +1525,14 @@ export const productosApi = {
       body: JSON.stringify({ productoIds }),
     }),
 
+  // Quitar los productos de ejemplo de la tienda nueva. Los que ya se usaron en un pedido quedan
+  // desactivados (`desactivados`) para conservar el historial.
+  quitarEjemplos: (token: string) =>
+    fetchApi<{ success: boolean; borrados: number; desactivados: number }>('/producto/ejemplos', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+
   // Reordenar productos (drag & drop): productoIds en el orden deseado
   reorder: (token: string, productoIds: number[]) =>
     fetchApi('/producto/reorder', {
@@ -3139,13 +3147,25 @@ export interface MiPlanTienda {
   pagosDisponibles: boolean
 }
 
-export type PasoId = 'crear_tienda' | 'productos' | 'whatsapp' | 'horarios' | 'entregas' | 'pagos' | 'diseno'
+export type PasoId = 'crear_tienda' | 'productos' | 'whatsapp' | 'horarios' | 'entregas' | 'pagos'
 export interface PrimerosPasos {
   visible: boolean
   pasos: Array<{ id: PasoId; hecho: boolean; opcional: boolean }>
   completados: number
   total: number
   terminado: boolean
+  /** El dueño ya respondió las preguntas iniciales (rubro y entregas). */
+  configurada: boolean
+  /** Productos de ejemplo que siguen activos en la carta. */
+  productosEjemplo: number
+}
+
+/** Rubros de las preguntas iniciales; deciden qué productos de ejemplo se cargan. */
+export type Rubro = 'cafeteria' | 'rotiseria' | 'hamburgueseria' | 'pizzeria' | 'otro'
+export interface ConfiguracionInicial {
+  rubro: Rubro
+  delivery: boolean
+  takeaway: boolean
 }
 
 export type ResultadoElegirPlan =
@@ -3158,6 +3178,12 @@ export const planesTiendaApi = {
     fetchApi<{ success: boolean; data: MiPlanTienda }>('/planes-tienda', { headers: { Authorization: `Bearer ${token}` } }),
   primerosPasos: (token: string) =>
     fetchApi<{ success: boolean; data: PrimerosPasos }>('/planes-tienda/primeros-pasos', { headers: { Authorization: `Bearer ${token}` } }),
+  configuracionInicial: (token: string, config: ConfiguracionInicial) =>
+    fetchApi<{ success: boolean; data: { productosEjemplo: number } }>('/planes-tienda/configuracion-inicial', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(config),
+    }),
   elegir: (token: string, codigo: PlanCodigo, ciclo: 'mensual' | 'anual' = 'mensual') =>
     fetchApi<{ success: boolean; data: ResultadoElegirPlan }>('/planes-tienda/elegir', {
       method: 'POST',

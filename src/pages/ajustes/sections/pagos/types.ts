@@ -1,5 +1,4 @@
 export type PagosEditorId =
-  | 'metodos'
   | 'mercadopago'
   | 'cucuru'
   | 'talo'

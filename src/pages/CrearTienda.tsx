@@ -13,7 +13,8 @@ const inputClass = "h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-0 focus
 
 /**
  * "Crear tienda gratis": el registro self-serve, al estilo Tiendanube. Mail, nombre de la marca y
- * contraseña; la tienda nace en el plan Inicial y entra directo al panel, a "Primeros pasos".
+ * contraseña; la tienda nace en el plan Inicial y sigue a las preguntas iniciales (`/configurar-tienda`)
+ * y de ahí a "Primeros pasos".
  * Se llega desde info.piru.app (`/crear-tienda?email=` precarga el mail que escribió ahí).
  */
 const CrearTienda = () => {
@@ -50,8 +51,8 @@ const CrearTienda = () => {
       setCreada(true)
       resetRestaurante()
       setAuth(res.token, res.restaurante)
-      toast.success('¡Tu tienda está creada!', { description: 'Te dejamos los pasos para dejarla lista.' })
-      navigate('/dashboard/primeros-pasos', { replace: true })
+      // Antes del panel, las dos preguntas que arman la carta de ejemplo.
+      navigate('/configurar-tienda', { replace: true })
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error('No pudimos crear tu tienda', { description: error.message })

@@ -1,62 +1,38 @@
-import { useEffect, useState } from 'react'
-import { Switch } from '@/components/ui/switch'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { restauranteApi, zonasDeliveryApi } from '@/lib/api'
-import { useAuthStore } from '@/store/authStore'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { AjusteRow } from '../components/AjusteRow'
 import { AjusteEditor } from '../components/AjusteEditor'
 import { AjusteInput } from '../components/AjusteInput'
-import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import { esAndroid, pedirExcepcionDeBateria } from '@/utils/piruAndroid'
-import {
-  DireccionField,
-  SucursalJustInTime,
-  CostoEnvioField,
-} from './general/campos'
+import { DireccionField, SucursalJustInTime, WhatsappPedidosField } from './general/campos'
 
-type EditorId = 'negocio' | 'envio' | 'avisos' | null
+type EditorId = 'negocio' | null
 
+/**
+ * Datos del negocio y el WhatsApp donde llegan los pedidos. El costo de envío vive en Entregas y
+ * zonas, junto con el resto de lo que decide cuánto se cobra por llevar un pedido.
+ */
 export default function General() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
-  const token = useAuthStore((s) => s.token)
   const [editor, setEditor] = useState<EditorId>(null)
-  // Con zonas de delivery cargadas el envío se cobra por zona: el costo fijo
-  // queda escondido para no ofrecer dos configuraciones contradictorias.
-  const [hayZonas, setHayZonas] = useState<boolean | null>(null)
 
   const nombre = restaurante?.nombre?.trim()
   const direccion = restaurante?.direccionTexto?.trim() || restaurante?.direccion?.trim() || ''
   const dirCorta = direccion.split(',')[0]?.trim()
-  const avisosOn = restaurante?.whatsappEnabled === true
-  const telefono = restaurante?.telefono?.trim()
-  const costoEnvioNum = parseFloat(restaurante?.deliveryFee ?? '') || 0
-
-  useEffect(() => {
-    if (!token) return
-    let cancelado = false
-    zonasDeliveryApi
-      .getAll(token)
-      .then((res: unknown) => {
-        if (cancelado) return
-        const respuesta = res as { success?: boolean; data?: unknown[] }
-        const zonas = respuesta.success ? respuesta.data ?? [] : []
-        setHayZonas(zonas.length > 0)
-      })
-      .catch(() => {
-        if (!cancelado) setHayZonas(false)
-      })
-    return () => { cancelado = true }
-  }, [token])
 
   return (
     <section className="space-y-6">
       <header className="space-y-1">
         <h2 className="text-lg font-medium text-foreground">General</h2>
         <p className="text-sm font-normal text-muted-foreground">
-          Información del negocio y cómo recibís los pedidos.
+          Información del negocio y dónde recibís los pedidos.
         </p>
       </header>
+
+      <div className="border-b border-border/50 pb-5">
+        <WhatsappPedidosField />
+      </div>
 
       <div>
         <AjusteRow
@@ -68,30 +44,6 @@ export default function General() {
           }
           estado={nombre ? 'configurado' : 'sin-configurar'}
           onAccion={() => setEditor('negocio')}
-        />
-        {hayZonas === false && (
-          <AjusteRow
-            titulo="Costo de envío"
-            oracion={
-              costoEnvioNum > 0
-                ? `Cobrás $${costoEnvioNum.toLocaleString('es-AR', { minimumFractionDigits: 0 })} por pedido de delivery`
-                : 'Sin costo fijo de envío configurado'
-            }
-            estado={costoEnvioNum > 0 ? 'configurado' : 'sin-configurar'}
-            onAccion={() => setEditor('envio')}
-          />
-        )}
-        <AjusteRow
-          titulo="Avisos de pedidos"
-          oracion={
-            avisosOn
-              ? telefono
-                ? `Recibís los pedidos nuevos por WhatsApp al ${telefono}`
-                : 'Activado, pero falta cargar el número donde recibirlos'
-              : 'No recibís avisos de pedidos nuevos por WhatsApp'
-          }
-          estado={avisosOn ? (telefono ? 'configurado' : 'atencion') : 'sin-configurar'}
-          onAccion={() => setEditor('avisos')}
         />
         {esAndroid() && <AjusteBateriaAndroid />}
       </div>
@@ -105,55 +57,10 @@ export default function General() {
         <div className="space-y-5">
           <AjusteInput campo="nombre" label="Nombre del local" placeholder="Ej: Burger Bros" />
           <DireccionField />
-          <AjusteInput campo="telefono" label="Teléfono" placeholder="Ej: 11 2345 6789" inputMode="tel" />
           <SucursalJustInTime />
         </div>
       </AjusteEditor>
-
-      <AjusteEditor
-        open={editor === 'envio'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Costo de envío"
-        descripcion="Se precarga automáticamente en los pedidos de delivery anotados en el POS."
-      >
-        <CostoEnvioField />
-      </AjusteEditor>
-
-      <AjusteEditor
-        open={editor === 'avisos'}
-        onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Avisos de pedidos"
-        descripcion="Recibí un WhatsApp cada vez que entra un pedido nuevo."
-      >
-        <div className="space-y-5">
-          <AvisosToggle />
-          {avisosOn && (
-            <AjusteInput
-              campo="telefono"
-              label="Número donde recibís los avisos"
-              placeholder="Ej: 11 2345 6789"
-              inputMode="tel"
-            />
-          )}
-        </div>
-      </AjusteEditor>
     </section>
-  )
-}
-
-/** Toggle optimista de las notificaciones de pedidos nuevos al local (WhatsApp). */
-function AvisosToggle() {
-  const { checked, toggle } = useToggleAjuste('whatsappEnabled', restauranteApi.toggleWhatsappEnabled)
-  return (
-    <div className="flex items-center justify-between gap-4 py-1">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">Avisarme por WhatsApp</p>
-        <p className="text-[13px] font-normal text-muted-foreground">
-          Te llega un mensaje con el detalle apenas se confirma cada pedido.
-        </p>
-      </div>
-      <Switch checked={checked} onCheckedChange={toggle} />
-    </div>
   )
 }
 

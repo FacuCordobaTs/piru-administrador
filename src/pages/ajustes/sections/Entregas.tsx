@@ -11,8 +11,9 @@ import { AjusteEditor } from '../components/AjusteEditor'
 import { ZonasEspecialesPanel } from '../components/ZonasEspecialesPanel'
 import { useToggleAjuste } from '../hooks/useToggleAjuste'
 import { useModuloActivo } from '@/store/modulosStore'
+import { CostoEnvioField } from './general/campos'
 
-type EditorId = 'tipos' | 'zonas-especiales' | null
+type EditorId = 'tipos' | 'envio' | 'barrios-privados' | null
 
 export default function Entregas() {
   const restaurante = useRestauranteStore((s) => s.restaurante)
@@ -26,12 +27,16 @@ export default function Entregas() {
   const takeawayOn = restaurante?.takeawayEnabled !== false
   const tiposOracion = describirTipos(deliveryOn, takeawayOn)
 
-  const { texto: zonasOracion, estado: zonasEstado } = useZonasResumen()
+  const { texto: zonasOracion, estado: zonasEstado, cantidad: cantidadZonas } = useZonasResumen()
+  // Con zonas el envío se cobra por zona: el costo fijo se esconde para no ofrecer dos
+  // configuraciones contradictorias. Mientras cargan, tampoco se muestra.
+  const conCostoFijo = deliveryOn && cantidadZonas === 0
+  const costoEnvio = parseFloat(restaurante?.deliveryFee ?? '') || 0
 
   const multisucursalActiva = useModuloActivo('multisucursal')
   const avisosWhatsappActivos = useModuloActivo('avisos_automaticos_whatsapp')
   const zonasEspecialesHabilitadas = restaurante?.zonasEspecialesHabilitadas === true
-  const { texto: zonasEspecialesOracion, estado: zonasEspecialesEstado } = useZonasEspecialesResumen(
+  const { texto: barriosOracion, estado: barriosEstado } = useBarriosPrivadosResumen(
     avisosWhatsappActivos && !esDemo && zonasEspecialesHabilitadas,
     editor === null,
   )
@@ -40,15 +45,17 @@ export default function Entregas() {
     const config = searchParams.get('config')
     // Enlaces guardados de cuando Sucursales vivía en Entregas.
     if (config === 'sucursales' && multisucursalActiva) navigate('/dashboard/sucursales', { replace: true })
-    else if (config === 'zonas-especiales' && avisosWhatsappActivos && !esDemo) setEditor('zonas-especiales')
+    // `zonas-especiales` es el nombre anterior de Barrios privados: los links guardados siguen andando.
+    else if ((config === 'barrios-privados' || config === 'zonas-especiales') && avisosWhatsappActivos && !esDemo) setEditor('barrios-privados')
+    else if (config === 'envio') setEditor('envio')
   }, [multisucursalActiva, avisosWhatsappActivos, esDemo, searchParams, navigate])
 
   return (
     <section className="space-y-6">
       <header className="space-y-1">
-        <h2 className="text-lg font-medium text-foreground">Entregas</h2>
+        <h2 className="text-lg font-medium text-foreground">Entregas y zonas</h2>
         <p className="text-sm font-normal text-muted-foreground">
-          Cómo entregás: tipos de pedido, zonas y locales.
+          Cómo entregás y cuánto cobrás el envío: tipos de pedido, zonas y locales.
         </p>
       </header>
 
@@ -65,22 +72,34 @@ export default function Entregas() {
           estado={zonasEstado}
           onAccion={() => navigate('/dashboard/ajustes/entregas/zonas')}
         />
+        {conCostoFijo && (
+          <AjusteRow
+            titulo="Costo de envío"
+            oracion={
+              costoEnvio > 0
+                ? `Cobrás $${costoEnvio.toLocaleString('es-AR', { minimumFractionDigits: 0 })} por pedido de delivery`
+                : 'Sin costo fijo de envío'
+            }
+            estado={costoEnvio > 0 ? 'configurado' : 'sin-configurar'}
+            onAccion={() => setEditor('envio')}
+          />
+        )}
         {!esDemo && (
           <AjusteRow
-            titulo="Zonas especiales"
+            titulo="Barrios privados"
             oracion={!avisosWhatsappActivos
-              ? 'Activá Avisos automáticos por WhatsApp para habilitar countries y barrios cerrados'
+              ? 'Activá Avisos automáticos por WhatsApp para repartir en countries y barrios cerrados'
               : !zonasEspecialesHabilitadas
-                ? 'Apagado: no se muestra nada de countries en la tienda'
-                : zonasEspecialesOracion}
-            estado={avisosWhatsappActivos && zonasEspecialesHabilitadas ? zonasEspecialesEstado : 'sin-configurar'}
+                ? 'Apagado: la tienda no ofrece barrios privados'
+                : barriosOracion}
+            estado={avisosWhatsappActivos && zonasEspecialesHabilitadas ? barriosEstado : 'sin-configurar'}
             accionLabel={!avisosWhatsappActivos
               ? 'Ver WhatsApp'
-              : zonasEspecialesHabilitadas && zonasEspecialesEstado === 'configurado'
+              : zonasEspecialesHabilitadas && barriosEstado === 'configurado'
                 ? 'Administrar'
                 : 'Configurar'}
             onAccion={() => avisosWhatsappActivos
-              ? setEditor('zonas-especiales')
+              ? setEditor('barrios-privados')
               : navigate('/dashboard/ajustes/whatsapp')}
           />
         )}
@@ -107,9 +126,18 @@ export default function Entregas() {
       </AjusteEditor>
 
       <AjusteEditor
-        open={editor === 'zonas-especiales' && avisosWhatsappActivos && !esDemo}
+        open={editor === 'envio' && conCostoFijo}
         onOpenChange={(o) => !o && setEditor(null)}
-        titulo="Zonas especiales"
+        titulo="Costo de envío"
+        descripcion="Un precio fijo por pedido de delivery, mientras no tengas zonas con su propio precio."
+      >
+        <CostoEnvioField />
+      </AjusteEditor>
+
+      <AjusteEditor
+        open={editor === 'barrios-privados' && avisosWhatsappActivos && !esDemo}
+        onOpenChange={(o) => !o && setEditor(null)}
+        titulo="Barrios privados"
         descripcion="Countries y barrios cerrados con días de reparto y horario para pre ordenar."
       >
         <ZonasEspecialesPanel />
@@ -125,10 +153,11 @@ function describirTipos(delivery: boolean, takeaway: boolean): string {
   return 'Sin tipos de pedido activos'
 }
 
-/** Oración de zonas: "{n} zonas, envío desde ${min}". */
+/** Oración de zonas: "{n} zonas, envío desde ${min}". `cantidad` es null mientras cargan. */
 function useZonasResumen() {
   const [texto, setTexto] = useState('Cargando…')
   const [estado, setEstado] = useState<'configurado' | 'sin-configurar'>('sin-configurar')
+  const [cantidad, setCantidad] = useState<number | null>(null)
 
   useEffect(() => {
     const cargar = async () => {
@@ -140,6 +169,7 @@ function useZonasResumen() {
           data: Array<{ precio: string }>
         }
         const zonas = res.success ? res.data : []
+        setCantidad(zonas.length)
         if (zonas.length === 0) {
           setTexto('Todavía no definiste zonas de delivery')
           setEstado('sin-configurar')
@@ -149,6 +179,7 @@ function useZonasResumen() {
         setTexto(`${zonas.length} ${zonas.length === 1 ? 'zona' : 'zonas'}, envío desde $${min.toLocaleString('es-AR')}`)
         setEstado('configurado')
       } catch {
+        setCantidad(0)
         setTexto('No se pudieron cargar las zonas')
         setEstado('sin-configurar')
       }
@@ -156,11 +187,11 @@ function useZonasResumen() {
     void cargar()
   }, [])
 
-  return { texto, estado }
+  return { texto, estado, cantidad }
 }
 
-/** Oración de zonas especiales: "{n} countries, pedidos 10:00 a 16:00". */
-function useZonasEspecialesResumen(activo: boolean, refrescar: boolean) {
+/** Oración de barrios privados (zonas especiales en el código): "{n} barrios, pedidos 10:00 a 16:00". */
+function useBarriosPrivadosResumen(activo: boolean, refrescar: boolean) {
   const [texto, setTexto] = useState('Cargando…')
   const [estado, setEstado] = useState<'configurado' | 'sin-configurar'>('sin-configurar')
 
@@ -173,15 +204,15 @@ function useZonasEspecialesResumen(activo: boolean, refrescar: boolean) {
         const res = await zonasEspecialesApi.getAll(token)
         const zonas = res.success ? res.data.filter((zona) => zona.activa) : []
         if (zonas.length === 0) {
-          setTexto('Todavía no cargaste countries ni barrios cerrados')
+          setTexto('Todavía no cargaste barrios privados')
           setEstado('sin-configurar')
           return
         }
         const primera = zonas[0]
-        setTexto(`${zonas.length} ${zonas.length === 1 ? 'zona' : 'zonas'}, pedidos ${primera.horaInicio.slice(0, 5)} a ${primera.horaFin.slice(0, 5)}`)
+        setTexto(`${zonas.length} ${zonas.length === 1 ? 'barrio' : 'barrios'}, pedidos ${primera.horaInicio.slice(0, 5)} a ${primera.horaFin.slice(0, 5)}`)
         setEstado('configurado')
       } catch {
-        setTexto('No se pudieron cargar las zonas especiales')
+        setTexto('No se pudieron cargar los barrios privados')
         setEstado('sin-configurar')
       }
     }

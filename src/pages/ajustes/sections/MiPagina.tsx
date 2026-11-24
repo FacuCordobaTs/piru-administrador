@@ -1,10 +1,7 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { toast } from 'sonner'
 import { ExternalLink, Gem, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { sitiosApi } from '@/lib/api'
-import { useAuthStore } from '@/store/authStore'
+import { useAbrirPaginas } from '@/hooks/useAbrirPaginas'
 import { nombrePlan, planIncluye, usePlanTienda } from '@/store/planTiendaStore'
 import { EscenaTienda } from '../components/EscenaTienda'
 
@@ -13,27 +10,11 @@ import { EscenaTienda } from '../components/EscenaTienda'
  * `pages.piru.app`. El panel sólo abre esa app en otra pestaña con un pase de dos minutos.
  */
 export default function MiPagina() {
-  const token = useAuthStore((s) => s.token)
   const navigate = useNavigate()
   // Páginas es el diseño personalizado: desde el plan Esencial (el backend también lo exige).
   const { plan } = usePlanTienda()
   const conDiseno = planIncluye(plan, 'diseno_personalizado')
-  const [abriendo, setAbriendo] = useState(false)
-  const [bloqueada, setBloqueada] = useState<string | null>(null)
-
-  const abrir = async () => {
-    if (!token) return
-    setAbriendo(true)
-    setBloqueada(null)
-    try {
-      const { data } = await sitiosApi.entrada(token)
-      if (!window.open(data.url, '_blank')) setBloqueada(data.url)
-    } catch (error) {
-      toast.error('No pudimos abrir Páginas', { description: error instanceof Error ? error.message : 'Intentá de nuevo.' })
-    } finally {
-      setAbriendo(false)
-    }
-  }
+  const { abrir, abriendo, bloqueada, disponible } = useAbrirPaginas()
 
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center gap-7 py-2 text-center">
@@ -47,7 +28,7 @@ export default function MiPagina() {
         </p>
       </div>
       {conDiseno ? (
-        <Button size="lg" onClick={abrir} disabled={abriendo || !token}>
+        <Button size="lg" onClick={abrir} disabled={abriendo || !disponible}>
           {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
           Abrir Páginas
         </Button>

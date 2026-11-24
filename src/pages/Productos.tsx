@@ -13,6 +13,7 @@ import { useAuthStore } from '@/store/authStore'
 import { productosApi, categoriasApi, ingredientesApi, agregadosApi, sucursalesApi } from '@/lib/api'
 import { toast } from 'sonner'
 import FotosProducto from '@/components/FotosProducto'
+import { AvisoProductosEjemplo, EtiquetaEjemplo } from '@/components/ProductosEjemplo'
 import { cn } from '@/lib/utils'
 import {
   Plus, Edit, Trash2, Search, Loader2, UtensilsCrossed, CheckCircle2,
@@ -999,6 +1000,7 @@ const Productos = () => {
 
         {/* ── Grid ── */}
         <div className="max-w-7xl mx-auto px-4 sm:px-8 pb-24">
+          <AvisoProductosEjemplo enCarta className="mb-6" />
           {productosFiltrados.length === 0 ? (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
               <div className="h-20 w-20 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center mb-6">
@@ -1101,6 +1103,7 @@ const Productos = () => {
                                 </div>
                               )}
                               <span className="flex-1 text-sm font-medium text-zinc-950 dark:text-white truncate">{producto.nombre}</span>
+                              {producto.esEjemplo && <EtiquetaEjemplo />}
                               <span className="text-sm font-bold text-muted-foreground dark:text-zinc-400 shrink-0">{producto.soloCanjePuntos ? `${producto.puntosNecesarios ?? 0} pts · Sólo canje` : `$${parseFloat(producto.precio).toFixed(0)}`}</span>
                             </div>
                           ))}
@@ -1128,6 +1131,8 @@ const Productos = () => {
                               producto.imagenUrl
                                 ? "rounded-4xl overflow-hidden"
                                 : "min-h-[140px] rounded-[24px] border border-zinc-200/70 dark:border-white/5 p-4 flex flex-col justify-between hover:border-orange-500/30",
+                              // Ejemplo: borde punteado violeta, el mismo lenguaje que su etiqueta y el aviso.
+                              producto.esEjemplo && "border border-dashed border-violet-400/70 dark:border-violet-400/50",
                               seleccionando && isChecked && "ring-2 ring-[#FF7A00]",
                               !seleccionando && isSelected && "border-l-2 border-orange-500",
                               !producto.activo && "opacity-50"
@@ -1149,6 +1154,9 @@ const Productos = () => {
                                       </Badge>
                                     </div>
                                   )}
+                                  {producto.esEjemplo && (
+                                    <EtiquetaEjemplo className="absolute top-2 right-2 bg-white/95 shadow-sm dark:bg-zinc-900/90" />
+                                  )}
                                 </div>
 
                                 <div className="px-3 pt-2 pb-3">
@@ -1163,6 +1171,7 @@ const Productos = () => {
                               <>
                                 {/* Producto sin imagen: tarjeta tipografica, como en MenuDelivery */}
                                 <div className="flex-1">
+                                  {producto.esEjemplo && <EtiquetaEjemplo className="mb-2" />}
                                   <div className="flex items-start justify-between gap-2 mb-2">
                                     <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-zinc-950 dark:text-white [overflow-wrap:anywhere]">
                                       {producto.nombre}
@@ -1291,6 +1300,12 @@ const Productos = () => {
               <div>
                 <span className="text-xs text-muted-foreground dark:text-zinc-500">{panelProducto.categoria || 'Sin categoría'}</span>
                 <h2 className="text-xl font-bold text-zinc-950 dark:text-white mt-1">{panelProducto.nombre}</h2>
+                {panelProducto.esEjemplo && (
+                  <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <EtiquetaEjemplo />
+                    Lo cargamos para mostrarte cómo se arma. Editalo o quitá los ejemplos desde la carta.
+                  </p>
+                )}
                 {panelProducto.eventoSucursalId != null && <Badge variant="outline" className="mt-2">Sólo {eventos.find(e => e.id === panelProducto.eventoSucursalId)?.nombre ?? 'evento'} · Oculto en web</Badge>}
                 {panelProducto.descripcion && (
                   <p className="text-sm text-muted-foreground dark:text-zinc-400 mt-1">{panelProducto.descripcion}</p>

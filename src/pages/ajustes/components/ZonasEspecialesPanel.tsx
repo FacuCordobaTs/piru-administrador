@@ -76,7 +76,7 @@ function resumenZona(zona: ZonaEspecial) {
 }
 
 /**
- * Zonas especiales (countries / barrios cerrados). La sección entera sólo se
+ * Barrios privados ("zonas especiales" en el código: countries y barrios cerrados). La sección entera sólo se
  * monta con el módulo de avisos automáticos activo: la plantilla de llegada es
  * parte de esa capacidad.
  */
@@ -109,7 +109,7 @@ export function ZonasEspecialesPanel() {
       const res = await zonasEspecialesApi.getAll(token)
       if (res.success) setZonas(res.data)
     } catch {
-      toast.error('No se pudieron cargar las zonas especiales')
+      toast.error('No se pudieron cargar los barrios privados')
     } finally {
       setCargando(false)
     }
@@ -140,7 +140,7 @@ export function ZonasEspecialesPanel() {
     const token = useAuthStore.getState().token
     if (!token) return
     if (!form.nombre.trim()) {
-      toast.error('Poné un nombre para la zona')
+      toast.error('Poné el nombre del barrio')
       return
     }
     const precio = Number(form.precio)
@@ -175,14 +175,14 @@ export function ZonasEspecialesPanel() {
         ? await zonasEspecialesApi.update(token, editando.id, payload)
         : await zonasEspecialesApi.create(token, payload)
       if (!res.success) {
-        toast.error((res as { message?: string }).message || 'No se pudo guardar la zona')
+        toast.error((res as { message?: string }).message || 'No se pudo guardar el barrio')
         return
       }
       setEditorOpen(false)
-      toast.success(editando ? 'Zona actualizada' : 'Zona creada')
+      toast.success(editando ? 'Barrio actualizado' : 'Barrio creado')
       await cargar()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo guardar la zona')
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar el barrio')
     } finally {
       setGuardando(false)
     }
@@ -195,13 +195,13 @@ export function ZonasEspecialesPanel() {
     try {
       const res = await zonasEspecialesApi.delete(token, zona.id)
       if (!res.success) {
-        toast.error(res.message || 'No se pudo eliminar la zona')
+        toast.error(res.message || 'No se pudo eliminar el barrio')
         return
       }
-      toast.success('Zona eliminada')
+      toast.success('Barrio eliminado')
       await cargar()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo eliminar la zona')
+      toast.error(error instanceof Error ? error.message : 'No se pudo eliminar el barrio')
     }
   }
 
@@ -215,7 +215,7 @@ export function ZonasEspecialesPanel() {
       if (!res.success) throw new Error()
     } catch {
       setZonas((prev) => prev.map((z) => z.id === zona.id ? { ...z, activa: zona.activa } : z))
-      toast.error('No se pudo cambiar el estado de la zona')
+      toast.error('No se pudo cambiar el estado del barrio')
     }
   }
 
@@ -228,9 +228,9 @@ export function ZonasEspecialesPanel() {
     try {
       const res = await zonasEspecialesApi.destinatarios(token, zona.id)
       if (res.success) setDestinatarios(res.data.destinatarios)
-      else toast.error('No se pudieron cargar los pedidos de la zona')
+      else toast.error('No se pudieron cargar los pedidos del barrio')
     } catch {
-      toast.error('No se pudieron cargar los pedidos de la zona')
+      toast.error('No se pudieron cargar los pedidos del barrio')
     } finally {
       setCargandoAviso(false)
     }
@@ -262,36 +262,36 @@ export function ZonasEspecialesPanel() {
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 px-4 py-3.5">
         <div className="max-w-xl space-y-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">Mostrar countries en la tienda</p>
+            <p className="text-sm font-medium">Mostrar barrios privados en la tienda</p>
             <SavedIndicator status={habilitadas.status} />
           </div>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Apagado por defecto: no se muestra ninguna opción de country ni se consultan zonas en el checkout hasta que lo actives.
+            Apagado por defecto: el checkout no ofrece barrios privados hasta que lo actives.
           </p>
         </div>
         <Switch
           checked={habilitadas.checked}
           onCheckedChange={habilitadas.toggle}
-          aria-label="Mostrar countries en la tienda"
+          aria-label="Mostrar barrios privados en la tienda"
         />
       </div>
 
       {!habilitadas.checked && (
         <div className="rounded-xl bg-muted/50 px-4 py-3 text-[13px] text-muted-foreground">
-          Countries está oculto en la tienda. Podés dejar las zonas configuradas y activarlo cuando quieras.
+          Los barrios privados están ocultos en la tienda. Podés dejarlos cargados y activarlos cuando quieras.
         </div>
       )}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-xl space-y-1">
-          <p className="text-sm font-medium text-foreground">Countries y barrios cerrados</p>
+          <p className="text-sm font-medium text-foreground">Tus barrios privados</p>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Cada zona tiene sus días de reparto y un horario para pre ordenar. La opción country sólo aparece en la tienda esos días; el horario de entrega se avisa por WhatsApp cuando salen.
+            Countries y barrios cerrados, cada uno con sus días de reparto y un horario para pre ordenar. Sólo aparecen en la tienda esos días; el horario de entrega se avisa por WhatsApp cuando salen.
           </p>
         </div>
         <Button type="button" onClick={abrirNueva} className="gap-2">
           <Plus className="size-4" />
-          Nueva zona
+          Nuevo barrio
         </Button>
       </div>
 
@@ -301,9 +301,9 @@ export function ZonasEspecialesPanel() {
         </div>
       ) : zonas.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border px-5 py-8 text-center">
-          <p className="text-sm font-medium">Todavía no cargaste zonas especiales</p>
+          <p className="text-sm font-medium">Todavía no cargaste barrios privados</p>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            Creá el primer country con sus días de reparto, el horario para pre ordenar y su costo de envío.
+            Creá el primero con sus días de reparto, el horario para pre ordenar y su costo de envío.
           </p>
         </div>
       ) : (
@@ -396,9 +396,9 @@ export function ZonasEspecialesPanel() {
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editando ? 'Editar zona especial' : 'Nueva zona especial'}</DialogTitle>
+            <DialogTitle>{editando ? 'Editar barrio privado' : 'Nuevo barrio privado'}</DialogTitle>
             <DialogDescription>
-              La zona sólo aparece en la tienda los días de reparto, y dentro del horario se toman los pre-pedidos. La entrega se avisa cuando salen.
+              El barrio sólo aparece en la tienda los días de reparto, y dentro del horario se toman los pre-pedidos. La entrega se avisa cuando salen.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -473,8 +473,8 @@ export function ZonasEspecialesPanel() {
             </div>
             <div className="flex items-center justify-between gap-4 py-1">
               <div>
-                <p className="text-sm font-medium">Zona activa</p>
-                <p className="text-[13px] text-muted-foreground">Si la apagás, no se ofrece en el checkout.</p>
+                <p className="text-sm font-medium">Barrio activo</p>
+                <p className="text-[13px] text-muted-foreground">Si lo apagás, no se ofrece en el checkout.</p>
               </div>
               <Switch
                 checked={form.activa}

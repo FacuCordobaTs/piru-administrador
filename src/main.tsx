@@ -23,6 +23,7 @@ import Impresion from './pages/Impresion'
 import Modulos from './pages/Modulos'
 import CrearTienda from './pages/CrearTienda'
 import PrimerosPasos from './pages/PrimerosPasos'
+import ConfigurarTienda from './pages/ConfigurarTienda'
 import Planes from './pages/Planes'
 import AjustesPage from './pages/ajustes'
 import Mensajes from './pages/Mensajes'
@@ -107,7 +108,7 @@ const router = createBrowserRouter([
   },
   {
     // Registro self-serve ("Crear tienda gratis"), enlazado desde info.piru.app. Fuera de
-    // GuestLayout: al crear la cuenta lleva a "Primeros pasos", no al inicio del panel.
+    // GuestLayout: al crear la cuenta sigue a las preguntas iniciales, no al inicio del panel.
     path: "/crear-tienda",
     element: <CrearTienda />,
   },
@@ -154,6 +155,18 @@ const router = createBrowserRouter([
       {
         index: true,
         element: <CuentaCreada />
+      }
+    ]
+  },
+  {
+    // Las dos preguntas que siguen a "Crear tienda gratis" (rubro y entregas): arman la carta de
+    // ejemplo. Pantalla completa, fuera del DashboardLayout.
+    path: "/configurar-tienda",
+    element: <ProtectedLayout />,
+    children: [
+      {
+        index: true,
+        element: <ConfigurarTienda />
       }
     ]
   },

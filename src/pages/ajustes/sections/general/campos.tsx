@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapPin } from 'lucide-react'
+import { MapPin, MessageCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SavedIndicator } from '../../components/SavedIndicator'
@@ -165,3 +165,75 @@ export function ColorField({
   )
 }
 
+
+/** Un número de WhatsApp argentino tiene al menos 8 dígitos (sin la característica del país). */
+const errorWhatsapp = (v: string) => (v.replace(/\D/g, '').length >= 8 ? null : 'Escribí el número completo, con código de área.')
+
+/**
+ * WhatsApp donde llega cada pedido de la tienda (`telefono`: la tienda abre ese chat con el pedido
+ * listo). Es el dato del que depende vender, así que va a la vista, sin abrir un editor.
+ * `onGuardado` avisa cuando el servidor confirmó el número (Primeros pasos recalcula su checklist).
+ */
+export function WhatsappPedidosField({ onGuardado, autoFocus }: { onGuardado?: () => void; autoFocus?: boolean }) {
+  const { valor, guardar, status } = useAjuste('telefono')
+  // `null` mientras no se edita: el campo muestra lo guardado y sigue sus cambios.
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const guardado = String(valor ?? '')
+  useEffect(() => {
+    if (status === 'saved') onGuardado?.()
+  }, [status, onGuardado])
+
+  const commit = () => {
+    if (draft === null) return
+    const limpio = draft.trim()
+    if (limpio === guardado.trim()) {
+      setDraft(null)
+      return setError(null)
+    }
+    const mensaje = errorWhatsapp(limpio)
+    setError(mensaje)
+    if (mensaje) return
+    setDraft(null)
+    void guardar(limpio)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Label htmlFor="ajuste-whatsapp-pedidos" className="font-medium">
+          WhatsApp para recibir pedidos
+        </Label>
+        <SavedIndicator status={status} />
+      </div>
+      <div className="relative">
+        <MessageCircle className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-600" />
+        <Input
+          id="ajuste-whatsapp-pedidos"
+          value={draft ?? guardado}
+          inputMode="tel"
+          autoComplete="tel"
+          autoFocus={autoFocus}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            if (error) setError(null)
+          }}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
+          }}
+          placeholder="Ej: 11 2345 6789"
+          aria-invalid={!!error}
+          aria-describedby="ajuste-whatsapp-pedidos-ayuda"
+          className="h-11 pl-9"
+        />
+      </div>
+      <p id="ajuste-whatsapp-pedidos-ayuda" className={error ? 'text-xs text-destructive' : 'text-xs font-normal text-muted-foreground'}>
+        {error ?? 'Cada pedido de tu tienda llega a este chat con todo el detalle, listo para confirmar.'}
+      </p>
+    </div>
+  )
+}
