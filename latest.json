@@ -1,11 +1,11 @@
 {
-    "version": "3.4.9",
-    "notes": "POS: efectivo, tarjeta y transferencia se anotan directamente; Mercado Pago mantiene el cobro con QR.",
-    "pub_date": "2026-10-02T19:55:29.672Z",
+    "version": "3.4.11",
+    "notes": "Nueva versión 3.4.11",
+    "pub_date": "2026-11-23T19:52:26.689Z",
     "platforms": {
         "windows-x86_64": {
-            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNTNwMkJuRXpwSGJFU2xCbkg5ak9WZzFFemtwcXpNWVpsclU5VFExRjVvUWVmTHNKQzJQdHp0a1lObWJycTNsd01UT2wyYkx3bTdqTUo0aU5yRFdWTEFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwOTcwOTE4CWZpbGU6cGlydV8zLjQuOV94NjQtc2V0dXAuZXhlClpUSXZJUnZRMk5XQ1hkUU1WczNPSnBPSjdnUVgyMjJTZEhuN1NKSXRtTUhtbFpvNy9CVHBKejBKdjRaYmdEUTd6Q3I0Sjk3Z3F4Wk5NTWFoc05Nc0RRPT0K",
-            "url": "https://api.piru.app/public/updates/piru_3.4.9_x64-setup.exe"
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRY2ZEV3RxZU5hNXo5bUFDUmZDVzNDVEhaMFVNMTRTVDhrWE1xanV0MkpGbXVKMlVaVWlOcm1FOHpzdzZhVUxMRmRzUi82WjZndkRWR0FRaXdvN1ZpaDhlMzJiWW92OEFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NDYzMTc3CWZpbGU6cGlydV8zLjQuMTFfeDY0LXNldHVwLmV4ZQp3YTB5Tlh5TjRWTndtT1VWQzRIYlUwMXVtQUZhWWp2c2kwbDVuZ3ZpSlVIY1owdkpoUklOV0w5WFdNTGwrTFZpeHhxek5tTXFVcU55UCs4YmltcHZBdz09Cg==",
+            "url": "https://api.piru.app/public/updates/piru_3.4.11_x64-setup.exe"
         }
     }
 }

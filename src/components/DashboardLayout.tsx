@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useRestauranteStore } from '@/store/restauranteStore'
 import { useModuloActivo } from '@/store/modulosStore'
+import { usePlanTienda } from '@/store/planTiendaStore'
 import { useAuthStore } from '@/store/authStore'
 import { useDatosEjemplo } from '@/store/datosEjemploStore'
 import { esSesionDemo } from '@/lib/api'
@@ -33,12 +34,18 @@ import {
   Printer,
   Receipt,
   Store,
+  ListChecks,
+  Gem,
 } from 'lucide-react'
 
 // El recorrido de bienvenida se carga aparte: el uso de todos los días no lo descarga.
 const RecorridoPanel = lazy(() => import('@/components/recorrido/RecorridoPanel'))
 
+/** Tab de las tiendas self-serve (plan de tienda) mientras queden pasos por completar. */
+const PRIMEROS_PASOS_PATH = '/dashboard/primeros-pasos'
+
 const NAV_ITEMS = [
+  { icon: ListChecks, label: 'Primeros pasos', path: PRIMEROS_PASOS_PATH, modulo: null },
   { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard/', modulo: null },
   { icon: Package, label: 'Menú', path: '/dashboard/productos', modulo: null },
   { icon: Shirt, label: 'Ropa', path: '/dashboard/ropa', modulo: null },
@@ -53,7 +60,7 @@ const NAV_ITEMS = [
   // Las tabs de Marketing ahora viven en el navbar del panel. Cada una se
   // muestra sólo con el módulo que la habilita (ver `navItems`).
   { icon: Users, label: 'Clientes', path: '/dashboard/marketing/clientes', modulo: null },
-  { icon: MessageCircle, label: 'Hoy', path: '/dashboard/marketing/hoy', modulo: 'motor_recompra' },
+  { icon: MessageCircle, label: 'Recompra', path: '/dashboard/marketing/recompra', modulo: 'motor_recompra' },
   { icon: CalendarDays, label: 'Días flojos', path: '/dashboard/marketing/dias-flojos', modulo: 'dias_flojos' },
   { icon: Megaphone, label: 'Campañas', path: '/dashboard/marketing/campanas', modulo: 'crecimiento' },
   { icon: Sparkles, label: 'Puntos', path: '/dashboard/marketing/puntos', modulo: 'puntos_clientes' },
@@ -86,6 +93,10 @@ const DashboardLayout = () => {
   const multisucursalActiva = useModuloActivo('multisucursal')
   const facturacionActiva = useModuloActivo('facturacion_arca')
   const impresionActiva = useModuloActivo('impresion_comandas')
+  // Plan de tienda: Evolución (los locales de siempre) no ve ni "Primeros pasos" ni "Tu plan".
+  const { plan, pasos } = usePlanTienda()
+  const conPlan = Boolean(plan && !plan.esLegado)
+  const mostrarPasos = conPlan && Boolean(pasos?.visible && !pasos.terminado)
   const token = useAuthStore((s) => s.token)
   const esDemo = esSesionDemo(token)
   const abrirRecorrido = useRecorridoPanel((s) => s.abrir)
@@ -169,12 +180,13 @@ const DashboardLayout = () => {
   }
   const navItems = NAV_ITEMS.filter((item) => {
     if (item.path === ROPA_PATH) return restauranteId === ROPA_RESTAURANTE_ID
+    if (item.path === PRIMEROS_PASOS_PATH) return mostrarPasos || isActive(PRIMEROS_PASOS_PATH)
     if (item.modulo) return modulosActivos[item.modulo] === true
     return true
   })
 
   // En el rail colapsado sólo quedan Inicio y Menú: el resto se alcanza expandiendo el menú.
-  const RAIL_PATHS = new Set(['/dashboard/', '/dashboard/productos'])
+  const RAIL_PATHS = new Set([PRIMEROS_PASOS_PATH, '/dashboard/', '/dashboard/productos'])
 
   // `compact` = rail de solo iconos (aplica en el sidebar de escritorio).
   // `drawer` = versión móvil (overlay): el botón de cabecera cierra el drawer.
@@ -229,6 +241,24 @@ const DashboardLayout = () => {
         {/* Footer: módulos y ajustes. En el rail colapsado no se muestra: sólo quedan Inicio y Menú. */}
         {!compact && (
           <div className="p-3 space-y-1 shrink-0">
+            {conPlan && (
+              <button
+                onClick={() => handleNavigation('/dashboard/planes')}
+                className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer px-3 ${
+                  isActive('/dashboard/planes')
+                    ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+              >
+                <Gem className={`h-[18px] w-[18px] ${isActive('/dashboard/planes') ? '' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                <span className="flex-1 text-left">Tu plan</span>
+                {plan && (
+                  <span className="text-xs font-normal opacity-80">
+                    {plan.catalogo.find((p) => p.codigo === plan.efectivo)?.nombre}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={() => handleNavigation('/dashboard/modulos')}
               className={`group w-full flex items-center gap-3 rounded-xl h-11 text-sm font-medium transition-all cursor-pointer px-3 ${

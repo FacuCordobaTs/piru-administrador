@@ -74,10 +74,10 @@ function Contenido() {
           <p className="stat mt-2">{l.mensajesParaHoy}</p>
           {l.recompraActiva ? (
             <Link
-              to={`${MARKETING}/hoy`}
+              to={`${MARKETING}/recompra`}
               className="mt-2 inline-block text-sm font-semibold text-brand-deep"
             >
-              Ir a Hoy →
+              Ir a Recompra →
             </Link>
           ) : (
             <p className="muted mt-2">Activá Recompra para prepararlos.</p>
@@ -183,8 +183,8 @@ function Contenido() {
                 <div className="flex items-center justify-between gap-3">
                   <p className="label">Recompra por WhatsApp</p>
                   {l.recompraActiva && (
-                    <Link className="resumen-enlace" to={`${MARKETING}/hoy`}>
-                      Ver Hoy →
+                    <Link className="resumen-enlace" to={`${MARKETING}/recompra`}>
+                      Armar una tanda →
                     </Link>
                   )}
                 </div>

@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/settings-dialog'
 import { cn } from '@/lib/utils'
 import { useModulosStore } from '@/store/modulosStore'
+import { usePlanTienda } from '@/store/planTiendaStore'
 import type { Modulo } from '@/lib/api'
 
 const fmtARS = (monto: string | number) =>
@@ -67,7 +68,7 @@ const RUTAS_CONFIGURACION: Partial<Record<string, string>> = {
   pos: '/dashboard/punto-de-venta',
   mesas: '/dashboard/mesas',
   gestion_stock: '/dashboard/stock',
-  motor_recompra: '/dashboard/marketing/hoy',
+  motor_recompra: '/dashboard/marketing/recompra',
   dias_flojos: '/dashboard/marketing/dias-flojos',
   puntos_clientes: '/dashboard/marketing/puntos',
   codigos_descuento: '/dashboard/marketing/cupones',
@@ -95,6 +96,7 @@ function AccionModulo({
   onReactivarPago,
   onActualizarPago,
   onConfigurar,
+  bloqueoPlan,
 }: {
   modulo: Modulo
   procesando: boolean
@@ -104,7 +106,12 @@ function AccionModulo({
   onReactivarPago: () => void
   onActualizarPago: () => void
   onConfigurar: () => void
+  /** Con un plan de tienda: el plan desde el que está disponible, si el actual no lo incluye. */
+  bloqueoPlan?: string | null
 }) {
+  if (bloqueoPlan) {
+    return <Button className="w-full" onClick={() => window.location.assign('/dashboard/planes')}>Disponible desde el plan {bloqueoPlan}</Button>
+  }
   if (modulo.estadoProducto === 'proximamente' || !modulo.activable) {
     return <Button className="w-full" variant="secondary" disabled>Próximamente</Button>
   }
@@ -142,16 +149,18 @@ function AccionModulo({
 function CardModulo({
   modulo,
   onSeleccionar,
+  bloqueoPlan,
 }: {
   modulo: Modulo
   onSeleccionar: () => void
+  bloqueoPlan?: string | null
 }) {
   const proximamente = modulo.estadoProducto === 'proximamente' || !modulo.activable
   const Icon = ICONOS[modulo.codigo] ?? Blocks
   const estado = proximamente ? 'En preparación' : modulo.estado === 'cancelacion_programada' ? 'Baja programada' : modulo.estado === 'pendiente_pago' ? 'Pago pendiente' : modulo.activoAhora ? 'Activo' : modulo.estado === 'activo' || modulo.estado === 'suspendido' ? 'Revisar suscripción' : 'Sin activar'
   return <button type="button" onClick={onSeleccionar} className="group flex h-full w-full items-start gap-3 rounded-2xl border bg-background p-5 text-left transition-colors hover:border-brand/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
     <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-xl', modulo.activoAhora ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}><Icon className="size-5" /></span>
-    <span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{modulo.nombre}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></span><span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{modulo.descripcion || 'Sumá esta herramienta a tu negocio.'}</span><span className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs"><span className={modulo.activoAhora ? 'font-medium text-emerald-600' : 'text-muted-foreground'}>{estado}</span><span className="font-medium">{modulo.tipo === 'pago' ? `+${fmtARS(modulo.precioMensualCongelado ?? modulo.precioMensual)}/mes` : 'Incluido · sin costo extra'}</span></span></span>
+    <span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{modulo.nombre}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground" /></span><span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{modulo.descripcion || 'Sumá esta herramienta a tu negocio.'}</span><span className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs"><span className={modulo.activoAhora ? 'font-medium text-emerald-600' : 'text-muted-foreground'}>{estado}</span><span className="font-medium">{bloqueoPlan ? `Desde el plan ${bloqueoPlan}` : modulo.tipo === 'pago' ? `+${fmtARS(modulo.precioMensualCongelado ?? modulo.precioMensual)}/mes` : 'Incluido · sin costo extra'}</span></span></span>
   </button>
 }
 
@@ -175,7 +184,18 @@ export default function Modulos() {
   const [filtro, setFiltro] = useState<'todos' | 'activos' | 'incluidos' | 'pagos'>('todos')
   const navigate = useNavigate()
   const location = useLocation()
-  const categorias = useModulosStore((state) => state.categorias)
+  const categoriasStore = useModulosStore((state) => state.categorias)
+  // Con un plan de tienda (no Evolución) nada se paga por módulo: lo incluido se muestra como
+  // incluido y lo demás como "Disponible desde el plan X". Evolución ve el catálogo de siempre.
+  const { plan } = usePlanTienda()
+  const conPlan = Boolean(plan && !plan.esLegado)
+  const categorias = conPlan
+    ? categoriasStore.map(c => ({ ...c, modulos: c.modulos.map(m => m.incluidoEnPlan ? { ...m, tipo: 'incluido' as const } : m) }))
+    : categoriasStore
+  const bloqueoPlan = (m: Modulo) => {
+    if (!conPlan || m.incluidoEnPlan) return null
+    return plan?.catalogo.find(p => p.codigo === m.planMinimo)?.nombre ?? 'Evolución'
+  }
   const cargando = useModulosStore((state) => state.cargando)
   const error = useModulosStore((state) => state.error)
   const cargar = useModulosStore((state) => state.cargar)
@@ -395,7 +415,7 @@ export default function Modulos() {
                 </div>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   {modulos.map((modulo) => (
-                    <CardModulo key={modulo.codigo} modulo={modulo} onSeleccionar={() => setModuloSeleccionado(modulo)} />
+                    <CardModulo key={modulo.codigo} modulo={modulo} bloqueoPlan={bloqueoPlan(modulo)} onSeleccionar={() => setModuloSeleccionado(modulo)} />
                   ))}
                 </div>
               </section>
@@ -413,7 +433,7 @@ export default function Modulos() {
               </div>
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 {pagos.map((modulo) => (
-                  <CardModulo key={modulo.codigo} modulo={modulo} onSeleccionar={() => setModuloSeleccionado(modulo)} />
+                  <CardModulo key={modulo.codigo} modulo={modulo} bloqueoPlan={bloqueoPlan(modulo)} onSeleccionar={() => setModuloSeleccionado(modulo)} />
                 ))}
               </div>
             </section>
@@ -503,7 +523,8 @@ export default function Modulos() {
 
               <SheetFooter className="border-t px-6 py-5">
                 {activo && moduloSeleccionado.estado === 'cancelacion_programada' && RUTAS_CONFIGURACION[moduloSeleccionado.codigo] && <Button onClick={() => configurarModulo(moduloSeleccionado)}>Configurar</Button>}
-                {moduloSeleccionado.tipo === 'pago' && !moduloSeleccionado.activoAhora && !['activa', 'pago_pendiente'].includes(useModulosStore.getState().suscripcion?.estado ?? '') ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Primero necesitás una suscripción base activa. La prueba gratis no incluye herramientas pagas.</p><Button className="w-full" onClick={() => { setModuloSeleccionado(null); navigate('/dashboard/ajustes/cuenta') }}>Ver mi suscripción</Button></div> : <AccionModulo
+                {!bloqueoPlan(moduloSeleccionado) && moduloSeleccionado.tipo === 'pago' && !moduloSeleccionado.activoAhora && !['activa', 'pago_pendiente'].includes(useModulosStore.getState().suscripcion?.estado ?? '') ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Primero necesitás una suscripción base activa. La prueba gratis no incluye herramientas pagas.</p><Button className="w-full" onClick={() => { setModuloSeleccionado(null); navigate('/dashboard/ajustes/cuenta') }}>Ver mi suscripción</Button></div> : <AccionModulo
+                  bloqueoPlan={bloqueoPlan(moduloSeleccionado)}
                   modulo={moduloSeleccionado}
                   procesando={procesandoCodigo === moduloSeleccionado.codigo}
                   onActivar={() => void activarIncluido(moduloSeleccionado)}

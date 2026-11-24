@@ -1,0 +1,392 @@
+import { useState } from "react";
+import { DropdownMenu } from "radix-ui";
+import {
+  ArrowLeft,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  Copy,
+  Eye,
+  Gift,
+  MessageCircle,
+  MoreHorizontal,
+  RotateCcw,
+  Send,
+  ShoppingBag,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button, Estado, Sheet, cn, copiar } from "../ui";
+import { PortalMenuMarketing } from "../portal";
+import { SkeletonPantalla } from "../SkeletonPantalla";
+import { useDatos } from "../../lib/useDatos";
+import { pesos } from "../../lib/formato";
+import { fechaTanda, tandasApi, type MensajeTanda, type Tanda } from "../../lib/tandas";
+import { VistaPrevia } from "./VistaPrevia";
+
+/** El segmento de una persona (la lista de Clientes los nombra en plural). */
+const SEGMENTO: Record<string, string> = {
+  nuevo: "Primer pedido",
+  activo: "Habitual",
+  vip: "VIP",
+  en_riesgo: "Se está yendo",
+  dormido: "Hace tiempo no viene",
+  perdido: "Dejó de pedir",
+};
+
+const iniciales = (nombre: string) =>
+  nombre.trim().split(/\s+/).slice(0, 2).map((p) => p.charAt(0).toUpperCase()).join("") || "?";
+
+function hechos(m: MensajeTanda): string[] {
+  const d = m.datos;
+  return [
+    d.cadenciaDias ? `Pide cada ~${d.cadenciaDias} días` : d.pedidos === 1 ? "1 pedido" : `${d.pedidos} pedidos`,
+    d.diasDesdeUltimo === 1 ? "pidió ayer" : `hace ${d.diasDesdeUltimo} días`,
+    d.diaHabitual ? `los ${d.diaHabitual}` : null,
+    `ticket ${pesos(d.ticketPromedio)}`,
+    d.puntos != null && d.puntos > 0 ? `${d.puntos} puntos` : null,
+  ].filter((x): x is string => !!x);
+}
+
+/** Una tanda: los mensajes que faltan mandar arriba, con el porqué de cada uno. */
+export function TandaDetalle({
+  tandaId,
+  inicial,
+  local,
+  onVolver,
+}: {
+  tandaId: number;
+  inicial?: Tanda;
+  local: string;
+  onVolver: () => void;
+}) {
+  const { data, error, loading, recargar } = useDatos(
+    () => (inicial ? Promise.resolve(inicial) : tandasApi.leer(tandaId)),
+    [tandaId],
+  );
+  const [cambios, setCambios] = useState<Record<number, MensajeTanda>>({});
+  const [enviando, setEnviando] = useState<number | null>(null);
+  const [viendo, setViendo] = useState<MensajeTanda | null>(null);
+  const [verDescartados, setVerDescartados] = useState(false);
+
+  if (!data) return <Estado skeleton={<SkeletonPantalla tipo="hoy" />} loading={loading} error={error} reintentar={recargar} />;
+
+  const api = data.canal === "api";
+  const mensajes = data.mensajes.map((m) => cambios[m.id] ?? m);
+  const pendientes = mensajes.filter((m) => m.estado === "pendiente");
+  const enviados = mensajes.filter((m) => m.estado === "enviado");
+  const descartados = mensajes.filter((m) => m.estado === "descartado");
+  const activos = mensajes.length - descartados.length;
+  const volvieron = enviados.filter((m) => m.resultado);
+  const actualizar = (m: MensajeTanda) => {
+    setCambios((c) => ({ ...c, [m.id]: m }));
+    setViendo((v) => (v?.id === m.id ? m : v));
+  };
+
+  async function accion(m: MensajeTanda, tipo: "abrir" | "deshacer" | "descartar" | "enviar") {
+    try {
+      const nuevo = await tandasApi.accion(data!.id, m.id, tipo);
+      actualizar(nuevo);
+      return nuevo;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No pudimos guardar el cambio.");
+      return null;
+    }
+  }
+
+  function abrir(m: MensajeTanda) {
+    // El enlace abre WhatsApp en otra pestaña; acá queda registrado y el beneficio empieza a correr.
+    actualizar({ ...m, estado: "enviado", canalEnvio: "wa_me", enviadoAt: new Date().toISOString() });
+    void accion(m, "abrir").then((r) => {
+      if (r) toast.success(`Listo, ${r.clienteNombre.split(" ")[0]} quedó como enviado`, {
+        action: { label: "Deshacer", onClick: () => void accion(r, "deshacer") },
+      });
+    });
+  }
+
+  async function enviar(m: MensajeTanda) {
+    if (enviando !== null) return;
+    setEnviando(m.id);
+    const r = await accion(m, "enviar");
+    setEnviando(null);
+    if (r?.estado === "enviado") toast.success(`Enviado a ${r.clienteNombre.split(" ")[0]}`);
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Button variant="ghost" className="-ml-3 mb-4 px-3" onClick={onVolver}>
+        <ArrowLeft size={16} />
+        Tus tandas
+      </Button>
+
+      <header className="mb-6">
+        <p className="text-xs font-semibold tracking-[.12em] text-ink-3 uppercase">
+          {api ? "Envío automático · de a uno" : "Desde el WhatsApp del local"}
+        </p>
+        <h1 className="mt-1 first-letter:uppercase">Tanda del {fechaTanda(data.createdAt)}</h1>
+        <p className="muted mt-2">
+          {activos} {activos === 1 ? "cliente" : "clientes"}
+          {data.presupuestoAsignado > 0
+            ? ` · hasta ${pesos(data.presupuestoAsignado)} en beneficios si todos los usan`
+            : " · sin beneficios"}
+        </p>
+      </header>
+
+      <div className="card mb-6 !p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="text-lg font-semibold tabular-nums">
+            {enviados.length} de {activos} enviados
+          </p>
+          {volvieron.length > 0 && (
+            <p className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-600/15">
+              <ShoppingBag size={15} />
+              {volvieron.length} volvieron a pedir · {pesos(volvieron.reduce((s, m) => s + (m.resultado?.total ?? 0), 0))}
+            </p>
+          )}
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-sand">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-[width] duration-500"
+            style={{ width: `${activos ? (enviados.length / activos) * 100 : 0}%` }}
+          />
+        </div>
+        {!api && pendientes.length > 0 && (
+          <p className="mt-3 text-xs text-ink-3">
+            Abrí cada uno desde el celular o la compu que tiene el WhatsApp del local: se abre el chat con el mensaje
+            escrito y sólo tenés que tocar enviar.
+          </p>
+        )}
+      </div>
+
+      {pendientes.length === 0 && (
+        <div className="card mb-6 py-8 text-center">
+          <CheckCheck className="mx-auto mb-3 text-emerald-600" size={28} />
+          <h2>Tanda terminada</h2>
+          <p className="muted mt-2">Abajo ves a quién le escribiste y quién ya volvió a pedir.</p>
+        </div>
+      )}
+
+      {pendientes.length > 0 && (
+        <ul aria-label="Mensajes por mandar" className="flex flex-col gap-3">
+          {pendientes.map((m) => (
+            <Tarjeta
+              key={m.id}
+              m={m}
+              api={api}
+              enviando={enviando}
+              onVer={() => setViendo(m)}
+              onAbrir={() => abrir(m)}
+              onEnviar={() => void enviar(m)}
+              onDescartar={() => void accion(m, "descartar")}
+            />
+          ))}
+        </ul>
+      )}
+
+      {enviados.length > 0 && (
+        <section className="mt-8" aria-labelledby="tanda-enviados">
+          <h2 id="tanda-enviados" className="mb-3 text-sm font-semibold text-ink-3">Enviados · {enviados.length}</h2>
+          <ul className="lista-sombra overflow-hidden rounded-[20px] bg-surface">
+            {enviados.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-700">
+                  <Check size={16} />
+                </span>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setViendo(m)}>
+                  <span className="block font-semibold">{m.clienteNombre}</span>
+                  <span className="block text-xs text-ink-3">
+                    {m.canalEnvio === "api" ? "Enviado por WhatsApp automático" : "Abierto en tu WhatsApp"}
+                    {m.beneficio.etiqueta ? ` · ${m.beneficio.etiqueta}` : ""}
+                  </span>
+                </button>
+                {m.resultado ? (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                    Volvió · {pesos(m.resultado.total)}
+                  </span>
+                ) : (
+                  m.canalEnvio === "wa_me" && (
+                    <Button variant="ghost" className="min-h-9 px-3 text-sm" onClick={() => void accion(m, "deshacer")}>
+                      <RotateCcw size={14} />
+                      No lo mandé
+                    </Button>
+                  )
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {descartados.length > 0 && (
+        <section className="mt-6 text-ink-3" aria-label="Descartados">
+          <button
+            type="button"
+            className="text-sm font-medium underline underline-offset-4"
+            aria-expanded={verDescartados}
+            onClick={() => setVerDescartados((v) => !v)}
+          >
+            {verDescartados ? "Ocultar" : "Ver"} {descartados.length === 1 ? "el que no se manda" : `los ${descartados.length} que no se mandan`}
+          </button>
+          {verDescartados && (
+            <ul className="mt-3">
+              {descartados.map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span>{m.clienteNombre}</span>
+                  <Button variant="ghost" className="min-h-9 px-3 text-sm" onClick={() => void accion(m, "deshacer")}>
+                    Volver a la lista
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      <Sheet open={!!viendo} onOpenChange={(o) => !o && setViendo(null)} title={viendo ? `Para ${viendo.clienteNombre}` : ""}>
+        {viendo && (
+          <>
+            <VistaPrevia mensaje={viendo} local={local} api={api} />
+            <h3 className="mt-6 mb-2 text-sm font-semibold">Por qué este mensaje</h3>
+            <ul className="space-y-1.5 text-sm text-ink-2">
+              {viendo.motivos.map((t) => (
+                <li key={t} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-brand" />{t}</li>
+              ))}
+            </ul>
+            {viendo.estado === "pendiente" && (
+              <div className="mt-6 flex flex-wrap gap-2">
+                {api ? (
+                  <Button disabled={enviando !== null} onClick={() => void enviar(viendo)}>
+                    <Send size={16} />
+                    {enviando === viendo.id ? "Enviando…" : "Enviar ahora"}
+                  </Button>
+                ) : (
+                  <a className="btn btn-wa" href={viendo.waMeUrl} target="_blank" rel="noreferrer" onClick={() => abrir(viendo)}>
+                    <MessageCircle size={16} />
+                    Abrir WhatsApp
+                  </a>
+                )}
+                <Button variant="secondary" onClick={() => copiar(viendo.texto)}>
+                  <Copy size={16} />
+                  Copiar texto
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </Sheet>
+    </div>
+  );
+}
+
+function Tarjeta({
+  m,
+  api,
+  enviando,
+  onVer,
+  onAbrir,
+  onEnviar,
+  onDescartar,
+}: {
+  m: MensajeTanda;
+  api: boolean;
+  enviando: number | null;
+  onVer: () => void;
+  onAbrir: () => void;
+  onEnviar: () => void;
+  onDescartar: () => void;
+}) {
+  const [porque, setPorque] = useState(false);
+  const item = "flex min-h-10 w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 text-sm outline-none data-[highlighted]:bg-sand";
+  const cuerpo = api && m.plantilla ? m.plantilla.cuerpo : m.texto.replace(/\n?https?:\/\/\S+\s*$/, "");
+  return (
+    <li className="tanda-tarjeta">
+      <div className="flex items-start gap-3">
+        <span className={cn("grid size-11 shrink-0 place-items-center rounded-full text-sm font-bold", m.datos.esVip ? "bg-ink text-white" : "bg-sand text-ink-2")}>
+          {iniciales(m.clienteNombre)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="font-semibold break-words">{m.clienteNombre}</p>
+            <span className="rounded-full bg-sand px-2 py-0.5 text-[11px] font-medium text-ink-2">
+              {SEGMENTO[m.segmento] ?? m.segmento}
+            </span>
+          </div>
+          <p className="mt-0.5 text-xs text-ink-3">{hechos(m).join(" · ")}</p>
+        </div>
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
+            m.beneficio.tipo === "ninguno" ? "text-ink-3 ring-1 ring-line" : "bg-brand-soft text-brand-deep",
+          )}
+        >
+          {m.beneficio.tipo !== "ninguno" && <Gift size={13} />}
+          {m.beneficio.etiqueta ?? "Sin beneficio"}
+        </span>
+      </div>
+
+      <button type="button" onClick={onVer} className="tanda-burbuja" aria-label={`Ver cómo le llega a ${m.clienteNombre}`}>
+        {api && m.plantilla?.imagenUrl && <img src={m.plantilla.imagenUrl} alt="" className="mb-2 h-24 w-full rounded-lg object-cover" />}
+        <span className="line-clamp-4 whitespace-pre-line">{cuerpo}</span>
+      </button>
+
+      <div className="mt-3">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-left text-[13px] text-ink-2"
+          aria-expanded={porque}
+          onClick={() => setPorque((v) => !v)}
+        >
+          <span className="font-semibold text-brand-deep">Por qué:</span>
+          <span className={cn(!porque && "line-clamp-1")}>{m.motivos.at(-1)}</span>
+          <ChevronDown size={14} className={cn("shrink-0 transition-transform", porque && "rotate-180")} />
+        </button>
+        {porque && (
+          <ul className="mt-2 space-y-1 text-[13px] text-ink-2">
+            {m.motivos.slice(0, -1).map((t) => (
+              <li key={t} className="flex gap-2"><span className="mt-[7px] size-1 shrink-0 rounded-full bg-ink-3" />{t}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {m.errorEnvio && <p role="alert" className="mt-3 text-sm text-rose-700">{m.errorEnvio}. Probá de nuevo o mandalo desde tu WhatsApp.</p>}
+
+      <div className="mt-4 flex items-center gap-2">
+        {api ? (
+          <Button className="flex-1" disabled={enviando !== null} onClick={onEnviar}>
+            <Send size={16} />
+            {enviando === m.id ? "Enviando…" : "Enviar"}
+          </Button>
+        ) : (
+          <a className="btn btn-wa flex-1" href={m.waMeUrl} target="_blank" rel="noreferrer" onClick={onAbrir}>
+            <MessageCircle size={16} />
+            Abrir WhatsApp
+          </a>
+        )}
+        <Button variant="secondary" className="px-3.5" onClick={onVer} aria-label={`Vista previa para ${m.clienteNombre}`}>
+          <Eye size={16} />
+          <span className="hidden sm:inline">Vista previa</span>
+        </Button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button variant="ghost" className="size-11 shrink-0 px-0" aria-label={`Más opciones para ${m.clienteNombre}`}>
+              <MoreHorizontal size={18} />
+            </Button>
+          </DropdownMenu.Trigger>
+          <PortalMenuMarketing>
+            <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-60 rounded-2xl bg-surface p-1.5 shadow-xl ring-1 ring-line">
+              <DropdownMenu.Item className={item} onSelect={() => copiar(m.texto)}><Copy size={16} />Copiar mensaje</DropdownMenu.Item>
+              {api && (
+                <DropdownMenu.Item className={item} asChild>
+                  <a href={m.waMeUrl} target="_blank" rel="noreferrer" onClick={onAbrir}><MessageCircle size={16} />Mandarlo desde mi WhatsApp</a>
+                </DropdownMenu.Item>
+              )}
+              <DropdownMenu.Separator className="my-1 h-px bg-line" />
+              <DropdownMenu.Item className={`${item} text-rose-700`} onSelect={onDescartar}><XCircle size={16} />No mandar</DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </PortalMenuMarketing>
+        </DropdownMenu.Root>
+      </div>
+    </li>
+  );
+}

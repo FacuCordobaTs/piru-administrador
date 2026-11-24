@@ -101,7 +101,7 @@ const ALIASES_SECCION: Record<string, string> = {
 const REDIRECTS_SECCION: Record<string, string> = {
   adquisicion: '/dashboard/marketing/campanas',
   activacion: '/dashboard/ajustes/general',
-  retencion: '/dashboard/marketing/hoy',
+  retencion: '/dashboard/marketing/recompra',
   // La personalización de la tienda se mudó a Páginas: la URL vieja sigue funcionando.
   tienda: '/dashboard/ajustes/mi-pagina',
   // Módulos dejó de ser una sección de Ajustes y pasó al menú principal.

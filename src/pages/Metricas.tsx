@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { useAuthStore } from '@/store/authStore'
 import { metricasApi, ApiError } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, TrendingUp, Globe, ShoppingBag, Users } from 'lucide-react'
+import { Loader2, TrendingUp, Globe, ShoppingBag, Users, Gem } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { nombrePlan, planIncluye, usePlanTienda } from '@/store/planTiendaStore'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -52,6 +54,9 @@ export default function Metricas() {
     () => seccionValida(searchParams.get('seccion')) ?? 'estadisticas',
   )
   const secciones = SECCIONES
+  // Estadísticas avanzadas (sección Clientes y rangos): plan Escala. Evolución, como siempre.
+  const { plan } = usePlanTienda()
+  const avanzadas = planIncluye(plan, 'estadisticas_avanzadas')
   const seccionActual = secciones.find((seccion) => seccion.key === tab) ?? secciones[0]
 
   // Cadetes dejó de ser una pestaña de Estadísticas: los enlaces viejos van a su pantalla.
@@ -82,7 +87,9 @@ export default function Metricas() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {seccionActual.key === 'clientes' ? (
+        {seccionActual.key === 'clientes' && !avanzadas ? (
+          <BloqueoAvanzadas plan={nombrePlan(plan, 'escala')} onVerPlanes={() => navigate('/dashboard/planes')} />
+        ) : seccionActual.key === 'clientes' ? (
           <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-7 w-7 animate-spin text-brand" /></div>}>
             <ResumenClientes />
           </Suspense>
@@ -90,6 +97,19 @@ export default function Metricas() {
           <MetricasPanel />
         )}
       </div>
+    </div>
+  )
+}
+
+function BloqueoAvanzadas({ plan, onVerPlanes }: { plan: string; onVerPlanes: () => void }) {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center px-6 py-20 text-center">
+      <Gem className="size-8 text-brand" />
+      <h2 className="mt-4 text-xl font-semibold tracking-tight">Estadísticas avanzadas</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Segmentos de clientes, recompra, campañas y rangos de fechas libres vienen con el plan {plan}.
+      </p>
+      <Button className="mt-6" onClick={onVerPlanes}>Ver planes</Button>
     </div>
   )
 }
@@ -135,11 +155,13 @@ const MESES = [
 ]
 
 export function PeriodSelector({
-  value, onChange, extraAll,
+  value, onChange, extraAll, sinRango = false,
 }: {
   value: PeriodValue
   onChange: (v: PeriodValue) => void
   extraAll?: { active: boolean; onSelectAll: () => void }
+  /** Sin estadísticas avanzadas en el plan: "Por rango" se muestra, pero no se puede elegir. */
+  sinRango?: boolean
 }) {
   const anioActual = new Date().getFullYear()
   const anios = Array.from({ length: 4 }, (_, i) => anioActual - i)
@@ -169,7 +191,7 @@ export function PeriodSelector({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="month">Por mes</SelectItem>
-          <SelectItem value="range">Por rango</SelectItem>
+          <SelectItem value="range" disabled={sinRango}>{sinRango ? 'Por rango · plan Escala' : 'Por rango'}</SelectItem>
         </SelectContent>
       </Select>
 
@@ -250,6 +272,8 @@ const fmtMoney = (n: number) =>
  */
 export function MetricasPanel({ sucursalId = null }: { sucursalId?: number | null }) {
   const token = useAuthStore(s => s.token)
+  const { plan } = usePlanTienda()
+  const sinRango = !planIncluye(plan, 'estadisticas_avanzadas')
   const [data, setData] = useState<MetricasData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -334,7 +358,7 @@ export function MetricasPanel({ sucursalId = null }: { sucursalId?: number | nul
 
       {/* Selector de período, centrado */}
       <div className="flex justify-center">
-        <PeriodSelector value={period} onChange={setPeriod} />
+        <PeriodSelector value={period} onChange={setPeriod} sinRango={sinRango} />
       </div>
 
       {/* Hero: facturación del período */}

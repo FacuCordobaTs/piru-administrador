@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   CalendarDays,
   ChevronDown,
-  CirclePlay,
   Link2,
   MessageCircle,
   Repeat2,
@@ -14,13 +13,11 @@ import {
 } from "lucide-react";
 import { SECCIONES_GUIA, gruposDeLaGuia, type SeccionGuia } from "../lib/guia";
 import { MARKETING } from "../lib/rutas";
-import { useRecorrido } from "../store/recorrido";
-import { Button, Sheet, cn } from "../components/ui";
+import { Sheet, cn } from "../components/ui";
 import { movimientoReducido } from "../components/escenas/animacion";
 import { CuerpoSeccion } from "../components/guia/Contenido";
 import { ConModulo } from "../components/guia/piezas";
 import { RaizMarketing } from "../components/portal";
-import { RecorridoDiferido } from "../components/Layout";
 import "../marketing.css";
 
 const TEMAS = [
@@ -92,7 +89,6 @@ const grupos = gruposDeLaGuia();
  * Los "dónde está" llevan a la pantalla; "Volver" regresa a la que la abrió (`state.volver`).
  */
 export function Guia() {
-  const abrirRecorrido = useRecorrido((s) => s.abrir);
   const { state } = useLocation();
   const [raiz, setRaiz] = useState<HTMLDivElement | null>(null);
   const [activa, setActiva] = useState(secciones[0].id);
@@ -101,7 +97,6 @@ export function Guia() {
     typeof (state as { volver?: unknown } | null)?.volver === "string"
       ? (state as { volver: string }).volver
       : MARKETING;
-  const verRecorrido = () => abrirRecorrido();
 
   useEffect(() => {
     const antes = document.title;
@@ -208,14 +203,6 @@ export function Guia() {
             </span>
           </Link>
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={verRecorrido}
-              className="hidden min-h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold text-ink-2 hover:bg-sand sm:inline-flex"
-            >
-              <CirclePlay size={17} />
-              Recorrido
-            </button>
             <Link className="btn btn-secondary min-h-10 px-4" to={volver}>
               <ArrowLeft size={16} />
               Volver a Marketing
@@ -253,12 +240,6 @@ export function Guia() {
             un link, cómo trabaja el motor de recompra y cómo suman los puntos. En simple y con
             ejemplos.
           </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Button onClick={verRecorrido}>
-              <CirclePlay size={18} />
-              Ver el recorrido de 1 minuto
-            </Button>
-          </div>
           <ul className="mt-9 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
             {TEMAS.map((t) => (
               <li key={t.id}>
@@ -321,27 +302,17 @@ export function Guia() {
           <footer className="rounded-[24px] bg-ink p-7 text-white sm:p-9">
             <p className="text-xl font-semibold tracking-tight">¿Te quedó una duda?</p>
             <p className="mt-2 max-w-xl text-[15.5px] leading-relaxed text-white/70">
-              Escribinos por WhatsApp y te ayudamos. Y si querés repasar lo básico, el recorrido
-              dura un minuto.
+              Escribinos por WhatsApp y te ayudamos.
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <a className="btn bg-surface text-ink" href={AYUDA} target="_blank" rel="noreferrer">
                 <MessageCircle size={17} />
                 Escribinos
               </a>
-              <button
-                type="button"
-                className="btn bg-surface/10 text-white ring-1 ring-white/20"
-                onClick={verRecorrido}
-              >
-                <CirclePlay size={17} />
-                Ver el recorrido
-              </button>
             </div>
           </footer>
         </main>
       </div>
-      <RecorridoDiferido />
       </RaizMarketing.Provider>
     </div>
   );

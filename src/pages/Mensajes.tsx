@@ -20,6 +20,8 @@ import { AjusteEditor } from './ajustes/components/AjusteEditor'
 import { SectionSkeleton } from './ajustes/components/SectionSkeleton'
 import { useSuscripcion } from './ajustes/hooks/useSuscripcion'
 import { useModuloActivo } from '@/store/modulosStore'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Chats } from './mensajes/Chats'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmtARS = (n: number | string) =>
@@ -47,27 +49,48 @@ export default function MensajesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const saldo = loading || !data ? (
+    <SectionSkeleton />
+  ) : (
+    <section className="space-y-8">
+      <SaldoBanner data={data} />
+      <EnviadosCard mostrarMarketing={mostrarMarketing(data, crecimientoActivo)} />
+      {!data.wallet?.ilimitado && data.wallet && <SaldoCard data={data} avisosActivos={avisosActivos} onDone={refetch} />}
+      {data.wallet?.ilimitado && <SaldoIlimitadoCard />}
+      {data.wallet && mostrarMarketing(data, crecimientoActivo) && <SaldoMarketingCard data={data} />}
+      <Movimientos />
+    </section>
+  )
+
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
       <header className="mb-8 space-y-1">
         <h1 className="text-2xl font-medium tracking-tight text-foreground">Mensajes</h1>
         <p className="text-sm font-normal text-muted-foreground">
-          Tus avisos por WhatsApp a los clientes y los mensajes de campaña: cuántos enviaste, cuántos te
-          quedan y cómo recargar.
+          Lo que te escriben tus clientes por WhatsApp, tus avisos y mensajes de campaña: cuántos enviaste,
+          cuántos te quedan y cómo recargar.
         </p>
       </header>
 
-      {loading || !data ? (
-        <SectionSkeleton />
+      {avisosActivos ? (
+        <Tabs
+          value={searchParams.get('vista') === 'saldo' ? 'saldo' : 'chats'}
+          onValueChange={(v) => {
+            searchParams.set('vista', v)
+            setSearchParams(searchParams, { replace: true })
+          }}
+        >
+          <TabsList className="mb-6">
+            <TabsTrigger value="chats">Chats</TabsTrigger>
+            <TabsTrigger value="saldo">Saldo y envíos</TabsTrigger>
+          </TabsList>
+          <TabsContent value="chats">
+            <Chats />
+          </TabsContent>
+          <TabsContent value="saldo">{saldo}</TabsContent>
+        </Tabs>
       ) : (
-        <section className="space-y-8">
-          <SaldoBanner data={data} />
-          <EnviadosCard mostrarMarketing={mostrarMarketing(data, crecimientoActivo)} />
-          {!data.wallet?.ilimitado && data.wallet && <SaldoCard data={data} avisosActivos={avisosActivos} onDone={refetch} />}
-          {data.wallet?.ilimitado && <SaldoIlimitadoCard />}
-          {data.wallet && mostrarMarketing(data, crecimientoActivo) && <SaldoMarketingCard data={data} />}
-          <Movimientos />
-        </section>
+        saldo
       )}
     </div>
   )

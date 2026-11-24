@@ -8,9 +8,11 @@ import { AjusteRow } from '../components/AjusteRow'
 import { CambiarEmailDialog } from '../components/CambiarEmailDialog'
 import { CambiarPasswordDialog } from '../components/CambiarPasswordDialog'
 import MiSuscripcion from '../../MiSuscripcion'
+import { nombrePlan, usePlanTienda } from '@/store/planTiendaStore'
 
 export default function Cuenta() {
   const navigate = useNavigate()
+  const { plan } = usePlanTienda()
   const logout = useAuthStore((s) => s.logout)
   const reset = useRestauranteStore((s) => s.reset)
   const email = useRestauranteStore((s) => s.restaurante?.email)
@@ -78,7 +80,18 @@ export default function Cuenta() {
             Tu cuota, los módulos que sumaste y tus comprobantes.
           </p>
         </header>
-        <MiSuscripcion embedded />
+        {plan && !plan.esLegado ? (
+          // Con un plan de tienda la cuota es la del plan; los módulos vienen incluidos.
+          <AjusteRow
+            titulo={`Plan ${nombrePlan(plan, plan.efectivo)}`}
+            oracion="Cambiá de plan o mirá qué incluye cada uno."
+            estado="configurado"
+            accionLabel="Ver planes"
+            onAccion={() => navigate('/dashboard/planes')}
+          />
+        ) : (
+          <MiSuscripcion embedded />
+        )}
       </div>
 
       {/* Zona separada visualmente */}

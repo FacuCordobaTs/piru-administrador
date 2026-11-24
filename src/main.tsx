@@ -21,6 +21,9 @@ import Facturacion from './pages/Facturacion'
 import Sucursales from './pages/Sucursales'
 import Impresion from './pages/Impresion'
 import Modulos from './pages/Modulos'
+import CrearTienda from './pages/CrearTienda'
+import PrimerosPasos from './pages/PrimerosPasos'
+import Planes from './pages/Planes'
 import AjustesPage from './pages/ajustes'
 import Mensajes from './pages/Mensajes'
 import Repartidores from './pages/Repartidores'
@@ -103,6 +106,12 @@ const router = createBrowserRouter([
     element: <Register />,
   },
   {
+    // Registro self-serve ("Crear tienda gratis"), enlazado desde info.piru.app. Fuera de
+    // GuestLayout: al crear la cuenta lleva a "Primeros pasos", no al inicio del panel.
+    path: "/crear-tienda",
+    element: <CrearTienda />,
+  },
+  {
     path: "/",
     element: <GuestLayout />,
     children: [
@@ -116,7 +125,7 @@ const router = createBrowserRouter([
       },
       {
         path: "/register",
-        element: <Navigate to="/login" replace />,
+        element: <Navigate to="/crear-tienda" replace />,
       },
       {
         path: "/register-email",
@@ -233,7 +242,9 @@ const router = createBrowserRouter([
             lazy: marketing('Layout'),
             children: [
               { index: true, element: <Navigate to="/dashboard/metricas?seccion=clientes" replace /> },
-              { path: "hoy", lazy: marketing('Hoy') },
+              { path: "recompra", lazy: marketing('Recompra') },
+              // Hoy pasó a ser Recompra (tandas de mensajes que arma el dueño cuando quiere).
+              { path: "hoy", element: <Navigate to="/dashboard/marketing/recompra" replace /> },
               { path: "dias-flojos", lazy: marketing('Dias') },
               { path: "campanas", lazy: marketing('Campanas') },
               { path: "clientes", lazy: marketing('Clientes') },
@@ -257,6 +268,15 @@ const router = createBrowserRouter([
           {
             path: "modulos",
             element: <Modulos />,
+          },
+          {
+            // Checklist de las tiendas self-serve (plan de tienda). Ver docs/PLANES_TIENDA.md.
+            path: "primeros-pasos",
+            element: <PrimerosPasos />,
+          },
+          {
+            path: "planes",
+            element: <Planes />,
           },
           {
             path: "mesas",

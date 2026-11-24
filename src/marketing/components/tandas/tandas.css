@@ -1,0 +1,207 @@
+/* Recompra por tandas (pages/Recompra.tsx). Acotado a .marketing-app como el resto de Marketing. */
+
+.marketing-app .tanda-bienvenida {
+  margin-inline: auto;
+  max-width: 760px;
+  padding-block: 1rem 2rem;
+  text-align: center;
+}
+.marketing-app .tanda-cta {
+  min-height: 3.5rem;
+  padding-inline: 1.75rem;
+  font-size: 1.0625rem;
+  border-radius: 999px;
+  box-shadow: 0 14px 30px -14px rgb(255 122 0 / 0.65);
+}
+
+/* Las preguntas del asistente: una por pantalla, centradas. */
+.marketing-app .tanda-paso {
+  margin-inline: auto;
+  max-width: 620px;
+  padding-block: 0.5rem 3rem;
+  text-align: center;
+  animation: tanda-entra 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes tanda-entra {
+  from { opacity: 0; transform: translateY(10px); }
+}
+.marketing-app .tanda-numero {
+  min-width: 2.4ch;
+  font-size: clamp(5rem, 18vw, 8.5rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+  color: var(--marketing-ink);
+}
+.marketing-app .tanda-mas-menos {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 999px;
+  background: var(--marketing-surface);
+  box-shadow: 0 0 0 1px var(--marketing-line), 0 8px 20px -14px rgb(40 24 8 / 0.5);
+  color: var(--marketing-ink);
+  transition: transform 0.15s, background-color 0.15s;
+}
+.marketing-app .tanda-mas-menos:hover:not(:disabled) { background: var(--marketing-sand); }
+.marketing-app .tanda-mas-menos:active:not(:disabled) { transform: scale(0.94); }
+.marketing-app .tanda-rango { accent-color: var(--color-brand); height: 2rem; }
+.marketing-app .tanda-recomendado {
+  margin-top: 1.5rem;
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding-inline: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--marketing-brand-deep);
+  background: var(--marketing-brand-soft);
+}
+.marketing-app .tanda-recomendado--activo { background: var(--marketing-ink); color: #fff; }
+.dark .marketing-app .tanda-recomendado--activo { color: #191512; }
+
+.marketing-app .tanda-monto {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.25rem;
+  border-bottom: 3px solid var(--marketing-line);
+  padding-inline: 0.5rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--marketing-ink);
+  transition: border-color 0.2s;
+}
+.marketing-app .tanda-monto:focus-within { border-color: var(--color-brand); }
+.marketing-app .tanda-monto > span { font-size: clamp(2.5rem, 9vw, 4rem); color: var(--marketing-ink-3); }
+.marketing-app .tanda-monto input {
+  min-width: 0;
+  max-width: 11ch;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: clamp(3.5rem, 13vw, 6rem);
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: none;
+}
+.marketing-app .tanda-monto input:focus-visible { outline: none; }
+.marketing-app .tanda-opcion {
+  min-height: 2.75rem;
+  border-radius: 999px;
+  padding-inline: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--marketing-ink-2);
+  background: var(--marketing-surface);
+  box-shadow: 0 0 0 1px var(--marketing-line);
+}
+.marketing-app .tanda-opcion--activa { background: var(--marketing-ink); color: #fff; box-shadow: none; }
+.dark .marketing-app .tanda-opcion--activa { color: #191512; }
+
+/* Mientras se arma: cinco burbujas que van llegando. */
+.marketing-app .tanda-armando { display: inline-flex; gap: 0.6rem; margin-top: 4rem; }
+.marketing-app .tanda-armando > span {
+  width: 2.75rem;
+  height: 2rem;
+  border-radius: 1rem 1rem 1rem 0.35rem;
+  background: #dcf8c6;
+  box-shadow: 0 6px 16px -10px rgb(0 0 0 / 0.4);
+  animation: tanda-burbujea 1.2s ease-in-out infinite;
+}
+@keyframes tanda-burbujea {
+  0%, 100% { transform: translateY(0); opacity: 0.45; }
+  40% { transform: translateY(-12px); opacity: 1; }
+}
+
+/* Tarjetas */
+.marketing-app .tanda-resumen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 20px;
+  background: var(--marketing-surface);
+  padding: 1.25rem;
+  text-align: left;
+  box-shadow: 0 0 0 1px var(--marketing-line), 0 10px 28px -22px rgb(40 24 8 / 0.5);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.marketing-app .tanda-resumen:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px var(--marketing-line), 0 18px 36px -24px rgb(40 24 8 / 0.55);
+}
+.marketing-app .tanda-tarjeta {
+  border-radius: 22px;
+  background: var(--marketing-surface);
+  padding: 1rem;
+  box-shadow: 0 0 0 1px var(--marketing-line), 0 10px 28px -24px rgb(40 24 8 / 0.5);
+}
+@media (min-width: 640px) {
+  .marketing-app .tanda-tarjeta { padding: 1.25rem 1.5rem; }
+}
+.marketing-app .tanda-burbuja {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-top: 0.875rem;
+  border-radius: 4px 16px 16px 16px;
+  background: #efeae2;
+  padding: 0.75rem 0.875rem;
+  text-align: left;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: #111b21;
+  overflow-wrap: anywhere;
+}
+.marketing-app .tanda-burbuja:hover { background: #e8e2d8; }
+.dark .marketing-app .tanda-burbuja { background: #202c33; color: #e9edef; }
+.marketing-app .btn-wa { background: #1faf55; color: #fff; }
+.marketing-app .btn-wa:hover { background: #18994a; }
+.dark .marketing-app .btn-wa { color: #fff; }
+
+/* Vista previa en un celular */
+.marketing-app .tanda-celular {
+  margin-inline: auto;
+  max-width: 340px;
+  overflow: hidden;
+  border-radius: 28px;
+  background: #0b141a;
+  padding: 6px;
+  box-shadow: 0 24px 50px -28px rgb(0 0 0 / 0.6);
+}
+.marketing-app .tanda-celular-barra {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 22px 22px 0 0;
+  background: #0b6e5c;
+  padding: 0.7rem 0.9rem;
+  color: #fff;
+}
+.marketing-app .tanda-celular-chat {
+  min-height: 260px;
+  border-radius: 0 0 22px 22px;
+  background-color: #efeae2;
+  background-image: radial-gradient(circle at 1px 1px, rgb(0 0 0 / 0.05) 1px, transparent 0);
+  background-size: 16px 16px;
+  padding: 1rem 0.75rem 1.25rem;
+}
+.marketing-app .tanda-celular-burbuja {
+  max-width: 92%;
+  border-radius: 0 10px 10px 10px;
+  background: #fff;
+  padding: 0.45rem 0.55rem 0.35rem;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: #111b21;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.12);
+  overflow-wrap: anywhere;
+}

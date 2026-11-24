@@ -209,6 +209,10 @@ const Login = () => {
           >
             {metodo === 'whatsapp' ? 'Entrar con correo y contraseña' : 'Entrar con WhatsApp'}
           </button>
+          <p className="mt-3 text-center text-sm text-muted-foreground">
+            ¿Todavía no tenés tienda?{' '}
+            <a href="/crear-tienda" className="font-medium text-foreground underline underline-offset-2">Creala gratis</a>
+          </p>
         </div>
       </main>
     </div>

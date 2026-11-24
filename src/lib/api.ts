@@ -155,6 +155,13 @@ async function fetchApi<T>(
 
 // Auth API
 export const authApi = {
+  /** "Crear tienda gratis" (self-serve): nace en el plan Inicial y entra directo al panel. */
+  crearTienda: async (datos: { email: string; nombre: string; password: string; aceptaTerminos: true }) =>
+    fetchApi<{ success: boolean; token: string; restaurante: any; message?: string }>('/auth/crear-tienda', {
+      method: 'POST',
+      body: JSON.stringify(datos),
+    }),
+
   login: async (email: string, password: string) => {
     return fetchApi('/auth/login-restaurante', {
       method: 'POST',
@@ -3006,6 +3013,10 @@ export interface Modulo {
   precioMensualCongelado: string | null
   vigenteHasta: string | null
   activoAhora: boolean
+  /** Lo incluye el plan de tienda del local (en Evolución, siempre). */
+  incluidoEnPlan?: boolean
+  /** Plan más barato que lo incluye. */
+  planMinimo?: string | null
 }
 
 export interface CategoriaModulo {
@@ -3095,6 +3106,66 @@ export const planesApi = {
 
 // Dominio canónico de suscripción. `/planes` se mantiene como alias para las
 // versiones instaladas anteriores del admin.
+// ── Planes de tienda (Inicial, Esencial, Impulso, Escala, Evolución) ──
+// Precios y módulos de cada plan salen de la API (`plan_tienda`): la UI no escribe montos.
+export type PlanCodigo = 'inicial' | 'esencial' | 'impulso' | 'escala' | 'evolucion'
+
+export interface PlanTienda {
+  codigo: PlanCodigo
+  nombre: string
+  descripcion: string | null
+  /** null = a medida. 0 = gratis. */
+  precioMensual: number | null
+  descuentoAnual: number
+  orden: number
+  destacado: boolean
+  modulos: string[]
+  beneficios: string[]
+}
+
+export interface MiPlanTienda {
+  contratado: PlanCodigo
+  efectivo: PlanCodigo
+  /** Evolución: los locales de siempre, con su suscripción de siempre. */
+  esLegado: boolean
+  catalogo: PlanTienda[]
+  suscripcion: {
+    estado: string
+    ciclo: 'mensual' | 'anual' | null
+    fechaProximoCobro: string | null
+    fechaCancelacion: string | null
+    cancelacionProgramada: boolean
+  } | null
+  pagosDisponibles: boolean
+}
+
+export type PasoId = 'crear_tienda' | 'productos' | 'whatsapp' | 'horarios' | 'entregas' | 'pagos' | 'diseno'
+export interface PrimerosPasos {
+  visible: boolean
+  pasos: Array<{ id: PasoId; hecho: boolean; opcional: boolean }>
+  completados: number
+  total: number
+  terminado: boolean
+}
+
+export type ResultadoElegirPlan =
+  | { cambio: 'pago'; url_pago: string; pagoId: number; monto: string; ciclo: 'mensual' | 'anual' }
+  | { cambio: 'inmediato' | 'baja_cancelada'; plan: PlanCodigo }
+  | { cambio: 'al_fin_del_periodo'; plan: PlanCodigo; hasta: string | null }
+
+export const planesTiendaApi = {
+  miPlan: (token: string) =>
+    fetchApi<{ success: boolean; data: MiPlanTienda }>('/planes-tienda', { headers: { Authorization: `Bearer ${token}` } }),
+  primerosPasos: (token: string) =>
+    fetchApi<{ success: boolean; data: PrimerosPasos }>('/planes-tienda/primeros-pasos', { headers: { Authorization: `Bearer ${token}` } }),
+  elegir: (token: string, codigo: PlanCodigo, ciclo: 'mensual' | 'anual' = 'mensual') =>
+    fetchApi<{ success: boolean; data: ResultadoElegirPlan }>('/planes-tienda/elegir', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ codigo, ciclo }),
+    }),
+}
+
 export const suscripcionApi = {
   // Catálogo canónico: contiene una única suscripción base. `/planes/catalogo`
   // queda disponible únicamente para admins instalados durante la transición.
@@ -3194,7 +3265,46 @@ export interface EstadisticasEnvios {
   marketing: { hoy: number; semana: number; mes: number; total: number }
 }
 
+/** Chats de sólo lectura: lo que los clientes le escriben al número del local por la API de Meta. */
+export interface ResumenChatWhatsapp {
+  clave: string
+  telefono: string
+  nombre: string | null
+  clienteId: number | null
+  ultimoTexto: string
+  ultimoOrigen: 'cliente' | 'bot' | 'tanda'
+  ultimoAt: string
+  recibidos: number
+}
+
+export interface MensajeChatWhatsapp {
+  id: number
+  direccion: 'entrante' | 'saliente'
+  origen: 'cliente' | 'bot' | 'tanda'
+  texto: string
+  imagenUrl: string | null
+  createdAt: string
+}
+
+export interface ChatWhatsapp {
+  clave: string
+  telefono: string
+  nombre: string | null
+  clienteId: number | null
+  mensajes: MensajeChatWhatsapp[]
+}
+
 export const mensajesApi = {
+  chats: async (token: string) =>
+    fetchApi<{ success: boolean; data: ResumenChatWhatsapp[] }>('/mensajes/chats', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  chat: async (token: string, clave: string) =>
+    fetchApi<{ success: boolean; data: ChatWhatsapp }>(`/mensajes/chats/${encodeURIComponent(clave)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }),
   saldo: async (token: string) =>
     fetchApi<{ success: boolean; data: WalletResumen }>('/mensajes/saldo', {
       method: 'GET',

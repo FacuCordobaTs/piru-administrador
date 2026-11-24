@@ -8,7 +8,7 @@ import { useRestauranteStore } from '../src/store/restauranteStore'
 import {
   Layout,
   ResumenClientes,
-  Hoy,
+  Recompra,
   Dias,
   Campanas,
   Clientes,
@@ -20,7 +20,7 @@ import '../src/index.css'
 
 /**
  * Marketing dentro del panel real (`DashboardLayout`), con la sesión de un dueño. La API la
- * responde la suite (`page.route`). `?ruta=/dashboard/marketing/hoy` elige la pantalla.
+ * responde la suite (`page.route`). `?ruta=/dashboard/marketing/recompra` elige la pantalla.
  */
 const params = new URLSearchParams(window.location.search)
 const ruta = params.get('ruta') ?? '/dashboard/marketing'
@@ -40,7 +40,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="metricas" element={<Metricas />} />
         <Route path="marketing" element={<Layout />}>
           <Route index element={<ResumenClientes />} />
-          <Route path="hoy" element={<Hoy />} />
+          <Route path="recompra" element={<Recompra />} />
           <Route path="dias-flojos" element={<Dias />} />
           <Route path="campanas" element={<Campanas />} />
           <Route path="clientes" element={<Clientes />} />

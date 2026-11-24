@@ -17,7 +17,7 @@ import { LOCAL_EJEMPLO } from "./ejemplo";
 // Las secciones de Marketing, con los mismos íconos que su barra (components/Layout.tsx).
 const SECCIONES = [
   { Icono: LayoutDashboard, nombre: "Resumen", texto: "Cómo viene" },
-  { Icono: MessageCircle, nombre: "Hoy", texto: "Para mandar" },
+  { Icono: MessageCircle, nombre: "Recompra", texto: "Tandas" },
   { Icono: CalendarDays, nombre: "Días flojos", texto: "A quién invitar" },
   { Icono: Link2, nombre: "Campañas", texto: "Links medidos" },
   { Icono: Users, nombre: "Clientes", texto: "La base" },
@@ -35,7 +35,7 @@ export function MapaApp({
     <Escena
       ancho={460}
       alto={326}
-      etiqueta="Las secciones de Marketing: Resumen, Hoy, Días flojos, Campañas, Clientes, Puntos, Cupones y Estadísticas de tu local."
+      etiqueta="Las secciones de Marketing: Resumen, Recompra, Días flojos, Campañas, Clientes, Puntos, Cupones y Estadísticas de tu local."
       siempreActiva={siempreActiva}
     >
       <div className="e-baja absolute left-[18px] top-[14px] flex items-center gap-2" style={d(0)}>

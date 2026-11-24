@@ -30,7 +30,7 @@ import { LinkMedido } from "../escenas/LinkMedido";
 import { FichaCliente } from "../escenas/FichaCliente";
 import { RitmoCliente } from "../escenas/RitmoCliente";
 import { EnvioHoy } from "../escenas/EnvioHoy";
-import { Escalera } from "../escenas/Escalera";
+import { ArmarTanda } from "../escenas/ArmarTanda";
 import { MapaDias } from "../escenas/MapaDias";
 import { ClubPuntos } from "../escenas/ClubPuntos";
 import { CuponTicket } from "../escenas/CuponTicket";
@@ -141,7 +141,7 @@ const PANTALLAS: {
   seccion?: string;
   modulo?: string;
 }[] = [
-  { Icono: MessageCircle, nombre: "Hoy", seccion: "hoy", modulo: "Recompra", texto: "Los mensajes del día, listos para mandar." },
+  { Icono: MessageCircle, nombre: "Recompra", seccion: "recompra", modulo: "Recompra", texto: "Tandas de mensajes personalizados, cuando quieras mover las ventas." },
   { Icono: CalendarDays, nombre: "Días flojos", seccion: "dias-flojos", modulo: "Días flojos", texto: "Qué días y franjas venden menos, y a quién invitar." },
   { Icono: Link2, nombre: "Campañas", seccion: "campanas", texto: "Un link por historia o anuncio, con sus ventas cobradas." },
   { Icono: Users, nombre: "Clientes", seccion: "clientes", modulo: "Recompra", texto: "La base, con los hábitos, favoritos y segmento de cada uno." },
@@ -371,31 +371,32 @@ function Campanas() {
 
 function Motor() {
   return <>
-    <p>El motor está siempre activo con Recompra. Piru encuentra los clientes que necesitan volver y los distribuye por día de la semana y hora habitual. En <strong>Hoy</strong> ves todos los mensajes del día; también podés mirar <strong>Mañana</strong> y los siguientes días. En manual, el día y la hora son recomendaciones: podés abrir WhatsApp y marcar enviado cuando prefieras.</p>
+    <p>Recompra no te pide entrar todos los días. Cuando quieras mover las ventas, armás una <strong>tanda</strong>: le decís a cuántos clientes escribirles ahora y cuánto querés invertir en beneficios, y Piru arma un mensaje distinto para cada uno.</p>
+    <Figura pie="Una tanda: de toda la base elige a los que conviene escribirles hoy y le arma a cada uno su mensaje y su beneficio."><ArmarTanda /></Figura>
     <Pasos items={[
-      { titulo: "La agenda se actualiza sola", texto: "No hace falta crear tandas ni elegir una cantidad de clientes. El primer mensaje se asigna al día habitual de compra; los clientes perdidos se distribuyen en días con menos movimiento." },
-      { titulo: "Mandás y marcás", texto: "Abrís WhatsApp con el texto listo desde el dispositivo del local y marcás enviado después de mandarlo." },
-      { titulo: "El próximo toque", texto: "Si no compró, el siguiente mensaje se agenda a partir del envío real, respetando los días configurados y un mínimo de 48 horas. Un jueves más dos días da sábado; si el local cierra, pasa al próximo día abierto." },
+      { titulo: "A quién", texto: "Mira toda la base y ordena por lo que vale cada cliente y qué tan buen momento es: su ritmo de pedidos, hace cuánto no pide y si hoy es su día. Te recomienda una cantidad: los que están justo en su momento." },
+      { titulo: "Qué beneficio", texto: "El monto que ponés es lo máximo que se puede ir si todos usan su beneficio. No se reparte parejo ni se va en uno: va donde más mueve la aguja. Al habitual que vuelve solo no le hace falta; al que se está yendo, sí." },
+      { titulo: "Qué decirle", texto: "Cada mensaje usa su historia: su producto favorito, el día que suele pedir, su último pedido armado en el link o algo nuevo para probar. Ninguno sale igual a otro." },
     ]} />
-    <h3>Hasta tres mensajes</h3><Figura pie="La recomendación: antojo, recordatorio y cierre."><Escalera /></Figura>
-    <p>El primer mensaje no lleva descuento; el segundo recomienda 10 % y el tercero 20 %, con vencimiento de 48 horas. El descuento viaja en el link y se aplica solo. El ritmo es automático: no hay nada que configurar mensaje por mensaje.</p>
-    <p>Con el club de puntos activo, el mensaje prioriza los puntos: si el cliente tiene saldo se lo recuerda (y le dice cuánto le falta para el premio más cercano); si tiene 0, lo invita a empezar a sumar. Podés cambiar el beneficio a un descuento a mano, o sumarle puntos extra. Un bonus de puntos en automático no se emite: se elige a mano en Hoy o se configura en una campaña.</p>
-    <h3>El mismo día cada semana</h3><p>Un mensaje pendiente del jueves sigue disponible los jueves; no se acumula entre los mensajes de los demás días. Una vez enviado deja de aparecer y se programa su siguiente toque. Si el cliente vuelve a comprar, sale de la agenda.</p>
-    <h3>Cuando el día es flojo</h3><p>Días flojos muestra, por día y horario, cuándo se vende menos; en Hoy aparecen dos herramientas: un link de campaña exclusivo para ese día de la semana, y sumar activos o VIP disponibles con una invitación propia sin descuento. Esa invitación no sube el descuento de su escalera y no genera recordatorios de recupero.</p>
-    <Clave><li>Todos los contactos disponibles aparecen en la agenda: no se apartan clientes nuevos como control.</li><li>Se respetan las bajas, cuatro contactos en 30 días, 48 horas de descanso. El envío automático respeta el silencio de 22 a 9; en manual, el horario es una recomendación.</li><li>El envío manual sale del WhatsApp del local. Automático requiere su conexión de Meta, plantillas aprobadas, saldo y cupo de proveedor.</li></Clave>
-    <p className="flex flex-wrap gap-2"><Donde texto="Hoy" icono={MessageCircle} ruta={ruta("hoy")} /></p>
+    <h3>Los beneficios</h3>
+    <p>Según el cliente puede tocarle envío gratis (si casi siempre pide delivery), un monto de regalo con una compra mínima o un porcentaje por tiempo limitado. Cada uno es un cupón de un solo uso que viaja en su link y se aplica solo, y el tiempo corre desde que se manda. Con $0 los mensajes van sin descuento.</p>
+    <p>Con el club de puntos activo, los beneficios son <strong>puntos extra</strong> con una compra mínima, que se acreditan al despacharse el pedido. Sin presupuesto, el mensaje le cuenta cuántos puntos suma con su favorito o qué tan cerca está de un premio.</p>
+    <h3>Por qué a cada uno</h3>
+    <p>Cada mensaje explica por qué se le escribe y por qué ese beneficio, en frases cortas: «Pide cada ~9 días y lleva 16 sin pedir», «Los viernes son su día», «Envío gratis: casi siempre pide delivery».</p>
+    <Clave><li>Se respetan las bajas y nadie recibe dos tandas en 5 días.</li><li>Nada se manda solo: cada mensaje sale cuando tocás su botón.</li><li>Con el envío automático por WhatsApp, salen de a uno por la plantilla aprobada del local.</li></Clave>
+    <p className="flex flex-wrap gap-2"><Donde texto="Recompra" icono={MessageCircle} ruta={ruta("recompra")} /></p>
   </>;
 }
 
-function Control() { return <p>La agenda semanal contacta a todos los clientes elegibles. Ya no crea grupos de control nuevos. Los grupos de las campañas anteriores se conservan sólo como historial; sus resultados no demuestran cuánto aporta el motor actual.</p>; }
+function Control() { return <p>En cada tanda ves quién volvió a pedir en los 14 días siguientes a su mensaje y cuánto compró. Las campañas anteriores con grupos de control se conservan sólo como historial.</p>; }
 
 const CUIDADOS = [
-  { icono: ShieldCheck, titulo: "4 mensajes en 30 días", texto: "Nunca más que eso a la misma persona." },
-  { icono: Moon, titulo: "Horario recomendado", texto: "En manual elegís cuándo mandar. El automático no envía entre las 22 y las 9." },
-  { icono: Timer, titulo: "48 horas de descanso", texto: "Como mínimo, entre un mensaje y el siguiente." },
-  { icono: Gauge, titulo: "Cupo diario", texto: "Los envíos automáticos respetan el cupo del proveedor." },
+  { icono: ShieldCheck, titulo: "5 días de descanso", texto: "Quien recibió un mensaje no entra en otra tanda por unos días." },
+  { icono: Moon, titulo: "Horario del automático", texto: "El envío automático no sale entre las 22 y las 9." },
+  { icono: Timer, titulo: "4 mensajes en 30 días", texto: "El automático nunca le escribe más que eso a la misma persona." },
+  { icono: Gauge, titulo: "Saldo de mensajes", texto: "Cada envío automático usa un mensaje de marketing." },
   { icono: Ban, titulo: "La baja se respeta", texto: "Quien pidió no recibir más mensajes, no los recibe." },
-  { icono: ShoppingBag, titulo: "Si pide, sale", texto: "Un pedido nuevo lo saca de la cola." },
+  { icono: ShoppingBag, titulo: "Si pidió hace poco, espera", texto: "Las tandas no incluyen a quien pidió en los últimos días." },
 ];
 
 function Whatsapp() {
@@ -403,36 +404,33 @@ function Whatsapp() {
     <>
       <p>
         Los mensajes salen del número donde el local ya recibe los pedidos, en el mismo chat con
-        cada cliente. No hay un número nuevo, ni una API que conectar, ni costo por mensaje.
+        cada cliente. No hay un número nuevo ni costo por mensaje.
       </p>
-      <Figura pie="En Hoy: «Abrir WhatsApp» abre el chat con el mensaje escrito; se manda desde ahí y después se marca como enviado.">
+      <Figura pie="«Abrir WhatsApp» abre el chat con el mensaje escrito; se manda desde ahí.">
         <EnvioHoy />
       </Figura>
-      <h3>Primero, ¿qué dispositivo es?</h3>
+      <h3>Abrir WhatsApp</h3>
       <p>
-        «Abrir WhatsApp» abre el WhatsApp del celular o la compu donde lo tocás. Por eso Hoy
-        pregunta, una vez por local, si ese dispositivo tiene el WhatsApp del local:
+        «Abrir WhatsApp» abre el WhatsApp del celular o la compu donde lo tocás, con el mensaje
+        escrito. Abrilo desde el dispositivo que tiene el WhatsApp del local. Al abrirlo, el
+        mensaje queda como enviado y su beneficio empieza a correr; si al final no lo mandaste,
+        tocá <strong>No lo mandé</strong>.
       </p>
       <Tarjetas>
-        <Tarjeta icono={Check} titulo="Sí, lo tiene" tono="si">
-          Aparecen «Abrir WhatsApp» y «Marcar enviado».
+        <Tarjeta icono={Check} titulo="Vista previa" tono="si">
+          Antes de mandarlo ves cómo le llega al cliente, en un celular.
         </Tarjeta>
-        <Tarjeta icono={X} titulo="No, está en otro" tono="no">
-          Mandalos desde el celular o la compu que tiene tu WhatsApp. Desde acá podés copiar el texto.
+        <Tarjeta icono={X} titulo="No mandar" tono="no">
+          Si a alguien no querés escribirle, lo sacás de la tanda y su cupón se apaga.
         </Tarjeta>
       </Tarjetas>
-      <p>La respuesta queda guardada en ese dispositivo y se cambia con «Cambiar dispositivo».</p>
-      <h3>Marcar enviado</h3>
+      <h3>Con envío automático</h3>
       <p>
-        Piru no ve el WhatsApp: se entera de que el mensaje salió cuando tocás{" "}
-        <strong>Marcar enviado</strong>. Eso lo registra y deja
-        programado el mensaje siguiente. Marcalo después de mandarlo.
+        Si el local tiene los avisos automáticos por WhatsApp, cada mensaje sale por la plantilla
+        aprobada del local, a veces con la foto del producto, y el botón abre su propia tienda.
+        Igual se manda de a uno: cuando tocás <strong>Enviar</strong>.
       </p>
       <h3>Cuidados de la base</h3>
-      <p>
-        Piru cuida a los clientes y al número del local. Por eso, a veces un mensaje dice
-        «Todavía no se puede mandar» y explica por qué:
-      </p>
       <Tarjetas columnas={3}>
         {CUIDADOS.map((x) => (
           <Tarjeta key={x.titulo} icono={x.icono} titulo={x.titulo}>
@@ -441,7 +439,7 @@ function Whatsapp() {
         ))}
       </Tarjetas>
       <p>
-        <Donde texto="Hoy" icono={MessageCircle} ruta={ruta("hoy")} />
+        <Donde texto="Recompra" icono={MessageCircle} ruta={ruta("recompra")} />
       </p>
     </>
   );
@@ -467,7 +465,7 @@ function DiasFlojos() {
       </p>
       <h3>La invitación</h3>
       <p>
-        En Hoy, si es un día flojo, podés sumar activos y VIP con una invitación sin descuento. El link de campaña sirve cada semana en el día elegido.
+        Un día flojo es un buen momento para armar una tanda en Recompra. El link de campaña sirve cada semana en el día elegido.
       </p>
       <h3>El link del día</h3>
       <p>
@@ -645,9 +643,9 @@ function Numeros() {
 function Rutina() {
   const bloques = [
     {
-      titulo: "Todos los días",
+      titulo: "Cuando quieras vender más",
       detalle: "Unos 5 minutos",
-      items: ["Abrí Hoy y mandá los mensajes del día.", "Marcá cada uno como enviado."],
+      items: ["Armá una tanda en Recompra.", "Abrí cada mensaje y mandalo."],
     },
     {
       titulo: "Cada semana",
@@ -655,7 +653,6 @@ function Rutina() {
       items: [
         "Un link nuevo para cada historia o anuncio.",
         "Mirá Días flojos y programá la invitación.",
-        "La agenda de los que se están yendo.",
       ],
     },
     {
@@ -693,7 +690,7 @@ function Rutina() {
 function Preguntas() {
   const preguntas = [
     {
-      p: "¿Por qué no veo Hoy, Días flojos o Puntos?",
+      p: "¿Por qué no veo Recompra, Días flojos o Puntos?",
       r: "Son módulos independientes: si no tenés el que abre esa pantalla, la tab no aparece y la URL te muestra cómo activarlo gratis.",
     },
     {
@@ -757,17 +754,15 @@ const GLOSARIO: [string, string][] = [
   ["Cola", "Los mensajes agendados que todavía no salieron."],
   ["Cupo diario", "Cuántos mensajes automáticos puede mandar el local por día."],
   ["Día flojo", "Un día y franja en que el local abre y vende menos del 70 % del promedio."],
-  ["Escalera", "Los tres mensajes de la recompra, con el descuento que recomienda Piru: sin descuento, 10 % y 20 %."],
   ["Franja", "Una parte del día —mediodía, tarde o noche— según los horarios del local."],
   ["Grupo de control", "Grupo histórico de campañas anteriores; la agenda actual no crea controles."],
-  ["Mensaje 1, 2 y 3", "Cada intento de la recompra con un mismo cliente."],
   ["Orgánico", "Lo que se vende sin ninguna campaña."],
-  ["Recompra", "El módulo incluido con la agenda de mensajes de Hoy."],
+  ["Recompra", "El módulo incluido que arma tandas de mensajes personalizados."],
   ["Días flojos", "El módulo incluido que encuentra los días y franjas con menos movimiento."],
   ["Puntos", "El módulo incluido del club: cómo se suman y se canjean los puntos."],
   ["Retorno", "Las ventas cobradas de una campaña divididas por lo que se invirtió en pauta."],
   ["Segmento", "El grupo de un cliente según su ritmo: primer pedido, habituales, VIP, se están yendo, hace tiempo no vienen o dejaron de pedir."],
-  ["Agenda semanal", "Los mensajes pendientes de Hoy, Mañana y los siguientes días, actualizados automáticamente."],
+  ["Tanda", "Un grupo de mensajes personalizados que armás cuando querés, con su beneficio para cada cliente."],
   ["Venta cobrada", "Un pedido pagado y no cancelado."],
 ];
 

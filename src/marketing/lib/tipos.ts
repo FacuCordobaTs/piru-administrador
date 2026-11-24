@@ -705,6 +705,10 @@ export interface Modulo {
   precioMensualCongelado: string | null;
   vigenteHasta: string | null;
   activoAhora: boolean;
+  /** Lo incluye el plan de tienda (en Evolución, siempre). */
+  incluidoEnPlan?: boolean;
+  /** Plan más barato que lo incluye. */
+  planMinimo?: string | null;
 }
 
 export interface CategoriaModulo {

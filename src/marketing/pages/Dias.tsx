@@ -33,14 +33,15 @@ function DiasContenido() {
   const maxDia = Math.max(1, ...(data?.dias.map(x => x.pedidosPromedio) ?? []));
   // La fila de hoy se marca: es la que se busca primero.
   const hoy = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date()) + 'T12:00:00-03:00').getUTCDay();
-  const diaLink = (n: number) => `${MARKETING}/hoy${query({ diaSemana: n })}`;
+  // Para mover un día flojo se arma una tanda de Recompra ese día.
+  const diaLink = (_dia: number) => `${MARKETING}/recompra`;
   return <><Header title="Llená los días flojos" sub="Mirá cuándo se vende menos y mandá a los clientes justo esos días." ayuda={{ seccion: 'dias-flojos', texto: 'Cómo se encuentran los días flojos' }} />
     <div role="group" aria-label="Ventana de análisis" className="mb-5 flex flex-wrap gap-2">
       {[4, 8, 12, 26].map(n => <Chip key={n} className="min-h-10" activo={semanas === n} onClick={() => setSemanas(n)}>Últimas {n} semanas</Chip>)}
     </div>
     <Estado skeleton={<SkeletonPantalla tipo="dias" />} loading={d.loading && !data} error={d.error} reintentar={d.recargar} />
     {data && (!data.suficientesDatos ? <Empty title="Necesitamos un poco más de historia" text={`Hay pedidos en ${data.semanasConPedidos} semanas. Necesitamos al menos dos para reconocer días flojos.`} /> : <div className={d.loading ? 'opacity-60' : undefined} aria-busy={d.loading}>
-      <div className="mb-5 grid gap-4 sm:grid-cols-3">{data.flojos.slice(0, 3).map((f, i) => <Card key={`${f.diaSemana}-${f.franja}`}><p className="label">{i === 0 ? 'El más flojo' : 'Oportunidad'}</p><h2 className="mt-3">{f.nombre}</h2><p className="muted my-3">Le faltan {Math.ceil(f.pedidosFaltantes)} pedidos para el promedio.</p><Link className="btn btn-secondary" to={diaLink(f.diaSemana)}>Ver mensajes de ese día</Link></Card>)}</div>
+      <div className="mb-5 grid gap-4 sm:grid-cols-3">{data.flojos.slice(0, 3).map((f, i) => <Card key={`${f.diaSemana}-${f.franja}`}><p className="label">{i === 0 ? 'El más flojo' : 'Oportunidad'}</p><h2 className="mt-3">{f.nombre}</h2><p className="muted my-3">Le faltan {Math.ceil(f.pedidosFaltantes)} pedidos para el promedio.</p><Link className="btn btn-secondary" to={diaLink(f.diaSemana)}>Armar una tanda de mensajes</Link></Card>)}</div>
       {!data.flojos.length && <Card className="mb-5"><h2>Tus días vienen parejos</h2><p className="muted mt-2">Ningún día abierto cae por debajo del 70% del promedio.</p></Card>}
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">

@@ -5,6 +5,7 @@ import { datosLocal, apiLocal } from "../lib/api";
 import { useDatos } from "../lib/useDatos";
 import type { CategoriaModulo } from "../lib/tipos";
 import { Card, Button, Estado, accion } from "./ui";
+import { usePlanTienda } from "@/store/planTiendaStore";
 export function useModulo(codigo: string) {
   const l = useLocal();
   const info = useDatos(
@@ -96,6 +97,10 @@ export function BloqueoModulo({
   const local = useLocal();
   const recargar = useRecargarLocal();
   const { modulo, loading, error, recargar: reload } = useModulo(codigo);
+  // Con un plan de tienda (no Evolución) nada se paga suelto: lo incluido se activa gratis y lo
+  // demás se consigue cambiando de plan.
+  const { plan } = usePlanTienda();
+  const conPlan = Boolean(plan && !plan.esLegado);
   if (loading || error)
     return <Estado loading={loading} error={error} reintentar={reload} />;
   if (!modulo)
@@ -109,6 +114,19 @@ export function BloqueoModulo({
         <Button onClick={reload}>Volver a cargar</Button>
       </Card>
     );
+  if (conPlan && !modulo.incluidoEnPlan) {
+    const desde = plan?.catalogo.find((p) => p.codigo === modulo.planMinimo)?.nombre ?? "Evolución";
+    return (
+      <Card>
+        <h2>
+          {nombre} para {local.nombre}
+        </h2>
+        <p className="muted mt-3 mb-5">Esta herramienta está disponible desde el plan {desde}.</p>
+        <Button onClick={() => window.location.assign("/dashboard/planes")}>Ver planes</Button>
+      </Card>
+    );
+  }
+  const tipo = conPlan ? "incluido" : modulo.tipo;
   return (
     <Card>
       <h2>
@@ -123,7 +141,7 @@ export function BloqueoModulo({
               ? "Sumá puntos en cada compra y dale a tus clientes una razón para volver."
               : "Activá esta herramienta incluida para crear links y medir las ventas."}
       </p>
-      {modulo?.tipo === "pago" && (
+      {tipo === "pago" && (
         <p className="text-lg font-semibold mb-5">
           {Number(
             modulo.precioMensualCongelado || modulo.precioMensual,
@@ -135,7 +153,7 @@ export function BloqueoModulo({
           / mes
         </p>
       )}
-      {modulo.tipo === "pago" ? (
+      {tipo === "pago" ? (
         <PagoModulo
           codigo={codigo}
           pendiente={modulo.estado === "pendiente_pago"}

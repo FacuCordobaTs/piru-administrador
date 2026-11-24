@@ -1,10 +1,9 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { BookOpen, CirclePlay } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import type { LocalMarketing } from "../lib/tipos";
 import { localApi } from "../lib/api";
 import { GUIA } from "../lib/rutas";
-import { useRecorrido } from "../store/recorrido";
 import { useDatos } from "../lib/useDatos";
 import { Estado } from "./ui";
 import { RaizMarketing } from "./portal";
@@ -28,21 +27,6 @@ export const useRecargarLocal = () => {
   if (!c) throw new Error("Local no disponible");
   return c.recargar;
 };
-
-// El recorrido se carga aparte: el uso de todos los días no lo descarga.
-const Recorrido = lazy(() =>
-  import("./recorrido/Recorrido").then((m) => ({ default: m.Recorrido })),
-);
-
-/** Se monta la primera vez que se pide el recorrido, y queda para que pueda cerrarse animado. */
-export function RecorridoDiferido() {
-  const pedido = useRecorrido((s) => s.vez > 0);
-  return pedido ? (
-    <Suspense fallback={null}>
-      <Recorrido />
-    </Suspense>
-  ) : null;
-}
 
 export function Monograma({ local }: { local: LocalMarketing }) {
   return local.imagenUrl ? (
@@ -100,8 +84,6 @@ export function MarketingShell({ children }: { children?: ReactNode }) {
     () => localApi.tarjeta(),
     [],
   );
-  const abrirRecorrido = useRecorrido((s) => s.abrir);
-  const verRecorrido = () => abrirRecorrido({ local: local?.nombre ?? null });
 
   useEffect(() => {
     const anterior = document.title;
@@ -124,14 +106,6 @@ export function MarketingShell({ children }: { children?: ReactNode }) {
               <BookOpen size={16} />
               <span className="hidden sm:inline">Guía</span>
             </Link>
-            <button
-              type="button"
-              onClick={verRecorrido}
-              className="btn btn-ghost px-3"
-            >
-              <CirclePlay size={16} />
-              <span className="hidden sm:inline">Ver el recorrido</span>
-            </button>
           </div>
           <main className="min-w-0">
             {loading || error || !local ? (
@@ -143,7 +117,6 @@ export function MarketingShell({ children }: { children?: ReactNode }) {
             )}
           </main>
         </div>
-        <RecorridoDiferido />
       </RaizMarketing.Provider>
     </div>
   );

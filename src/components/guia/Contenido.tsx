@@ -968,7 +968,7 @@ function Clientes({ c }: { c: ContextoGuia }) {
         es el celular. Esa base es la que usás para que vuelvan.
       </p>
       <p>
-        En el menú, esas pantallas viven cada una en su tab: <strong>Clientes</strong>, Hoy,
+        En el menú, esas pantallas viven cada una en su tab: <strong>Clientes</strong>, Recompra,
         Días flojos, Campañas, Puntos y Cupones. Mientras las usás, el panel sigue recibiendo e
         imprimiendo pedidos.
       </p>

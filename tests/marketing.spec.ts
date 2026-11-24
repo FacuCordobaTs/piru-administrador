@@ -294,6 +294,36 @@ const opcionesMensaje = {
 // El texto de cada toque, como lo arma el backend con las decisiones que llegan por query.
 const textoToque = (toque: number, descuento: number) =>
   `${["Hola Ana 👋 Volvé a Brasa.", "Ana, ¿te tentás con lo de siempre?", "Ana, última invitación del mes."][toque - 1]}${descuento ? ` Tenés ${descuento}% OFF.` : ""} https://my.piru.app/brasa/`;
+const tandaEjemplo = {
+  id: 40,
+  canal: "manual" as const,
+  createdAt: new Date().toISOString(),
+  cantidadPedida: 2,
+  presupuesto: 5000,
+  presupuestoAsignado: 2500,
+  conPuntos: false,
+  mensajes: [
+    {
+      id: 1, clienteId: 1, clienteNombre: "Ana", telefono: "5491112345678", orden: 0, segmento: "dormido", angulo: "extranamos",
+      texto: "¡Hola Ana! 👋\n\nHace un mes que no pasás por Brasa y te extrañamos. El envío va por nuestra cuenta durante 3 días.\n\nTe lo dejamos listo acá 👇\nhttps://my.piru.app/brasa/r/abc",
+      motivos: ["Pide cada ~9 días y lleva 31 sin pedir. Se está enfriando.", "Envío gratis ($ 2.500): casi siempre pide delivery; un empujón fuerte antes de perderlo."],
+      datos: { pedidos: 5, totalGastado: 90000, ticketPromedio: 18000, diasDesdeUltimo: 31, cadenciaDias: 9, diaHabitual: "viernes", favorito: "Smash", puntos: null, esVip: false },
+      beneficio: { tipo: "envio_gratis", valor: 0, etiqueta: "Envío gratis · 3 días", costoMaximo: 2500, vigenciaHoras: 72 },
+      link: "https://my.piru.app/brasa/r/abc", waMeUrl: "https://api.whatsapp.com/send?phone=5491112345678&text=hola",
+      plantilla: null, estado: "pendiente", canalEnvio: null, enviadoAt: null, errorEnvio: null, resultado: null,
+    },
+    {
+      id: 2, clienteId: 2, clienteNombre: "Beto", telefono: "5491187654321", orden: 1, segmento: "activo", angulo: "a_tiempo",
+      texto: "¡Buenas Beto! 👋\n\nPor cómo venís pidiendo, ya te toca Smash 😉\n\nPedilo en dos toques 👇\nhttps://my.piru.app/brasa/c/lo-mismo?tk=v1.x",
+      motivos: ["Pide cada ~7 días y lleva 8 sin pedir. Está justo en su momento.", "Va sin beneficio: pide seguido y suele volver solo; el mensaje alcanza."],
+      datos: { pedidos: 9, totalGastado: 120000, ticketPromedio: 13300, diasDesdeUltimo: 8, cadenciaDias: 7, diaHabitual: null, favorito: "Smash", puntos: null, esVip: true },
+      beneficio: { tipo: "ninguno", valor: 0, etiqueta: null, costoMaximo: 0, vigenciaHoras: null },
+      link: "https://my.piru.app/brasa/c/lo-mismo?tk=v1.x", waMeUrl: "https://api.whatsapp.com/send?phone=5491187654321&text=hola",
+      plantilla: null, estado: "pendiente", canalEnvio: null, enviadoAt: null, errorEnvio: null, resultado: null,
+    },
+  ],
+};
+
 async function mock(
   page: Page,
   opciones: {
@@ -305,15 +335,10 @@ async function mock(
     /** Suma la campaña del motor y un link pausado a "Historia martes". */
     variasCampanas?: boolean;
     motor?: "activa" | "pausada_manual" | "pausada_sin_saldo";
-    /** Deja que el recorrido de bienvenida se abra solo, como la primera vez. */
-    recorrido?: boolean;
+    /** Recompra ya tiene una tanda armada. */
+    conTandas?: boolean;
   } = {},
 ) {
-  // El resto de los recorridos no lo quieren encima: lo dan por visto.
-  if (!opciones.recorrido)
-    await page.addInitScript(() => {
-      localStorage.setItem("piru-marketing-recorrido-v1:1", "visto");
-    });
   const envio = opciones.envio ?? { puedeEnviar: true, motivo: null };
   const requests: string[] = [];
   const posts: {
@@ -329,6 +354,7 @@ async function mock(
   let motor = opciones.motor ?? "activa";
   let clientesVivos = clientes.map((c) => ({ ...c, pedidos: [...c.pedidos] }));
   let cuponesVivos = cupones.map((c) => ({ ...c }));
+  let tandas: typeof tandaEjemplo[] = opciones.conTandas ? [tandaEjemplo] : [];
   let campanasVivas: (typeof campana | typeof maestra | typeof reel)[] =
     opciones.variasCampanas ? [campana, maestra, reel].map((c) => ({ ...c })) : [campana];
   const resumen = opciones.variasCampanas
@@ -355,6 +381,26 @@ async function mock(
     const fulfill = (data: unknown, status = 200) =>
       route.fulfill({ status, json: data });
     if (path === "/marketing-local") return fulfill(local(1, "Brasa"));
+    if (path === "/recompra-tandas/preparacion")
+      return fulfill(envelope({
+        elegibles: 18, recomendado: 6, maximo: 18, presupuestoSugerido: 9000, ticketPromedio: 21000,
+        canal: "manual", conPuntos: false, localNombre: "Brasa", tieneTienda: true,
+      }));
+    if (path === "/recompra-tandas" && req.method() === "POST") {
+      const t = { ...tandaEjemplo, id: 41 + tandas.length, cantidadPedida: req.postDataJSON().cantidad };
+      tandas = [t, ...tandas];
+      return fulfill(envelope(t), 201);
+    }
+    if (path === "/recompra-tandas")
+      return fulfill(envelope(tandas.map((t) => ({
+        id: t.id, canal: t.canal, createdAt: t.createdAt, presupuesto: t.presupuesto, presupuestoAsignado: t.presupuestoAsignado,
+        conPuntos: false, total: t.mensajes.length, enviados: 0, descartados: 0, volvieron: 0, ventas: 0, nombres: ["Ana", "Beto"],
+      }))));
+    if (/^\/recompra-tandas\/\d+$/.test(path)) return fulfill(envelope(tandas.find((t) => t.id === id) ?? tandaEjemplo));
+    if (/^\/recompra-tandas\/\d+\/mensajes\/\d+\/abrir$/.test(path)) {
+      const m = tandaEjemplo.mensajes.find((x) => x.id === id)!;
+      return fulfill(envelope({ ...m, estado: "enviado", canalEnvio: "wa_me", enviadoAt: new Date().toISOString() }));
+    }
     if (path === "/marketing-local/sucursales")
       return fulfill([
         { id: 1, nombre: "Centro", activo: true },
@@ -770,7 +816,7 @@ async function mock(
       return fulfill({ success: true, message: "Código eliminado" });
     }
     // El resto del panel (perfil, módulos del menú, avisos…) no es parte de esta suite.
-    if (!/^\/(clientes|marketing|codigo-descuento|puntos|modulos|metricas|producto|categoria)(\/|$)/.test(path))
+    if (!/^\/(clientes|marketing|codigo-descuento|puntos|modulos|metricas|producto|categoria|recompra-tandas)(\/|$)/.test(path))
       return fulfill(envelope(null));
     return fulfill({ message: `Sin fixture: ${path}` }, 500);
   });
@@ -795,7 +841,7 @@ test("cada pantalla de Marketing carga dentro del panel, sin errores", async ({ 
   page.on("pageerror", (e) => errores.push(e.message + "\n" + (e.stack ?? "")));
   for (const [ruta, titulo] of [
     ["/dashboard/marketing", "Clientes"],
-    ["/dashboard/marketing/hoy", "Tu semana de mensajes"],
+    ["/dashboard/marketing/recompra", "Que tus clientes vuelvan a pedir"],
     ["/dashboard/marketing/dias-flojos", "Llená los días flojos"],
     ["/dashboard/marketing/campanas", "Cada historia, su link"],
     ["/dashboard/marketing/clientes", "Tus clientes, con nombre"],
@@ -862,26 +908,60 @@ test("los diálogos se montan dentro de Marketing, con su estilo", async ({ page
   expect(await dialogo.evaluate((el) => !!el.closest(".marketing-app"))).toBe(true);
 });
 
-test("la guía y el recorrido de Marketing", async ({ page }) => {
+test("la guía de Marketing, sin recorrido", async ({ page }) => {
   await mock(page);
   await ir(page, "/dashboard/marketing/guia");
   await expect(page.getByRole("heading", { name: "Cómo funciona el marketing de tu local" })).toBeVisible();
   await expect(page.getByText(/marketer/i)).toHaveCount(0);
-  await page.getByRole("button", { name: "Ver el recorrido de 1 minuto" }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Este es el marketing de tu local" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /recorrido/i })).toHaveCount(0);
+});
+
+test("Recompra arma una tanda: cuántos, cuánto invertir y los mensajes con su porqué", async ({ page }) => {
+  const m = await mock(page);
+  const errores: string[] = [];
+  page.on("pageerror", (e) => errores.push(e.message));
+  await ir(page, "/dashboard/marketing/recompra");
+  await expect(page.getByRole("button", { name: /recorrido/i })).toHaveCount(0);
+  await page.getByRole("button", { name: "Armar una tanda de mensajes" }).click();
+  await expect(page.getByRole("heading", { name: "¿A cuántos clientes les escribís ahora?" })).toBeVisible();
+  await expect(page.getByText("6 es lo recomendado")).toBeVisible();
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-paso-1.png" });
+  await page.getByRole("button", { name: "Uno más" }).click();
+  await page.getByRole("button", { name: "Seguir" }).click();
+  await expect(page.getByRole("heading", { name: /¿Cuánto querés invertir/ })).toBeVisible();
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-paso-2.png" });
+  await page.getByRole("button", { name: "Sin beneficios" }).click();
+  await page.getByRole("button", { name: "Armar 7 mensajes" }).click();
+  await expect(page.getByRole("heading", { name: /^Tanda del/ })).toBeVisible();
+  expect(m.posts.find((p) => p.path === "/recompra-tandas")?.body).toEqual({ cantidad: 7, presupuesto: 0 });
+  await expect(page.getByText("Envío gratis · 3 días")).toBeVisible();
+  await expect(page.getByText(/Por qué:/).first()).toBeVisible();
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda.png", fullPage: true });
+  await page.getByRole("button", { name: "Vista previa para Ana" }).click();
+  await expect(page.getByRole("dialog").getByText(/Hace un mes que no pasás/)).toBeVisible();
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-vista-previa.png" });
+  expect(errores).toEqual([]);
+});
+
+test("Recompra lista las tandas anteriores y deja crear otra", async ({ page }) => {
+  await mock(page, { conTandas: true });
+  await ir(page, "/dashboard/marketing/recompra");
+  await expect(page.getByRole("heading", { name: "Recompra", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Nueva tanda" })).toBeEnabled();
+  await expect(page.getByRole("list", { name: "Tus tandas" }).getByRole("listitem")).toHaveCount(1);
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tandas.png", fullPage: true });
 });
 
 test("en el celular la pantalla no desborda y las tabs siguen accesibles desde el menú", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mock(page);
-  await ir(page, "/dashboard/marketing/hoy");
-  await expect(page.getByRole("heading", { name: "Tu semana de mensajes", exact: true })).toBeVisible();
+  await ir(page, "/dashboard/marketing/recompra");
+  await expect(page.getByRole("heading", { name: "Que tus clientes vuelvan a pedir", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole("button", { name: "Abrir menú" }).click();
   await expect(page.getByRole("button", { name: "Clientes" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Cupones" })).toBeVisible();
-  await page.screenshot({ path: "node_modules/.cache/marketing-results/hoy-390.png", fullPage: true });
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/recompra-390.png", fullPage: true });
 });
 
 test("las tabs aparecen según los módulos activos", async ({ page }) => {
@@ -894,7 +974,7 @@ test("las tabs aparecen según los módulos activos", async ({ page }) => {
   await mock(page, { retencion: "inactivo" });
   await ir(page, "/dashboard/marketing/dias-flojos");
   await expect(page.getByRole("button", { name: "Clientes" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Hoy" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Recompra" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Días flojos" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Puntos" })).toBeVisible();
 });

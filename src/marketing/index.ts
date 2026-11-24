@@ -1,7 +1,7 @@
 // Marketing del panel: se carga en un chunk aparte, la primera vez que se abre.
 export { Layout } from "./components/Layout";
 export { ResumenClientes } from "./pages/ResumenClientes";
-export { Hoy } from "./pages/Hoy";
+export { Recompra } from "./pages/Recompra";
 export { Dias } from "./pages/Dias";
 export { Campanas } from "./pages/Campanas";
 export { Clientes } from "./pages/Clientes";

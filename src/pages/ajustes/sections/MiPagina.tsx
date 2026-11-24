@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { ExternalLink, Gem, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { sitiosApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { nombrePlan, planIncluye, usePlanTienda } from '@/store/planTiendaStore'
 import { EscenaTienda } from '../components/EscenaTienda'
 
 /**
@@ -12,6 +14,10 @@ import { EscenaTienda } from '../components/EscenaTienda'
  */
 export default function MiPagina() {
   const token = useAuthStore((s) => s.token)
+  const navigate = useNavigate()
+  // Páginas es el diseño personalizado: desde el plan Esencial (el backend también lo exige).
+  const { plan } = usePlanTienda()
+  const conDiseno = planIncluye(plan, 'diseno_personalizado')
   const [abriendo, setAbriendo] = useState(false)
   const [bloqueada, setBloqueada] = useState<string | null>(null)
 
@@ -40,10 +46,22 @@ export default function MiPagina() {
           Secciones, colores, letras, logos y pedido en grupo, a mano o con tu IA. La carta, los precios y los pedidos siguen saliendo de este panel.
         </p>
       </div>
-      <Button size="lg" onClick={abrir} disabled={abriendo || !token}>
-        {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
-        Abrir Páginas
-      </Button>
+      {conDiseno ? (
+        <Button size="lg" onClick={abrir} disabled={abriendo || !token}>
+          {abriendo ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
+          Abrir Páginas
+        </Button>
+      ) : (
+        <div className="space-y-3">
+          <p className="mx-auto max-w-md text-balance text-sm">
+            Hoy tu tienda usa el diseño de Piru. Desde el plan {nombrePlan(plan, 'esencial')} elegís una plantilla y la personalizás con tu marca.
+          </p>
+          <Button size="lg" onClick={() => navigate('/dashboard/planes')}>
+            <Gem className="size-4" />
+            Ver planes
+          </Button>
+        </div>
+      )}
       {bloqueada && (
         <p className="text-sm">
           El navegador bloqueó la pestaña.{' '}
