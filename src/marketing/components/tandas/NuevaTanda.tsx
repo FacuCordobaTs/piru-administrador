@@ -96,7 +96,7 @@ function ElegirNumero({
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold">{p.nombre}</span>
                   <span className="block text-xs text-ink-3 tabular-nums">
-                    {motivo ?? `${p.numero} · ${elegibles} ${elegibles === 1 ? "cliente" : "clientes"} para hoy`}
+                    {motivo ?? `${p.numero ? `${p.numero} · ` : ""}${elegibles} ${elegibles === 1 ? "cliente" : "clientes"} para hoy`}
                     {!motivo && p.canal === "api" ? " · automático" : ""}
                   </span>
                 </span>
@@ -203,7 +203,7 @@ function PreguntasTanda({
           </h2>
           {pasosPrevios > 0 && (
             <p className="mt-3 text-sm font-medium text-ink-2">
-              Desde {punto.nombre} · {punto.numero}
+              Desde {punto.nombre}{punto.numero ? ` · ${punto.numero}` : ""}
             </p>
           )}
           <p className="muted mx-auto mt-3 max-w-md">
