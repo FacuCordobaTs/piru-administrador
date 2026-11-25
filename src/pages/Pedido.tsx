@@ -54,6 +54,8 @@ interface UnifiedPedido {
   metodoPago?: string | null
   rapiboyTrackingUrl?: string | null
   montoDescuento?: string | number | null
+  /** El cliente mandó el pedido al WhatsApp vinculado del local. */
+  whatsappConfirmadoAt?: string | null
 }
 
 const getMinutesAgo = (dateString: string) => {
@@ -168,6 +170,7 @@ export default function Pedido() {
           metodoPago: res.data.metodoPago,
           rapiboyTrackingUrl: res.data.rapiboyTrackingUrl,
           montoDescuento: res.data.montoDescuento,
+          whatsappConfirmadoAt: res.data.whatsappConfirmadoAt ?? null,
         })
       }
     } catch (e) {
@@ -473,6 +476,15 @@ export default function Pedido() {
                 <Phone className="h-3.5 w-3.5" />
                 {pedido.telefono}
               </a>
+            </div>
+          )}
+
+          {pedido.whatsappConfirmadoAt && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">WhatsApp</span>
+              <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                Mandó el pedido · {new Date(pedido.whatsappConfirmadoAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
           )}
 

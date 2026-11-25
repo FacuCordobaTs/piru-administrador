@@ -297,6 +297,7 @@ const textoToque = (toque: number, descuento: number) =>
 const tandaEjemplo = {
   id: 40,
   canal: "manual" as const,
+  envio: { alcance: "todo" as const, sucursalId: null, nombre: "Brasa", numero: "+54 9 341 555 0000" },
   createdAt: new Date().toISOString(),
   cantidadPedida: 2,
   presupuesto: 5000,
@@ -339,6 +340,8 @@ async function mock(
     conTandas?: boolean;
     /** Envío automático por Meta, con este saldo de mensajes de marketing. */
     mensajesMarketing?: number;
+    /** El local tiene sucursales, cada una con su WhatsApp (una sin número). */
+    sucursales?: boolean;
   } = {},
 ) {
   const envio = opciones.envio ?? { puedeEnviar: true, motivo: null };
@@ -384,9 +387,22 @@ async function mock(
       route.fulfill({ status, json: data });
     if (path === "/marketing-local") return fulfill(local(1, "Brasa"));
     if (path === "/recompra-tandas/preparacion")
-      return fulfill(envelope({
-        elegibles: 18, recomendado: 6, maximo: 18, presupuestoSugerido: 9000, ticketPromedio: 21000,
-        canal: opciones.mensajesMarketing != null ? "api" : "manual", conPuntos: false, localNombre: "Brasa", tieneTienda: true,
+      return fulfill(envelope(opciones.sucursales ? {
+        puntos: [
+          { clave: "sucursal:1", alcance: "sucursal", sucursalId: 1, nombre: "Centro", numero: "341 555 1111", canal: "manual", motivo: null,
+            preparacion: { elegibles: 9, recomendado: 5, maximo: 9, presupuestoSugerido: 4000, ticketPromedio: 20000 } },
+          { clave: "sucursal:2", alcance: "sucursal", sucursalId: 2, nombre: "Fisherton", numero: "341 555 2222", canal: "manual", motivo: null,
+            preparacion: { elegibles: 4, recomendado: 4, maximo: 4, presupuestoSugerido: 3000, ticketPromedio: 19000 } },
+          { clave: "sucursal:3", alcance: "sucursal", sucursalId: 3, nombre: "Funes", numero: null, canal: "manual", motivo: "sin_numero", preparacion: null },
+        ],
+        requiereSeleccion: true, conPuntos: false, localNombre: "Brasa", tieneTienda: true,
+      } : {
+        puntos: [{
+          clave: "todo:local", alcance: "todo", sucursalId: null, nombre: "Brasa", numero: "+54 9 341 555 0000",
+          canal: opciones.mensajesMarketing != null ? "api" : "manual", motivo: null,
+          preparacion: { elegibles: 18, recomendado: 6, maximo: 18, presupuestoSugerido: 9000, ticketPromedio: 21000 },
+        }],
+        requiereSeleccion: false, conPuntos: false, localNombre: "Brasa", tieneTienda: true,
       }));
     if (path === "/recompra-tandas/mensajes")
       return fulfill(envelope({
@@ -406,7 +422,7 @@ async function mock(
     }
     if (path === "/recompra-tandas")
       return fulfill(envelope(tandas.map((t) => ({
-        id: t.id, canal: t.canal, createdAt: t.createdAt, presupuesto: t.presupuesto, presupuestoAsignado: t.presupuestoAsignado,
+        id: t.id, canal: t.canal, envio: t.envio, createdAt: t.createdAt, presupuesto: t.presupuesto, presupuestoAsignado: t.presupuestoAsignado,
         conPuntos: false, total: t.mensajes.length, enviados: 0, descartados: 0, volvieron: 0, ventas: 0, nombres: ["Ana", "Beto"],
       }))));
     if (/^\/recompra-tandas\/\d+$/.test(path) && req.method() === "DELETE") {
@@ -953,7 +969,7 @@ test("Recompra arma una tanda: cuántos, cuánto invertir y los mensajes con su 
   await page.getByRole("button", { name: "Sin beneficios" }).click();
   await page.getByRole("button", { name: "Armar 7 mensajes" }).click();
   await expect(page.getByRole("heading", { name: /^Tanda del/ })).toBeVisible();
-  expect(m.posts.find((p) => p.path === "/recompra-tandas")?.body).toEqual({ cantidad: 7, presupuesto: 0 });
+  expect(m.posts.find((p) => p.path === "/recompra-tandas")?.body).toEqual({ cantidad: 7, presupuesto: 0, alcance: "todo", sucursalId: null });
   await expect(page.getByText("Envío gratis · 3 días")).toBeVisible();
   await expect(page.getByText(/Por qué:/).first()).toBeVisible();
   await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda.png", fullPage: true });
@@ -961,6 +977,23 @@ test("Recompra arma una tanda: cuántos, cuánto invertir y los mensajes con su 
   await expect(page.getByRole("dialog").getByText(/Hace un mes que no pasás/)).toBeVisible();
   await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-vista-previa.png" });
   expect(errores).toEqual([]);
+});
+
+test("con sucursales, Recompra pregunta primero desde qué número y arma la tanda con sus clientes", async ({ page }) => {
+  const m = await mock(page, { sucursales: true });
+  await ir(page, "/dashboard/marketing/recompra");
+  await page.getByRole("button", { name: "Armar una tanda de mensajes" }).click();
+  await expect(page.getByRole("heading", { name: "¿Desde qué número mandás los mensajes?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Funes/ })).toBeDisabled();
+  await page.screenshot({ path: "node_modules/.cache/marketing-results/tanda-sucursal.png" });
+  await page.getByRole("button", { name: /Fisherton/ }).click();
+  await expect(page.getByText("Desde Fisherton · 341 555 2222")).toBeVisible();
+  await expect(page.getByText("4 es lo recomendado")).toBeVisible();
+  await page.getByRole("button", { name: "Seguir" }).click();
+  await page.getByRole("button", { name: "Sin beneficios" }).click();
+  await page.getByRole("button", { name: "Armar 4 mensajes" }).click();
+  await expect(page.getByRole("heading", { name: /^Tanda del/ })).toBeVisible();
+  expect(m.posts.find((p) => p.path === "/recompra-tandas")?.body).toEqual({ cantidad: 4, presupuesto: 0, alcance: "sucursal", sucursalId: 2 });
 });
 
 test("sin mensajes de marketing, la tanda automática ofrece los packs y suma su precio al costo", async ({ page }) => {

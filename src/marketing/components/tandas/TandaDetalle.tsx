@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { DropdownMenu } from "radix-ui";
 import {
@@ -64,15 +64,36 @@ export function TandaDetalle({
   local: string;
   onVolver: () => void;
 }) {
+  // La tanda recién creada llega armada; al recargar se lee de nuevo.
+  const usarInicial = useRef(Boolean(inicial));
   const { data, error, loading, recargar } = useDatos(
-    () => (inicial ? Promise.resolve(inicial) : tandasApi.leer(tandaId)),
+    () => {
+      if (usarInicial.current && inicial) {
+        usarInicial.current = false;
+        return Promise.resolve(inicial);
+      }
+      return tandasApi.leer(tandaId);
+    },
     [tandaId],
+    { conservar: true },
   );
   const [cambios, setCambios] = useState<Record<number, MensajeTanda>>({});
   const [enviando, setEnviando] = useState<number | null>(null);
   const [viendo, setViendo] = useState<MensajeTanda | null>(null);
   const [verDescartados, setVerDescartados] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [cambiandoVinculado, setCambiandoVinculado] = useState(false);
+  // Mientras sale sola por el WhatsApp vinculado, la lista se actualiza cada medio minuto.
+  const automatico = Boolean(data?.vinculado?.automatico);
+  useEffect(() => {
+    if (!automatico) return;
+    const t = window.setInterval(() => {
+      setCambios({});
+      recargar();
+    }, 30_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [automatico]);
   // Envío automático: el saldo de mensajes de marketing manda. Sin saldo no sale ninguno.
   const esApi = data?.canal === "api";
   const saldo = useDatos(() => (esApi ? tandasApi.mensajes() : Promise.resolve(null)), [esApi], { conservar: true });
@@ -96,6 +117,10 @@ export function TandaDetalle({
   if (!data) return <Estado skeleton={<SkeletonPantalla tipo="hoy" />} loading={loading} error={error} reintentar={recargar} />;
 
   const api = data.canal === "api";
+  // Con sucursales, cada tanda sale desde el número de una sola: se muestra siempre cuál.
+  const desde = data.envio
+    ? `${data.envio.nombre}${data.envio.numero ? ` · ${data.envio.numero}` : ""}`
+    : local;
   const disponibles = saldo.data?.disponibles ?? 0;
   const sinSaldo = api && !!saldo.data && disponibles <= 0;
 
@@ -142,6 +167,20 @@ export function TandaDetalle({
     });
   }
 
+  async function cambiarVinculado(activar: boolean) {
+    setCambiandoVinculado(true);
+    try {
+      await tandasApi.envioVinculado(data!.id, activar);
+      setCambios({});
+      recargar();
+      if (activar) toast.success("Listo: la tanda sale sola desde tu WhatsApp");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No pudimos cambiar el envío.");
+    } finally {
+      setCambiandoVinculado(false);
+    }
+  }
+
   async function enviar(m: MensajeTanda) {
     if (enviando !== null) return;
     setEnviando(m.id);
@@ -184,7 +223,7 @@ export function TandaDetalle({
 
       <header className="mb-6">
         <p className="text-xs font-semibold tracking-[.12em] text-ink-3 uppercase">
-          {api ? "Envío automático · de a uno" : "Desde el WhatsApp del local"}
+          {api ? `Envío automático · ${desde}` : `Desde el WhatsApp de ${desde}`}
         </p>
         <h1 className="mt-1 first-letter:uppercase">Tanda del {fechaTanda(data.createdAt)}</h1>
         <p className="muted mt-2">
@@ -212,6 +251,38 @@ export function TandaDetalle({
         </div>
       )}
 
+      {!api && data.vinculado && pendientes.length > 0 && (
+        <div className="tanda-saldo mb-4">
+          <MessageCircle size={18} className="text-emerald-600" />
+          <p className="min-w-0 flex-1 text-sm">
+            {!data.vinculado.disponible ? (
+              <>Tu WhatsApp vinculado es otro número: esta tanda se manda a mano desde {data.envio?.nombre ?? local}.</>
+            ) : data.vinculado.automatico ? (
+              <>
+                <b>Saliendo sola desde tu WhatsApp.</b> Hoy van <b className="tabular-nums">{data.vinculado.enviadosHoy}</b> de{" "}
+                {data.vinculado.limiteDiario}; lo que no entre hoy sale mañana. Podés cerrar esta pantalla.
+              </>
+            ) : (
+              <>
+                Puede salir sola desde tu WhatsApp vinculado, con foto del producto: hasta {data.vinculado.limiteDiario} por día y
+                con pausas, para cuidar tu número.
+                {data.vinculado.enviadosHoy > 0 ? ` Hoy ya salieron ${data.vinculado.enviadosHoy}.` : ""}
+              </>
+            )}
+          </p>
+          {data.vinculado.disponible && (
+            <Button
+              variant={data.vinculado.automatico ? "secondary" : "primary"}
+              className="min-h-10 px-4 text-sm"
+              disabled={cambiandoVinculado}
+              onClick={() => void cambiarVinculado(!data.vinculado!.automatico)}
+            >
+              {data.vinculado.automatico ? "Pausar" : "Mandar sola"}
+            </Button>
+          )}
+        </div>
+      )}
+
       <div className="card mb-6 !p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-lg font-semibold tabular-nums">
@@ -232,8 +303,9 @@ export function TandaDetalle({
         </div>
         {!api && pendientes.length > 0 && (
           <p className="mt-3 text-xs text-ink-3">
-            Abrí cada uno desde el celular o la compu que tiene el WhatsApp del local: se abre el chat con el mensaje
-            escrito y sólo tenés que tocar enviar.
+            Abrí cada uno desde el celular o la compu que tiene el WhatsApp de {data.envio?.nombre ?? local}
+            {data.envio?.numero ? ` (${data.envio.numero})` : ""}: se abre el chat con el mensaje escrito y sólo tenés que
+            tocar enviar.
           </p>
         )}
       </div>
@@ -276,7 +348,11 @@ export function TandaDetalle({
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setViendo(m)}>
                   <span className="block font-semibold">{m.clienteNombre}</span>
                   <span className="block text-xs text-ink-3">
-                    {m.canalEnvio === "api" ? "Enviado por WhatsApp automático" : "Abierto en tu WhatsApp"}
+                    {m.canalEnvio === "api"
+                      ? "Enviado por WhatsApp automático"
+                      : m.canalEnvio === "vinculado"
+                        ? "Enviado solo desde tu WhatsApp"
+                        : "Abierto en tu WhatsApp"}
                     {m.beneficio.etiqueta ? ` · ${m.beneficio.etiqueta}` : ""}
                   </span>
                 </button>

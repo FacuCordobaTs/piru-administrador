@@ -1,10 +1,17 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, MessageCircle, Minus, Plus, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, MessageCircle, Minus, Plus, Sparkles, Store } from "lucide-react";
 import { toast } from "sonner";
 import { Button, cn } from "../ui";
 import { pesos } from "../../lib/formato";
 import { useDatos } from "../../lib/useDatos";
-import { tandasApi, type PackMensajes, type PreparacionTanda, type Tanda } from "../../lib/tandas";
+import {
+  puntosDisponibles,
+  tandasApi,
+  type PackMensajes,
+  type PreparacionTandas,
+  type PuntoEnvio,
+  type Tanda,
+} from "../../lib/tandas";
 import { Packs } from "./Packs";
 
 const redondear = (n: number) => Math.max(0, Math.round(n / 500) * 500);
@@ -12,27 +19,124 @@ const redondear = (n: number) => Math.max(0, Math.round(n / 500) * 500);
 type Paso = "cantidad" | "mensajes" | "beneficios";
 
 /**
- * Las preguntas de una tanda, una por pantalla y centradas: a cuántos clientes escribirles ahora y
- * cuánto invertir en beneficios. Con envío automático, entre las dos aparece el saldo de mensajes de
- * marketing: si no alcanza, se elige un pack y su precio entra en el costo de la tanda.
+ * Una tanda nueva. Con varias sucursales, lo primero es desde qué número se manda: cada sucursal
+ * escribe desde su WhatsApp y sólo a los clientes que le pidieron a ella. Con un solo número se
+ * salta directo a las preguntas.
  */
 export function NuevaTanda({
   prep,
   onCreada,
   onCancelar,
 }: {
-  prep: PreparacionTanda;
+  prep: PreparacionTandas;
   onCreada: (tanda: Tanda) => void;
   onCancelar: () => void;
 }) {
+  const disponibles = puntosDisponibles(prep);
+  const [elegido, setElegido] = useState<PuntoEnvio | null>(prep.requiereSeleccion ? null : disponibles[0] ?? null);
+
+  if (!elegido) {
+    return <ElegirNumero prep={prep} onElegir={setElegido} onCancelar={onCancelar} />;
+  }
+  return (
+    <PreguntasTanda
+      key={elegido.clave}
+      prep={prep}
+      punto={elegido}
+      pasosPrevios={prep.requiereSeleccion ? 1 : 0}
+      onAtras={prep.requiereSeleccion ? () => setElegido(null) : onCancelar}
+      onCreada={onCreada}
+    />
+  );
+}
+
+const motivoPunto = (p: PuntoEnvio) =>
+  p.motivo === "inactiva"
+    ? "Sucursal inactiva"
+    : p.motivo === "sin_numero"
+      ? "Sin WhatsApp cargado en Sucursales"
+      : !p.preparacion?.elegibles
+        ? "Hoy no hay clientes para escribirles"
+        : null;
+
+/** Primera pregunta con sucursales: desde qué número salen los mensajes. */
+function ElegirNumero({
+  prep,
+  onElegir,
+  onCancelar,
+}: {
+  prep: PreparacionTandas;
+  onElegir: (punto: PuntoEnvio) => void;
+  onCancelar: () => void;
+}) {
+  return (
+    <div className="tanda-paso">
+      <div className="mb-10 flex items-center justify-between">
+        <Button variant="ghost" className="px-3" onClick={onCancelar}>
+          <ArrowLeft size={16} />
+          Cancelar
+        </Button>
+        <span className="text-xs font-semibold tracking-[.12em] text-ink-3 uppercase">Paso 1</span>
+      </div>
+      <h2 className="text-2xl font-bold tracking-tight sm:text-[2rem] sm:leading-tight">
+        ¿Desde qué número mandás los mensajes?
+      </h2>
+      <p className="muted mx-auto mt-3 max-w-md">
+        Cada sucursal le escribe desde su WhatsApp a los clientes que le pidieron a ella. Elegí una y armamos la
+        tanda con sus clientes.
+      </p>
+      <ul aria-label="Números de envío" className="mx-auto mt-8 grid max-w-md gap-3 text-left">
+        {prep.puntos.map((p) => {
+          const motivo = motivoPunto(p);
+          const elegibles = p.preparacion?.elegibles ?? 0;
+          return (
+            <li key={p.clave}>
+              <button type="button" className="tanda-punto" disabled={!!motivo} onClick={() => onElegir(p)}>
+                <Store size={18} className="shrink-0 text-ink-3" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold">{p.nombre}</span>
+                  <span className="block text-xs text-ink-3 tabular-nums">
+                    {motivo ?? `${p.numero} · ${elegibles} ${elegibles === 1 ? "cliente" : "clientes"} para hoy`}
+                    {!motivo && p.canal === "api" ? " · automático" : ""}
+                  </span>
+                </span>
+                {!motivo && <ArrowRight size={16} className="shrink-0 text-ink-3" aria-hidden />}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Las preguntas de una tanda, una por pantalla y centradas: a cuántos clientes escribirles ahora y
+ * cuánto invertir en beneficios. Con envío automático, entre las dos aparece el saldo de mensajes de
+ * marketing: si no alcanza, se elige un pack y su precio entra en el costo de la tanda.
+ */
+function PreguntasTanda({
+  prep,
+  punto,
+  pasosPrevios,
+  onAtras,
+  onCreada,
+}: {
+  prep: PreparacionTandas;
+  punto: PuntoEnvio;
+  pasosPrevios: number;
+  onAtras: () => void;
+  onCreada: (tanda: Tanda) => void;
+}) {
+  const aud = punto.preparacion ?? { elegibles: 0, recomendado: 0, maximo: 0, presupuestoSugerido: 0, ticketPromedio: 0 };
   const [paso, setPaso] = useState<Paso>("cantidad");
-  const api = prep.canal === "api";
+  const api = punto.canal === "api";
   const saldo = useDatos(() => (api ? tandasApi.mensajes() : Promise.resolve(null)), [api]);
   const [pack, setPack] = useState<PackMensajes | null>(null);
   // Sin comprar, los que no tengan saldo se mandan desde el WhatsApp del local.
   const [sinComprar, setSinComprar] = useState(false);
-  const [cantidad, setCantidad] = useState(prep.recomendado);
-  const sugerido = redondear((prep.presupuestoSugerido / Math.max(1, prep.recomendado)) * cantidad);
+  const [cantidad, setCantidad] = useState(aud.recomendado);
+  const sugerido = redondear((aud.presupuestoSugerido / Math.max(1, aud.recomendado)) * cantidad);
   const [monto, setMonto] = useState<number | null>(null);
   const presupuesto = monto ?? sugerido;
   const [armando, setArmando] = useState(false);
@@ -46,7 +150,7 @@ export function NuevaTanda({
     setArmando(true);
     let tanda: Tanda;
     try {
-      tanda = await tandasApi.crear(cantidad, presupuesto);
+      tanda = await tandasApi.crear(cantidad, presupuesto, punto);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No pudimos armar la tanda. Probá de nuevo.");
       setArmando(false);
@@ -83,12 +187,12 @@ export function NuevaTanda({
   return (
     <div className="tanda-paso">
       <div className="mb-10 flex items-center justify-between">
-        <Button variant="ghost" className="px-3" onClick={indice === 0 ? onCancelar : () => setPaso(pasos[indice - 1])}>
+        <Button variant="ghost" className="px-3" onClick={indice === 0 ? onAtras : () => setPaso(pasos[indice - 1])}>
           <ArrowLeft size={16} />
-          {indice === 0 ? "Cancelar" : "Atrás"}
+          {indice === 0 && !pasosPrevios ? "Cancelar" : "Atrás"}
         </Button>
         <span className="text-xs font-semibold tracking-[.12em] text-ink-3 uppercase">
-          Paso {indice + 1} de {pasos.length}
+          Paso {pasosPrevios + indice + 1} de {pasosPrevios + pasos.length}
         </span>
       </div>
 
@@ -97,10 +201,15 @@ export function NuevaTanda({
           <h2 className="text-2xl font-bold tracking-tight sm:text-[2rem] sm:leading-tight">
             ¿A cuántos clientes les escribís ahora?
           </h2>
+          {pasosPrevios > 0 && (
+            <p className="mt-3 text-sm font-medium text-ink-2">
+              Desde {punto.nombre} · {punto.numero}
+            </p>
+          )}
           <p className="muted mx-auto mt-3 max-w-md">
-            {prep.elegibles === 1
+            {aud.elegibles === 1
               ? "Hay 1 cliente al que le viene bien un mensaje hoy."
-              : `Hay ${prep.elegibles} clientes a los que les viene bien un mensaje hoy. Empezamos por los que más conviene.`}
+              : `Hay ${aud.elegibles} clientes a los que les viene bien un mensaje hoy. Empezamos por los que más conviene.`}
           </p>
 
           <div className="mt-10 flex items-center justify-center gap-5 sm:gap-8">
@@ -120,19 +229,19 @@ export function NuevaTanda({
               type="button"
               className="tanda-mas-menos"
               aria-label="Uno más"
-              disabled={cantidad >= prep.maximo}
-              onClick={() => setCantidad((c) => Math.min(prep.maximo, c + 1))}
+              disabled={cantidad >= aud.maximo}
+              onClick={() => setCantidad((c) => Math.min(aud.maximo, c + 1))}
             >
               <Plus size={22} />
             </button>
           </div>
           <p className="mt-1 text-sm font-medium text-ink-3">{cantidad === 1 ? "cliente" : "clientes"}</p>
 
-          {prep.maximo > 1 && (
+          {aud.maximo > 1 && (
             <input
               type="range"
               min={1}
-              max={prep.maximo}
+              max={aud.maximo}
               value={cantidad}
               onChange={(e) => setCantidad(Number(e.target.value))}
               aria-label="Cantidad de clientes"
@@ -142,11 +251,11 @@ export function NuevaTanda({
 
           <button
             type="button"
-            onClick={() => setCantidad(prep.recomendado)}
-            className={cn("tanda-recomendado", cantidad === prep.recomendado && "tanda-recomendado--activo")}
+            onClick={() => setCantidad(aud.recomendado)}
+            className={cn("tanda-recomendado", cantidad === aud.recomendado && "tanda-recomendado--activo")}
           >
             <Sparkles size={15} />
-            {cantidad === prep.recomendado ? `${prep.recomendado} es lo recomendado` : `Recomendado: ${prep.recomendado}`}
+            {cantidad === aud.recomendado ? `${aud.recomendado} es lo recomendado` : `Recomendado: ${aud.recomendado}`}
           </button>
           <p className="mx-auto mt-3 max-w-sm text-xs text-ink-3">
             Son los que están justo en su momento de volver a pedir. Mandarlos lleva unos minutos.
@@ -292,11 +401,11 @@ export function NuevaTanda({
               ? `Armar la tanda y pagar ${pesos(pack.precio)}`
               : `Armar ${cantidad} ${cantidad === 1 ? "mensaje" : "mensajes"}`}
           </Button>
-          {api && (
-            <p className="mx-auto mt-3 max-w-md text-xs text-ink-3">
-              Salen por el WhatsApp automático de {prep.localNombre}, de a uno y sólo cuando apretás Enviar.
-            </p>
-          )}
+          <p className="mx-auto mt-3 max-w-md text-xs text-ink-3">
+            {api
+              ? `Salen por el WhatsApp automático de ${punto.nombre}, de a uno y sólo cuando apretás Enviar.`
+              : `Los mandás desde el WhatsApp de ${punto.nombre}${punto.numero ? ` (${punto.numero})` : ""}.`}
+          </p>
         </>
       )}
     </div>

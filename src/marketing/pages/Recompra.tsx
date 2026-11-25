@@ -10,7 +10,15 @@ import { NuevaTanda } from "../components/tandas/NuevaTanda";
 import { TandaDetalle } from "../components/tandas/TandaDetalle";
 import { useDatos } from "../lib/useDatos";
 import { pesos } from "../lib/formato";
-import { fechaTanda, tandasApi, type PreparacionTanda, type ResumenTanda, type Tanda } from "../lib/tandas";
+import {
+  elegiblesTotales,
+  fechaTanda,
+  puntosDisponibles,
+  tandasApi,
+  type PreparacionTandas,
+  type ResumenTanda,
+  type Tanda,
+} from "../lib/tandas";
 import "../components/tandas/tandas.css";
 
 export function Recompra() {
@@ -83,14 +91,18 @@ function RecompraContenido() {
 }
 
 /** Por qué no se puede armar una tanda ahora, si no se puede. */
-function bloqueo(prep: PreparacionTanda): string | null {
+function bloqueo(prep: PreparacionTandas): string | null {
   if (!prep.tieneTienda) return "Configurá la dirección de tu tienda para que los mensajes lleven su link.";
-  if (prep.elegibles === 0)
+  if (!prep.puntos.some((p) => p.motivo == null))
+    return prep.puntos.length
+      ? "Ninguna sucursal tiene un WhatsApp activo: cargalo en Sucursales para mandar desde ese número."
+      : "Configurá el WhatsApp del local para poder mandar mensajes.";
+  if (!puntosDisponibles(prep).length)
     return "Ahora no hay a quién escribirle: tus clientes pidieron hace poco o ya recibieron un mensaje estos días. Volvé en unos días.";
   return null;
 }
 
-function Bienvenida({ prep, onEmpezar }: { prep: PreparacionTanda; onEmpezar: () => void }) {
+function Bienvenida({ prep, onEmpezar }: { prep: PreparacionTandas; onEmpezar: () => void }) {
   const motivo = bloqueo(prep);
   return (
     <section className="tanda-bienvenida">
@@ -123,18 +135,21 @@ function Listado({
   onAbrir,
 }: {
   tandas: ResumenTanda[];
-  prep: PreparacionTanda;
+  prep: PreparacionTandas;
   onNueva: () => void;
   onAbrir: (id: number) => void;
 }) {
   const motivo = bloqueo(prep);
+  const elegibles = elegiblesTotales(prep);
+  const sucursales = prep.puntos.some((p) => p.alcance === "sucursal");
   return (
     <>
       <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1>Recompra</h1>
           <p className="muted mt-2">
-            {motivo ?? `Hoy hay ${prep.elegibles} ${prep.elegibles === 1 ? "cliente" : "clientes"} a los que les viene bien un mensaje.`}
+            {motivo ??
+              `Hoy hay ${elegibles} ${elegibles === 1 ? "cliente" : "clientes"} a los que les viene bien un mensaje${sucursales ? ", entre todas tus sucursales" : ""}.`}
           </p>
         </div>
         <Button disabled={!!motivo} onClick={onNueva}>
@@ -157,6 +172,7 @@ function Listado({
                       {activos} {activos === 1 ? "cliente" : "clientes"}
                       {t.presupuestoAsignado > 0 ? ` · hasta ${pesos(t.presupuestoAsignado)}` : " · sin beneficios"}
                       {t.canal === "api" ? " · automático" : ""}
+                      {sucursales && t.envio.alcance !== "todo" ? ` · desde ${t.envio.nombre}` : ""}
                     </p>
                   </div>
                   <span

@@ -3524,6 +3524,27 @@ export interface UsuarioStaff {
   createdAt: string
 }
 
+/** WhatsApp del local vinculado como dispositivo (backend/src/routes/whatsapp-vinculado.ts). */
+export type EstadoWhatsappVinculado = {
+  /** false = el local tiene avisos automáticos: no aplica. */
+  aplica: boolean
+  /** false = el servicio no está configurado en este servidor. */
+  disponible: boolean
+  estado: 'desvinculado' | 'preparando' | 'esperando_qr' | 'conectado' | 'desconectado'
+  qr?: string
+  telefono?: string
+  limiteDiario: number
+}
+
+export const whatsappVinculadoApi = {
+  estado: (token: string) =>
+    fetchApi<{ success: boolean; data: EstadoWhatsappVinculado }>('/whatsapp-vinculado', { headers: { Authorization: `Bearer ${token}` } }),
+  vincular: (token: string) =>
+    fetchApi<{ success: boolean; data: EstadoWhatsappVinculado }>('/whatsapp-vinculado/vincular', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
+  desvincular: (token: string) =>
+    fetchApi<{ success: boolean; data: EstadoWhatsappVinculado }>('/whatsapp-vinculado/desvincular', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
+}
+
 export const staffApi = {
   list: (token: string) =>
     fetchApi<{ success: boolean; data: UsuarioStaff[]; ownerId: number }>(

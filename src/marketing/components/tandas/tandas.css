@@ -271,3 +271,19 @@
 }
 .marketing-app .tanda-saldo--vacio { background: #fff1f2; box-shadow: 0 0 0 1px rgb(225 29 72 / 0.2); }
 .dark .marketing-app .tanda-saldo--vacio { background: rgb(225 29 72 / 0.12); }
+
+/* Elegir desde qué número (sucursal) sale la tanda. */
+.marketing-app .tanda-punto {
+  display: flex;
+  width: 100%;
+  min-height: 4rem;
+  align-items: center;
+  gap: 0.85rem;
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--marketing-surface);
+  box-shadow: 0 0 0 1px var(--marketing-line);
+  transition: box-shadow 0.15s ease;
+}
+.marketing-app .tanda-punto:not(:disabled):hover { box-shadow: 0 0 0 2px var(--marketing-ink); }
+.marketing-app .tanda-punto:disabled { opacity: 0.55; cursor: not-allowed; }

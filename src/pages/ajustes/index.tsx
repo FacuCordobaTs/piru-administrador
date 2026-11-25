@@ -26,6 +26,12 @@ const SECTIONS: SectionDef[] = [
     descripcion: 'WhatsApp Business oficial y avisos automáticos de estado de pedidos.',
     Component: lazy(() => import('./sections/WhatsApp')),
   },
+  {
+    id: 'whatsapp-local',
+    label: 'WhatsApp del local',
+    descripcion: 'Vinculá tu WhatsApp: confirma los pedidos sin pedir el celular y manda solas las tandas de recompra.',
+    Component: lazy(() => import('./sections/WhatsAppVinculado')),
+  },
   { id: 'medicion', label: 'Medición', descripcion: 'Google Tag Manager y Meta Pixel para medir tu tienda.', Component: lazy(() => import('./sections/Medicion')) },
   {
     id: 'mozos',
@@ -83,10 +89,12 @@ const DESTINO_PUNTOS = '/dashboard/marketing/puntos'
  * Qué módulos tiene que tener activos un local para que una herramienta de Ajustes
  * tenga sentido. `todos` exige cada código; `alguno` alcanza con uno.
  */
-interface RequisitoModulos { todos?: string[]; alguno?: string[] }
+interface RequisitoModulos { todos?: string[]; alguno?: string[]; ninguno?: string[] }
 
 const REQUISITOS: Record<string, RequisitoModulos> = {
   whatsapp: { todos: ['avisos_automaticos_whatsapp'] },
+  // Con avisos automáticos todo sale por Meta: el WhatsApp vinculado no aplica.
+  'whatsapp-local': { ninguno: ['avisos_automaticos_whatsapp'] },
   mozos: { todos: ['pos', 'mesas'] },
   medicion: { todos: ['crecimiento'] },
 }
@@ -105,6 +113,7 @@ export default function AjustesPage() {
     const requisito = REQUISITOS[id]
     if (!requisito) return true
     if (requisito.alguno && !requisito.alguno.some(activo)) return false
+    if (requisito.ninguno?.some(activo)) return false
     return (requisito.todos ?? []).every(activo)
   }
   const active = seccion ? SECTIONS.find((s) => s.id === seccion) : undefined

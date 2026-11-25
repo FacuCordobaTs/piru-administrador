@@ -424,6 +424,12 @@ function Whatsapp() {
           Si a alguien no querés escribirle, lo sacás de la tanda y su cupón se apaga.
         </Tarjeta>
       </Tarjetas>
+      <h3>Si tenés sucursales</h3>
+      <p>
+        Cada sucursal le escribe desde su propio WhatsApp. Al armar la tanda, primero elegís desde
+        qué número la mandás y entran sólo los clientes que le pidieron a esa sucursal. Una
+        sucursal sin WhatsApp cargado en <strong>Sucursales</strong> no se puede elegir.
+      </p>
       <h3>Con envío automático</h3>
       <p>
         Si el local tiene los avisos automáticos por WhatsApp, cada mensaje sale por la plantilla
